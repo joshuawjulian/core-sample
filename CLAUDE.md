@@ -283,19 +283,10 @@ page, not to force every article into one mold.
 
 ---
 
-## §6 — Tracks (index only)
+## §6 — Tracks
 
-Full per-track roadmaps live in `tracks/` as their own files. **Keep this index lean — do
-NOT inline roadmaps here** (CLAUDE.md is auto-loaded every session; bloat swamps context).
-To work on a track, have an agent read its file on demand. Status: 🟢 designed · ⚪ planned.
-
-- 🟢 **Regression** — `tracks/regression.md`. OLS → projection → multiple regression →
-  inference → diagnostics, then branches: regularization / GLMs / nonparametric. 27 articles
-  (R0–R26).
-- 🟢 **Statistical Inference** — `tracks/statistical-inference.md`. Estimator → likelihood/MLE
-  → intervals → testing → bootstrap/Bayesian. 18 articles. Owns the general uncertainty
-  machinery; Regression links to it rather than re-deriving. (Name settled: *Inference*, not
-  *Modeling*.)
-- ⚪ **Probability foundations**, **Geometry of Data** (applied linear algebra),
-  **Optimization** — required as cross-track prerequisites by the two designed tracks; not
-  yet designed.
+Each track is its own file in **`tracks/`** — that folder is the source of truth for what
+tracks exist and what's in them. **Do NOT enumerate or inline tracks here** (CLAUDE.md is
+auto-loaded every session; keeping the list out of it keeps context lean and means this
+file never needs editing when a track is added). To work on a track, list `tracks/` and
+have an agent read the relevant file on demand.
