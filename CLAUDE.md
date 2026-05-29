@@ -133,6 +133,15 @@ already read (with links), and what it sets up next. There must be a **narrative
 an article is a chapter in a story, not an isolated entry. A reader moving through a
 track in order should feel a continuous build, never a cold start.
 
+**Tracks are not the same length, and that's expected.** One track may be 4–5 articles;
+another may be 30. Let the subject dictate the count — never pad a short track or starve a
+deep one to hit some uniform size. When a track threatens to balloon (e.g. Bayesian
+methods, which sprawl), we have three legitimate moves, chosen per case: **(a)** let it be
+a large track; **(b)** split it into several smaller sibling tracks; or **(c)** sprinkle
+its pieces into the tracks that need them, where each piece is most motivated. Decide this
+the same way as the split/prerequisite protocols — propose the options and discuss before
+committing.
+
 ### 1.4 Full derivations — every step, zero assumptions
 Every derivation MUST show **every step**. This is the heart of the series.
 
@@ -269,5 +278,24 @@ page, not to force every article into one mold.
 - Cross-reference registry (how forward-links to not-yet-written articles stay valid).
 - Visual design: typeset callout boxes (Core / Definition / Theorem / Proof ∎ / Pitfall),
   LaTeX template, title page, typography.
-- Master topic taxonomy and the roadmap of tracks/titles.
+- Master topic taxonomy across all tracks (see §6 for tracks designed so far).
 - Authoring + review workflow at scale.
+
+---
+
+## §6 — Tracks (index only)
+
+Full per-track roadmaps live in `tracks/` as their own files. **Keep this index lean — do
+NOT inline roadmaps here** (CLAUDE.md is auto-loaded every session; bloat swamps context).
+To work on a track, have an agent read its file on demand. Status: 🟢 designed · ⚪ planned.
+
+- 🟢 **Regression** — `tracks/regression.md`. OLS → projection → multiple regression →
+  inference → diagnostics, then branches: regularization / GLMs / nonparametric. 27 articles
+  (R0–R26).
+- 🟢 **Statistical Inference** — `tracks/statistical-inference.md`. Estimator → likelihood/MLE
+  → intervals → testing → bootstrap/Bayesian. 18 articles. Owns the general uncertainty
+  machinery; Regression links to it rather than re-deriving. (Name settled: *Inference*, not
+  *Modeling*.)
+- ⚪ **Probability foundations**, **Geometry of Data** (applied linear algebra),
+  **Optimization** — required as cross-track prerequisites by the two designed tracks; not
+  yet designed.
