@@ -48,12 +48,13 @@ The host stays lean — no Quarto/LaTeX installed locally. Two supported paths:
 - `REGR-1 — OLS, One Predictor` (flagship pilot: the full step-by-step derivation, Old
   Faithful worked example, the Anscombe quartet)
 
-### ⚠️ One thing to check first
-The Quarto/LaTeX pipeline has **not been rendered yet** — it couldn't be built on this host.
-All config and article front matter pass YAML/JSON validation, but the *real* test is the
-first **GitHub Actions run** (Actions tab → "Render PDFs"). If it errors, the fix is a
-next-session task. **Please skim REGR-1 and REGR-0 for depth/format/voice** before we mass-
-produce — they are the template every future article will follow.
+### ✅ The pipeline works — download the PDFs
+CI renders cleanly. Grab the latest PDFs from the **[`latest` release](../../releases/tag/latest)**:
+the bound `Core-Sample.pdf` plus each article standalone (`REGR-0-…`, `REGR-1-…`). They refresh
+on every push to `main`.
+
+**Please skim REGR-1 (and REGR-0) for depth/format/voice** before we mass-produce — they are
+the template every future article will follow.
 
 ### Suggested next steps
 1. Confirm the first CI render produces a clean PDF (or report the error to fix).
