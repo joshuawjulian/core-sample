@@ -1,0 +1,1002 @@
+---
+title: "Ordinary Least Squares, One Predictor"
+subtitle: "Core Sample · Regression"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT = "#2b3a67"     # data points
+LINE  = "#c1121f"     # fitted line
+ACCENT = "#0a7d4d"    # highlights / means
+GREY  = "#6c757d"
+
+def ols_fit(x, y):
+    """Return (b0, b1, Sxx, Sxy) for simple OLS — the very formulas this
+    article derives, used here only to draw the pictures."""
+    n = len(x)
+    xbar, ybar = x.mean(), y.mean()
+    Sxx = np.sum((x - xbar) ** 2)
+    Sxy = np.sum((x - xbar) * (y - ybar))
+    b1 = Sxy / Sxx
+    b0 = ybar - b1 * xbar
+    return b0, b1, Sxx, Sxy
+```
+
+> **Where this sits in the track.** This is the true entry point of the Regression
+> track. It assumes only [REGR-0 *Why a Line?*], which established *what* regression is
+> after — estimating how the average of an outcome moves with a predictor — and *why*
+> "draw the best line through the cloud" is meaningless until we pin down the word
+> *best*. Here we make that commitment (squared error) and follow it all the way to a
+> closed-form line. It sets up [REGR-2 *What the Line Assumes*] (when this line is
+> trustworthy), [REGR-3 *How Good Is the Fit?*] (how we score it), and [REGR-4
+> *Regression as Projection*] (the same answer seen as geometry).
+
+## Abstract {.unnumbered}
+
+Given paired data $(x_1,y_1),\dots,(x_n,y_n)$ and the decision to measure error by the
+*sum of squared vertical distances*, exactly one straight line is best. This article
+derives it from nothing but Calculus I. We write down the error as a function of the
+intercept and slope, $S(\beta_0,\beta_1)$, differentiate it, set the derivatives to
+zero, and solve. Two clean formulas fall out:
+$$\hat\beta_1 = \frac{S_{xy}}{S_{xx}}, \qquad \hat\beta_0 = \bar y - \hat\beta_1\bar x.$$
+The single claim this article defends is that **these are not a recipe to memorize but
+the forced consequence of one choice** — squared error — and that reading the slope as
+*covariance over variance* tells you when the line will serve you and when it will lie.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Commit to measuring a line's error by the **sum of squared vertical gaps** between the
+data and the line. Then the best line is no longer a matter of taste: calculus pins down
+exactly one. Its slope is the **covariance of $x$ and $y$ divided by the variance of
+$x$**, and it always passes through the point of averages $(\bar x,\bar y)$.
+:::
+
+Everything below orbits that box. The slope formula $\hat\beta_1 = S_{xy}/S_{xx}$ will
+appear to drop out of grinding algebra, but by the end you should see it as inevitable:
+*how much $y$ and $x$ move together, scaled by how much $x$ moves at all.* If they move
+together strongly relative to $x$'s own spread, the line is steep; if $x$ barely varies,
+the slope is unstable — a fact that will return as a genuine failure mode in
+@sec-failure.
+
+# Why we are doing this: the problem that forced the line {#sec-why}
+
+Keep one question in view for the entire article: **why squared error, and why does it
+hand us a line we can actually compute?** Every algebraic step below is an answer to some
+piece of that question. If you ever feel a step is arbitrary, return here.
+
+## The original problem
+
+The setting that birthed least squares was not statistics class — it was astronomy and
+geodesy around 1800. Astronomers had many noisy observations of a planet's position and
+wanted a single best orbit. Surveyors measuring the shape of the Earth had more
+measurements than unknowns and no two agreed exactly. They faced an **over-determined**
+problem: more equations than unknowns, no exact solution, and a need to *reconcile*
+conflicting measurements into one answer.
+
+Adrien-Marie Legendre published the method of least squares in 1805 as an appendix on
+cometary orbits; Carl Friedrich Gauss claimed (and used) it earlier and tied it to the
+normal distribution of errors. Their shared move is the one we inherit: **declare that
+the best reconciliation is the one minimizing the total squared discrepancy**, then solve
+for it.
+
+::: {.callout-tip title="You might be asked"}
+*"Why squared error? Why not the sum of absolute errors, or the maximum error?"* Three
+honest reasons, and you should be able to give all three.
+
+1. **It is differentiable everywhere.** $|e|$ has a corner at $e=0$; $e^2$ is smooth, so
+   we can use calculus and get a clean closed-form answer — which is the whole point of
+   this article. Absolute error gives a problem with no formula, solvable only
+   numerically (that line is the *median* regression, a real and useful alternative).
+2. **It has a clean statistical meaning.** Minimizing squared error coincides with
+   maximum likelihood when the noise is Gaussian — derived in full in [REGR-12].
+3. **It penalizes big misses hard.** Squaring weights a gap of 4 sixteen times a gap of
+   1, so the line works hard to avoid large errors.
+
+And the honest catch you must volunteer: reason 3 is *also* its great weakness. Squared
+error is hypersensitive to outliers, because one far-off point contributes an enormous
+squared term and can drag the whole line toward itself. We will see exactly this in
+@sec-failure. The interviewer is testing whether you know the cost of the choice, not
+just the choice.
+:::
+
+## What we are committing to
+
+We are given $n$ pairs $(x_i, y_i)$. We propose to summarize them with a straight line,
+
+$$
+\hat y = \beta_0 + \beta_1 x,
+$$ {#eq-line}
+
+where $\beta_0$ is the **intercept** (the line's height at $x=0$) and $\beta_1$ is the
+**slope** (the change in $\hat y$ per unit change in $x$). The hat on $\hat y$ marks it
+as a *prediction* from the line, distinct from the observed $y_i$.
+
+For a candidate line with parameters $(\beta_0,\beta_1)$, the line predicts
+$\beta_0 + \beta_1 x_i$ at the $i$-th point, while we actually observed $y_i$. The
+**residual** is the vertical gap
+
+$$
+e_i = y_i - (\beta_0 + \beta_1 x_i),
+$$ {#eq-resid}
+
+the signed distance from the data point *up to* the line (positive when the point sits
+above the line). @fig-residuals-anatomy shows precisely these gaps. Our chosen score for
+a whole line is the sum of the squares of these gaps.
+
+```{python}
+#| label: fig-residuals-anatomy
+#| fig-cap: "The anatomy of least squares. Each vertical red segment is a residual $e_i = y_i - (\\beta_0+\\beta_1 x_i)$ — the gap we square and add up. OLS chooses the line that makes the total squared length of these segments as small as possible. Note the residuals are *vertical*, not perpendicular: we are predicting $y$ from $x$, so only errors in $y$ count."
+rng = np.random.default_rng(7)
+x = np.linspace(1, 9, 9)
+y = 2.0 + 0.8 * x + rng.normal(0, 1.1, size=x.size)
+b0, b1, *_ = ols_fit(x, y)
+xs = np.linspace(0, 10, 100)
+
+fig, ax = plt.subplots()
+ax.plot(xs, b0 + b1 * xs, color=LINE, label=fr"fitted line $\hat y = {b0:.2f} + {b1:.2f}x$")
+for xi, yi in zip(x, y):
+    ax.plot([xi, xi], [yi, b0 + b1 * xi], color=GREY, lw=1.4, zorder=1)
+ax.scatter(x, y, color=POINT, zorder=3, s=45, label="data $(x_i, y_i)$")
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("Residuals are the vertical gaps we square")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+```
+
+# Intuition before symbols {#sec-intuition}
+
+Before any calculus, picture the search. We have a flat cloud of points. We slide a rigid
+straight line around — tilting it (changing $\beta_1$) and raising or lowering it
+(changing $\beta_0$) — and for each position we measure a single number: the total
+squared vertical gap. We want the position where that number bottoms out.
+
+Here is the key mental image that makes the calculus unsurprising. **The score is a bowl.**
+As a function of the two knobs $(\beta_0, \beta_1)$, the total squared error
+$S(\beta_0,\beta_1)$ is a smooth, upward-opening bowl (a paraboloid) — it has exactly one
+lowest point, and at that lowest point the surface is flat in every direction. "Flat in
+every direction" is precisely what "both partial derivatives equal zero" means. So the
+entire derivation in @sec-formal is just: *find the bottom of the bowl by finding where
+it is flat.* @fig-bowl draws the bowl.
+
+```{python}
+#| label: fig-bowl
+#| fig-cap: "The error surface $S(\\beta_0,\\beta_1)$ is a single convex bowl over the plane of candidate lines. Every choice of intercept and slope is a point on the floor; its height is the total squared error of that line. There is exactly one lowest point (marked), and the surface is flat there in both directions. The derivation that follows is nothing more than solving for that flat spot."
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+xs_d = np.linspace(1, 9, 9)
+ys_d = 2.0 + 0.8 * xs_d + np.random.default_rng(7).normal(0, 1.1, size=xs_d.size)
+
+b0g = np.linspace(-2, 6, 60)
+b1g = np.linspace(-0.6, 2.2, 60)
+B0, B1 = np.meshgrid(b0g, b1g)
+S = np.zeros_like(B0)
+for i in range(B0.shape[0]):
+    for j in range(B0.shape[1]):
+        pred = B0[i, j] + B1[i, j] * xs_d
+        S[i, j] = np.sum((ys_d - pred) ** 2)
+
+b0_star, b1_star, *_ = ols_fit(xs_d, ys_d)
+S_star = np.sum((ys_d - (b0_star + b1_star * xs_d)) ** 2)
+
+fig = plt.figure(figsize=(6.4, 4.6))
+ax = fig.add_subplot(111, projection="3d")
+ax.plot_surface(B0, B1, S, cmap="viridis", alpha=0.85, linewidth=0, antialiased=True)
+ax.scatter([b0_star], [b1_star], [S_star], color=LINE, s=60, depthshade=False)
+ax.text(b0_star, b1_star, S_star + 30, "minimum", color=LINE)
+ax.set_xlabel(r"$\beta_0$ (intercept)")
+ax.set_ylabel(r"$\beta_1$ (slope)")
+ax.set_zlabel(r"$S(\beta_0,\beta_1)$")
+ax.set_title("The squared-error surface is one convex bowl")
+ax.view_init(elev=28, azim=-128)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"How do you know setting the derivatives to zero gives a minimum and not a maximum or a
+saddle?"* Because $S$ is a sum of squared terms — it is bounded below by $0$ and grows
+without bound as the line runs away from the data, so its one stationary point must be
+the minimum. We confirm this rigorously in @sec-second-order using the second
+derivatives, exactly the Calc-1 second-derivative test. The bowl picture is the intuition;
+the second-order check is the proof.
+:::
+
+# The formal development {#sec-formal}
+
+## The objective function {#sec-objective}
+
+::: {#def-objective}
+**Definition (least-squares objective).** For data $(x_i,y_i)_{i=1}^n$, the **sum of
+squared errors** as a function of the candidate intercept $\beta_0$ and slope $\beta_1$ is
+
+$$
+S(\beta_0,\beta_1) \;=\; \sum_{i=1}^{n} e_i^2
+\;=\; \sum_{i=1}^{n}\bigl(y_i - \beta_0 - \beta_1 x_i\bigr)^2 .
+$$ {#eq-objective}
+:::
+
+Read @eq-objective slowly, because every symbol earns its place. The sum $\sum_{i=1}^n$
+runs over all $n$ data points. Inside, $y_i - \beta_0 - \beta_1 x_i$ is the residual from
+@eq-resid (the gap), and the square makes every gap a positive contribution that grows
+quadratically. The data $(x_i,y_i)$ are *fixed, known numbers*; the *variables* of this
+function are $\beta_0$ and $\beta_1$. That last sentence is the entire conceptual pivot of
+the article, so we dwell on it.
+
+::: {.callout-important title="The pivot: what is variable and what is fixed"}
+In high-school algebra, $x$ is the variable and the slope/intercept are fixed numbers
+describing a known line. **Here it is the reverse.** The data $x_i, y_i$ are the fixed,
+already-collected numbers; the unknowns we are solving *for* are $\beta_0$ and $\beta_1$.
+We are not asking "what is $y$ at a given $x$"; we are asking "which line —which
+$(\beta_0,\beta_1)$— is best." Holding this straight is what makes the partial
+derivatives below make sense.
+:::
+
+## A two-minute refresher on the partial derivative {#sec-partial-refresher}
+
+Our objective $S$ depends on *two* variables, $\beta_0$ and $\beta_1$. Minimizing a
+function of two variables is technically multivariable calculus, which sits above our
+Calculus-I floor — so we build the one tool we need from scratch, and we need only its
+Calc-1 shadow.
+
+A **partial derivative** of a two-variable function is computed by an almost insultingly
+simple rule: **to differentiate with respect to one variable, treat the other variable as
+if it were a constant number, then differentiate normally with the ordinary Calc-1 rules
+you already know.** The symbol is $\partial$ instead of $d$, purely to signal "there are
+other variables hanging around that I am holding still." That is the whole idea.
+
+A worked micro-example so there is zero mystery. Let $g(a,b) = (5 - a - 3b)^2$. To get
+$\partial g/\partial a$, freeze $b$ (pretend $3b$ is just some number) and use the chain
+rule from Calc 1, $\frac{d}{du}[u^2] = 2u\cdot u'$:
+
+$$
+\frac{\partial g}{\partial a}
+= 2\,(5 - a - 3b)\cdot \underbrace{\frac{\partial}{\partial a}(5 - a - 3b)}_{=\,-1}
+= -2\,(5 - a - 3b).
+$$
+
+The inner derivative is $-1$ because, treating $b$ as constant, $5$ and $-3b$ are
+constants (derivative $0$) and $-a$ contributes $-1$. The minimization below is *only*
+this move, applied to @eq-objective, twice. Every term we will differentiate has the
+shape $(\text{stuff})^2$, so the chain rule $2(\text{stuff})\times(\text{derivative of
+stuff})$ is the engine throughout.
+
+::: {.callout-tip title="You might be asked"}
+*"Why partial derivatives and not just one ordinary derivative?"* Because the height of
+the bowl depends on two independent knobs. The minimum requires the surface to be flat
+along the $\beta_0$ axis **and** flat along the $\beta_1$ axis simultaneously — two
+conditions, hence two partial derivatives, hence (as we will see) two equations in two
+unknowns.
+:::
+
+## Differentiating with respect to the intercept {#sec-dS-db0}
+
+We find where the bowl is flat in the $\beta_0$ direction. Start from @eq-objective and
+differentiate term by term — the derivative of a sum is the sum of the derivatives:
+
+$$
+\frac{\partial S}{\partial \beta_0}
+= \frac{\partial}{\partial \beta_0}\sum_{i=1}^{n}\bigl(y_i - \beta_0 - \beta_1 x_i\bigr)^2
+= \sum_{i=1}^{n}\frac{\partial}{\partial \beta_0}\bigl(y_i - \beta_0 - \beta_1 x_i\bigr)^2 .
+$$
+
+Now apply the chain rule to one term. The "stuff" is $u_i = y_i - \beta_0 - \beta_1 x_i$.
+Treating $\beta_1$ (and the data) as constant, the derivative of $u_i$ with respect to
+$\beta_0$ is $-1$ (only the $-\beta_0$ term survives). So each term gives
+
+$$
+\frac{\partial}{\partial \beta_0}\,u_i^2
+= 2u_i \cdot \frac{\partial u_i}{\partial \beta_0}
+= 2\bigl(y_i - \beta_0 - \beta_1 x_i\bigr)\cdot(-1)
+= -2\bigl(y_i - \beta_0 - \beta_1 x_i\bigr).
+$$
+
+Summing over $i$ and pulling the constant $-2$ out front:
+
+$$
+\frac{\partial S}{\partial \beta_0}
+= -2\sum_{i=1}^{n}\bigl(y_i - \beta_0 - \beta_1 x_i\bigr).
+$$ {#eq-dSdb0}
+
+## Differentiating with respect to the slope {#sec-dS-db1}
+
+Same move, now freezing $\beta_0$ and differentiating with respect to $\beta_1$. The only
+change is the inner derivative: with $\beta_0$ held constant,
+$\frac{\partial}{\partial\beta_1}\bigl(y_i - \beta_0 - \beta_1 x_i\bigr) = -x_i$ (the
+$-\beta_1 x_i$ term contributes $-x_i$; everything else is constant). Then
+
+$$
+\frac{\partial}{\partial \beta_1}\,u_i^2
+= 2u_i\cdot\frac{\partial u_i}{\partial \beta_1}
+= 2\bigl(y_i - \beta_0 - \beta_1 x_i\bigr)\cdot(-x_i)
+= -2x_i\bigl(y_i - \beta_0 - \beta_1 x_i\bigr),
+$$
+
+and summing,
+
+$$
+\frac{\partial S}{\partial \beta_1}
+= -2\sum_{i=1}^{n} x_i\bigl(y_i - \beta_0 - \beta_1 x_i\bigr).
+$$ {#eq-dSdb1}
+
+The single difference between @eq-dSdb0 and @eq-dSdb1 is the extra factor of $x_i$ inside
+the sum — the fingerprint of the chain rule's inner derivative ($-1$ versus $-x_i$). Keep
+an eye on that $x_i$; it is what makes the two equations carry different information.
+
+## Setting both to zero: the normal equations {#sec-normal-eqs}
+
+At the bottom of the bowl, both partial derivatives vanish. Set @eq-dSdb0 and @eq-dSdb1
+to zero. We write the minimizing values with hats — $\hat\beta_0, \hat\beta_1$ — to mark
+them as *the solution*, no longer free variables:
+
+$$
+-2\sum_{i=1}^{n}\bigl(y_i - \hat\beta_0 - \hat\beta_1 x_i\bigr) = 0,
+\qquad
+-2\sum_{i=1}^{n} x_i\bigl(y_i - \hat\beta_0 - \hat\beta_1 x_i\bigr) = 0.
+$$
+
+Divide both by $-2$ (a nonzero constant, so it cannot change where the zero is) and
+distribute the sums over their three terms. Recall that $\sum \hat\beta_0 = n\hat\beta_0$
+because $\hat\beta_0$ is the same number added $n$ times, and constants pull out of sums.
+From the first equation:
+
+$$
+\sum y_i - \sum \hat\beta_0 - \sum \hat\beta_1 x_i = 0
+\;\Longrightarrow\;
+\sum_{i=1}^n y_i - n\hat\beta_0 - \hat\beta_1\sum_{i=1}^n x_i = 0.
+$$
+
+From the second equation, distributing the $x_i$ inside first
+($x_i\cdot\hat\beta_0 = \hat\beta_0 x_i$ and $x_i\cdot\hat\beta_1 x_i = \hat\beta_1 x_i^2$):
+
+$$
+\sum x_i y_i - \hat\beta_0\sum x_i - \hat\beta_1\sum x_i^2 = 0.
+$$
+
+Rearranging each so the unknowns sit on the left, we obtain the celebrated **normal
+equations** — two linear equations in the two unknowns $\hat\beta_0, \hat\beta_1$:
+
+$$
+\boxed{\;
+\begin{aligned}
+n\,\hat\beta_0 \;+\; \Bigl(\textstyle\sum x_i\Bigr)\hat\beta_1 &= \textstyle\sum y_i, \\[4pt]
+\Bigl(\textstyle\sum x_i\Bigr)\hat\beta_0 \;+\; \Bigl(\textstyle\sum x_i^2\Bigr)\hat\beta_1 &= \textstyle\sum x_i y_i.
+\end{aligned}
+\;}
+$$ {#eq-normal}
+
+::: {.callout-tip title="You might be asked"}
+*"Why are they called the 'normal' equations?"* Not because they are ordinary. "Normal"
+here means *perpendicular*. The first normal equation says $\sum e_i = 0$ and the second
+says $\sum x_i e_i = 0$ — i.e. the residual vector is **orthogonal** to both the constant
+vector and the $x$ vector. That orthogonality is the entire geometric story of least
+squares, taken up in full in [REGR-4 *Regression as Projection*]. For now, just register
+that "normal" = "at right angles," and that we have *two* equations because we set *two*
+partials to zero.
+:::
+
+## Solving the system {#sec-solve}
+
+We now solve @eq-normal. There are two clean routes; we take the one that reveals the
+meaning. **Solve the first equation for $\hat\beta_0$, then substitute.**
+
+Divide the first normal equation by $n$:
+
+$$
+\hat\beta_0 + \hat\beta_1\,\frac{\sum x_i}{n} = \frac{\sum y_i}{n}.
+$$
+
+The two averages are exactly the sample means
+$\bar x = \frac1n\sum x_i$ and $\bar y = \frac1n\sum y_i$, so this reads
+$\hat\beta_0 + \hat\beta_1\bar x = \bar y$, which rearranges to
+
+$$
+\boxed{\;\hat\beta_0 = \bar y - \hat\beta_1\,\bar x.\;}
+$$ {#eq-b0}
+
+That is the intercept formula already — but it still contains $\hat\beta_1$, so we need
+the slope. Notice immediately what @eq-b0 says geometrically: rearranged, it is
+$\bar y = \hat\beta_0 + \hat\beta_1\bar x$, i.e. **the fitted line passes through the
+point of averages $(\bar x, \bar y)$.** We will use and re-derive that fact in
+@sec-through-means.
+
+Now substitute @eq-b0 into the second normal equation to eliminate $\hat\beta_0$. The
+second equation is $\hat\beta_0\sum x_i + \hat\beta_1\sum x_i^2 = \sum x_i y_i$. Replace
+$\hat\beta_0$ with $\bar y - \hat\beta_1\bar x$:
+
+$$
+(\bar y - \hat\beta_1\bar x)\sum x_i \;+\; \hat\beta_1\sum x_i^2 = \sum x_i y_i.
+$$
+
+Distribute the $\sum x_i$ across the parenthesis:
+
+$$
+\bar y\sum x_i - \hat\beta_1\bar x\sum x_i + \hat\beta_1\sum x_i^2 = \sum x_i y_i.
+$$
+
+Collect the two $\hat\beta_1$ terms on the left and move the lone $\bar y\sum x_i$ to the
+right:
+
+$$
+\hat\beta_1\Bigl(\sum x_i^2 - \bar x\sum x_i\Bigr) = \sum x_i y_i - \bar y\sum x_i.
+$$
+
+Therefore, dividing by the parenthesized factor,
+
+$$
+\hat\beta_1 = \frac{\sum x_i y_i - \bar y\sum x_i}{\sum x_i^2 - \bar x\sum x_i}.
+$$ {#eq-b1-raw}
+
+This is correct but ugly. We now show it equals the clean covariance/variance form
+promised in the Core. Two small identities do all the work, and we prove both rather than
+assert them.
+
+## Two bookkeeping identities (proved, not assumed) {#sec-identities}
+
+::: {#lem-identities}
+**Lemma (centering identities).** With $\bar x = \frac1n\sum x_i$ and
+$\bar y = \frac1n\sum y_i$,
+
+$$
+\sum_{i=1}^n (x_i-\bar x)(y_i-\bar y) = \sum x_i y_i - \bar y\sum x_i,
+\qquad
+\sum_{i=1}^n (x_i-\bar x)^2 = \sum x_i^2 - \bar x\sum x_i.
+$$
+:::
+
+::: {.proof}
+We prove the first; the second is the special case $y\equiv x$. Expand the product inside
+the sum using ordinary FOIL:
+
+$$
+(x_i-\bar x)(y_i-\bar y) = x_i y_i - x_i\bar y - \bar x\, y_i + \bar x\,\bar y .
+$$
+
+Sum each of the four pieces over $i$, pulling the constants $\bar x,\bar y$ outside their
+sums:
+
+$$
+\sum (x_i-\bar x)(y_i-\bar y)
+= \sum x_i y_i \;-\; \bar y\sum x_i \;-\; \bar x\sum y_i \;+\; n\,\bar x\,\bar y .
+$$
+
+The last term has $n$ because $\bar x\bar y$ is a constant summed $n$ times. Now use the
+defining fact $\sum y_i = n\bar y$ (and likewise $\sum x_i = n\bar x$) on the third and
+fourth terms:
+
+$$
+-\,\bar x\sum y_i + n\bar x\bar y
+= -\,\bar x\,(n\bar y) + n\bar x\bar y
+= -\,n\bar x\bar y + n\bar x\bar y = 0 .
+$$
+
+Those two terms cancel exactly, leaving
+
+$$
+\sum (x_i-\bar x)(y_i-\bar y) = \sum x_i y_i - \bar y\sum x_i ,
+$$
+
+which is the first identity. Setting $y_i = x_i$ throughout gives the second. $\qquad\blacksquare$
+:::
+
+These identities are pure algebra — no statistics, no assumptions about the data. They
+matter because the left-hand sides are *centered* quantities with a clean interpretation,
+while the right-hand sides are exactly the messy numerators and denominators in
+@eq-b1-raw.
+
+## The clean slope, and its meaning {#sec-clean-slope}
+
+Define the two **sums of squares and cross-products** — the standard shorthand of
+regression:
+
+$$
+S_{xx} = \sum_{i=1}^n (x_i-\bar x)^2,
+\qquad
+S_{xy} = \sum_{i=1}^n (x_i-\bar x)(y_i-\bar y).
+$$ {#eq-Sxx-Sxy}
+
+By @lem-identities, the numerator of @eq-b1-raw is exactly $S_{xy}$ and its denominator
+is exactly $S_{xx}$. Substituting,
+
+$$
+\boxed{\;\hat\beta_1 = \frac{S_{xy}}{S_{xx}}
+= \frac{\sum_{i=1}^n (x_i-\bar x)(y_i-\bar y)}{\sum_{i=1}^n (x_i-\bar x)^2}.\;}
+$$ {#eq-b1}
+
+We can state the result formally.
+
+::: {#thm-ols}
+**Theorem (OLS line, one predictor).** If $S_{xx} = \sum (x_i-\bar x)^2 > 0$ (the $x_i$
+are not all identical), then $S(\beta_0,\beta_1)$ in @eq-objective has a unique minimizer
+
+$$
+\hat\beta_1 = \frac{S_{xy}}{S_{xx}}, \qquad \hat\beta_0 = \bar y - \hat\beta_1\bar x ,
+$$
+
+and the fitted line $\hat y = \hat\beta_0 + \hat\beta_1 x$ passes through $(\bar x,\bar y)$.
+:::
+
+::: {.proof}
+Existence and the formulas are the derivation of @sec-objective through @sec-clean-slope:
+the partial derivatives @eq-dSdb0–@eq-dSdb1 set to zero give the normal equations
+@eq-normal, whose solution is @eq-b0 and @eq-b1. Uniqueness and the fact that the
+stationary point is a *minimum* (not a maximum or saddle) are confirmed by the
+second-order test in @sec-second-order, which needs $S_{xx}>0$. The point
+$(\bar x,\bar y)$ lies on the line by @eq-b0, shown in @sec-through-means.
+$\qquad\blacksquare$
+:::
+
+Now read @eq-b1 for what it *means*, which is the payoff of the Core box. Divide top and
+bottom by $n-1$ (legal, since it cancels):
+
+$$
+\hat\beta_1 = \frac{\frac{1}{n-1}\sum (x_i-\bar x)(y_i-\bar y)}{\frac{1}{n-1}\sum (x_i-\bar x)^2}
+= \frac{\operatorname{Cov}(x,y)}{\operatorname{Var}(x)} .
+$$ {#eq-b1-cov}
+
+The top is the **sample covariance** of $x$ and $y$ — how much they move together — and
+the bottom is the **sample variance** of $x$ — how much $x$ moves on its own. The slope
+is *co-movement normalized by $x$'s own spread*. (If covariance and variance are rusty,
+they are built from the ground up in [REGR-2]; here we only need that these named
+formulas are what those words mean.)
+
+This single line of reading answers a great deal at once:
+
+- **Sign.** The slope has the sign of the covariance: positive if $x$ and $y$ tend to
+  rise together, negative if one rises as the other falls, zero if they are uncorrelated.
+- **Why divide by $S_{xx}$.** Covariance has units of $x\cdot y$; dividing by $x$'s
+  variance (units $x^2$) leaves units of $y$ per unit $x$ — exactly a slope. The division
+  also *rescales*: if $x$ barely varies ($S_{xx}$ tiny), the same co-movement implies a
+  huge, fragile slope. That fragility is a real failure mode (@sec-failure).
+- **What can go wrong.** If $S_{xx}=0$ — every $x_i$ identical — the denominator is zero
+  and there is no slope to speak of. Geometrically all the data sit on one vertical line
+  and no non-vertical line is "best." This is the boundary condition in @thm-ols, and we
+  return to it in @sec-failure.
+
+::: {.callout-tip title="You might be asked"}
+*"What's the relationship between the OLS slope and the correlation coefficient $r$?"* They
+differ only by a ratio of standard deviations. Since $r =
+S_{xy}/\sqrt{S_{xx}S_{yy}}$, a little algebra gives $\hat\beta_1 = r\cdot
+\frac{s_y}{s_x}$ where $s_x,s_y$ are the sample standard deviations. So the slope is the
+correlation, rescaled from the dimensionless $[-1,1]$ world of $r$ back into the units of
+the data. If you first standardize both variables to unit variance, the slope *is* the
+correlation. This connection is developed in [REGR-3].
+:::
+
+## The line passes through the means {#sec-through-means}
+
+We promised this in the Core, and @eq-b0 already delivers it, but it deserves its own
+moment because it is the fact most worth carrying in your head. Plug $x=\bar x$ into the
+fitted line and use @eq-b0:
+
+$$
+\hat y\big|_{x=\bar x} = \hat\beta_0 + \hat\beta_1\bar x
+= (\bar y - \hat\beta_1\bar x) + \hat\beta_1\bar x
+= \bar y .
+$$
+
+So $(\bar x, \bar y)$ is always on the line. Intuitively: the least-squares line is a
+*balanced* line — it pivots about the center of mass of the data. Tilt it however the
+slope demands, but it must pass through the centroid. This is why, in practice, you can
+*center* your data (subtract the means) without changing the slope at all; it only sends
+the intercept to zero. @fig-pivot shows the line pivoting about $(\bar x,\bar y)$ as the
+slope changes.
+
+```{python}
+#| label: fig-pivot
+#| fig-cap: "Every candidate line that respects the intercept relation $\\beta_0 = \\bar y - \\beta_1\\bar x$ pivots about the centroid $(\\bar x,\\bar y)$ (green dot). Changing the slope rotates the line about that fixed point. The OLS line (red) is the one rotation that minimizes total squared error; the grey lines are wrong slopes shown for contrast."
+rng = np.random.default_rng(11)
+x = np.linspace(2, 12, 14)
+y = 1.5 + 0.9 * x + rng.normal(0, 1.8, size=x.size)
+xbar, ybar = x.mean(), y.mean()
+b0, b1, *_ = ols_fit(x, y)
+xs = np.linspace(0, 14, 100)
+
+fig, ax = plt.subplots()
+for slope in (0.3, 0.6, 1.3, 1.6):
+    inter = ybar - slope * xbar
+    ax.plot(xs, inter + slope * xs, color=GREY, lw=1.0, alpha=0.7)
+ax.plot(xs, b0 + b1 * xs, color=LINE, label=f"OLS line (slope {b1:.2f})")
+ax.scatter(x, y, color=POINT, s=35, zorder=3, label="data")
+ax.scatter([xbar], [ybar], color=ACCENT, s=110, zorder=4,
+           edgecolor="white", linewidth=1.5, label=r"centroid $(\bar x,\bar y)$")
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("All balanced lines pivot through the centroid")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+```
+
+## Confirming it is a minimum (the second-order check) {#sec-second-order}
+
+We claimed the stationary point is the bottom of a bowl. In Calc 1 you confirm a critical
+point is a minimum with the second-derivative test: $f''>0$ means concave up. For two
+variables the analogue needs three second derivatives, which we compute directly (each is
+again just "differentiate, holding the other constant"). Differentiate @eq-dSdb0 and
+@eq-dSdb1 once more:
+
+$$
+\frac{\partial^2 S}{\partial\beta_0^2}
+= \frac{\partial}{\partial\beta_0}\!\left[-2\sum (y_i-\beta_0-\beta_1 x_i)\right]
+= -2\sum(-1) = 2n,
+$$
+
+$$
+\frac{\partial^2 S}{\partial\beta_1^2}
+= \frac{\partial}{\partial\beta_1}\!\left[-2\sum x_i(y_i-\beta_0-\beta_1 x_i)\right]
+= -2\sum x_i(-x_i) = 2\sum x_i^2,
+$$
+
+$$
+\frac{\partial^2 S}{\partial\beta_0\partial\beta_1}
+= \frac{\partial}{\partial\beta_1}\!\left[-2\sum (y_i-\beta_0-\beta_1 x_i)\right]
+= -2\sum(-x_i) = 2\sum x_i .
+$$
+
+The first two are *positive* ($n>0$ and $\sum x_i^2 > 0$ as long as the $x$'s aren't all
+zero) — the surface curves upward along each axis. The two-variable second-derivative
+test asks one more thing: that the determinant
+$\frac{\partial^2 S}{\partial\beta_0^2}\frac{\partial^2 S}{\partial\beta_1^2}
+- \bigl(\frac{\partial^2 S}{\partial\beta_0\partial\beta_1}\bigr)^2$ be positive. Plugging
+in,
+
+$$
+(2n)\bigl(2\textstyle\sum x_i^2\bigr) - \bigl(2\sum x_i\bigr)^2
+= 4\Bigl(n\sum x_i^2 - \bigl(\sum x_i\bigr)^2\Bigr)
+= 4n\sum (x_i-\bar x)^2 = 4n\,S_{xx} .
+$$
+
+(The middle step uses the identity $n\sum x_i^2 - (\sum x_i)^2 = n\sum(x_i-\bar x)^2$,
+which is the second identity of @lem-identities multiplied through by $n$.) This is
+**positive exactly when $S_{xx}>0$** — the same condition as in @thm-ols. So whenever the
+$x$'s are not all identical, the critical point is a genuine, unique minimum. When
+$S_{xx}=0$ the test fails and, consistently, the slope formula @eq-b1 divides by zero:
+there is simply no best line. The intuition (a convex bowl) and the algebra agree.
+
+# Worked examples {#sec-examples}
+
+We now run the formulas on real, messy data — never a toy rigged to flatter the method.
+The first example we carry through *by hand, number by number*, so you watch the formulas
+breathe.
+
+## Example 1 — Old Faithful: predicting eruption length from waiting time {#sec-faithful}
+
+A classic, genuinely linear dataset: the Old Faithful geyser. Each observation pairs the
+*waiting time* until an eruption (minutes) with the *duration* of that eruption (minutes).
+Naturalists want to predict how long the next eruption will last from how long visitors
+have been waiting. We take a small, representative slice of $n=10$ observations so we can
+do every arithmetic step in the open.
+
+```{python}
+#| label: tbl-faithful-data
+#| echo: false
+import numpy as np
+wait = np.array([56, 57, 62, 68, 71, 73, 79, 81, 84, 89], dtype=float)
+dur  = np.array([1.9, 2.1, 2.4, 3.6, 3.8, 3.9, 4.3, 4.1, 4.6, 4.9])
+n = len(wait)
+xbar, ybar = wait.mean(), dur.mean()
+Sxx = np.sum((wait - xbar) ** 2)
+Sxy = np.sum((wait - xbar) * (dur - ybar))
+b1 = Sxy / Sxx
+b0 = ybar - b1 * xbar
+print(f"n          = {n}")
+print(f"sum x      = {wait.sum():.1f}    xbar = {xbar:.3f}")
+print(f"sum y      = {dur.sum():.2f}     ybar = {ybar:.3f}")
+print(f"S_xx       = sum (x - xbar)^2          = {Sxx:.3f}")
+print(f"S_xy       = sum (x - xbar)(y - ybar)  = {Sxy:.3f}")
+print(f"beta1_hat  = S_xy / S_xx               = {b1:.4f}")
+print(f"beta0_hat  = ybar - beta1*xbar         = {b0:.4f}")
+```
+
+Walk the arithmetic the code just printed, plugging straight into the boxed formulas:
+
+- The means are $\bar x = `{python} f"{xbar:.1f}"`$ minutes of waiting and
+  $\bar y = `{python} f"{ybar:.2f}"`$ minutes of eruption.
+- The spread of $x$ about its mean is $S_{xx} = `{python} f"{Sxx:.1f}"`$, and the
+  co-movement of $x$ and $y$ is $S_{xy} = `{python} f"{Sxy:.2f}"`$. Both are positive:
+  longer waits go with longer eruptions.
+- The slope is $\hat\beta_1 = S_{xy}/S_{xx} = `{python} f"{Sxy:.2f}"` /
+  `{python} f"{Sxx:.1f}"` = `{python} f"{b1:.4f}"`$. Reading the units: each extra minute
+  of waiting buys about $`{python} f"{b1:.3f}"`$ extra minutes of eruption.
+- The intercept is $\hat\beta_0 = \bar y - \hat\beta_1\bar x = `{python} f"{ybar:.2f}"` -
+  (`{python} f"{b1:.4f}"`)(`{python} f"{xbar:.1f}"`) = `{python} f"{b0:.3f}"`$.
+
+So the fitted line is
+$\widehat{\text{duration}} = `{python} f"{b0:.2f}"` + `{python} f"{b1:.3f}"`\,\text{wait}$.
+A sanity check against @sec-through-means: at $x=\bar x = `{python} f"{xbar:.1f}"`$ the
+line predicts $`{python} f"{b0 + b1*xbar:.2f}"`$, which is $\bar y$ to rounding — the line
+goes through the centroid, as it must. @fig-faithful draws the fit and its residuals.
+
+```{python}
+#| label: fig-faithful
+#| fig-cap: "Old Faithful, $n=10$. **Left:** the fitted OLS line through the data, passing through the centroid (green). **Right:** the residuals $e_i = y_i - \\hat y_i$ plotted against $x$. They scatter around zero with no obvious pattern — the linear model is appropriate here. Their *signed* sum is zero (first normal equation) and their $x$-weighted sum is zero (second normal equation), the visual content of @eq-normal."
+fitted = b0 + b1 * wait
+resid = dur - fitted
+xs = np.linspace(wait.min() - 3, wait.max() + 3, 100)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))
+axL.plot(xs, b0 + b1 * xs, color=LINE, label=f"$\\hat y = {b0:.2f} + {b1:.3f}x$")
+for xi, yi, fi in zip(wait, dur, fitted):
+    axL.plot([xi, xi], [yi, fi], color=GREY, lw=1.2)
+axL.scatter(wait, dur, color=POINT, s=40, zorder=3, label="data")
+axL.scatter([xbar], [ybar], color=ACCENT, s=90, zorder=4, edgecolor="white", label="centroid")
+axL.set_xlabel("waiting time (min)"); axL.set_ylabel("eruption duration (min)")
+axL.set_title("Fitted line"); axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+axR.axhline(0, color=GREY, lw=1.2)
+axR.scatter(wait, resid, color=POINT, s=40, zorder=3)
+for xi, ri in zip(wait, resid):
+    axR.plot([xi, xi], [0, ri], color=GREY, lw=1.2)
+axR.set_xlabel("waiting time (min)"); axR.set_ylabel("residual $e_i$")
+axR.set_title("Residuals vs. $x$ (no pattern = good)")
+plt.tight_layout()
+print(f"check: sum of residuals      = {resid.sum(): .3e}  (≈ 0, first normal eqn)")
+print(f"check: sum of x_i * residual = {np.sum(wait*resid): .3e}  (≈ 0, second normal eqn)")
+```
+
+The printed checks confirm the derivation operationally: the residuals sum to zero and
+their $x$-weighted sum is zero, the two normal equations made visible. The residual plot
+on the right is your first diagnostic tool — a structureless cloud around zero is what a
+good simple-regression fit looks like. Structure in that plot (a curve, a fan) is the
+signal that an assumption is breaking, the subject of [REGR-2] and [REGR-10].
+
+## Example 2 — a near-linear economic relationship with real noise {#sec-mortgage}
+
+A second honest example, with more points and more scatter, so you see the method working
+where the relationship is real but loose. We relate a regional **median household income**
+(in thousands of dollars) to **average annual household spending on dining out** (also in
+thousands) across $n=40$ synthetic-but-realistic localities. Spending genuinely rises with
+income, but with substantial person-to-person variation — exactly the regime regression is
+built for.
+
+```{python}
+#| label: fig-mortgage
+#| fig-cap: "A noisier but genuinely linear relationship ($n=40$): dining-out spending vs. household income. The OLS line captures the central trend; the wide but patternless residual band on the right confirms the linear model is honest here, just imprecise for any single locality. This is the *typical* habitat of simple regression — a real signal inside real noise."
+rng = np.random.default_rng(2024)
+income = rng.uniform(35, 140, size=40)
+spend = 0.8 + 0.045 * income + rng.normal(0, 0.9, size=income.size)
+b0m, b1m, Sxxm, Sxym = ols_fit(income, spend)
+fittedm = b0m + b1m * income
+residm = spend - fittedm
+xs = np.linspace(income.min(), income.max(), 100)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))
+axL.scatter(income, spend, color=POINT, s=30, alpha=0.85, label="localities")
+axL.plot(xs, b0m + b1m * xs, color=LINE, label=f"$\\hat y = {b0m:.2f} + {b1m:.3f}x$")
+axL.set_xlabel("median income ($000)"); axL.set_ylabel("dining-out spend ($000)")
+axL.set_title("Fitted line"); axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+axR.axhline(0, color=GREY, lw=1.2)
+axR.scatter(income, residm, color=POINT, s=30, alpha=0.85)
+axR.set_xlabel("median income ($000)"); axR.set_ylabel("residual")
+axR.set_title("Residuals vs. $x$")
+plt.tight_layout()
+print(f"slope  beta1 = {b1m:.4f}  (≈ ${b1m*1000:.0f} more dining spend per $1000 income)")
+print(f"interc beta0 = {b0m:.4f}")
+print(f"S_xx = {Sxxm:.1f}   S_xy = {Sxym:.2f}")
+```
+
+Same two formulas, larger data: the slope says each additional \$1,000 of median income is
+associated with about \$$`{python} f"{b1m*1000:.0f}"`$ more annual dining-out spending.
+The residual band is wide — the line will not predict any single locality precisely — but
+it is *flat and patternless*, so the line is an honest summary of the central tendency. The
+gap between "captures the trend" and "predicts an individual well" is the difference
+between the slope's meaning and the residual spread, quantified in [REGR-3].
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The Core's choice — squared vertical error — has consequences, and an honest treatment
+shows where the line breaks. This is the section that separates "can compute a slope" from
+"knows when to trust one."
+
+## Outliers: one point can capture the line {#sec-outliers}
+
+Because error is *squared*, a single far-off point contributes a giant term to
+@eq-objective, and the line will tilt dramatically to reduce it. @fig-outlier shows the
+same clean dataset with and without one corrupted point — perhaps a data-entry error or a
+genuinely anomalous case.
+
+```{python}
+#| label: fig-outlier
+#| fig-cap: "The edge of applicability. **Left:** a clean linear cloud and its OLS line. **Right:** the *same* data with one point moved to $(9, 1)$ — a single outlier. Because squared error punishes large gaps quadratically, that one point levers the entire line away from the rest (dashed grey = original fit, red = fit with the outlier). OLS has zero robustness to outliers; this is its sharpest limitation."
+rng = np.random.default_rng(5)
+x = np.linspace(1, 9, 12)
+y = 1.0 + 1.0 * x + rng.normal(0, 0.7, size=x.size)
+
+b0c, b1c, *_ = ols_fit(x, y)
+
+x_out = x.copy(); y_out = y.copy()
+y_out[-1] = 1.0          # drag the rightmost point far below the trend
+x_out[-1] = 9.0
+b0o, b1o, *_ = ols_fit(x_out, y_out)
+
+xs = np.linspace(0, 10, 100)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7), sharey=True)
+axL.scatter(x, y, color=POINT, s=40, zorder=3)
+axL.plot(xs, b0c + b1c * xs, color=LINE, label=f"slope {b1c:.2f}")
+axL.set_title("Clean data"); axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+axR.scatter(x_out[:-1], y_out[:-1], color=POINT, s=40, zorder=3)
+axR.scatter([x_out[-1]], [y_out[-1]], color="black", s=90, marker="X", zorder=4, label="outlier")
+axR.plot(xs, b0c + b1c * xs, color=GREY, ls="--", lw=1.6, label=f"orig slope {b1c:.2f}")
+axR.plot(xs, b0o + b1o * xs, color=LINE, label=f"new slope {b1o:.2f}")
+axR.set_title("One outlier captures the line"); axR.set_xlabel("$x$")
+axR.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The slope falls from $`{python} f"{b1c:.2f}"`$ to $`{python} f"{b1o:.2f}"`$ on the
+strength of one point. **When you reach for something else:** if outliers are a real
+worry, use a robust loss — least *absolute* deviations (the median-style fit hinted at in
+@sec-why), or Huber/Tukey M-estimators that grow linearly rather than quadratically for
+large residuals. Diagnosing *which* points are doing the levering is the job of [REGR-10
+*Diagnostics, Leverage, and Influence*].
+
+## Nonlinearity: a perfectly computed line for a curved truth {#sec-nonlinear}
+
+The formulas always return *a* line; they cannot tell you the relationship was never
+linear. @fig-nonlinear fits OLS to data that genuinely curve. The slope and intercept are
+computed flawlessly, and they are nearly useless — the residual plot screams the problem.
+
+```{python}
+#| label: fig-nonlinear
+#| fig-cap: "OLS applied where it does not belong. The truth is a curve ($y$ rises then falls), but OLS dutifully returns a straight line (left). The tell is the residual plot (right): a clear $\\cap$-shaped pattern, not a flat cloud. The residuals are not random noise — they carry the curvature the line could not. *A patterned residual plot is the universal signal that the linear form is wrong.*"
+rng = np.random.default_rng(8)
+x = np.linspace(0, 10, 40)
+y = 2 + 4 * x - 0.42 * x ** 2 + rng.normal(0, 1.5, size=x.size)
+b0n, b1n, *_ = ols_fit(x, y)
+fittedn = b0n + b1n * x
+residn = y - fittedn
+xs = np.linspace(0, 10, 100)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))
+axL.scatter(x, y, color=POINT, s=30)
+axL.plot(xs, b0n + b1n * xs, color=LINE, label=f"OLS line (slope {b1n:.2f})")
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$"); axL.set_title("Straight line, curved truth")
+axL.legend(loc="lower center", fontsize=9, framealpha=0.9)
+
+axR.axhline(0, color=GREY, lw=1.2)
+axR.scatter(x, residn, color=POINT, s=30)
+axR.set_xlabel("$x$"); axR.set_ylabel("residual"); axR.set_title("Residuals reveal the curvature")
+plt.tight_layout()
+```
+
+**When you reach for something else:** if the residuals show curvature, the fix is often
+still least squares — applied to *transformed* predictors (a polynomial or basis
+expansion, [REGR-20]) or after transforming $y$. Truly local, form-free methods
+(splines, kernels, LOESS) live at the far end of this track ([REGR-21]–[REGR-24]). The key
+practitioner habit: **always plot the residuals**, because the fit summary alone will not
+warn you.
+
+## Anscombe's quartet: identical statistics, four different realities {#sec-anscombe}
+
+The sharpest single demonstration that the slope and intercept are *not enough* is Frank
+Anscombe's 1973 quartet: four datasets engineered to share, to two decimal places, the
+same $\bar x$, $\bar y$, the same slope, intercept, and correlation — yet they look
+nothing alike.
+
+```{python}
+#| label: fig-anscombe
+#| fig-cap: "Anscombe's quartet. All four datasets yield essentially the *same* OLS line ($\\hat y \\approx 3.00 + 0.500x$) and the same correlation, yet only the first is a genuine linear relationship. Dataset II is a clean curve; III is an exact line dragged by one outlier; IV is a vertical stack whose slope hangs entirely on a single far-right point. The numbers are blind to all of this — the plot is not."
+# Anscombe's actual published quartet.
+ax_data = {
+ "I":  (np.array([10,8,13,9,11,14,6,4,12,7,5.]),
+        np.array([8.04,6.95,7.58,8.81,8.33,9.96,7.24,4.26,10.84,4.82,5.68])),
+ "II": (np.array([10,8,13,9,11,14,6,4,12,7,5.]),
+        np.array([9.14,8.14,8.74,8.77,9.26,8.10,6.13,3.10,9.13,7.26,4.74])),
+ "III":(np.array([10,8,13,9,11,14,6,4,12,7,5.]),
+        np.array([7.46,6.77,12.74,7.11,7.81,8.84,6.08,5.39,8.15,6.42,5.73])),
+ "IV": (np.array([8,8,8,8,8,8,8,19,8,8,8.]),
+        np.array([6.58,5.76,7.71,8.84,8.47,7.04,5.25,12.50,5.56,7.91,6.89])),
+}
+fig, axes = plt.subplots(2, 2, figsize=(8.4, 6.2))
+xs = np.linspace(2, 20, 100)
+for ax, (name, (xx, yy)) in zip(axes.ravel(), ax_data.items()):
+    bb0, bb1, *_ = ols_fit(xx, yy)
+    ax.scatter(xx, yy, color=POINT, s=35, zorder=3)
+    ax.plot(xs, bb0 + bb1 * xs, color=LINE)
+    ax.set_title(f"Dataset {name}:  $\\hat y = {bb0:.2f} + {bb1:.3f}x$", fontsize=10)
+    ax.set_xlim(2, 20); ax.set_ylim(2, 14)
+    ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**Never trust the slope and intercept without looking at the data and the residuals.**
+Anscombe's quartet is the permanent reminder: identical regression output can hide a clean
+line, a curve, an outlier-driven artifact, or a near-degenerate $x$. The summary numbers
+are a *compression* of the data and, like any lossy compression, they discard exactly the
+information — curvature, outliers, leverage — that decides whether the line means anything.
+The figure is not optional decoration; it is part of the analysis.
+:::
+
+## The degenerate boundary: no spread in $x$ {#sec-degenerate}
+
+Finally, the boundary baked into @thm-ols. If every $x_i$ is the same value, then
+$S_{xx} = \sum (x_i-\bar x)^2 = 0$, the slope @eq-b1 divides by zero, and the
+second-order determinant $4n S_{xx}$ is zero — the bowl degenerates into a trough with no
+unique bottom. This is not a numerical glitch; it is the honest statement that **you
+cannot learn how $y$ changes with $x$ if $x$ never changed.** Near-degeneracy (tiny but
+nonzero $S_{xx}$) is just as dangerous: the slope becomes wildly sensitive, the
+one-predictor shadow of *multicollinearity*, which gets its full treatment in [REGR-7].
+
+::: {.callout-tip title="You might be asked"}
+*"When is simple OLS the right tool, and when is it the wrong one?"* The honest summary you
+should be able to recite:
+
+- **Use it** when (a) you have one quantitative predictor and a quantitative outcome, (b) a
+  scatterplot looks plausibly linear, (c) the residual plot is a flat, patternless cloud,
+  and (d) no single point dominates. In that regime it is unbeatable: closed-form,
+  interpretable, fast, and — as [REGR-6] proves — the best linear unbiased estimator.
+- **Do not use it** when the relationship is curved (transform or go nonparametric —
+  [REGR-20]+), when outliers dominate (robust regression), when the error spread changes
+  across $x$ (weighted least squares, [REGR-11]), or when $x$ barely varies (degenerate).
+- **And remember the deepest caveat:** the line estimates *association*, not causation. A
+  positive slope means $y$ tends to be higher where $x$ is higher in this data — nothing
+  about whether changing $x$ would change $y$.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. In practice you would *not*
+type out the sums. Every numerical stack has it: `numpy.polyfit(x, y, 1)` or a
+`scipy.stats.linregress(x, y)` (which also returns the correlation and standard errors),
+or `statsmodels`/`sklearn` for the full inferential apparatus. Internally these solve the
+normal equations @eq-normal — though for numerical stability they use a QR or SVD
+factorization of the design matrix rather than forming $\sum x_i^2$ directly, because the
+raw sums can lose precision when the $x$'s are large. But the *answer* they return is
+exactly $\hat\beta_1 = S_{xy}/S_{xx}$ and $\hat\beta_0 = \bar y - \hat\beta_1\bar x$ — the
+two boxed formulas of @sec-clean-slope. You now know what the library is doing and why.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[REGR-0 *Why a Line?*]**, which posed the regression question and
+argued that "best" needs defining. This article made the definition (squared error) and
+derived the unique line it produces. From here the trunk continues:
+
+- **[REGR-2 *What the Line Assumes*]** — we have *a* line; under what conditions on the
+  errors is it a *trustworthy* one? Introduces the Gauss–Markov conditions and builds the
+  covariance/variance machinery we leaned on in @eq-b1-cov.
+- **[REGR-3 *How Good Is the Fit?*]** — having a line, how do we *score* it? $R^2$,
+  residual analysis, RMSE; the honest limits of those numbers (Anscombe, again).
+- **[REGR-4 *Regression as Projection*]** — the same answer, seen as geometry: the
+  residual is *orthogonal* to the predictors (the real meaning of "normal" equations,
+  @sec-normal-eqs), and the fit is a projection. This generalizes effortlessly to many
+  predictors.
+- **[REGR-5 *Multiple Regression*]** — many predictors at once; the two normal equations
+  @eq-normal become the single matrix equation $X^\top X\hat\beta = X^\top y$, with this
+  article as its $p=1$ special case.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Legendre's 1805 *Nouvelles méthodes pour la détermination des
+  orbites des comètes* (the first published least squares) and Gauss's 1809 *Theoria
+  Motus*, which connected least squares to the normal distribution of errors — the seed of
+  the maximum-likelihood view in [REGR-12].
+- **The honest-statistics classic.** F. J. Anscombe, "Graphs in Statistical Analysis,"
+  *The American Statistician* 27 (1973): the quartet of @fig-anscombe and the case for
+  always plotting.
+- **Open threads this article deliberately deferred.** *How uncertain are
+  $\hat\beta_0,\hat\beta_1$?* — they are random, since the data are one sample; their
+  sampling distribution is [REGR-6]. *Is squared error "optimal" in any provable sense?* —
+  yes, the Gauss–Markov theorem, also [REGR-6]. *What if I want the line that minimizes
+  perpendicular distance, not vertical?* — that is total least squares / principal
+  components, a different objective that lives in the Geometry-of-Data track.

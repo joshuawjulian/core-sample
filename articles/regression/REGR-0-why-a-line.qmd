@@ -1,0 +1,524 @@
+---
+title: "Why a Line? The Regression Question"
+subtitle: "Core Sample · Regression"
+---
+
+> **Where this sits in the track.** This is **REGR-0**, the opener of the
+> Regression track. It assumes nothing above the knowledge floor — functions, a
+> scatterplot, and the idea of an average. It is the *motivational* article: it
+> poses the question the whole track answers and tells the origin story, but it
+> does **not** derive the line. The algebra — choosing squared-error loss and
+> solving for the slope and intercept — is the job of **REGR-1**, which this
+> article sets up.
+
+## Abstract {.unnumbered}
+
+We open the Regression track not with a formula but with a question: when we
+"fit a line to data," *what are we actually estimating, and why is it a line?*
+The single claim this article defends is that regression is the estimation of a
+**conditional mean**, $E[Y \mid X]$ — the average value of an outcome given what
+we know — and that the familiar straight line is the simplest honest guess at
+that function. Along the way we show that "draw the best line through the cloud"
+is *ill-posed* until we say what *best* means, which is exactly the choice
+REGR-1 makes. We tell the history that forces all of this into existence:
+Galton's discovery of *regression to the mean*, and Legendre and Gauss
+inventing least squares to pin down planets and the shape of the Earth.
+
+::: {.callout-important title="The Core"}
+**Regression estimates the conditional mean $E[Y \mid X]$ — the average outcome
+given the inputs. A "line" is the simplest model of that mean, and "best line"
+means nothing until we choose a rule for scoring our errors.**
+:::
+
+# The one question
+
+Picture the everyday gesture that names this entire field. You have a cloud of
+points — heights of fathers against heights of their sons, square footage
+against house price, advertising spend against sales — and you draw a line
+through it. Everyone has done it; it feels obvious. But pause on it the way a
+sharp interviewer would, because almost every idea in this track is hiding
+inside that gesture.
+
+Two questions are buried there, and they are *different* questions.
+
+- **The prediction question.** A new house comes on the market at 2{,}100
+  square feet. What price should I guess? Here I do not care *why* the line
+  looks the way it does; I want a number, and I want it to be wrong as rarely
+  and as mildly as possible on houses I have not seen yet.
+- **The explanation question.** Does an extra hundred square feet *raise* the
+  price, and by how much, holding everything else fixed? Here the number on the
+  line — its slope — is the whole point. I want to interpret it, attach
+  uncertainty to it, and defend it.
+
+The same line can serve both, but the two goals pull on it differently, and a
+lot of confusion in applied work comes from not knowing which one you are
+doing. We will keep both in view through the whole track; for now, notice that
+both of them want the *same underlying object*. The predictor wants to know "on
+average, what outcome comes with this input?" The explainer wants to know "how
+does that average shift as I change the input?" Both are questions about an
+**average outcome as a function of the inputs**. That object has a name.
+
+## Regression is the estimation of a conditional mean
+
+Let $Y$ be the outcome we care about (price, son's height, sales) and let $X$
+be what we get to condition on (square footage, father's height, ad spend).
+For any fixed value $X = x$, there is not *one* outcome — there is a whole
+distribution of them. At exactly 2{,}100 square feet, houses sell for many
+different prices: location, condition, and luck scatter them. So asking "what
+*is* the price at 2{,}100 sq ft?" is the wrong question; there is no single
+answer.
+
+The right question is: **what is the average price among houses at 2{,}100 sq
+ft?** That average — taken over the distribution of $Y$ at a fixed $x$ — is the
+**conditional mean**, written
+
+$$
+m(x) \;=\; E[\,Y \mid X = x\,].
+$$
+
+Read the notation slowly, because it is the spine of everything. $E[\cdot]$ is
+the *expectation* — a weighted average of all possible values, weighted by how
+likely each is. (Formally, for a discrete outcome it is $\sum_y y \, P(Y = y)$;
+for a continuous one it is $\int y \, f(y)\,dy$. We only need the *idea* of an
+average here; the Probability track builds expectation properly, and we use it
+seriously starting in REGR-2.) The vertical bar $\mid X = x$ says: take that
+average *only over the cases where the input equals $x$*. As $x$ sweeps across
+its possible values, $m(x)$ traces out a curve — the **regression function**.
+
+::: {#def-regfn}
+**Definition (regression function).** For an outcome $Y$ and predictor $X$, the
+*regression function* is the conditional mean
+$$
+m(x) = E[\,Y \mid X = x\,],
+$$
+the average value of $Y$ among all cases with $X = x$. *Regression* is the
+problem of estimating $m(x)$ from a finite sample of paired observations
+$(x_1, y_1), \dots, (x_n, y_n)$.
+:::
+
+Why is the conditional mean the *right* target, and not, say, the conditional
+median or the most likely value? There is a precise reason, and it is worth
+stating now even though we will only prove it later. The conditional mean is the
+function of $x$ that makes the **smallest average squared error** when you use
+it to predict $Y$. In symbols, among *all possible functions* $g$,
+
+$$
+m(x) = E[Y \mid X = x] \quad\text{minimizes}\quad E\big[(Y - g(X))^2\big].
+$$
+
+So *if* you have decided that being wrong by 2 is four times as bad as being
+wrong by 1 — that is what squaring does — then the conditional mean is, with no
+further assumptions, the best possible predictor. That "if" is doing enormous
+work, and it is the hinge of the next section. (This minimization fact is the
+*population* version of the squared-error story; REGR-1 does the *sample*
+version with calculus, and REGR-23 returns to estimate $m(x)$ directly without
+assuming a line.)
+
+::: {.callout-tip title="You might be asked"}
+**"What is regression actually estimating?"** The crisp answer interviewers
+want is *the conditional expectation $E[Y \mid X]$* — not "a line," not "the
+relationship," but specifically the average of the outcome given the inputs. A
+line is one *model* of that mean. Saying this cleanly signals you understand
+that the line is a means, not the end, and it makes everything downstream
+(loss functions, residuals, why we square errors) follow naturally.
+:::
+
+## Why a line, then?
+
+If the target is the curve $m(x)$, why do we so often draw a *straight* line —
+the most restrictive curve imaginable? Three honest reasons, in increasing order
+of importance.
+
+1. **It is the simplest non-trivial model.** A line $m(x) \approx \beta_0 +
+   \beta_1 x$ has exactly two numbers in it: an intercept $\beta_0$ (where it
+   crosses) and a slope $\beta_1$ (how fast it climbs). Two numbers is the least
+   you can spend and still capture "outcome tends to rise (or fall) with input."
+
+2. **The slope is directly interpretable.** $\beta_1$ is "the average change in
+   $Y$ per one-unit change in $X$." That is the explanation question's answer in
+   a single number. No curve gives you so clean a story.
+
+3. **With few data points, a flexible curve fools itself.** If you let the model
+   bend freely, it will happily thread every point in your sample — including
+   the noise — and then predict garbage on new data. A line *cannot* chase
+   noise; its rigidity is a feature when data is scarce. This is the
+   bias–variance trade-off, and the whole nonparametric branch of the track
+   (REGR-20 through REGR-26) is about earning the right to bend the line *only
+   as much as the data supports*.
+
+The honest caveat — which we owe you up front, per the spirit of this series —
+is that the world is rarely exactly linear. The line is a deliberate
+*approximation* to $m(x)$, chosen because it is interpretable and stable, not
+because nature is straight. Knowing when that approximation is good enough, and
+what to reach for when it is not, is a recurring theme; we flag the boundary
+explicitly in the closing section.
+
+```{python}
+#| label: fig-conditional-mean
+#| fig-cap: "The target of regression is the conditional mean. At each input value there is a whole spread of outcomes (faint points); regression estimates the average outcome at each input (red curve). A straight line (dashed) is a simple model of that mean — here a good one over the middle, straining at the edges."
+import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(0)
+
+# A gently curved true conditional mean, to make the point that the line
+# is an approximation: m(x) = 2 + 1.4 x - 0.06 x^2 over x in [0, 12].
+def m(x):
+    return 2 + 1.4 * x - 0.06 * x**2
+
+# Draw a cloud: many outcomes at each of a grid of inputs, with vertical spread.
+xs = rng.uniform(0, 12, size=400)
+ys = m(xs) + rng.normal(0, 1.6, size=400)
+
+xgrid = np.linspace(0, 12, 200)
+
+# A straight-line approximation fit by eye-equivalent least squares slope/intercept.
+b1 = np.cov(xs, ys, bias=True)[0, 1] / np.var(xs)
+b0 = ys.mean() - b1 * xs.mean()
+
+fig, ax = plt.subplots(figsize=(6.4, 4.0))
+ax.scatter(xs, ys, s=10, alpha=0.18, color="0.4", label="outcomes (one cloud)")
+ax.plot(xgrid, m(xgrid), color="crimson", lw=2.4,
+        label=r"conditional mean $m(x)=E[Y\mid X=x]$")
+ax.plot(xgrid, b0 + b1 * xgrid, color="navy", lw=2.0, ls="--",
+        label="straight-line model")
+ax.set_xlabel("input  $x$")
+ax.set_ylabel("outcome  $y$")
+ax.legend(loc="lower center", frameon=False, fontsize=8)
+ax.set_title("Regression estimates the average outcome at each input")
+fig.tight_layout()
+plt.show()
+```
+
+# "Best line" is meaningless until we define "best"
+
+Now we hit the question that REGR-1 exists to answer, and the reason REGR-0
+comes first: **there is no such thing as "the best line" until you have chosen
+how to score a line's mistakes.** This sounds pedantic. It is not. Different
+scoring rules give *different lines through the same points*, and the choice is
+yours to make, not the data's to dictate.
+
+Set up the bookkeeping. A candidate line predicts $\hat y_i = \beta_0 + \beta_1
+x_i$ for the $i$-th point, whose actual outcome is $y_i$. The mistake on that
+point is the **residual**
+
+$$
+e_i \;=\; y_i - \hat y_i \;=\; y_i - (\beta_0 + \beta_1 x_i),
+$$
+
+the vertical gap between the dot and the line. A line is "good" if its residuals
+are collectively small — but *collectively small* is exactly the undefined
+phrase. We must aggregate the $n$ residuals into a single score, and there are
+many ways to do it:
+
+- **Sum of squared residuals**, $\sum_{i=1}^{n} e_i^2$. Squaring makes every
+  error positive (so $+3$ and $-3$ do not cancel) and punishes big misses
+  disproportionately — a residual of 4 costs 16, four times the cost of a
+  residual of 2. Minimizing this is **least squares**, and it is the choice the
+  rest of this track commits to.
+- **Sum of absolute residuals**, $\sum_{i=1}^{n} |e_i|$. Also kills the sign,
+  but treats a miss of 4 as merely twice as bad as a miss of 2. This is
+  *least absolute deviations*; it estimates the conditional *median* rather than
+  the mean, and it shrugs off outliers that least squares would chase.
+- **Worst single residual**, $\max_i |e_i|$. Minimizing the largest error
+  ("minimax") — sensible if one catastrophic miss is unacceptable, common in
+  engineering tolerances, almost never used in statistics.
+
+Three rules, three different "best" lines through the *identical* cloud. None is
+universally correct; each encodes a different belief about what kind of error
+hurts.
+
+```{python}
+#| label: fig-loss-choice
+#| fig-cap: "Three honest definitions of 'best' give three different lines through the same eight points. Least squares (solid) is pulled toward the high outlier because squaring magnifies large residuals; least absolute deviations (dashed) resists it; minimax (dotted) bends to shrink the single worst gap. 'Best line' is undefined until you pick a column of this menu."
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+
+x = np.array([1, 2, 3, 4, 5, 6, 7, 8], dtype=float)
+y = np.array([2.1, 3.9, 5.8, 7.7, 9.6, 11.2, 13.1, 22.0])  # last point an outlier
+
+xg = np.linspace(0, 9, 50)
+
+def fit(loss):
+    def obj(p):
+        r = y - (p[0] + p[1] * x)
+        return loss(r)
+    res = minimize(obj, x0=[0.0, 1.0], method="Nelder-Mead")
+    return res.x
+
+ls   = fit(lambda r: np.sum(r**2))
+lad  = fit(lambda r: np.sum(np.abs(r)))
+mmax = fit(lambda r: np.max(np.abs(r)))
+
+fig, ax = plt.subplots(figsize=(6.4, 4.0))
+ax.scatter(x, y, s=40, color="black", zorder=3, label="data")
+ax.plot(xg, ls[0]  + ls[1]  * xg, color="navy",    lw=2.0, ls="-",
+        label="least squares (mean)")
+ax.plot(xg, lad[0] + lad[1] * xg, color="crimson", lw=2.0, ls="--",
+        label="least absolute dev. (median)")
+ax.plot(xg, mmax[0]+ mmax[1] * xg, color="seagreen",lw=2.0, ls=":",
+        label="minimax (worst error)")
+ax.set_xlabel("$x$")
+ax.set_ylabel("$y$")
+ax.legend(loc="upper left", frameon=False, fontsize=8)
+ax.set_title("Same points, three definitions of “best”")
+fig.tight_layout()
+plt.show()
+```
+
+So why does *squared* error win the track? Three reasons, each of which we cash
+out later:
+
+1. **It targets the mean.** Minimizing squared error estimates $E[Y \mid X]$ —
+   the conditional mean we argued for in §1 — whereas absolute error estimates
+   the median. If the conditional mean is your target, squared error is the
+   matching tool. (REGR-1 shows this with calculus on the sample.)
+2. **It has a clean closed-form solution.** Squaring makes the score a smooth,
+   bowl-shaped (quadratic) function of $\beta_0$ and $\beta_1$; setting its
+   derivatives to zero gives two linear equations you can solve by hand. Absolute
+   error has a kink at zero and no such tidy formula. (REGR-1 derives the
+   formula; REGR-4 reveals it as a geometric projection.)
+3. **It is the maximum-likelihood choice under Gaussian noise.** If the scatter
+   around the line is normally distributed, least squares is not an arbitrary
+   convenience — it is the *most probable* explanation of the data. (REGR-12
+   proves this; it is the bridge to the entire GLM branch.)
+
+::: {.callout-warning title="Pitfall"}
+**Least squares is a *choice*, not a law of nature — and its Achilles' heel is
+the outlier.** Because squaring magnifies large residuals, a single wild point
+can swing the least-squares line dramatically, as @fig-loss-choice shows. If your
+data has heavy tails or contamination, the least-absolute-deviation line (or a
+robust method, REGR-11) may be the honest choice. Reaching for least squares
+reflexively, without asking what kind of error you are willing to tolerate, is
+one of the most common mistakes in applied regression.
+:::
+
+::: {.callout-tip title="You might be asked"}
+**"Why do we square the residuals instead of taking absolute values?"** A strong
+answer hits all three notes above: squaring (1) targets the conditional *mean*
+rather than the median, (2) yields a differentiable, convex objective with a
+closed-form solution, and (3) coincides with maximum likelihood under Gaussian
+errors. Then add the honest caveat — squared error is *sensitive to outliers*,
+which is precisely when you would prefer absolute deviations. Naming both the
+upside and the cost is what separates a graduate-level answer from a
+memorized one.
+:::
+
+# Where this came from: two origin stories
+
+The *why* of regression is easier to feel once you know it was invented twice,
+for two different reasons, by people who were not trying to invent it.
+
+## Legendre and Gauss: pinning down the heavens (least squares)
+
+The method came first; the name came later. Around the turn of the nineteenth
+century, the hardest data problem in the world was astronomical and geodetic:
+given many imperfect measurements — of a comet's position night after night, or
+of the length of a degree of arc along a meridian to determine the figure of the
+Earth — find the orbit, or the shape, that best reconciles them. The
+measurements *disagreed*, because every instrument and observer carried error,
+and there were more equations than unknowns. What does "best fit" mean when no
+single curve can pass through every observation?
+
+**Adrien-Marie Legendre** published the answer in 1805, in an appendix on comet
+orbits, and stated the principle with striking clarity: choose the values that
+make the **sum of the squares of the errors** as small as possible. He called it
+*la méthode des moindres carrés* — the method of least squares — and gave the
+modern reason for squaring: it prevents positive and negative errors from
+cancelling, and it lets large errors weigh more, so the fit is dragged toward
+consensus.
+
+**Carl Friedrich Gauss** claimed — credibly, and to Legendre's lasting
+irritation — to have been using the method since around 1795, and in 1809 he
+supplied what Legendre had not: a *probabilistic justification*. Gauss showed
+that *if* the observation errors follow what we now call the normal (Gaussian)
+distribution, then least squares yields the most probable values of the
+unknowns. This is the maximum-likelihood argument in embryo — the exact result
+REGR-12 derives in full — and it is why the bell curve and least squares have
+been welded together ever since. Gauss's public triumph was concrete: in 1801
+the dwarf planet **Ceres** was discovered, tracked briefly, then lost behind the
+Sun. From a sparse handful of observations Gauss predicted where it would
+re-emerge, and astronomers found it almost exactly where his least-squares
+computation said it would be. The method that lets us draw a line through a
+scatterplot was forged to find a lost world in the sky.
+
+The *why* to carry forward: least squares was born to **reconcile conflicting
+measurements of a quantity you cannot observe directly** — to extract signal
+from a pile of noisy, over-determined data. That is still exactly what
+regression does. Every time you fit a line, you are doing Gauss's Ceres problem
+in miniature.
+
+## Galton: regression to the mean (and the word itself)
+
+The *word* "regression" comes from a different problem entirely, and from a
+discovery so counterintuitive it still trips people up. In the 1880s the
+Victorian polymath **Francis Galton** was studying heredity — how a trait passes
+from parents to offspring. He gathered data on the heights of parents and their
+adult children (and, in a cleaner parallel experiment, on the diameters of
+sweet-pea seeds across generations), plotted children's heights against parents'
+heights, and found something he did not expect.
+
+Tall parents did tend to have tall children — but **on average, the children
+were closer to the population mean than their parents were.** The sons of very
+tall fathers were tall, yet typically *shorter* than their fathers; the sons of
+very short fathers were short, yet typically *taller* than their fathers. The
+extremes pulled *inward* toward the average from one generation to the next.
+Galton first called this "reversion," then "regression toward mediocrity" — and
+that word, *regression*, attached itself to the line he drew through the cloud
+and never let go. The slope he found was less than 1: a father one inch above
+average had sons on average only about two-thirds of an inch above average.
+
+```{python}
+#| label: fig-galton
+#| fig-cap: "Galton's regression to the mean, simulated transparently. Fathers' and sons' heights are generated with equal spread and correlation 0.5, so neither generation is shrinking. Yet the regression line (red, slope $\\approx 0.5$) is flatter than the dashed 45-degree 'sons equal fathers' line. Read off the tallest fathers: their sons average shorter than they are; the shortest fathers' sons average taller. The extremes regress toward the mean."
+import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(7)
+n = 600
+mu, sd, rho = 69.0, 2.7, 0.5  # inches; equal spread; correlation 0.5
+
+# Bivariate normal with equal marginals and correlation rho -> regression slope = rho.
+father = rng.normal(mu, sd, n)
+son = mu + rho * (father - mu) + rng.normal(0, sd * np.sqrt(1 - rho**2), n)
+
+slope = np.cov(father, son, bias=True)[0, 1] / np.var(father)
+intercept = son.mean() - slope * father.mean()
+xg = np.linspace(father.min(), father.max(), 50)
+
+fig, ax = plt.subplots(figsize=(6.4, 4.2))
+ax.scatter(father, son, s=12, alpha=0.30, color="0.45")
+ax.plot(xg, xg, color="0.2", ls="--", lw=1.6, label="sons = fathers (slope 1)")
+ax.plot(xg, intercept + slope * xg, color="crimson", lw=2.4,
+        label=f"regression line (slope $\\approx${slope:.2f})")
+ax.axvline(mu, color="0.7", lw=0.8)
+ax.axhline(mu, color="0.7", lw=0.8)
+ax.set_xlabel("father's height (inches)")
+ax.set_ylabel("son's height (inches)")
+ax.legend(loc="upper left", frameon=False, fontsize=8)
+ax.set_title("Regression to the mean")
+fig.tight_layout()
+plt.show()
+```
+
+Here is the part everyone gets wrong, and the part worth demystifying once and
+for all: **regression to the mean is not a force, not heredity weakening, not
+populations collapsing toward average height.** In @fig-galton the two
+generations have *exactly the same spread* — nothing is shrinking. The effect is
+a pure consequence of **imperfect correlation**. Whenever two variables are
+correlated by less than 1, an extreme value of one is, on average, paired with a
+*less* extreme value of the other, simply because an extreme observation is
+partly skill (or genuine tallness) and partly luck, and luck does not repeat. A
+father who is unusually tall is tall partly for heritable reasons that pass on
+and partly for a roll of the dice that does not. Average over the dice and the
+son slides toward the middle.
+
+This is why the regression line is *flatter* than the 45-degree line — and the
+slope of a standardized regression line is exactly the correlation coefficient,
+a fact REGR-1 makes precise. Galton handed us not just a word but a permanent
+warning, which appears all over applied science:
+
+::: {.callout-warning title="Pitfall"}
+**Regression to the mean masquerades as a real effect.** Take the worst-scoring
+students, give them a tutoring program, retest them: they improve — *even if the
+program does nothing*, because their first scores were partly bad luck that
+won't repeat. Praise a pilot after a great landing and the next is worse; scold
+after a bad one and the next is better — not because scolding works, but because
+extremes regress. Any time you select on an extreme and then measure again,
+expect movement toward the mean *for free*. Mistaking that statistical
+inevitability for a causal effect is one of the most expensive errors in
+medicine, education, sports, and business analytics.
+:::
+
+::: {.callout-tip title="You might be asked"}
+**"Explain regression to the mean to someone non-technical, and say why it
+matters."** The grad-level answer: it is what happens when you select cases on an
+extreme value of one variable and then look at a second, imperfectly correlated
+variable — the second tends to be less extreme, *purely* because the
+correlation is below 1, with no causal mechanism required. The reason it matters
+is that it manufactures fake treatment effects: pick the sickest patients, the
+worst-performing stores, the coldest months, do *anything*, and you will see
+improvement that a naive analysis credits to your intervention. The defense is a
+control group. Connecting the phenomenon to "correlation $< 1$" and to its
+practical danger is the answer interviewers are listening for.
+:::
+
+# When is "fit a line" the right move — and when not?
+
+We promised an honest applicability call, and this is where REGR-0 earns its
+place as the opener: before you spend the rest of the track learning *how* to
+fit lines, you should know *when* to.
+
+**Reach for a straight-line regression when:**
+
+- The relationship between $X$ and the *average* of $Y$ is plausibly
+  monotonic and roughly straight over the range you care about — or you only need
+  a local, first-order approximation.
+- You want an **interpretable** summary: a slope you can report, defend, and
+  attach uncertainty to. This is the explanation question, and the line is
+  almost unmatched for it.
+- Data is **limited** relative to the complexity of the truth. A line's rigidity
+  protects you from overfitting noise; a flexible curve with few points will
+  betray you on new data.
+
+**Be suspicious, and reach for something else, when:**
+
+- The conditional mean is genuinely **curved or has a threshold** — diminishing
+  returns, saturation, a tipping point. A line will systematically over- and
+  under-predict in stripes (you will *see* it in the residuals, REGR-10). Fix:
+  transform a variable, add a polynomial or spline term (REGR-20, REGR-21), or
+  go nonparametric (REGR-23, REGR-24).
+- The outcome is **not a free real number** — a yes/no, a count, a probability.
+  Fitting an ordinary line to a 0/1 outcome can predict probabilities below 0 or
+  above 1, which is nonsense. Fix: a generalized linear model — logistic for
+  binary (REGR-17), Poisson for counts (REGR-19).
+- The data has **heavy-tailed noise or outliers**. Least squares will chase
+  them. Fix: robust or absolute-deviation methods (REGR-11).
+- You actually want a **causal** slope, not just an associational one. Regression
+  gives you "outcomes tend to be higher when the input is higher"; turning that
+  into "raising the input *causes* higher outcomes" requires assumptions
+  (controlled experiments, or careful causal-inference machinery) that the line
+  itself does not supply. Galton's warning is the tip of this iceberg.
+
+The honest summary: the line is a **deliberate, interpretable approximation to
+the conditional mean**, superb when the mean is roughly straight and the noise is
+well-behaved, and a trap when it is not. The entire Regression track is, in a
+sense, the systematic story of *detecting* when the line is too simple and
+*earning* the right to make it more flexible — without ever losing the
+interpretability that made it worth drawing in the first place.
+
+# Connections — where the track goes from here
+
+This article posed the question; the rest of the track answers it.
+
+- **REGR-1 — OLS, One Predictor.** Commits to squared-error loss and *derives*
+  the slope $\hat\beta_1 = S_{xy}/S_{xx}$ and intercept $\hat\beta_0 = \bar y -
+  \hat\beta_1 \bar x$ with full Calc-1 calculus. This is the true computational
+  entry point; everything in §3's "least squares wins" claim is cashed out there.
+- **REGR-2 — What the Line Assumes.** States precisely the conditions under
+  which the least-squares line is a *good* estimator of $E[Y \mid X]$ — making
+  rigorous the hand-waving about "noise" and "average" we used here.
+- **REGR-12 — The Maximum-Likelihood View.** Proves Gauss's claim: under
+  Gaussian errors, least squares *is* maximum likelihood — the §3 reason (3) and
+  the doorway to the GLM branch.
+- **REGR-23 — Kernel Regression.** Returns to estimate $E[Y \mid X]$ *directly*,
+  as a local weighted average, with no line at all — the purest expression of
+  the Core, and the answer to "what if the mean really is curved?"
+
+# Going deeper
+
+- **Legendre, A.-M. (1805).** *Nouvelles méthodes pour la détermination des
+  orbites des comètes.* The appendix that first published least squares.
+- **Gauss, C. F. (1809).** *Theoria Motus Corporum Coelestium.* The
+  probabilistic justification and the Ceres computation; the origin of the
+  least-squares–Gaussian link.
+- **Galton, F. (1886).** "Regression towards Mediocrity in Hereditary Stature,"
+  *Journal of the Anthropological Institute.* The paper that named the field and
+  first charted regression to the mean.
+- **Stigler, S. M. (1986).** *The History of Statistics: The Measurement of
+  Uncertainty before 1900.* The definitive account of the Legendre–Gauss
+  priority dispute and Galton's path to regression.
+- **Kahneman, D. (2011).** *Thinking, Fast and Slow*, ch. 17. A modern,
+  accessible treatment of regression to the mean as a cognitive trap — the
+  flight-instructor anecdote in §4 is his.
