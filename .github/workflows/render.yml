@@ -1,0 +1,35 @@
+name: Render Core Sample
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          tinytex: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install numpy matplotlib pandas jupyter
+
+      - name: Render book to PDF
+        run: quarto render
+
+      - name: Upload rendered PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-sample-pdf
+          path: _book/

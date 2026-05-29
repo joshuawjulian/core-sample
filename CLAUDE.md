@@ -270,16 +270,25 @@ page, not to force every article into one mold.
 
 ---
 
-## §5 — Open Decisions (still being designed)
+## §5 — Decisions (resolved + open)
 
-- Repo layout & file-naming convention for tracks + articles — must support **both**
-  output targets in §4 (standalone per-article PDF *and* the single bound book) from one
-  set of source files.
-- Cross-reference registry (how forward-links to not-yet-written articles stay valid).
-- Visual design: typeset callout boxes (Core / Definition / Theorem / Proof ∎ / Pitfall),
-  LaTeX template, title page, typography.
-- Master topic taxonomy across all tracks (see §6 for tracks designed so far).
-- Authoring + review workflow at scale.
+**Resolved — see `REGISTRY.md` for the authoritative details:**
+- **Repo layout & file naming.** Articles live at `articles/<track-slug>/<ID>-<slug>.qmd`;
+  global article IDs use four-letter track prefixes (`REGR-4`, `INFR-B4`, …). One source
+  set serves both §4 output targets.
+- **Build pipeline.** Quarto `book` project (`_quarto.yml`) for the bound volume +
+  per-article standalone via `articles/_metadata.yml`. PDFs render in GitHub Actions
+  (`.github/workflows/render.yml`) and a devcontainer (`.devcontainer/`).
+- **Cross-reference registry + global ID scheme.** `REGISTRY.md` is the source of truth for
+  IDs, path conventions, authoring syntax, and cross-track ownership calls.
+- **Visual design / callouts.** Quarto-native: theorem/definition/lemma/proof crossref
+  environments; "The Core" = `callout-important`, "Pitfall" = `callout-warning`,
+  "You might be asked" = `callout-tip`. (No fragile custom LaTeX.)
+
+**Still open:**
+- Master topic taxonomy beyond the 8 tracks in `tracks/` (more tracks to design).
+- A dedicated **Model-Evaluation** track (interim: classifier eval lives in CLAS-18..20).
+- Authoring + review workflow at scale (pilot articles REGR-0/REGR-1 written first).
 
 ---
 
