@@ -1,9 +1,18 @@
-name: Render Core Sample
+name: Render PDFs
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+# Allow the workflow to publish the "latest" release with the PDFs attached.
+permissions:
+  contents: write
+
+# Don't pile up overlapping renders; newest push wins.
+concurrency:
+  group: render-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   render:
@@ -12,7 +21,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Quarto
+      - name: Set up Quarto (+ TinyTeX)
         uses: quarto-dev/quarto-actions/setup@v2
         with:
           tinytex: true
@@ -22,14 +31,68 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Python dependencies
-        run: pip install numpy matplotlib pandas jupyter
+      - name: Install Python dependencies (for figure generation)
+        run: |
+          pip install -r requirements.txt
+          # Make sure Quarto's jupyter engine can find a python3 kernel.
+          python -m ipykernel install --user --name python3 --display-name "Python 3"
+          jupyter kernelspec list
 
-      - name: Render book to PDF
+      # --- Primary deliverable: the bound book PDF. Must succeed. ---
+      - name: Render the bound book (single PDF)
         run: quarto render
 
-      - name: Upload rendered PDF
+      # --- Secondary: one standalone PDF per article. Best-effort. ---
+      # Rendered in a temp dir copy of articles/ so the root book _quarto.yml
+      # does not capture single-file renders; articles/_metadata.yml travels
+      # with the copy and supplies the standalone PDF format.
+      - name: Render standalone article PDFs
+        continue-on-error: true
+        run: |
+          set +e
+          SRC="$RUNNER_TEMP/standalone"
+          mkdir -p "$SRC"
+          cp -r articles/. "$SRC/"
+          mkdir -p article-pdfs
+          find "$SRC" -name '*.qmd' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::Rendering $f"
+            quarto render "$f" --to pdf || echo "WARN: failed to render $f"
+            echo "::endgroup::"
+          done
+          find "$SRC" -name '*.pdf' -exec cp {} article-pdfs/ \;
+          echo "Standalone PDFs produced:"; ls -la article-pdfs || true
+
+      - name: Assemble outputs
+        run: |
+          mkdir -p out/articles
+          cp _book/*.pdf out/ 2>/dev/null || true
+          cp article-pdfs/*.pdf out/articles/ 2>/dev/null || true
+          echo "Final PDF set:"; find out -name '*.pdf' | sort
+
+      - name: Upload PDFs as build artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: core-sample-pdf
-          path: _book/
+          name: core-sample-pdfs
+          path: out/
+          if-no-files-found: warn
+
+      # Stable, easy-to-grab download: refresh a "latest" prerelease on each
+      # push to main with all PDFs attached. Won't fail the build if the repo
+      # restricts Actions write permissions (fix: Settings -> Actions ->
+      # General -> Workflow permissions -> Read and write).
+      - name: Publish "latest" release
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(find out -name '*.pdf')
+          if [ -z "$files" ]; then
+            echo "No PDFs to publish."; exit 0
+          fi
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest $files \
+            --title "Latest PDFs" \
+            --prerelease \
+            --notes "Auto-built from ${{ github.sha }}. Bound book + per-article PDFs."
