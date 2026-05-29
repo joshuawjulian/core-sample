@@ -105,8 +105,11 @@ honest reasons, and you should be able to give all three.
    we can use calculus and get a clean closed-form answer — which is the whole point of
    this article. Absolute error gives a problem with no formula, solvable only
    numerically (that line is the *median* regression, a real and useful alternative).
-2. **It has a clean statistical meaning.** Minimizing squared error coincides with
-   maximum likelihood when the noise is Gaussian — derived in full in [REGR-12].
+2. **It has a clean statistical meaning.** If the measurement noise is Gaussian (the
+   familiar bell curve), the least-squares line is *also* the **most likely** line given
+   the data — its maximum-likelihood estimate. That is the deepest reason squared error is
+   the statistician's default, and we derive the equivalence step by step in
+   @sec-why-gaussian below — not as a slogan, but in full.
 3. **It penalizes big misses hard.** Squaring weights a gap of 4 sixteen times a gap of
    1, so the line works hard to avoid large errors.
 
@@ -246,6 +249,109 @@ already-collected numbers; the unknowns we are solving *for* are $\beta_0$ and $
 We are not asking "what is $y$ at a given $x$"; we are asking "which line —which
 $(\beta_0,\beta_1)$— is best." Holding this straight is what makes the partial
 derivatives below make sense.
+:::
+
+## Why *this* objective: least squares is Gaussian maximum likelihood {#sec-why-gaussian}
+
+Back in the motivation we claimed that minimizing $S$ has a clean statistical meaning.
+Here is that claim in full — no slogan, every step on the page. It is the deepest reason
+the squared-error objective is the one statisticians reach for first.
+
+Suppose the data really were produced by a true line, with each point knocked off it by
+random measurement noise. Model that noise as **Gaussian** — the symmetric, bell-shaped
+distribution. (The Gaussian is built from first principles in the Probability track; here
+we need only its formula.) Independently for each point,
+
+$$
+y_i = \beta_0 + \beta_1 x_i + \varepsilon_i,
+\qquad \varepsilon_i \sim \mathcal{N}(0,\sigma^2),
+$$ {#eq-gauss-model}
+
+where $\sigma^2$ is the (unknown) noise variance — how violently the points scatter off
+the line. A Gaussian quantity with mean $\mu$ and variance $\sigma^2$ has **probability
+density**
+
+$$
+\phi(t) = \frac{1}{\sqrt{2\pi\sigma^2}}\,\exp\!\Bigl(-\frac{(t-\mu)^2}{2\sigma^2}\Bigr),
+$$
+
+which is just the bell curve: tallest at $t=\mu$ and falling off the further $t$ strays,
+so values near the mean are the most probable. The density is a relative measure of *how
+plausible* a value is. Since $y_i$ equals the line value $\beta_0+\beta_1 x_i$ plus
+zero-mean noise, its mean is exactly $\beta_0+\beta_1 x_i$. So for a *candidate* line
+$(\beta_0,\beta_1)$, the density of the observed $y_i$ is
+
+$$
+p\bigl(y_i \mid \beta_0,\beta_1\bigr)
+= \frac{1}{\sqrt{2\pi\sigma^2}}\,
+  \exp\!\Bigl(-\frac{(y_i-\beta_0-\beta_1 x_i)^2}{2\sigma^2}\Bigr).
+$$
+
+Look at the exponent: it holds $(y_i-\beta_0-\beta_1 x_i)^2$, the **squared residual**
+from @eq-resid. Squared error has appeared on its own, just from writing down the bell
+curve — we have not chosen it, the Gaussian handed it to us.
+
+Now the question that defines maximum likelihood: of all candidate lines, which makes the
+data we *actually observed* most probable? The **likelihood** is the probability density
+of the whole dataset, read as a function of the line we are guessing. Because the $n$
+observations are independent, the joint density is the product of the individual ones:
+
+$$
+L(\beta_0,\beta_1)
+= \prod_{i=1}^{n} \frac{1}{\sqrt{2\pi\sigma^2}}\,
+  \exp\!\Bigl(-\frac{(y_i-\beta_0-\beta_1 x_i)^2}{2\sigma^2}\Bigr).
+$$
+
+A product of $n$ exponentials is awkward to handle, so take the natural logarithm. The
+logarithm is a *strictly increasing* function, so the line that maximizes $L$ is the very
+same line that maximizes $\ln L$ — taking logs never moves the location of the peak, it
+only rescales the height. Turn the product into a sum with $\ln(ab)=\ln a+\ln b$, and undo
+each exponential with $\ln e^{z}=z$:
+
+$$
+\ln L(\beta_0,\beta_1)
+= \sum_{i=1}^{n}\Bigl[-\tfrac{1}{2}\ln(2\pi\sigma^2)
+   - \frac{(y_i-\beta_0-\beta_1 x_i)^2}{2\sigma^2}\Bigr]
+= -\frac{n}{2}\ln(2\pi\sigma^2)
+   \;-\; \frac{1}{2\sigma^2}\sum_{i=1}^{n}(y_i-\beta_0-\beta_1 x_i)^2 .
+$$
+
+Read the two terms. The first, $-\tfrac{n}{2}\ln(2\pi\sigma^2)$, contains no $\beta_0$ and
+no $\beta_1$ — as far as *choosing the line* goes it is a fixed constant, and a constant
+cannot change where a maximum sits. Every bit of dependence on the line lives in the
+second term, which is
+
+$$
+-\frac{1}{2\sigma^2}\sum_{i=1}^{n}(y_i-\beta_0-\beta_1 x_i)^2
+= -\frac{1}{2\sigma^2}\,S(\beta_0,\beta_1),
+$$
+
+exactly $-\tfrac{1}{2\sigma^2}$ times our objective $S$ from @eq-objective. The factor
+$\tfrac{1}{2\sigma^2}$ is a fixed *positive* number (a variance is positive), and a
+negative constant times $S$ is **large precisely when $S$ is small**. Therefore
+
+$$
+\underbrace{\max_{\beta_0,\beta_1}\ \ln L(\beta_0,\beta_1)}_{\text{most likely line}}
+\quad\Longleftrightarrow\quad
+\underbrace{\min_{\beta_0,\beta_1}\ S(\beta_0,\beta_1)}_{\text{least-squares line}} .
+$$
+
+The maximization and the minimization are the *same problem*, separated only by a minus
+sign and a positive scale factor — so they have the identical solution
+$(\hat\beta_0,\hat\beta_1)$, the one we are about to compute.
+
+That is the payoff: **minimizing squared error is not an arbitrary convenience — it is
+maximum likelihood under Gaussian noise**, the most common noise model in all of
+measurement. Of every loss we could have picked back in the motivation, this is why
+squared error is the default.
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+This argument used three things from outside this article: the **Gaussian density**, the
+idea of **independence** giving a product of densities, and the **maximum-likelihood**
+principle itself. Each is constructed from the ground up in the Probability and
+Statistical Inference tracks — we imported only their statements here so the logic could
+run end to end. The complete regression-specific treatment, including how we *also*
+estimate the noise size $\sigma^2$ and what that estimate buys us, is [REGR-12].
 :::
 
 ## A two-minute refresher on the partial derivative {#sec-partial-refresher}
