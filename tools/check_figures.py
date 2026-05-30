@@ -10,7 +10,14 @@ import os, re, sys, io, contextlib, pathlib, traceback
 os.environ.setdefault('MPLBACKEND', 'Agg')
 
 def check(path: pathlib.Path):
-    chunks = re.findall(r"```\{python\}\n(.*?)```", path.read_text(), re.S)
+    text = path.read_text()
+    # Inline `{python} expr` expressions are evaluated by Quarto too — compile each.
+    for expr in re.findall(r'`\{python\}\s*(.+?)`', text):
+        try:
+            compile(expr, "<inline>", "eval")
+        except SyntaxError:
+            return f"inline `{{python}}` SyntaxError: {expr!r}"
+    chunks = re.findall(r"```\{python\}\n(.*?)```", text, re.S)
     if not chunks:
         return None
     code = "\n".join(chunks)
