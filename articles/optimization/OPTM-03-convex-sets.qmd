@@ -305,8 +305,9 @@ The definition is abstract; the value is in recognizing convex sets on sight. He
 ones that appear constantly in data science and optimization, each verified directly from
 @def-convex-set.
 
-**The whole space $\mathbb{R}^n$, and any line or plane through it.** Trivially convex: a
-blend of two points in $\mathbb{R}^n$ is in $\mathbb{R}^n$. More usefully, an **affine set**
+**The whole space $\mathbb{R}^n$, and any line or plane through it.** Convex for the most
+direct reason there is: a blend of two points of $\mathbb{R}^n$ is a vector in $\mathbb{R}^n$,
+so the segment never has anywhere to escape *to*. More usefully, an **affine set**
 — a solution set of linear equations $\{x : Ax = b\}$, e.g. a line or a plane — is convex.
 If $Ax=b$ and $Ay=b$, then for any $t$,
 $$
@@ -729,18 +730,45 @@ $$
 so the hyperplane passes through the midpoint of the closest pair. The claim is that no point
 of $\mathcal{C}$ crosses to $\mathcal{D}$'s side, and vice versa.
 
-Here is why $\mathcal{C}$ stays on its side. Suppose, for contradiction, some
+First record where $c^\star$ itself sits relative to the wall. Using $a = d^\star - c^\star$
+and the chosen offset $b$, subtract:
+$$
+a^\top c^\star - b
+= a^\top c^\star - a^\top\!\left(\frac{c^\star + d^\star}{2}\right)
+= \tfrac12\,a^\top\big(c^\star - d^\star\big)
+= \tfrac12\,a^\top(-a)
+= -\tfrac12\,\|a\|^2 \;<\; 0,
+$$
+so $a^\top c^\star < b$: the closest point $c^\star$ lies strictly on $\mathcal{C}$'s side of
+the midpoint wall, as the picture demands. (The norm-squared identity $a^\top a = \|a\|^2$ is
+the definition of the Euclidean norm, imported from the Geometry track.)
+
+Now here is why *all* of $\mathcal{C}$ stays on that side. Suppose, for contradiction, some
 $x\in\mathcal{C}$ had $a^\top x > b$ — it poked past the wall toward $\mathcal{D}$. Walk a tiny
-step from $c^\star$ toward $x$ along the segment inside $\mathcal{C}$ (legal:
-$\mathcal{C}$ is convex, so the whole segment $c^\star \to x$ is in $\mathcal{C}$). Because
-$x$ is on the far side of the wall, stepping toward it moves you *closer to $\mathcal{D}$'s
-representative $d^\star$* than $c^\star$ was — contradicting that $c^\star$ was the closest
-point of $\mathcal{C}$ to $\mathcal{D}$. (Concretely: the derivative of the squared distance
-$\|c^\star + s(x-c^\star) - d^\star\|^2$ with respect to the step size $s$ at $s=0$ is
-$2(c^\star - d^\star)^\top(x - c^\star) = -2a^\top(x-c^\star)$, and $a^\top x > b \ge a^\top
-c^\star$ — the right inequality because $c^\star$ sits on $\mathcal{C}$'s side of the
-midpoint wall — makes this derivative negative, so a small step *reduces* the distance.) The
-contradiction forces $a^\top x \le b$ for all $x\in\mathcal{C}$. The identical argument with
+step from $c^\star$ toward $x$, landing at $c(s) = c^\star + s(x - c^\star)$ for small
+$s\in[0,1]$. This stays inside $\mathcal{C}$ (it is a point on the segment $c^\star \to x$, and
+$\mathcal{C}$ is convex), so its distance to $d^\star$ cannot be smaller than the
+closest-pair distance. Measure that distance squared and watch it as $s$ grows from $0$.
+Write $w = x - c^\star$ and $r = c^\star - d^\star = -a$, so $c(s) - d^\star = r + s\,w$, and
+expand the squared norm as an ordinary quadratic in the *single* variable $s$ (using
+$\|u\|^2 = u^\top u$ and that the dot product distributes):
+$$
+\phi(s) \;=\; \|\,c(s) - d^\star\,\|^2
+\;=\; (r + s\,w)^\top(r + s\,w)
+\;=\; \|r\|^2 \;+\; 2s\,(r^\top w) \;+\; s^2\,\|w\|^2.
+$$
+This is a plain parabola in $s$; differentiate it with Calc-1 rules:
+$\phi'(s) = 2\,(r^\top w) + 2s\,\|w\|^2$, so at the starting point
+$$
+\phi'(0) = 2\,r^\top w = 2(c^\star - d^\star)^\top(x - c^\star) = -2\,a^\top(x - c^\star)
+= -2\big(a^\top x - a^\top c^\star\big).
+$$
+By assumption $a^\top x > b$, and we just showed $a^\top c^\star < b$, so
+$a^\top x - a^\top c^\star > 0$ and therefore $\phi'(0) < 0$: the squared distance is *strictly
+decreasing* as we leave $c^\star$ toward $x$. A small enough step thus produces a point of
+$\mathcal{C}$ strictly closer to $d^\star\in\mathcal{D}$ than $c^\star$ was — contradicting that
+$c^\star,d^\star$ were the closest pair. The contradiction forces $a^\top x \le b$ for all
+$x\in\mathcal{C}$. The identical argument with
 the roles of $\mathcal{C}$ and $\mathcal{D}$ swapped gives $a^\top x \ge b$ for all
 $x\in\mathcal{D}$. So the wall separates them. $\qquad\blacksquare$
 :::
@@ -833,10 +861,41 @@ convex intuition as a flashlight.**
 
 **Convexity can be hidden, or recoverable.** Sometimes a problem looks non-convex but a change
 of variables convexifies it (the log-transform of a geometric program; the SVM's lift to
-feature space). The skill is recognizing that a feasible set written one way (e.g.
-$\{x : x_1 x_2 \ge 1,\ x>0\}$, which is convex despite the nonlinear constraint) may be convex
-even when "no linear constraints" suggests otherwise. The reliable test never changes:
-**does every segment between two points of the set stay inside?**
+feature space). The skill is recognizing that a feasible set written one way may be convex
+even when "no linear constraints" suggests otherwise. Take
+$\mathcal{H} = \{(x_1,x_2) : x_1 > 0,\ x_2 > 0,\ x_1 x_2 \ge 1\}$ — the region lying on or above
+the hyperbola $x_2 = 1/x_1$ in the positive quadrant. The defining constraint is *nonlinear*,
+so none of @sec-examples-sets applies directly; yet the set is convex, and the only honest way
+to know is to run the segment test by hand. Take $x = (x_1,x_2)$ and $y = (y_1,y_2)$ in
+$\mathcal{H}$ (so $x_1x_2\ge 1$, $y_1y_2\ge 1$, all four coordinates positive) and any
+$t\in[0,1]$. The blend $(1-t)x + ty$ has positive coordinates (a non-negative blend of positive
+numbers), so we only need its coordinate product to be $\ge 1$. Multiply the two blended
+coordinates out:
+$$
+\big[(1-t)x_1 + ty_1\big]\big[(1-t)x_2 + ty_2\big]
+= (1-t)^2\,x_1x_2 \;+\; t^2\,y_1y_2 \;+\; t(1-t)\,(x_1y_2 + y_1x_2).
+$$
+Bound the three pieces. The first two use the memberships directly: $x_1x_2\ge 1$ and
+$y_1y_2\ge 1$. For the cross term, use the floor-level fact that for any non-negative $u,v$,
+$(\sqrt{u}-\sqrt{v})^2\ge 0$ expands to $u + v \ge 2\sqrt{uv}$ (the **AM–GM inequality**).
+Applying it to $u = x_1y_2$ and $v = y_1x_2$,
+$$
+x_1y_2 + y_1x_2 \;\ge\; 2\sqrt{x_1y_2\cdot y_1x_2}
+\;=\; 2\sqrt{(x_1x_2)(y_1y_2)} \;\ge\; 2\sqrt{1\cdot 1} \;=\; 2,
+$$
+where the last step again used both memberships. Substituting the three bounds (and using
+$t,(1-t)\ge 0$, so the inequalities survive multiplication by the weights):
+$$
+\big[(1-t)x_1 + ty_1\big]\big[(1-t)x_2 + ty_2\big]
+\;\ge\; (1-t)^2 + t^2 + 2\,t(1-t)
+\;=\; \big[(1-t) + t\big]^2 = 1.
+$$
+So the blend's coordinate product is at least $1$ — the blend is back in $\mathcal{H}$, and the
+set is convex despite the nonlinear constraint. (The slicker route, available after [OPTM-04]:
+$1/x_1$ is a convex function on $x_1>0$, and $\mathcal{H}$ is exactly the region above its graph,
+which [OPTM-04] shows is convex precisely *because* the function is. The by-hand check above is
+the same fact without that machinery.) The reliable test never changes: **does every segment
+between two points of the set stay inside?**
 
 **The edge case the definition quietly covers.** A set that is *almost* convex — convex except
 for a single missing boundary point, or a thin notch — is *not* convex, and the failure can be

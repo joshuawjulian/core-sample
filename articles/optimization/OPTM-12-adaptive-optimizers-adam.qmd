@@ -876,42 +876,60 @@ Now the honest edge, the example that separates "knows the update rules" from "k
 to use them." Adam's fast *training*-loss descent does not always translate into the best
 *test*-set performance. There is substantial evidence — and we reproduce its mechanism — that
 on some problems Adam converges to solutions that **generalize worse** than those found by
-well-tuned plain SGD or SGD-with-momentum, even though Adam's training loss is lower. We make
-the gap visible by tracking *held-out* loss, not training loss.
+well-tuned plain SGD or SGD-with-momentum, even though Adam's training loss is just as low.
+
+The cleanest way to *see* this is the **overparametrized** regime, which is where modern deep
+models live: more parameters than training examples, so the model has the capacity to fit the
+training data *exactly* — and crucially, it can do so in *many different ways*. When a whole
+family of weight vectors drives the training loss to zero, the training loss alone can no
+longer choose between them; the *optimizer* does, through its **implicit bias** — the
+particular zero-loss solution its update rule happens to drift toward. Plain SGD and
+SGD-with-momentum are biased toward small-norm, simple solutions (a fact tied to their
+uniform per-coordinate step); Adam's per-coordinate rescaling biases it toward a *different*
+interpolating solution, and on noisy data that solution tends to fit the noise more and
+generalize worse. So we make the gap visible by plotting **both** losses side by side: the
+training loss (where the two optimizers tie) and the *held-out* test loss (where they separate).
 
 ```{python}
 #| label: fig-ex-edge
-#| fig-cap: "The edge of applicability: lower training loss, worse generalization. A model trained on a noisy regression task, tracking loss on a *held-out test set* (not the training set). **Adam** (green) drives the *training* loss down fastest, but its **test** loss bottoms out *higher* and can creep back up -- it overfits the noise more readily. Well-tuned **SGD with momentum** (navy) descends more slowly but reaches a *lower test* loss and holds it. This is the documented Adam-vs-SGD generalization gap: Adam optimizes faster but sometimes finds a solution that fits the training noise rather than the signal. When final test performance is what matters and you can afford the tuning, SGD+momentum often still wins."
-rng = np.random.default_rng(15)
-ntr, nte, p = 400, 2000, 80
+#| fig-cap: "The edge of applicability: same training fit, worse generalization. An **overparametrized** noisy regression ($n_{\\text{train}}=60$ examples, $p=200$ weights, so the model has more than enough capacity to fit the training data exactly). **Left -- training loss:** both optimizers drive it to essentially zero; **Adam** (green) gets there faster. There is *nothing left to separate them on the data you fit.* **Right -- held-out test loss:** here they part ways. **SGD with momentum** (navy) settles at a clearly *lower* test loss; **Adam** plateaus *higher*. Both interpolate the training set, but they reach *different* interpolating solutions, and Adam's per-coordinate rescaling steers it to one that fits the noise more and generalizes worse (its final weight norm is larger). This is the documented Adam-vs-SGD generalization gap (Wilson et al. 2017): when many solutions fit the data, the optimizer's implicit bias decides which one you land on -- and Adam's is often the worse one for test performance."
+rng = np.random.default_rng(0)
+ntr, nte, p = 60, 4000, 200          # overparametrized: p >> n_train, many interpolating solutions
 Xtr = rng.standard_normal((ntr, p)); Xte = rng.standard_normal((nte, p))
-wtrue = rng.standard_normal(p) / np.sqrt(p)
-ytr = Xtr @ wtrue + 0.7 * rng.standard_normal(ntr)
-yte = Xte @ wtrue + 0.7 * rng.standard_normal(nte)
-def tr_grad_i(w, i): return (Xtr[i] @ w - ytr[i]) * Xtr[i]
+wtrue = np.zeros(p); wtrue[:5] = rng.standard_normal(5) * 1.5   # a few strong signal coords
+ytr = Xtr @ wtrue + 0.3 * rng.standard_normal(ntr)
+yte = Xte @ wtrue + 0.3 * rng.standard_normal(nte)
+def tr_loss(w): return 0.5 * np.mean((Xtr @ w - ytr)**2)
 def te_loss(w): return 0.5 * np.mean((Xte @ w - yte)**2)
 eps = 1e-8
 
-def run(method, steps=6000, eta=0.01, b1m=0.9):
-    w = np.zeros(p); m = np.zeros(p); v = np.zeros(p); hist = []
+def run(method, steps=8000, eta=0.01, b1m=0.9, bs=10):
+    w = np.zeros(p); m = np.zeros(p); v = np.zeros(p); tr = []; te = []
     for k in range(1, steps + 1):
-        i = rng.integers(ntr); g = tr_grad_i(w, i)
+        idx = rng.integers(0, ntr, bs); r = Xtr[idx] @ w - ytr[idx]; g = Xtr[idx].T @ r / bs
         if method == "sgdm":
-            m = b1m * m - eta * g; w = w + m
+            m = b1m * m - eta * g; w = w + m            # heavy-ball form of OPTM-08
         elif method == "adam":
             m = 0.9 * m + 0.1 * g; v = 0.999 * v + 0.001 * g**2
             mh = m / (1 - 0.9**k); vh = v / (1 - 0.999**k)
             w = w - eta * mh / (np.sqrt(vh) + eps)
-        if k % 30 == 0: hist.append(te_loss(w))
-    return np.array(hist)
+        if k % 40 == 0: tr.append(tr_loss(w)); te.append(te_loss(w))
+    return np.array(tr), np.array(te), np.linalg.norm(w)
 
-ks = np.arange(30, 6001, 30)
-fig, ax = plt.subplots(figsize=(6.8, 4.2))
-ax.plot(ks, run("adam", eta=0.02), color=ACCENT, label="Adam (test loss)")
-ax.plot(ks, run("sgdm", eta=0.01), color=CURVE, label="SGD + momentum (test loss)")
-ax.set_xlabel("iteration $k$"); ax.set_ylabel("held-out test loss")
-ax.set_title("Adam trains faster but can generalize worse")
-ax.legend(fontsize=9, framealpha=0.9)
+ks = np.arange(40, 8001, 40)
+tr_a, te_a, nrm_a = run("adam", eta=0.01)
+tr_s, te_s, nrm_s = run("sgdm", eta=0.01)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
+axL.semilogy(ks, np.clip(tr_a, 1e-6, None), color=ACCENT, label="Adam")
+axL.semilogy(ks, np.clip(tr_s, 1e-6, None), color=CURVE, label="SGD + momentum")
+axL.set_xlabel("iteration $k$"); axL.set_ylabel("training loss (log)")
+axL.set_title("Training loss: both fit, Adam faster")
+axL.legend(fontsize=9, framealpha=0.9)
+axR.plot(ks, te_a, color=ACCENT, label=f"Adam ($\\|w\\|={nrm_a:.1f}$)")
+axR.plot(ks, te_s, color=CURVE, label=f"SGD + momentum ($\\|w\\|={nrm_s:.1f}$)")
+axR.set_xlabel("iteration $k$"); axR.set_ylabel("held-out test loss")
+axR.set_title("Test loss: SGD+momentum generalizes better")
+axR.legend(fontsize=9, framealpha=0.9)
 plt.tight_layout()
 ```
 

@@ -915,10 +915,31 @@ optimistic $\eta$ and shrinks it geometrically until @eq-armijo holds:
 > first $\eta$ that satisfies it, and take the step.
 
 This needs only the ability to *evaluate $f$* — no $L$, no second derivatives. And it
-provably terminates: the descent lemma guarantees that once $\eta\le 1/L$, @eq-armijo holds
-(for any $c\le\tfrac12$), so backtracking cannot shrink below roughly $\beta/L$. It
-automatically discovers a safe, near-optimal step. @fig-linesearch shows it in action and
-its effect on the trajectory.
+**provably terminates**, which we can show directly from the one-step inequality
+@eq-onestep rather than assert. Setting $\mathbf{y}=\mathbf{x}_k-\eta\mathbf{g}_k$ in the
+descent lemma gave, for *any* $\eta$,
+
+$$
+f(\mathbf{x}_k - \eta\mathbf{g}_k) \le f(\mathbf{x}_k) - \eta\Bigl(1-\frac{L\eta}{2}\Bigr)\|\mathbf{g}_k\|^2.
+$$
+
+Compare this against what the Armijo test @eq-armijo demands,
+$f(\mathbf{x}_k-\eta\mathbf{g}_k)\le f(\mathbf{x}_k)-c\,\eta\,\|\mathbf{g}_k\|^2$. The test
+is therefore *guaranteed* to pass whenever the coefficient the descent lemma delivers is at
+least the one Armijo asks for, i.e. whenever
+$\eta(1-\tfrac{L\eta}{2})\ge c\,\eta$. Dividing by $\eta>0$, this is
+$1-\tfrac{L\eta}{2}\ge c$, which rearranges to
+
+$$
+\eta \;\le\; \frac{2(1-c)}{L}.
+$$
+
+For the typical tiny $c$ (say $10^{-4}$) the right side is just under $2/L$, so any
+$\eta\le 2(1-c)/L$ — in particular any $\eta\le 1/L$ — passes the test. Backtracking shrinks
+$\eta$ by the factor $\beta$ at a time, so it must accept as soon as $\eta$ first drops into
+this passing region; it therefore stops at some $\eta\ge \beta\cdot 2(1-c)/L$, never
+collapsing toward zero. It automatically discovers a safe, near-optimal step *without ever
+knowing $L$*. @fig-linesearch shows it in action and its effect on the trajectory.
 
 ```{python}
 #| label: fig-linesearch
@@ -1008,14 +1029,43 @@ method can fail.
 ## Non-convex objectives: only stationarity is promised {#sec-nonconvex}
 
 Drop convexity and keep only $L$-smoothness — the setting of essentially every neural
-network. The descent lemma still holds (it never used convexity), so the objective still
-decreases and we can still prove something: telescoping @eq-sufficient gives
+network. The descent lemma still holds (its proof never used convexity, only the Lipschitz
+bound @eq-Lsmooth), so the objective still decreases and we can still prove something. We
+do not need to defer this — the bound falls straight out of summing the sufficient-decrease
+inequality, and the algebra is short enough to put on the page.
+
+Start from the per-step drop @eq-sufficient, which held for any $L$-smooth $f$ with
+$\eta=1/L$:
+
+$$
+f(\mathbf{x}_{j+1}) \le f(\mathbf{x}_j) - \frac{1}{2L}\|\nabla f(\mathbf{x}_j)\|^2,
+\qquad\text{i.e.}\qquad
+\frac{1}{2L}\|\nabla f(\mathbf{x}_j)\|^2 \le f(\mathbf{x}_j) - f(\mathbf{x}_{j+1}).
+$$
+
+Sum both sides from $j=0$ to $j=k-1$. The right-hand side **telescopes** — each
+$-f(\mathbf{x}_{j+1})$ cancels the $+f(\mathbf{x}_{j+1})$ of the next term — leaving only
+the first and last values:
+
+$$
+\frac{1}{2L}\sum_{j=0}^{k-1}\|\nabla f(\mathbf{x}_j)\|^2
+\;\le\; \sum_{j=0}^{k-1}\bigl(f(\mathbf{x}_j)-f(\mathbf{x}_{j+1})\bigr)
+= f(\mathbf{x}_0) - f(\mathbf{x}_k)
+\;\le\; f(\mathbf{x}_0) - f^\star,
+$$
+
+where the last inequality used $f(\mathbf{x}_k)\ge f^\star$ (no iterate can beat the
+minimum value). Now there are $k$ terms in the sum on the left, each at least the smallest
+one, so the sum is at least $k$ times the minimum term:
+$\sum_{j=0}^{k-1}\|\nabla f(\mathbf{x}_j)\|^2 \ge k\,\min_{0\le j<k}\|\nabla f(\mathbf{x}_j)\|^2$.
+Substituting that and multiplying through by $2L/k$,
 
 $$
 \min_{0\le j<k}\|\nabla f(\mathbf{x}_j)\|^2 \;\le\; \frac{2L\bigl(f(\mathbf{x}_0)-f^\star\bigr)}{k},
 $$
 
-so the *gradients* drive to zero at an $O(1/k)$ rate — but that only certifies arrival at a
+so the *smallest gradient seen so far* drives to zero at an $O(1/k)$ rate — but that only
+certifies arrival at a
 **stationary point** ($\nabla f=\mathbf{0}$), which in a non-convex landscape might be a
 local minimum, a poor local minimum, or a **saddle** (the trap from [OPTM-02]). Gradient
 descent gives *no guarantee* of reaching the global minimum here. @fig-nonconvex shows

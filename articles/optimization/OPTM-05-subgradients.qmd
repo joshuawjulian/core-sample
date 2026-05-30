@@ -323,20 +323,59 @@ $x$.
 
 ::: {.proof}
 We give the one-dimensional argument in full and flag the $n$-dimensional step as imported.
-**In 1-D:** convexity means the slopes of chords increase as you slide along the graph.
-Concretely, for a convex $f:\mathbb R\to\mathbb R$ and any $x$, the **right derivative**
+**In 1-D**, everything rests on one fact about convex functions — that **chord slopes
+increase as you slide to the right** — so we prove that first, from the definition of
+convexity itself, and then build the right and left derivatives on top of it.
+
+*The three-point (increasing-slope) lemma.* Let $f:\mathbb R\to\mathbb R$ be convex and
+take any three points $a<b<c$. We claim the slope of the left chord is at most the slope of
+the right chord:
+$$
+\frac{f(b)-f(a)}{b-a}\;\le\;\frac{f(c)-f(b)}{c-b}.
+$$ {#eq-three-chord}
+To see it, write the middle point $b$ as a weighted average of the outer two. With
+$\theta = \frac{c-b}{c-a}\in(0,1)$ we have $\theta a + (1-\theta)c = b$ (check:
+$\theta a+(1-\theta)c = a + (1-\theta)(c-a) = a + \frac{b-a}{c-a}(c-a) = b$). The defining
+**chord-above-graph** inequality of a convex function from [OPTM-04],
+$f(\theta a+(1-\theta)c)\le \theta f(a)+(1-\theta)f(c)$, then reads
+$$
+f(b)\;\le\;\frac{c-b}{c-a}\,f(a)+\frac{b-a}{c-a}\,f(c).
+$$
+Multiply through by $(c-a)>0$ and group: $(c-a)f(b)\le (c-b)f(a)+(b-a)f(c)$. Now subtract
+$(c-a)f(b)$-worth of terms to isolate each chord. Write $c-a=(c-b)+(b-a)$ on the left, so
+the inequality becomes $(c-b)f(b)+(b-a)f(b)\le (c-b)f(a)+(b-a)f(c)$, i.e.
+$(c-b)\bigl(f(b)-f(a)\bigr)\le (b-a)\bigl(f(c)-f(b)\bigr)$. Dividing by the positive number
+$(b-a)(c-b)$ gives exactly @eq-three-chord. The same chain, kept as a three-way grouping,
+also yields the companion inequalities
+$\frac{f(b)-f(a)}{b-a}\le \frac{f(c)-f(a)}{c-a}\le \frac{f(c)-f(b)}{c-b}$ (the outer chord
+slope sits between the two inner ones); we use the two-sided form below.
+
+*The right derivative exists.* Fix $x$ and look at the difference quotient
+$q(t)=\frac{f(x+t)-f(x)}{t}$ for $t>0$. For $0<t_1<t_2$ the three points
+$x<x+t_1<x+t_2$ are increasing, and the outer-chord inequality
+$\frac{f(b)-f(a)}{b-a}\le\frac{f(c)-f(a)}{c-a}$ (with $a=x$, $b=x+t_1$, $c=x+t_2$) reads
+$q(t_1)\le q(t_2)$ directly. So $q$ is **nondecreasing in $t>0$** — larger steps really do
+see steeper average slopes, and now we have shown it rather than asserted it. It is also
+bounded below: applying @eq-three-chord with a point $a'<x$ fixed, $b=x$, $c=x+t$ shows
+every $q(t)$ is at least the backward chord slope $\frac{f(x)-f(a')}{x-a'}$, a finite
+constant. A function of $t>0$ that is nondecreasing in $t$ and bounded below has a finite
+limit as $t\downarrow 0$ — namely its infimum $\inf_{t>0}q(t)$ — so the **right derivative**
 $$
 f'_+(x) = \lim_{t\downarrow 0}\frac{f(x+t)-f(x)}{t}
 $$
-exists, because the difference quotient $\frac{f(x+t)-f(x)}{t}$ is nondecreasing in $t>0$
-(a standard consequence of convexity: larger steps see steeper average slopes) and is
-bounded below by any backward difference quotient, so the limit exists. Likewise the
-**left derivative** $f'_-(x)$ exists, and convexity gives $f'_-(x)\le f'_+(x)$. We claim
-*any* $g\in[f'_-(x),f'_+(x)]$ is a subgradient. Take $y>x$; then by the
-increasing-chord-slope property, $\frac{f(y)-f(x)}{y-x}\ge f'_+(x)\ge g$, so
-$f(y)-f(x)\ge g(y-x)$. Take $y<x$; then $\frac{f(y)-f(x)}{y-x}\le f'_-(x)\le g$, and since
-$y-x<0$ multiplying flips the inequality to $f(y)-f(x)\ge g(y-x)$ again. Either way
-@eq-subgrad holds, so $g\in\partial f(x)$ and the interval $[f'_-(x),f'_+(x)]$ is nonempty.
+exists and equals $\inf_{t>0}q(t)$. The mirror argument on $t<0$ (where the quotient is
+nondecreasing as $t\uparrow 0$ and bounded above) gives the **left derivative** $f'_-(x)$.
+Finally, applying @eq-three-chord with $a=x-s$, $b=x$, $c=x+t$ ($s,t>0$) gives
+$\frac{f(x)-f(x-s)}{s}\le\frac{f(x+t)-f(x)}{t}$; letting $s\downarrow 0$ and $t\downarrow 0$
+yields $f'_-(x)\le f'_+(x)$ — proved, not assumed.
+
+*Every $g\in[f'_-(x),f'_+(x)]$ is a subgradient.* Take $y>x$ and set $t=y-x>0$. Because
+$q(t)\ge\inf_{s>0}q(s)=f'_+(x)$ (the right derivative is the infimum), the chord slope
+satisfies $\frac{f(y)-f(x)}{y-x}\ge f'_+(x)\ge g$, so $f(y)-f(x)\ge g(y-x)$. Take $y<x$;
+the analogous fact $\frac{f(y)-f(x)}{y-x}\le f'_-(x)\le g$ holds (the left difference
+quotient is bounded above by its limit $f'_-(x)$), and since $y-x<0$, multiplying by it
+flips the inequality to $f(y)-f(x)\ge g(y-x)$ again. Either way @eq-subgrad holds, so
+$g\in\partial f(x)$ and the interval $[f'_-(x),f'_+(x)]$ is nonempty.
 **In $n$ dimensions** the existence of a supporting hyperplane to the convex
 **epigraph** of $f$ (the region on and above the graph, a convex set by [OPTM-04]) at the
 boundary point $(x,f(x))$ is exactly the **supporting-hyperplane theorem**, the
@@ -350,11 +389,14 @@ is exactly the interval between the left and right derivatives**,
 $$
 \partial f(x) = \bigl[\,f'_-(x),\,f'_+(x)\,\bigr].
 $$ {#eq-1d-subdiff}
-(One can show these are the *only* subgradients by the same squeeze argument as in
-@lem-subdiff-gradient. The two endpoints are the extreme supporting slopes; everything
-between supports too, by the convexity of $\partial f$, @lem-subdiff-closed-convex.) This
-single formula computes the subdifferential of *any* convex function of one variable, and
-we use it now.
+and these are the *only* subgradients, by the squeeze argument of @lem-subdiff-gradient
+run one-sided: if $g\in\partial f(x)$ then $f(x+t)-f(x)\ge gt$ for all $t$, so dividing by
+$t>0$ and letting $t\downarrow 0$ gives $f'_+(x)\ge g$, while dividing by $t<0$ (which
+flips the inequality) and letting $t\uparrow 0$ gives $f'_-(x)\le g$; together
+$f'_-(x)\le g\le f'_+(x)$, so no $g$ outside the interval qualifies. The two endpoints are
+the extreme supporting slopes, and everything between them supports too (by the convexity
+of $\partial f$, @lem-subdiff-closed-convex). This single formula computes the
+subdifferential of *any* convex function of one variable, and we use it now.
 
 ## The subdifferential of the absolute value {#sec-abs}
 
@@ -458,12 +500,23 @@ $\partial f(x)$ is convex (@lem-subdiff-closed-convex), it contains every convex
 combination of the active $a_i$ as well — i.e. it contains
 $\operatorname{conv}\{a_i:i\in I(x)\}$.
 
-**(Nothing outside that hull is a subgradient.)** This is the supporting-hyperplane content
-again; we argue the clean 1-D / generic case and flag the general one. Suppose $g$ is a
-subgradient. Move in a direction $d$; for small $t>0$ only the active pieces can stay
-active, and $f(x+td)=\max_{i\in I(x)}(a_i^\top x+b_i+t\,a_i^\top d)+o(t)$, so the
-directional derivative is $f'(x;d)=\max_{i\in I(x)} a_i^\top d$. The subgradient inequality,
-divided by $t$ and sent to $0$ as in @lem-subdiff-gradient, forces
+**(Nothing outside that hull is a subgradient.)** Suppose $g$ is a subgradient and fix any
+direction $d$. We first compute how $f$ changes along $d$, then squeeze $g$ with it. Each
+inactive piece sits *strictly* below $f(x)$ at $x$: for $i\notin I(x)$, the gap
+$\delta_i = f(x)-(a_i^\top x+b_i)>0$. Since there are finitely many pieces, let
+$\delta=\min_{i\notin I(x)}\delta_i>0$. Along the ray $x+td$, each linear piece changes by
+the bounded amount $t\,a_i^\top d$, so for $t$ small enough that
+$t\max_i|a_i^\top d| < \delta/2$, every inactive piece stays below the active ones and the
+maximum is achieved *only* among active pieces:
+$$
+f(x+td)=\max_{i\in I(x)}\bigl(a_i^\top x+b_i+t\,a_i^\top d\bigr)
+       =f(x)+t\,\max_{i\in I(x)} a_i^\top d,
+$$
+using $a_i^\top x+b_i=f(x)$ for active $i$. Hence the one-sided difference quotient is
+*exactly* $\frac{f(x+td)-f(x)}{t}=\max_{i\in I(x)} a_i^\top d$ for all small $t>0$, so the
+**directional derivative** is $f'(x;d)=\max_{i\in I(x)} a_i^\top d$. Now the subgradient
+inequality @eq-subgrad with $y=x+td$ gives $f(x+td)-f(x)\ge t\,g^\top d$; dividing by $t>0$
+and letting $t\downarrow 0$ (exactly the squeeze of @lem-subdiff-gradient) forces
 $g^\top d\le \max_{i\in I(x)} a_i^\top d$ for every $d$. A vector $g$ satisfying
 $g^\top d\le \max_{i\in I(x)} a_i^\top d$ for all $d$ is, by the (imported)
 **support-function characterization of a convex hull**, exactly a member of
@@ -807,7 +860,7 @@ hold at the answer.
 
 ```{python}
 #| label: fig-scalar-check
-#| fig-cap: "Solving the scalar lasso $\\phi(\\beta)=\\tfrac12(\\beta-\\rho)^2+\\lambda|\\beta|$ three ways for $\\rho=1.8,\\ \\lambda=0.7$. The objective (blue) has a kink at $\\beta=0$; its minimizer from the closed form $S_\\lambda(\\rho)$ (red dot) coincides with a fine-grid brute-force search (black ring). The subgradient set $\\partial\\phi(\\beta^\\star)=(\\beta^\\star-\\rho)+\\lambda\\,\\partial|\\beta^\\star|$ contains $0$, the printed certificate of optimality."
+#| fig-cap: "Solving the scalar lasso $\\phi(\\beta)=\\tfrac12(\\beta-\\rho)^2+\\lambda|\\beta|$ three ways for $\\rho=1.8,\\ \\lambda=0.7$. The objective (blue) has a kink at $\\beta=0$; its minimizer from the closed form $S_\\lambda(\\rho)$ (red dot) agrees with a fine-grid brute-force search (black ring). The subgradient set $\\partial\\phi(\\beta^\\star)=(\\beta^\\star-\\rho)+\\lambda\\,\\partial|\\beta^\\star|$ contains $0$, the printed certificate of optimality."
 def phi(beta, rho, lam):
     return 0.5 * (beta - rho) ** 2 + lam * np.abs(beta)
 

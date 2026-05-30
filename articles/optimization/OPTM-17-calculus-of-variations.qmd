@@ -192,7 +192,6 @@ bottom out at $\varepsilon=0$.
 #| fig-cap: "Slicing function-space along one direction. The thick blue curve is a candidate $f$ (here pinned to pass through the two black endpoints). Each thin red curve is a perturbed competitor $f + \\varepsilon\\eta$ for a fixed wiggle $\\eta(x)=\\sin(\\pi (x-a)/(b-a))$ that vanishes at both ends, as $\\varepsilon$ ranges over $[-1,1]$. Sliding $\\varepsilon$ traces a *straight line* through the space of admissible curves. The functional's value along that line is an ordinary function $\\Phi(\\varepsilon)$ — and if $f$ is optimal, $\\Phi$ must bottom out at $\\varepsilon=0$."
 a, b = 0.0, 1.0
 xs = np.linspace(a, b, 200)
-f = 1.0 + 0.6 * np.sin(2 * np.pi * xs) * 0.0 + 0.0 * xs  # base candidate: flat-ish
 f = 1.0 + 0.8 * (xs - a) * (b - xs) * 2.0                 # a gentle arch, pinned at ends
 eta = np.sin(np.pi * (xs - a) / (b - a))                  # vanishes at a and b
 
@@ -886,7 +885,7 @@ ax.scatter(xd, yd, color=GREY, s=28, alpha=0.8, label="noisy data", zorder=2)
 # small lambda -> near interpolation; use make_smoothing_spline lam argument
 for lam, col, lab in [(1e-3, PERTURB, r"small $\lambda$ (wiggly)"),
                       (0.5, CURVE, r"moderate $\lambda$ (smoother)"),
-                      (1e4, GOLD, r"large $\lambda$ (\to line)")]:
+                      (1e4, GOLD, r"large $\lambda$ ($\to$ line)")]:
     spl = make_smoothing_spline(xd, yd, lam=lam)
     ax.plot(xg, spl(xg), color=col, lw=2.2, label=lab)
 ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
@@ -966,15 +965,25 @@ structure visible.
 
 ```{python}
 #| label: fig-spline-cubic
-#| fig-cap: "The minimizer of @eq-spline-objective is a *piecewise cubic*. We fit a smoothing spline to a small dataset (black points = knots) and mark the knot locations with vertical lines. On each shaded inter-knot panel the curve is a single cubic polynomial ($f^{(4)}=0$ there); the cubics meet at the knots with matching value, slope, and curvature ($C^2$). Beyond the leftmost and rightmost data points the curve is straight (the *natural* boundary condition $f''=0$), visible as the flat-curvature tails. The bottom panel plots $f''(x)$: piecewise *linear* (since $f$ is piecewise cubic), continuous across knots, and exactly zero in the tails."
+#| fig-cap: "The minimizer of @eq-spline-objective is a *piecewise cubic*. We fit a smoothing spline to a small dataset (black points = knots) and mark the knot locations with vertical lines. On each shaded inter-knot panel the curve is a single cubic polynomial ($f^{(4)}=0$ there); the cubics meet at the knots with matching value, slope, and curvature ($C^2$). The natural boundary condition forces $f''=0$ *at* the two boundary knots $x_1,x_n$ (the bottom panel's curve touches zero exactly there), so beyond the data the minimizer continues as a straight line — the green dashed *natural linear tails*, drawn explicitly here as the tangent at each boundary knot. The bottom panel plots $f''(x)$ across the data span: piecewise *linear* (since $f$ is piecewise cubic), continuous across knots, and hitting zero at $x_1$ and $x_n$."
 from scipy.interpolate import make_smoothing_spline
 rng = np.random.default_rng(11)
 xk = np.array([0.5, 1.7, 3.0, 4.4, 6.0, 7.5, 9.0])
 yk = np.array([0.4, 1.2, 0.6, 1.9, 1.1, 2.3, 1.6])
 spl = make_smoothing_spline(xk, yk, lam=0.05)
+# Plot scipy's fit only on the data span [x_1, x_n], where the piecewise-cubic /
+# natural-C2 structure is exactly what the theorem describes. scipy's object does NOT
+# extrapolate as a line, so we draw the TRUE natural tails ourselves: the natural
+# cubic spline is linear beyond x_1 and x_n, continuing with the boundary value and
+# slope (and f''=0). That tangent line is the honest tail.
 xg = np.linspace(xk.min(), xk.max(), 600)
-# extend slightly past the data to show the linear tails
-xfull = np.linspace(xk.min() - 0.8, xk.max() + 0.8, 800)
+tail = 0.8
+x_left  = np.linspace(xk.min() - tail, xk.min(), 50)
+x_right = np.linspace(xk.max(), xk.max() + tail, 50)
+f_a, fp_a = spl(xk.min()),  spl.derivative(1)(xk.min())   # value & slope at x_1
+f_b, fp_b = spl(xk.max()),  spl.derivative(1)(xk.max())   # value & slope at x_n
+left_tail  = f_a + fp_a * (x_left  - xk.min())
+right_tail = f_b + fp_b * (x_right - xk.max())
 
 fig, (axT, axB) = plt.subplots(2, 1, figsize=(7.0, 5.4), sharex=True,
                                gridspec_kw={"height_ratios": [2, 1]})
@@ -982,20 +991,27 @@ fig, (axT, axB) = plt.subplots(2, 1, figsize=(7.0, 5.4), sharex=True,
 for j in range(len(xk) - 1):
     if j % 2 == 0:
         axT.axvspan(xk[j], xk[j + 1], color=GREY, alpha=0.08)
-axT.plot(xfull, spl(xfull), color=CURVE, lw=2.4, label="natural cubic spline")
+axT.plot(xg, spl(xg), color=CURVE, lw=2.4, label="natural cubic spline")
+axT.plot(x_left,  left_tail,  color=ACCENT, lw=2.0, ls="--")
+axT.plot(x_right, right_tail, color=ACCENT, lw=2.0, ls="--",
+         label=r"natural linear tails ($f''=0$)")
 axT.scatter(xk, yk, color="black", s=55, zorder=5, label="knots = data")
 for xv in xk:
     axT.axvline(xv, color=GREY, lw=0.8, ls=":")
 axT.set_ylabel("$f(x)$"); axT.set_title("Piecewise cubic, $C^2$, linear tails")
 axT.legend(loc="upper left", fontsize=9, framealpha=0.9)
 
-fpp = spl.derivative(2)(xfull)
+# f'' on the data span: piecewise linear, continuous, zero at the two boundary knots
+fpp = spl.derivative(2)(xg)
 axB.axhline(0, color=GREY, lw=1.0)
-axB.plot(xfull, fpp, color=PERTURB, lw=2.0)
+axB.plot(xg, fpp, color=PERTURB, lw=2.0)
+axB.scatter([xk.min(), xk.max()], [0, 0], color=ACCENT, s=55, zorder=5,
+            label=r"$f''=0$ at $x_1,x_n$")
 for xv in xk:
     axB.axvline(xv, color=GREY, lw=0.8, ls=":")
 axB.set_xlabel("$x$"); axB.set_ylabel(r"$f''(x)$")
-axB.set_title(r"$f''$ is piecewise linear, continuous, zero in the tails")
+axB.set_title(r"$f''$ is piecewise linear, continuous, zero at the boundary knots")
+axB.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
 plt.tight_layout()
 ```
 

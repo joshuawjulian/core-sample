@@ -325,11 +325,26 @@ So the velocity is an **exponentially weighted sum of all past gradients**: the 
 gradient enters with weight $1$, the one before with weight $\beta$, the one before that
 $\beta^2$, and so on — a fading memory with timescale set by $\beta$. This is the precise
 meaning of "remember where you have been." Now read off the two behaviors the intuition
-promised. If the gradients $\nabla f(\mathbf{x}_j)$ all **point the same way** (the valley
-floor), the sum @eq-velocity-sum adds coherently and the velocity grows toward
-$-\eta\nabla f\cdot\frac{1}{1-\beta}$ — a *speed-up* by the factor $\frac{1}{1-\beta}$ (a
-geometric series we will sum exactly in a moment). If they **alternate sign** step to step
-(the zig-zag across the walls), consecutive terms in the sum partly cancel, shrinking the
+promised. If the gradients $\nabla f(\mathbf{x}_j)$ all **point the same way** — call that
+common value $\mathbf{g}$, the situation on the valley floor — then @eq-velocity-sum is a
+geometric series we can sum exactly. Pull $\mathbf{g}$ out and reindex with $m=k-j$ (so $j=0$
+gives $m=k$ and $j=k$ gives $m=0$):
+$$
+\mathbf{v}_{k+1} = -\eta\sum_{j=0}^{k}\beta^{\,k-j}\,\mathbf{g}
+= -\eta\,\mathbf{g}\sum_{m=0}^{k}\beta^{\,m}
+= -\eta\,\mathbf{g}\,\frac{1-\beta^{\,k+1}}{1-\beta},
+$$
+using the finite geometric-sum identity $\sum_{m=0}^{k}\beta^{m}=\frac{1-\beta^{k+1}}{1-\beta}$
+(valid for $\beta\neq 1$; for $0\le\beta<1$ it is just the standard partial sum). As the steps
+pile up, $\beta^{k+1}\to 0$ because $0\le\beta<1$, so the velocity grows toward
+$$
+\mathbf{v}_\infty = -\eta\,\mathbf{g}\,\frac{1}{1-\beta}.
+$$
+That is the **speed-up**: along a direction where the gradient is consistent, momentum reaches
+a terminal velocity $\frac{1}{1-\beta}$ times larger than the single-step gradient push
+$-\eta\mathbf{g}$ that plain GD would take — for $\beta=0.9$, a tenfold larger effective step.
+If instead the gradients **alternate sign** step to step (the zig-zag across the walls),
+consecutive terms in @eq-velocity-sum carry opposite signs and partly cancel, shrinking the
 velocity in that direction — the *damping*.
 
 ::: {.callout-tip title="You might be asked"}
@@ -440,11 +455,15 @@ $$ {#eq-roots}
 The discriminant $(1+\beta-\eta\lambda)^2-4\beta$ decides their character. When it is
 **negative**, the roots are a **complex-conjugate pair** — and this is precisely the regime
 where momentum behaves like a damped oscillator (the ringing ball of @fig-friction), and,
-crucially, the regime that gives the best worst-case rate. For complex-conjugate roots
-$r=a\pm bi$ of the quadratic $r^2-(\text{sum})r+(\text{product})=0$, the product of the roots
-equals the constant term, and the product of a conjugate pair is its squared modulus:
+crucially, the regime that gives the best worst-case rate. To read off their modulus we use
+**Vieta's formula**: for a monic quadratic $r^2+pr+q=0$ with roots $r_1,r_2$, expanding
+$(r-r_1)(r-r_2)=r^2-(r_1+r_2)r+r_1 r_2$ and matching coefficients gives $r_1+r_2=-p$ and
+$r_1 r_2=q$ — the product of the roots equals the constant term. Our characteristic equation
+@eq-characteristic has constant term $\beta$, so $r_1 r_2=\beta$. When the roots are a complex
+conjugate pair $r=a\pm bi$, that product is also the squared modulus:
 $$
-r_1 r_2 = (a+bi)(a-bi) = a^2+b^2 = |r|^2 = \beta.
+r_1 r_2 = (a+bi)(a-bi) = a^2 - (bi)^2 = a^2+b^2 = |r|^2,
+\qquad\text{so}\qquad |r|^2=\beta.
 $$
 This is a clean, remarkable fact: **in the complex regime both roots have modulus exactly
 $\sqrt{\beta}$, independent of the curvature $\lambda$.** Every eigen-direction whose
@@ -458,10 +477,14 @@ every $\lambda\in[\mu,L]$:
 $$
 (1+\beta-\eta\lambda)^2 < 4\beta
 \quad\Longleftrightarrow\quad
-1+\beta-2\sqrt\beta < \eta\lambda < 1+\beta+2\sqrt\beta,
+1+\beta-2\sqrt\beta < \eta\lambda < 1+\beta+2\sqrt\beta.
 $$
-where we took square roots of both sides (legitimate since both bounds are non-negative for
-$\beta\in[0,1)$) and recognized $1+\beta\pm2\sqrt\beta=(1\pm\sqrt\beta)^2$:
+The middle step is just $\sqrt{x^2}=|x|$: since $\sqrt\beta\ge 0$, the inequality
+$(1+\beta-\eta\lambda)^2<4\beta=(2\sqrt\beta)^2$ is equivalent to
+$|1+\beta-\eta\lambda|<2\sqrt\beta$, which unpacks to the two-sided bound
+$-2\sqrt\beta<1+\beta-\eta\lambda<2\sqrt\beta$ and rearranges to the line above. Finally
+recognize $1+\beta\pm2\sqrt\beta=(\sqrt\beta)^2\pm2\sqrt\beta+1=(1\pm\sqrt\beta)^2$
+(a perfect square in $\sqrt\beta$):
 $$
 (1-\sqrt\beta)^2 < \eta\lambda < (1+\sqrt\beta)^2
 \qquad\text{for all }\lambda\in[\mu,L].
@@ -500,10 +523,30 @@ $$
 \beta = \left(\frac{\sqrt\kappa-1}{\sqrt\kappa+1}\right)^{2}.\;}
 $$ {#eq-beta-opt}
 
-And $\eta$ follows from either edge condition; adding the two equations @eq-edge-conditions
-after writing them as $\eta\mu=(1-\sqrt\beta)^2$ and $\eta L=(1+\sqrt\beta)^2$ and solving,
-the standard convenient form is $\eta=\bigl(\tfrac{2}{\sqrt L+\sqrt\mu}\bigr)^2$, which one
-checks satisfies both. The *rate* is the contraction $\sqrt\beta$ itself:
+Now recover $\eta$ from the lower edge condition $\eta\mu=(1-\sqrt\beta)^2$. Substitute the
+$\sqrt\beta$ we just found:
+$$
+1-\sqrt\beta = 1 - \frac{\sqrt\kappa-1}{\sqrt\kappa+1}
+= \frac{(\sqrt\kappa+1)-(\sqrt\kappa-1)}{\sqrt\kappa+1}
+= \frac{2}{\sqrt\kappa+1},
+\qquad\text{so}\qquad
+\eta = \frac{(1-\sqrt\beta)^2}{\mu} = \frac{4}{\mu\,(\sqrt\kappa+1)^2}.
+$$
+This is the answer; the standard "convenient" way of writing it just clears the $\kappa$.
+Using $\sqrt\kappa=\sqrt{L/\mu}=\sqrt L/\sqrt\mu$ gives
+$\sqrt\kappa+1=\frac{\sqrt L+\sqrt\mu}{\sqrt\mu}$, hence
+$(\sqrt\kappa+1)^2=\frac{(\sqrt L+\sqrt\mu)^2}{\mu}$, and the $\mu$ in the denominator cancels:
+$$
+\eta = \frac{4}{\mu\cdot\frac{(\sqrt L+\sqrt\mu)^2}{\mu}}
+= \frac{4}{(\sqrt L+\sqrt\mu)^2}
+= \left(\frac{2}{\sqrt L+\sqrt\mu}\right)^{2}.
+$$
+We can confirm this same $\eta$ also satisfies the *upper* edge condition
+$\eta L=(1+\sqrt\beta)^2$, so the band's two endpoints really do pin to $\mu$ and $L$
+simultaneously: on the right, $1+\sqrt\beta=\frac{2\sqrt\kappa}{\sqrt\kappa+1}$ gives
+$(1+\sqrt\beta)^2=\frac{4\kappa}{(\sqrt\kappa+1)^2}$, while
+$\eta L=\frac{4L}{\mu(\sqrt\kappa+1)^2}=\frac{4\kappa}{(\sqrt\kappa+1)^2}$ since $L/\mu=\kappa$
+— the two match exactly. The *rate* is the contraction $\sqrt\beta$ itself:
 $$
 \boxed{\;\text{rate} = \sqrt\beta = \frac{\sqrt\kappa-1}{\sqrt\kappa+1}
 = 1 - \frac{2}{\sqrt\kappa+1} \approx 1 - \frac{2}{\sqrt\kappa}.\;}
@@ -684,9 +727,19 @@ t_{k+1} = \frac{1+\sqrt{1+4t_k^2}}{2},
 $$ {#eq-nag-schedule}
 
 This looks arbitrary; it is not. The schedule is engineered so that a particular weighted
-combination of past suboptimalities telescopes in the convergence proof, and $t_k$ grows
-like $k/2$, so $\beta_k\to 1$ as $1-3/k$ — the method becomes *heavier* as it homes in,
-which is what lets the accumulated velocity reach the $O(1/k^2)$ rate. (For a *strongly*
+combination of past suboptimalities telescopes in the convergence proof (the proof is flagged
+below). We can at least see the growth rate directly from @eq-nag-schedule, since it explains
+why $\beta_k\to 1$. For large $t_k$ the $1$ under the root is negligible against $4t_k^2$, so
+$\sqrt{1+4t_k^2}\approx\sqrt{4t_k^2}=2t_k$, and the recurrence becomes
+$$
+t_{k+1}=\frac{1+\sqrt{1+4t_k^2}}{2}\;\approx\;\frac{1+2t_k}{2}=t_k+\tfrac12.
+$$
+So $t_k$ climbs by about $\tfrac12$ per step and therefore $t_k\approx k/2$ for large $k$.
+Feeding that into $\beta_k=\frac{t_k-1}{t_{k+1}}$ with $t_k\approx k/2$ and
+$t_{k+1}\approx (k+1)/2$ gives
+$\beta_k\approx\frac{k/2-1}{(k+1)/2}=\frac{k-2}{k+1}=1-\frac{3}{k+1}$, i.e. $\beta_k\to 1$ like
+$1-3/k$ — the method becomes *heavier* as it homes in, which is what lets the accumulated
+velocity reach the $O(1/k^2)$ rate. (For a *strongly*
 convex objective one instead uses the constant
 $\beta=\frac{\sqrt\kappa-1}{\sqrt\kappa+1}$ — the very same optimal coefficient @eq-beta-opt
 we derived for heavy-ball — and gets the linear $1-1/\sqrt\kappa$ rate.)

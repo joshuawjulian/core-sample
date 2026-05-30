@@ -49,11 +49,11 @@ FEAS    = "#9db4d4"    # feasible-region shading
 > all of $\mathbb R^n$. **What do we do when one of those assumptions fails** — when part
 > of the objective is *non-smooth* (a penalty like $\lambda\|\boldsymbol\beta\|_1$ that has
 > no gradient at a kink), or when the iterate is *not free* but must stay inside a
-> constraint set $C$? The answer to both turns out to be the same single idea.
+> constraint set $C$? We will show the answer to both is one and the same idea.
 >
 > **What it sets up.** This article delivers the general-purpose **proximal-gradient** /
 > **projected-gradient** machinery that the regularization branch of Regression links here
-> for as the modern lasso/elastic-net solver (the alternative to coordinate descent of
+> for as the modern lasso/elastic-net solver (an alternative to the coordinate descent of
 > [OPTM-10]), and that constrained solvers across Classification and Unsupervised Learning
 > reach for. It is a terminal node of the track.
 
@@ -320,17 +320,46 @@ imposing $\|\mathbf x\|=t$ fixes the multiple to $t/\|\mathbf v\|$.
 
 **(c) The probability simplex $C=\{\mathbf x:\ x_j\ge 0,\ \sum_j x_j=1\}$.** This one is
 genuinely less obvious; it is the constraint behind portfolio weights, mixture weights, and
-attention distributions. The Lagrangian/KKT analysis ([OPTM-13]/[OPTM-14]) for
-$\min \tfrac12\|\mathbf x-\mathbf v\|^2$ subject to $\mathbf 1^\top\mathbf x=1$,
-$\mathbf x\ge\mathbf 0$ gives the per-coordinate stationarity
-$x_j - v_j - \theta + \mu_j = 0$ with $\mu_j\ge 0$ and complementary slackness
-$\mu_j x_j=0$. Reading this exactly as in the box case, each coordinate is a *shifted clip
-at zero*, $x_j=\max(v_j+\theta,0)=(v_j+\theta)_+$, where the single scalar $\theta$ is
-chosen so the coordinates sum to one: $\sum_j (v_j+\theta)_+ = 1$. That last equation has a
-unique root in $\theta$ (its left side is continuous and strictly increasing in $\theta$
-wherever positive), found by a quick sort-and-search. We use this projection in the
-portfolio example of @sec-ex-simplex; the derivation is the same shadow-price machinery
-from [OPTM-13], so we do not re-walk it here beyond naming the result.
+attention distributions. Form the Lagrangian for $\min \tfrac12\|\mathbf x-\mathbf v\|^2$
+subject to $\mathbf 1^\top\mathbf x=1$, $\mathbf x\ge\mathbf 0$, attaching a multiplier
+$\theta$ (free, for the equality) and multipliers $\mu_j\ge0$ (for $-x_j\le0$):
+$$
+\mathcal L(\mathbf x,\theta,\boldsymbol\mu)=\tfrac12\|\mathbf x-\mathbf v\|^2-\theta\bigl(\mathbf 1^\top\mathbf x-1\bigr)-\boldsymbol\mu^\top\mathbf x.
+$$
+KKT ([OPTM-13]/[OPTM-14]) gives per-coordinate **stationarity** $\partial\mathcal L/\partial x_j=(x_j-v_j)-\theta-\mu_j=0$,
+**dual feasibility** $\mu_j\ge0$, and **complementary slackness** $\mu_j x_j=0$. Solve the
+stationarity for $x_j=v_j+\theta+\mu_j$ and split on the slackness, exactly as the box split
+on which side of the wall we landed:
+
+- If $x_j>0$, slackness forces $\mu_j=0$, so $x_j=v_j+\theta$ — and this is the active value
+  only when it is positive, i.e. $v_j+\theta>0$.
+- If $x_j=0$, then $\mu_j=-(v_j+\theta)\ge0$ requires $v_j+\theta\le0$.
+
+Both cases collapse to a single *shifted clip at zero*,
+$x_j=\max(v_j+\theta,0)=(v_j+\theta)_+$, where the one scalar $\theta$ is the equality
+multiplier, pinned by the constraint $\sum_j x_j=1$:
+$$
+\phi(\theta):=\sum_j (v_j+\theta)_+ = 1.
+$$ {#eq-simplex-theta}
+The left side $\phi$ is continuous, piecewise-linear, and **non-decreasing** in $\theta$
+(each $(\cdot)_+$ is non-decreasing), with slope equal to the number of *active* coordinates
+$\#\{j:v_j+\theta>0\}$ — so it is *strictly* increasing wherever any coordinate is active,
+ranges from $0$ to $+\infty$, and therefore crosses the level $1$ at a **unique** $\theta$.
+
+That unique root has a closed form found by sorting, which is the formula the code uses.
+Sort the entries descending, $v_{(1)}\ge v_{(2)}\ge\dots\ge v_{(n)}$. At the solution some
+top $\rho$ coordinates are active (the largest ones) and the rest are clipped to zero, so
+@eq-simplex-theta reads $\sum_{i=1}^{\rho}(v_{(i)}+\theta)=1$, giving
+$$
+\theta=\frac{1}{\rho}\Bigl(1-\sum_{i=1}^{\rho} v_{(i)}\Bigr).
+$$ {#eq-simplex-rho}
+The correct count $\rho$ is the largest index for which the candidate active set is
+self-consistent — i.e. the smallest included coordinate $v_{(\rho)}$ stays positive after
+the shift, $v_{(\rho)}+\theta>0$. Substituting @eq-simplex-rho, that test is exactly
+$v_{(\rho)}\cdot\rho > \bigl(\sum_{i=1}^{\rho}v_{(i)}\bigr)-1$, which is the line
+`u*arange(1,n+1) > cumsum(u)-1` in the `proj_simplex` helper below; the largest $\rho$
+passing it determines $\theta$ via @eq-simplex-rho, and the projection is
+$(\mathbf v+\theta)_+$. We use this projection in the portfolio example of @sec-ex-simplex.
 
 @fig-projections draws all three.
 
@@ -448,8 +477,9 @@ $$
 that is $\|\mathbf q-\mathbf p\|^2 \le (\mathbf v-\mathbf u)^\top(\mathbf q-\mathbf p)$. By
 the **Cauchy–Schwarz inequality** $\mathbf a^\top\mathbf b\le\|\mathbf a\|\,\|\mathbf b\|$
 (itself a Calc-level fact about the dot product), the right side is at most
-$\|\mathbf v-\mathbf u\|\,\|\mathbf q-\mathbf p\|$. Cancel one factor of
-$\|\mathbf q-\mathbf p\|$ (if it is zero the claim is trivial) to get
+$\|\mathbf v-\mathbf u\|\,\|\mathbf q-\mathbf p\|$. If $\|\mathbf q-\mathbf p\|=0$ the
+projections coincide and the claimed bound $0\le\|\mathbf v-\mathbf u\|$ holds outright;
+otherwise divide both sides by the common positive factor $\|\mathbf q-\mathbf p\|$ to get
 $\|\mathbf q-\mathbf p\|\le\|\mathbf v-\mathbf u\|$. $\qquad\blacksquare$
 :::
 
@@ -689,8 +719,9 @@ plt.tight_layout()
 
 The reason proximal gradient inherits the smooth method's rate is that the prox step is
 *also* non-expansive, just like projection — they are both instances of the same firmly
-non-expansive class. We state the guarantee and sketch the mechanism without re-deriving
-the full [OPTM-07] descent machinery (which owns it).
+non-expansive class. We give the full $O(1/k)$ argument here: the only ingredient beyond
+the [OPTM-07] descent lemma (which we restate) is the prox optimality condition, and we
+carry the telescoping algebra all the way to the bound rather than pointing at it.
 
 ::: {#thm-ista-rate}
 **Theorem (proximal-gradient convergence).** Let $f$ be convex and $L$-smooth and $g$
@@ -706,37 +737,96 @@ minimizing the smooth part alone.
 :::
 
 ::: {.proof}
-*(Mechanism.)* The key object is the **prox-gradient map**
-$G_\eta(\mathbf x)=\tfrac1\eta\bigl(\mathbf x-\operatorname{prox}_{\eta g}(\mathbf x-\eta\nabla f(\mathbf x))\bigr)$,
-the analogue of the gradient: the update @eq-ista reads
-$\mathbf x_{k+1}=\mathbf x_k-\eta\,G_\eta(\mathbf x_k)$. Two facts, each provable from the
-pieces we already have, combine to give the rate.
+Write the gradient-step point as $\mathbf v_k=\mathbf x_k-\eta\nabla f(\mathbf x_k)$, so the
+update is $\mathbf x_{k+1}=\operatorname{prox}_{\eta g}(\mathbf v_k)$. The whole proof is one
+inequality — a per-step bound on $F(\mathbf x_{k+1})$ that we then sum. We build it from two
+ingredients we already have, and we carry the algebra to the end.
 
-First, a **sufficient-decrease** inequality. Plug $\mathbf x_{k+1}$ — the *minimizer* of the
-surrogate-plus-$g$ from @sec-ista-derivation — back into that surrogate. Because
-$\mathbf x_{k+1}$ minimizes the surrogate, its surrogate value is no larger than the
-surrogate value at $\mathbf x_k$, which equals $F(\mathbf x_k)$ (the parabola touches $f$
-there and $g$ is exact). And because the surrogate is an *upper bound* on $F$ (descent
-lemma, with $\eta\le 1/L$ making the parabola steep enough to dominate), $F(\mathbf x_{k+1})$
-is no larger than its surrogate value. Chaining: $F(\mathbf x_{k+1})\le F(\mathbf x_k)$ —
-the objective never increases — with the decrease controlled by
-$\tfrac1{2\eta}\|\mathbf x_{k+1}-\mathbf x_k\|^2$.
+**Ingredient 1: the prox optimality condition.** Since $\mathbf x_{k+1}$ minimizes the
+strongly convex map $\mathbf x\mapsto g(\mathbf x)+\tfrac1{2\eta}\|\mathbf x-\mathbf v_k\|^2$,
+the subgradient optimality condition $\mathbf 0\in\partial(\cdot)$ ([OPTM-05]) gives
+$\mathbf 0\in\partial g(\mathbf x_{k+1})+\tfrac1\eta(\mathbf x_{k+1}-\mathbf v_k)$. Substituting
+$\mathbf v_k=\mathbf x_k-\eta\nabla f(\mathbf x_k)$ and rearranging, the vector
+$$
+\mathbf s_{k+1} \;:=\; \tfrac1\eta(\mathbf x_k-\mathbf x_{k+1}) - \nabla f(\mathbf x_k)
+\;\in\;\partial g(\mathbf x_{k+1})
+$$ {#eq-prox-subgrad}
+is a genuine subgradient of $g$ at $\mathbf x_{k+1}$. (Setting $\mathbf x_{k+1}=\mathbf x_k$
+here recovers the composite optimality condition $\mathbf 0\in\nabla f+\partial g$, used in
+the box below.)
 
-Second, the optimality condition of the prox subproblem. Since $\mathbf x_{k+1}$ minimizes
-$g(\mathbf x)+\tfrac1{2\eta}\|\mathbf x-(\mathbf x_k-\eta\nabla f(\mathbf x_k))\|^2$, the
-subgradient optimality condition $\mathbf 0\in\partial(\cdot)$ ([OPTM-05]) gives
+**Ingredient 2: the descent lemma.** With $\eta\le 1/L$ the descent lemma of [OPTM-07] gives,
+at the *actual* next point,
 $$
-\mathbf 0 \in \partial g(\mathbf x_{k+1}) + \tfrac1\eta\bigl(\mathbf x_{k+1}-\mathbf x_k\bigr) + \nabla f(\mathbf x_k),
+f(\mathbf x_{k+1}) \;\le\; f(\mathbf x_k)+\nabla f(\mathbf x_k)^\top(\mathbf x_{k+1}-\mathbf x_k)
++\tfrac{1}{2\eta}\|\mathbf x_{k+1}-\mathbf x_k\|^2,
+$$ {#eq-descent-step}
+since $\tfrac{L}{2}\le\tfrac{1}{2\eta}$.
+
+**Assembling the per-step bound.** Fix any comparison point $\mathbf z$. We bound
+$F(\mathbf x_{k+1})-F(\mathbf z)=\bigl[f(\mathbf x_{k+1})-f(\mathbf z)\bigr]+\bigl[g(\mathbf x_{k+1})-g(\mathbf z)\bigr]$
+piece by piece, using convexity (the tangent-below inequality of [OPTM-04]) on each.
+
+For the smooth part, convexity of $f$ gives $f(\mathbf z)\ge f(\mathbf x_k)+\nabla f(\mathbf x_k)^\top(\mathbf z-\mathbf x_k)$,
+i.e. $f(\mathbf x_k)\le f(\mathbf z)+\nabla f(\mathbf x_k)^\top(\mathbf x_k-\mathbf z)$. Feed
+that into @eq-descent-step:
 $$
-so a specific subgradient of $g$ at $\mathbf x_{k+1}$ equals
-$-\nabla f(\mathbf x_k)-\tfrac1\eta(\mathbf x_{k+1}-\mathbf x_k)$. Feeding this into the
-convexity inequalities for $f$ and $g$ separately (the tangent-below bound of [OPTM-04] for
-each piece) and summing telescopes, after summing over $k$, into the stated $O(1/k)$ bound.
-The full telescoping algebra is the [OPTM-07] proof with $\nabla f$ replaced by $G_\eta$
-throughout; the only new ingredient is the prox optimality condition, supplied above. The
-*fixed point* of the map — where $\mathbf x_{k+1}=\mathbf x_k$, i.e. $G_\eta=\mathbf 0$ — is
-exactly the composite optimality condition $\mathbf 0\in\nabla f(\mathbf x)+\partial g(\mathbf x)$,
-shown next. $\qquad\blacksquare$
+f(\mathbf x_{k+1}) \;\le\; f(\mathbf z)+\nabla f(\mathbf x_k)^\top(\mathbf x_{k+1}-\mathbf z)
++\tfrac{1}{2\eta}\|\mathbf x_{k+1}-\mathbf x_k\|^2,
+$$
+where we combined the two inner-product terms $\nabla f(\mathbf x_k)^\top(\mathbf x_{k+1}-\mathbf x_k)+\nabla f(\mathbf x_k)^\top(\mathbf x_k-\mathbf z)=\nabla f(\mathbf x_k)^\top(\mathbf x_{k+1}-\mathbf z)$.
+
+For the non-smooth part, convexity of $g$ with the subgradient $\mathbf s_{k+1}$ from
+@eq-prox-subgrad gives $g(\mathbf z)\ge g(\mathbf x_{k+1})+\mathbf s_{k+1}^\top(\mathbf z-\mathbf x_{k+1})$, i.e.
+$$
+g(\mathbf x_{k+1}) \;\le\; g(\mathbf z)+\mathbf s_{k+1}^\top(\mathbf x_{k+1}-\mathbf z)
+= g(\mathbf z)+\Bigl(\tfrac1\eta(\mathbf x_k-\mathbf x_{k+1})-\nabla f(\mathbf x_k)\Bigr)^\top(\mathbf x_{k+1}-\mathbf z).
+$$
+Add the two displays. The $f(\mathbf z),g(\mathbf z)$ collect into $F(\mathbf z)$, and the
+two $\nabla f(\mathbf x_k)^\top(\mathbf x_{k+1}-\mathbf z)$ terms **cancel exactly** (one is
+$+$, the one hidden in $\mathbf s_{k+1}$ is $-$). What survives is
+$$
+F(\mathbf x_{k+1})-F(\mathbf z)
+\;\le\; \tfrac{1}{2\eta}\|\mathbf x_{k+1}-\mathbf x_k\|^2
++\tfrac1\eta(\mathbf x_k-\mathbf x_{k+1})^\top(\mathbf x_{k+1}-\mathbf z).
+$$ {#eq-perstep-raw}
+The two right-hand terms are a completed square in disguise. Using the polarization identity
+$2\mathbf a^\top\mathbf b=\|\mathbf a\|^2+\|\mathbf b\|^2-\|\mathbf a-\mathbf b\|^2$ with
+$\mathbf a=\mathbf x_k-\mathbf x_{k+1}$ and $\mathbf b=\mathbf x_{k+1}-\mathbf z$ (so
+$\mathbf a-\mathbf b=\mathbf x_k-2\mathbf x_{k+1}+\mathbf z$ — we will not need it, because
+the $\|\mathbf a\|^2$ piece cancels), expand $\tfrac1\eta(\mathbf x_k-\mathbf x_{k+1})^\top(\mathbf x_{k+1}-\mathbf z)$:
+group it with $\tfrac{1}{2\eta}\|\mathbf x_{k+1}-\mathbf x_k\|^2$ and complete the square to
+get the clean **telescoping form**
+$$
+F(\mathbf x_{k+1})-F(\mathbf z)
+\;\le\; \tfrac{1}{2\eta}\Bigl(\|\mathbf x_k-\mathbf z\|^2-\|\mathbf x_{k+1}-\mathbf z\|^2\Bigr).
+$$ {#eq-perstep}
+(Concretely: $\|\mathbf x_k-\mathbf z\|^2=\|(\mathbf x_k-\mathbf x_{k+1})+(\mathbf x_{k+1}-\mathbf z)\|^2
+=\|\mathbf x_k-\mathbf x_{k+1}\|^2+2(\mathbf x_k-\mathbf x_{k+1})^\top(\mathbf x_{k+1}-\mathbf z)+\|\mathbf x_{k+1}-\mathbf z\|^2$,
+so $\tfrac{1}{2\eta}\|\mathbf x_{k+1}-\mathbf x_k\|^2+\tfrac1\eta(\mathbf x_k-\mathbf x_{k+1})^\top(\mathbf x_{k+1}-\mathbf z)
+=\tfrac{1}{2\eta}\bigl(\|\mathbf x_k-\mathbf z\|^2-\|\mathbf x_{k+1}-\mathbf z\|^2\bigr)$,
+which is exactly @eq-perstep applied to @eq-perstep-raw.)
+
+**Two specializations finish it.** First take $\mathbf z=\mathbf x_k$ in @eq-perstep: the
+right side is $-\tfrac{1}{2\eta}\|\mathbf x_{k+1}-\mathbf x_k\|^2\le0$, so
+$F(\mathbf x_{k+1})\le F(\mathbf x_k)$ — **the objective never increases** (the
+sufficient-decrease fact). Now take $\mathbf z=\mathbf x^\star$ and sum @eq-perstep over
+$i=0,1,\dots,k-1$. The right side telescopes:
+$$
+\sum_{i=0}^{k-1}\bigl(F(\mathbf x_{i+1})-F^\star\bigr)
+\;\le\; \tfrac{1}{2\eta}\sum_{i=0}^{k-1}\Bigl(\|\mathbf x_i-\mathbf x^\star\|^2-\|\mathbf x_{i+1}-\mathbf x^\star\|^2\Bigr)
+= \tfrac{1}{2\eta}\Bigl(\|\mathbf x_0-\mathbf x^\star\|^2-\|\mathbf x_k-\mathbf x^\star\|^2\Bigr)
+\le \tfrac{\|\mathbf x_0-\mathbf x^\star\|^2}{2\eta}.
+$$
+Because the sequence $F(\mathbf x_i)$ is non-increasing, the *last* term $F(\mathbf x_k)-F^\star$
+is the smallest of the $k$ summands, so $k\bigl(F(\mathbf x_k)-F^\star\bigr)\le\sum_{i=0}^{k-1}\bigl(F(\mathbf x_{i+1})-F^\star\bigr)$.
+Dividing by $k$,
+$$
+F(\mathbf x_k)-F^\star \;\le\; \frac{\|\mathbf x_0-\mathbf x^\star\|^2}{2\eta k}\;=\;O\!\left(\frac1k\right),
+$$
+the stated bound. The only place the non-smooth $g$ entered was the subgradient
+@eq-prox-subgrad, and it canceled the gradient term cleanly — which is *why* the penalty
+costs nothing in rate. $\qquad\blacksquare$
 :::
 
 ::: {.callout-tip title="You might be asked"}
@@ -745,8 +835,9 @@ A point $\mathbf x^\star$ minimizes $F=f+g$ iff $\mathbf 0\in\nabla f(\mathbf x^
 — the smooth gradient plus a subgradient of the non-smooth part can cancel. (This is the
 sum rule for subdifferentials from [OPTM-05], specialized to one smooth summand.) The prox
 update has $\mathbf x^\star$ as a fixed point precisely when this holds: set
-$\mathbf x_{k+1}=\mathbf x_k=\mathbf x^\star$ in the prox optimality condition from the proof
-and the $\tfrac1\eta(\mathbf x_{k+1}-\mathbf x_k)$ term vanishes, leaving
+$\mathbf x_{k+1}=\mathbf x_k=\mathbf x^\star$ in the prox subgradient identity @eq-prox-subgrad
+from the proof, where the $\tfrac1\eta(\mathbf x_k-\mathbf x_{k+1})$ term vanishes, leaving
+$-\nabla f(\mathbf x^\star)\in\partial g(\mathbf x^\star)$, i.e.
 $\mathbf 0\in\nabla f(\mathbf x^\star)+\partial g(\mathbf x^\star)$. So *the algorithm
 stops exactly when the optimality condition is met* — the cleanest possible statement that
 it solves the right problem.

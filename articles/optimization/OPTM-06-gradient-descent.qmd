@@ -754,9 +754,16 @@ $$ {#eq-sigmoid-deriv}
 Now differentiate the objective @eq-nll with respect to the coefficient vector
 $\boldsymbol\beta$. Take one data point's contribution
 $f_i = -\bigl[y_i\ln p_i + (1-y_i)\ln(1-p_i)\bigr]$ and chase it through the chain rule. Let
-$z_i=\mathbf{x}_i^\top\boldsymbol\beta$, so $p_i=\sigma(z_i)$ and (by @sec-objects of
-[OPTM-02], differentiating a dot product) $\nabla_{\boldsymbol\beta}\, z_i = \mathbf{x}_i$.
-The chain rule gives
+$z_i=\mathbf{x}_i^\top\boldsymbol\beta$, so $p_i=\sigma(z_i)$. We need
+$\nabla_{\boldsymbol\beta}\,z_i$, the gradient of the linear score with respect to
+$\boldsymbol\beta$. Writing the dot product out as
+$z_i=\sum_{j=1}^{p}x_{ij}\beta_j$ (the $j$-th component $x_{ij}$ of the predictor times the
+$j$-th coefficient, summed), the partial derivative with respect to one coefficient picks out
+its single term: $\partial z_i/\partial\beta_j = x_{ij}$, since every other term is constant
+in $\beta_j$. Stacking those partials into the gradient vector gives
+$\nabla_{\boldsymbol\beta}\,z_i = (x_{i1},\dots,x_{ip})^\top = \mathbf{x}_i$ — differentiating
+a linear function just returns its coefficient vector (the multivariate echo of
+$\frac{d}{d\beta}(x\beta)=x$ from Calc 1, an [OPTM-02] object). The chain rule then gives
 
 $$
 \nabla_{\boldsymbol\beta}\, f_i

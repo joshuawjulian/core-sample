@@ -690,55 +690,71 @@ it opens upward. In many variables, "opens upward in every direction" is exactly
    unreliable step. This is the multivariate echo of @eq-newton-1d dividing by $f''(x_k)\approx
    0$.
 
-@fig-divergence shows the raw Newton iteration *diverging* on a function whose curvature goes
-the wrong way, and the damped version (next subsection) converging on the same function.
+@fig-divergence shows the raw Newton iteration *diverging* on a smooth convex function whose
+curvature *decays* too fast as you move away from the minimum, and the damped version (next
+subsection) converging on the same function. The function is $f(x)=\sqrt{x^2+1}$, whose unique
+minimum is at $x^\star=0$. Its one-dimensional Newton step has a startlingly clean closed form:
+with $f'(x)=x/\sqrt{x^2+1}$ and $f''(x)=(x^2+1)^{-3/2}$, the step @eq-newton-1d is
+$$
+x_{k+1} = x_k - \frac{f'(x_k)}{f''(x_k)}
+= x_k - \frac{x_k/\sqrt{x_k^2+1}}{(x_k^2+1)^{-3/2}}
+= x_k - x_k(x_k^2+1) = -x_k^3.
+$$
+So $x_{k+1}=-x_k^3$: if $|x_k|<1$ the iteration converges to $0$ *cubically* (even faster than
+quadratically), but if $|x_k|>1$ it **explodes**, $|x_{k+1}|=|x_k|^3$, flipping sign each step.
+Started at $x_0=1.1$ — just outside the basin — undamped Newton runs
+$1.1\to-1.33\to2.36\to-13.1\to2253\to\cdots$, racing to infinity. This is the honest edge of
+applicability: nothing is pathological about $f$ (it is smooth, strictly convex, with a single
+minimum), yet the *raw* step diverges from a perfectly reasonable start. Damping fixes it.
 
 ```{python}
 #| label: fig-divergence
-#| fig-cap: "Raw Newton can diverge. Minimizing $f(x)=\\log(1+e^{-3x}) + 0.05x^2$ — convex, with a unique minimum near $x\\approx 1.1$ — from $x_0=2.5$ where the curvature $f''$ is tiny. **Grey:** the *undamped* Newton step $x-f'/f''$ overshoots wildly (the near-flat region gives a huge step) and oscillates away. **Red:** the *damped* Newton step $x-tf'/f''$ with a backtracking line search on $t$ stays a descent method and converges. Damping is what makes Newton safe far from the optimum."
-import numpy as np
-def f(x):   return np.log1p(np.exp(-3*x)) + 0.05*x**2
-def fp(x):
-    s = 1/(1+np.exp(3*x))      # sigmoid(-3x), stable
-    return -3*s + 0.1*x
-def fpp(x):
-    s = 1/(1+np.exp(3*x))
-    return 9*s*(1-s) + 0.1
+#| fig-cap: "Raw Newton can diverge on a perfectly nice function. Minimizing $f(x)=\\sqrt{x^2+1}$ — smooth, strictly convex, single minimum at $x^\\star=0$ — from $x_0=1.1$. The Newton step here is exactly $x_{k+1}=-x_k^3$, so any start with $|x_0|>1$ explodes while flipping sign. **Left (grey):** the *undamped* iterates $1.1\\to-1.33\\to2.36\\to\\cdots$ race outward (the magnitude is plotted on a log axis; the alternating sign is annotated). **Right (red):** the *damped* step $x+t\\,(-f'/f'')$ with a backtracking line search on $t$ shortens the overlong steps, stays a descent method, and converges to $0$. Damping is what makes Newton safe far from the optimum."
+def f(x):   return np.sqrt(x**2 + 1.0)
+def fp(x):  return x/np.sqrt(x**2 + 1.0)
+def fpp(x): return (x**2 + 1.0)**(-1.5)
 
-xs = np.linspace(-1, 3, 300)
-
-# Undamped Newton
-x = 2.5; raw = [x]
-for _ in range(8):
+# Undamped Newton: x_{k+1} = -x_k^3, diverges for |x0| > 1
+x = 1.1; raw = [x]
+for _ in range(7):
     x = x - fp(x)/fpp(x)
     raw.append(x)
-    if abs(x) > 50: break
+    if abs(x) > 1e8: break
 
-# Damped Newton with backtracking on t
-x = 2.5; damped = [x]
-for _ in range(12):
+# Damped Newton with backtracking on the step length t
+x = 1.1; damped = [x]
+for _ in range(25):
     step = -fp(x)/fpp(x)
     t = 1.0
-    while f(x + t*step) > f(x) + 1e-4*t*fp(x)*step and t > 1e-6:
+    while f(x + t*step) > f(x) + 1e-4*t*fp(x)*step and t > 1e-8:
         t *= 0.5
     x = x + t*step
     damped.append(x)
 
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
-axL.plot(xs, f(xs), color=CURVE)
-ry = [f(v) if abs(v) < 50 else np.nan for v in raw]
-axL.plot(raw[:6], ry[:6], color=GD, marker="o", ms=4, lw=1.2)
-axL.set_title("Undamped Newton overshoots")
-axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$"); axL.set_xlim(-1, 3)
-axL.set_ylim(0, 3)
 
+# Left: divergence, magnitude on a log scale (sign annotated)
+axL.semilogy(range(len(raw)), np.abs(raw), color=GD, marker="o", ms=5, lw=1.4)
+for k, v in enumerate(raw):
+    sgn = "+" if v >= 0 else "-"
+    axL.annotate(sgn, (k, abs(v)), textcoords="offset points",
+                 xytext=(0, 7), ha="center", fontsize=11, color=GD)
+axL.axhline(1.0, color=GREY, ls=":", lw=1.0)
+axL.set_title("Undamped Newton diverges")
+axL.set_xlabel("iteration $k$"); axL.set_ylabel(r"$|x_k|$")
+
+# Right: damped Newton walking down f to the minimum
+xs = np.linspace(-1.6, 1.6, 300)
 axR.plot(xs, f(xs), color=CURVE)
 axR.plot(damped, [f(v) for v in damped], color=NEWTON, marker="s", ms=4, lw=1.2)
+axR.scatter([0], [f(0)], color=ACCENT, s=90, marker="*", zorder=6, label=r"min $x^\star=0$")
 axR.set_title("Damped Newton converges")
-axR.set_xlabel("$x$"); axR.set_xlim(-1, 3); axR.set_ylim(0, 3)
+axR.set_xlabel("$x$"); axR.set_ylabel("$f(x)$")
+axR.set_xlim(-1.6, 1.6); axR.set_ylim(0.9, 2.1)
+axR.legend(loc="upper center", framealpha=0.9)
 plt.tight_layout()
-print(f"undamped iterates (first 6): {[round(v,2) for v in raw[:6]]}")
-print(f"damped   iterates (last 4):  {[round(v,4) for v in damped[-4:]]}")
+print(f"undamped iterates: {[round(v, 3) for v in raw]}")
+print(f"damped iterates (last 4): {[round(v, 5) for v in damped[-4:]]}")
 ```
 
 ## The fixes: damping and Hessian modification {#sec-fixes}
@@ -901,9 +917,14 @@ The same idea, applied to *maximum likelihood*, produces the algorithm that fits
 regression and every generalized linear model. Statistical Inference owns *what* the MLE is
 ([INFR-B2]); we own *how to compute it*. The MLE maximizes the log-likelihood
 $\ell(\boldsymbol\beta)$, equivalently minimizes $-\ell$, so it solves the **score equation**
-$\nabla\ell(\boldsymbol\beta)=\mathbf{0}$ — a root-finding problem, Newton's home turf. The
-Newton update for *maximizing* $\ell$ (note the sign: maximizing flips the step direction)
-is
+$\nabla\ell(\boldsymbol\beta)=\mathbf{0}$ — a root-finding problem, Newton's home turf. A point
+worth pausing on: Newton's method hunts *stationary points* of $\ell$ — points where
+$\nabla\ell=\mathbf{0}$ — and the iteration is the **same formula** whether we read it as
+maximizing $\ell$ or minimizing $-\ell$. (This is unlike gradient methods, where ascent flips
+the sign to $+\eta\nabla\ell$; Newton applied to the root problem $\nabla\ell=\mathbf{0}$ does
+not flip — it inherits whatever stationary point it is closest to, which is why the
+positive-definiteness of the Hessian still matters here, exactly as in @sec-fragility.) The
+update is
 $$
 \boldsymbol\beta_{k+1} = \boldsymbol\beta_k - \bigl[\nabla^2\ell(\boldsymbol\beta_k)\bigr]^{-1}
    \nabla\ell(\boldsymbol\beta_k).
@@ -912,9 +933,12 @@ $$
 Hessian $\nabla^2\ell$ by its expectation, the negative **Fisher information**
 $-\mathcal{I}(\boldsymbol\beta)=\mathbb{E}[\nabla^2\ell]$. This is the exact analogue of the
 Gauss–Newton move — swap the true second derivative for a cheaper, guaranteed-definite
-surrogate:
+surrogate. Substituting $\nabla^2\ell\to-\mathcal{I}$ into the update turns the leading minus
+sign into a plus, because $-[-\mathcal{I}]^{-1}=+\mathcal{I}^{-1}$:
 $$
-\boldsymbol\beta_{k+1} = \boldsymbol\beta_k + \mathcal{I}(\boldsymbol\beta_k)^{-1}
+\boldsymbol\beta_{k+1} = \boldsymbol\beta_k - \bigl[-\mathcal{I}(\boldsymbol\beta_k)\bigr]^{-1}
+   \nabla\ell(\boldsymbol\beta_k)
+= \boldsymbol\beta_k + \mathcal{I}(\boldsymbol\beta_k)^{-1}
    \nabla\ell(\boldsymbol\beta_k).
 $$
 For a GLM this update algebraically *rearranges* into a **weighted least-squares** problem: at
@@ -1033,8 +1057,13 @@ is a constrained matrix optimization that would balloon this article past its sc
 flag exactly what it accomplishes and why it works, since that is what an interviewer and a user
 need:
 
-- It satisfies the secant equation @eq-secant by construction (multiply @eq-bfgs by
-  $\mathbf{y}_k$ and the terms collapse to $\mathbf{s}_k$).
+- It satisfies the secant equation @eq-secant by construction — in the **inverse** form
+  $H_{k+1}\mathbf{y}_k=\mathbf{s}_k$ (which is just @eq-secant, $B_{k+1}\mathbf{s}_k=\mathbf{y}_k$,
+  left-multiplied by $B_{k+1}^{-1}=H_{k+1}$). To see it, multiply @eq-bfgs on the right by
+  $\mathbf{y}_k$: the factor $(I-\rho_k\mathbf{y}_k\mathbf{s}_k^\top)\mathbf{y}_k = \mathbf{y}_k -
+  \rho_k\mathbf{y}_k(\mathbf{s}_k^\top\mathbf{y}_k) = \mathbf{y}_k-\mathbf{y}_k=\mathbf{0}$ kills
+  the whole first term, leaving $\rho_k\mathbf{s}_k(\mathbf{s}_k^\top\mathbf{y}_k)=\mathbf{s}_k$
+  since $\rho_k=1/(\mathbf{y}_k^\top\mathbf{s}_k)$.
 - It is a **rank-two** update — only two outer products are added — so applying it costs
   $O(p^2)$, not the $O(p^3)$ of a fresh Hessian solve.
 - Crucially, if $\mathbf{y}_k^\top\mathbf{s}_k>0$ (the **curvature condition**, guaranteed by a

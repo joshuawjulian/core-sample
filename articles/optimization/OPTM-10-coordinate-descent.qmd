@@ -410,9 +410,14 @@ constants, $g(t) = 3t^2 - t + 5\,|t - (-3)| = 3t^2 - t + 5|t+3|$. Use the subgra
 condition $0\in g'(t)$. The smooth part has derivative $6t-1$; the kink term contributes
 $5\cdot\operatorname{sign}(t+3)$, which is $+5$ for $t>-3$. So for $t>-3$ we need
 $6t-1+5=0$, i.e. $t=-\tfrac46=-\tfrac23$ — consistent, since $-\tfrac23>-3$. Thus
-$x_1\leftarrow-\tfrac23$. Then update $x_2$ holding $x_1=-\tfrac23$: by the symmetry of
-@eq-jam in $(x_1,x_2)$ the same computation gives $x_2\leftarrow-\tfrac23$. We have landed on
-the diagonal at $(-\tfrac23,-\tfrac23)$.
+$x_1\leftarrow-\tfrac23$. Then update $x_2$ holding $x_1=-\tfrac23$. We can either redo the
+calculation or notice that @eq-jam is **unchanged when we swap $x_1\leftrightarrow x_2$**
+(both $x_1^2+x_2^2$ and $x_1+x_2$ are symmetric, and $|x_1-x_2|=|x_2-x_1|$), so the
+$x_2$-slice with $x_1=-\tfrac23$ is the *identical* 1-D problem we just solved with the roles
+of the two variables interchanged: minimize $3t^2 - t + 5|t-(-\tfrac23)|$. For $t>-\tfrac23$
+its derivative is $6t-1+5=0$, giving $t=-\tfrac23$ again (and $-\tfrac23$ is the boundary of
+that region, which the next paragraph confirms is exactly the optimum). So
+$x_2\leftarrow-\tfrac23$, and we have landed on the diagonal at $(-\tfrac23,-\tfrac23)$.
 
 Now the trap springs. At a diagonal point $x_1=x_2=c$, try to update $x_1$: minimize
 $h(t)=3t^2 - t + 5|t-c|$. The kink is *at* $t=c$, where the subdifferential of $|t-c|$ is the
@@ -422,7 +427,9 @@ $$
 -\tfrac23 \;\le\; c \;\le\; 1 \quad\Longrightarrow\quad t=c \text{ is optimal — the coordinate cannot move.}
 $$
 Our point $c=-\tfrac23$ sits *exactly* at the left end of this interval, so **the $x_1$-update
-returns $-\tfrac23$ unchanged**, and by symmetry so does the $x_2$-update. Coordinate descent
+returns $-\tfrac23$ unchanged**; and because $f$ is unchanged under swapping
+$x_1\leftrightarrow x_2$, the $x_2$-update at the same point is the same frozen 1-D problem
+and likewise returns $-\tfrac23$. Coordinate descent
 is frozen at $(-\tfrac23,-\tfrac23)$, $f=4$ — while the true minimum is way down the same
 diagonal at $(\tfrac16,\tfrac16)$, $f=-\tfrac16$. No single-coordinate move helps; only a
 *joint* diagonal move (increasing both $x_1$ and $x_2$ together) descends, and coordinate
@@ -469,7 +476,7 @@ print(f"true minimum   (0.1667, 0.1667),  f = {f_jam(1/6, 1/6):.4f}")
 
 The printed numbers make it explicit: coordinate descent halts at a point with $f$ strictly
 above the minimum, even though *no single-coordinate move decreases $f$ at that point*. It is
-stuck on the diagonal ridge $x_1=x_2$, which is where the kink of $|x_1+x_2|$ cuts across the
+stuck on the diagonal ridge $x_1=x_2$, which is where the kink of $|x_1-x_2|$ cuts across the
 quadratic bowl. To make progress you would have to move **both** coordinates at once (down the
 ridge toward the origin), and coordinate descent is forbidden from doing that.
 

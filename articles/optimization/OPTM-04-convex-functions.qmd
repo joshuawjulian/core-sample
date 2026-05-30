@@ -696,15 +696,70 @@ is slow to find, because the gradient there is tiny and carries little informati
 where the minimum is. The fix is a *quantitative* lower bound on curvature.
 
 ::: {#def-strong}
-**Definition (strong convexity).** $f$ is **$\mu$-strongly convex** for some $\mu>0$ if
-$f(x)-\tfrac{\mu}{2}\|x\|^2$ is convex. Equivalently — and this is the form to remember —
-$f$ sits above a *moving quadratic* of curvature $\mu$: for differentiable $f$,
+**Definition (strong convexity).** $f$ is **$\mu$-strongly convex** for some $\mu>0$ if the
+function
+$$
+g(x)\;:=\;f(x)-\tfrac{\mu}{2}\|x\|^2
+$$
+is convex. In words: $f$ is convex *with room to spare* — you can scoop a whole quadratic
+bowl of curvature $\mu$ out from under it and what remains is still convex.
+:::
+
+This base definition is clean but not the form you compute or remember with. The two working
+forms — a *moving-quadratic* first-order inequality and a Hessian lower bound — are
+*consequences* we now derive, not extra postulates. Both come from running the
+characterization theorems of @sec-formal on the convex function $g$.
+
+::: {#thm-strong-forms}
+**Proposition (the working forms of strong convexity).** Let $\mu>0$.
+
+(a) If $f$ is differentiable, then $f$ is $\mu$-strongly convex if and only if
 $$
 f(y)\;\ge\;f(x)+\nabla f(x)^\top(y-x)+\frac{\mu}{2}\|y-x\|^2
 \qquad\text{for all } x,y.
 $$ {#eq-strong}
-For twice-differentiable $f$ this is $\nabla^2 f(x)\succeq\mu I$: every eigenvalue of the
-Hessian is at least $\mu>0$, so curvature is bounded *away from zero* in every direction.
+This is the **form to remember**: $f$ lies above its tangent *plus* a genuine upward parabola.
+
+(b) If $f$ is twice continuously differentiable, then $f$ is $\mu$-strongly convex if and
+only if $\nabla^2 f(x)\succeq\mu I$ for all $x$ — i.e. $v^\top\nabla^2 f(x)\,v\ge\mu\|v\|^2$
+for every $v$, so every eigenvalue of the Hessian is at least $\mu>0$ and curvature is
+bounded *away from zero* in every direction.
+:::
+
+::: {.proof}
+Both parts apply an earlier theorem to $g(x)=f(x)-\tfrac{\mu}{2}\|x\|^2$, using two
+elementary derivatives of the quadratic $q(x)=\tfrac{\mu}{2}\|x\|^2=\tfrac{\mu}{2}\sum_k
+x_k^2$. Differentiating coordinatewise, $\partial q/\partial x_k=\mu x_k$, so
+$\nabla q(x)=\mu x$; differentiating again, $\partial^2 q/\partial x_j\partial x_k=\mu$ if
+$j=k$ and $0$ otherwise, so $\nabla^2 q(x)=\mu I$. By linearity of the gradient and Hessian
+(each is a sum of partial derivatives, and the derivative of a difference is the difference
+of derivatives), $\nabla g=\nabla f-\mu x$ and $\nabla^2 g=\nabla^2 f-\mu I$.
+
+**(a)** By @def-strong, $f$ is $\mu$-strongly convex exactly when $g$ is convex. Apply the
+first-order characterization @thm-first-order *to $g$*: $g$ is convex iff
+$$
+g(y)\;\ge\;g(x)+\nabla g(x)^\top(y-x)\qquad\text{for all }x,y.
+$$
+Now substitute $g=f-q$ and $\nabla g=\nabla f-\mu x$ and expand every $q$ term:
+$$
+f(y)-\tfrac{\mu}{2}\|y\|^2\;\ge\;f(x)-\tfrac{\mu}{2}\|x\|^2+\bigl(\nabla f(x)-\mu x\bigr)^\top(y-x).
+$$
+Move the two $\tfrac{\mu}{2}\|\cdot\|^2$ terms and the $-\mu x^\top(y-x)$ term to the right:
+$$
+f(y)\;\ge\;f(x)+\nabla f(x)^\top(y-x)+\Bigl[\tfrac{\mu}{2}\|y\|^2-\tfrac{\mu}{2}\|x\|^2-\mu x^\top(y-x)\Bigr].
+$$
+The bracket simplifies exactly. Using $\|y\|^2=\|x\|^2+2x^\top(y-x)+\|y-x\|^2$ (just expand
+$\|x+(y-x)\|^2$), the first two terms give $\tfrac{\mu}{2}\bigl(2x^\top(y-x)+\|y-x\|^2\bigr)
+=\mu x^\top(y-x)+\tfrac{\mu}{2}\|y-x\|^2$, and the $-\mu x^\top(y-x)$ cancels the cross term,
+leaving exactly $\tfrac{\mu}{2}\|y-x\|^2$. That is @eq-strong. Every step is reversible, so
+the equivalence holds in both directions.
+
+**(b)** Again $f$ is $\mu$-strongly convex iff $g$ is convex. Apply the second-order
+characterization @thm-second-order *to $g$*: $g$ is convex iff $\nabla^2 g(x)\succeq 0$ for
+all $x$. Substituting $\nabla^2 g=\nabla^2 f-\mu I$, this reads $\nabla^2 f(x)-\mu I\succeq 0$,
+i.e. $v^\top\bigl(\nabla^2 f(x)-\mu I\bigr)v\ge 0$ for all $v$. Since
+$v^\top(\mu I)v=\mu\|v\|^2$, that is $v^\top\nabla^2 f(x)\,v\ge\mu\|v\|^2$ for all $v$ —
+precisely $\nabla^2 f(x)\succeq\mu I$. $\qquad\blacksquare$
 :::
 
 Compare @eq-strong to the first-order condition @eq-first-order. Plain convexity says the
