@@ -1,0 +1,1274 @@
+---
+title: "Stochastic Gradient Descent: Optimizing on a Budget"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # the objective / full-batch path
+STEP    = "#c1121f"    # the stochastic path / noise
+ACCENT  = "#0a7d4d"    # the optimum / safe choices
+GREY    = "#6c757d"
+BATCH   = "#d97706"    # minibatch curves
+```
+
+> **Where this sits in the track.** This is the first of the two **scaling** articles in
+> the Optimization track's descent spine — the point where gradient descent is forced to
+> confront datasets too large to touch all at once. It assumes [OPTM-06 *Gradient Descent*]
+> for the update rule $\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\nabla f(\mathbf{x}_k)$ and the
+> fact that $-\nabla f$ is the steepest-descent direction, and it assumes [OPTM-07 *Step
+> Size and Convergence*] for **$L$-smoothness**, the **descent lemma**, **strong
+> convexity** with constant $\mu$, the **condition number** $\kappa=L/\mu$, and the
+> baseline rates ($O(1/k)$ convex, linear $\rho^k$ strongly convex) that SGD is measured
+> against.
+>
+> **What it borrows, and from where.** The single new analytic ingredient is
+> probabilistic: the **expectation** of a random vector, the notion of an **unbiased
+> estimator**, and the **variance of an average** of independent draws. These are owned by
+> the *Probability Foundations* track; we restate exactly the three facts we use, inline,
+> and derive everything we do with them. The optimization machinery — gradients, the
+> descent lemma, strong convexity — is [OPTM-06]/[OPTM-07], used, not rebuilt.
+>
+> **What it sets up.** [OPTM-12 *Adaptive and Modern Optimizers*] (AdaGrad, RMSProp, Adam)
+> are all refinements of the bare SGD step derived here. And SGD is the literal training
+> engine that **Classification**, **Unsupervised Learning**, and every deep-model track
+> link back to when they say "fit by SGD."
+
+## Abstract {.unnumbered}
+
+Gradient descent ([OPTM-06], [OPTM-07]) needs the *full* gradient at every step. But the
+objectives the rest of the series minimizes are **finite sums** over data — a loss
+averaged across $n$ examples — and when $n$ is in the millions, computing that full
+gradient even once is ruinously expensive. This article derives the universal fix:
+**stochastic gradient descent (SGD)**, which steps using the gradient of *one* example (or
+a small **minibatch**) at a time. The central fact, derived from the definition of
+expectation, is that a single example's gradient is an **unbiased estimator** of the full
+gradient — *on average* it points the right way — so SGD is "noisy gradient descent" that
+makes $n$ times more progress per unit of computation. We pay for that with **variance**:
+the steps jitter, and we derive why this forces a *decaying* step size (the
+Robbins–Monro conditions $\sum\eta_k=\infty$, $\sum\eta_k^2<\infty$) and why a *constant*
+step instead converges only to a **noise floor** of size $O(\eta)$ around the optimum, never
+into it. We prove the canonical SGD rates — $O(1/k)$ for strongly convex objectives,
+$O(1/\sqrt{k})$ for merely convex ones — and locate the **minibatch** sweet spot as the
+variance/cost trade-off it is. We sketch how **variance reduction** (SVRG/SAG) recovered
+the fast linear rate the field thought SGD had forfeited, and we close at the honest edge:
+the small- and medium-scale, ill-conditioned problems where full-batch GD or L-BFGS still
+wins outright.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+When the objective is an average over $n$ data points,
+$f(\mathbf{x})=\tfrac1n\sum_{i=1}^n f_i(\mathbf{x})$, the full gradient
+$\nabla f=\tfrac1n\sum_i\nabla f_i$ costs $n$ gradient evaluations per step. **Stochastic
+gradient descent replaces it with the gradient of a single randomly chosen example**,
+$$
+\mathbf{x}_{k+1} = \mathbf{x}_k - \eta_k\,\nabla f_{i_k}(\mathbf{x}_k),
+\qquad i_k \text{ drawn uniformly at random.}
+$$
+This is legitimate because $\nabla f_{i_k}$ is an **unbiased estimator** of $\nabla f$:
+its expectation over the random draw *is* the full gradient, so on average SGD steps
+downhill. It is $n$ times cheaper per step, but its steps are **noisy** — they scatter
+around the true descent direction with a variance that does not vanish at the optimum. Two
+consequences follow and define the method. **(1)** A *constant* step size cannot converge
+to the exact minimum; it settles into a **noise floor** of radius $\propto\eta$ and bounces
+there forever. To actually converge you must **decay the step size**, fast enough to kill
+the noise ($\sum\eta_k^2<\infty$) but slowly enough to still travel ($\sum\eta_k=\infty$).
+**(2)** The price of the noise is a *slower* rate: $O(1/k)$ for strongly convex problems
+(versus GD's geometric $\rho^k$) and $O(1/\sqrt{k})$ for convex ones. **Minibatching** —
+averaging $b$ examples per step — buys back accuracy by cutting the variance by $1/b$, at
+$b\times$ the cost: the dial between cheap-and-noisy and expensive-and-clean.
+:::
+
+Everything below orbits that box. The update will look like a trivial edit of
+[OPTM-06]'s — "use one example's gradient instead of all of them" — but that single change
+trades a *deterministic descent guarantee* (the descent lemma forced $f$ down every step)
+for a *statement in expectation*, and re-deriving the convergence theory under that
+weakening is the whole technical content. The reward is the only thing that scales:
+modern machine learning is trained by SGD because no full-batch method can afford to look
+at the whole dataset for every one of millions of steps.
+
+# Why we are here: the gradient itself is too expensive {#sec-why}
+
+Keep one question in view for the entire article: **when even a single full gradient is
+too expensive to compute, how do we keep descending — and what does it cost us to descend
+on an estimate instead of the real thing?** Every derivation below answers a piece of
+that.
+
+## The finite-sum objective, and the cost wall {#sec-finite-sum}
+
+Almost every objective the rest of the series minimizes has the same shape: a **loss
+averaged over a dataset**. Least squares averages squared residuals; logistic regression
+averages a log-loss; a neural network averages a cross-entropy. Write it generally as
+
+$$
+f(\mathbf{x}) = \frac{1}{n}\sum_{i=1}^{n} f_i(\mathbf{x}),
+$$ {#eq-finite-sum}
+
+where $\mathbf{x}\in\mathbb{R}^p$ is the parameter vector we are optimizing and $f_i$ is the
+loss contributed by the $i$-th data point (so $f_i$ depends on the parameters *and* on that
+one example, which is fixed). The number $n$ is the **dataset size** and $p$ the **parameter
+dimension**; in the regime that birthed SGD, $n$ is enormous.
+
+Because the derivative of a sum is the sum of the derivatives (and the constant $\tfrac1n$
+pulls out), the full gradient inherits the same average structure:
+
+$$
+\nabla f(\mathbf{x}) = \frac{1}{n}\sum_{i=1}^{n} \nabla f_i(\mathbf{x}).
+$$ {#eq-full-grad}
+
+Here is the cost wall. Gradient descent ([OPTM-06]) needs $\nabla f(\mathbf{x}_k)$ at
+*every* iteration. By @eq-full-grad, computing it once means evaluating $n$ per-example
+gradients $\nabla f_i$ and averaging them — an $O(n)$ pass over the *entire dataset*. And
+[OPTM-07] told us GD typically needs *many* iterations (the count scales with the condition
+number $\kappa$). So the total work is roughly $(\text{iterations})\times n$. When
+$n=10^6$ examples and you want $10^3$ iterations, that is $10^9$ per-example gradient
+evaluations — and a single full-batch step does not even *move* until all $10^6$ are summed.
+For the datasets that defined modern machine learning, one full gradient can take minutes;
+GD would take a step a minute and need thousands of them.
+
+The waste is glaring once you say it aloud. To take *one* step, GD reads all $n$ examples,
+forms a precise average, and then moves a single short distance downhill. If the $n$
+examples are at all redundant — and real datasets are massively redundant, full of
+near-duplicate examples — most of that precision is thrown away. **We computed a gradient
+accurate to many digits and then took a small step.** Surely a *rough* estimate of the
+direction, computed from a tiny fraction of the data, would point downhill well enough to
+step — and then we could take $n$ such steps in the time GD takes one.
+
+That is the entire idea of SGD, and the rest of the article makes "well enough" precise.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the gradient an average over data in the first place — couldn't the objective be
+anything?"* In principle yes, but the objectives we actually minimize in statistics and ML
+are **empirical risks**: an average of a per-example loss, $f(\mathbf{x})=\tfrac1n\sum_i
+\ell(\mathbf{x};\text{data}_i)$, which is the sample stand-in for an *expected* loss
+$\mathbb{E}_{\text{data}}[\ell(\mathbf{x};\text{data})]$ over the true data distribution.
+The finite-sum form @eq-finite-sum is not a coincidence; it is what "fit a model to data
+by minimizing average loss" *means*. That is also why SGD generalizes so cleanly to the
+streaming/online setting: if you can draw fresh examples from the distribution, a single
+example's gradient is an unbiased estimate of the gradient of the *population* risk, and
+SGD optimizes the thing you actually care about (expected loss) without ever forming the
+empirical sum. The interviewer is checking that you see "minimize average loss over data"
+and "finite-sum optimization" as the same sentence.
+:::
+
+## A two-line history: from a 1951 statistics paper to every GPU {#sec-history}
+
+SGD predates machine learning by decades. **Herbert Robbins and Sutton Monro**, in a 1951
+paper titled *A Stochastic Approximation Method*, asked a purely statistical question: how
+do you find the root of a function you can only observe through *noisy* measurements? Their
+answer — step in the (noisy) measured direction, with a step size that *shrinks over time*
+in a precisely calibrated way — is exactly SGD, and the step-size conditions we derive in
+@sec-decay still bear their name. The method sat in the statistics literature as "stochastic
+approximation" until the data deluge of the 2000s made full-batch gradients unaffordable,
+at which point this 1951 idea turned out to be the *only* thing that scaled to millions of
+examples and parameters. Every modern deep network is trained by Robbins and Monro's
+procedure, dressed up with momentum ([OPTM-08]) and per-coordinate scaling ([OPTM-12]).
+Holding this history in mind explains the article's shape: SGD is *gradient descent
+married to the theory of estimating something from a noisy sample*, and the noise is not a
+nuisance bolted on — it is the entire reason the method is cheap, and the entire source of
+everything that makes it behave differently from GD.
+
+# Intuition before symbols: a drunk who walks downhill on average {#sec-intuition}
+
+Picture [OPTM-06]'s blindfolded walker on the hillside again, but now add a twist that
+changes everything. The walker can no longer feel the true slope under their feet. Instead,
+at each step they *poll a single, randomly chosen informant* — one data point — who shouts a
+direction. Each informant is biased by their own example: one near-duplicate point insists
+"steepest descent is *that* way," a different point shouts something a bit off. No single
+informant gives the true downhill direction. **But the informants are unbiased: if you
+averaged all $n$ of their answers you would get exactly the true slope.** So each one,
+individually, is the true direction plus some zero-mean error.
+
+The walker's strategy is reckless but effective: *don't wait to poll everyone — just step in
+the direction the one random informant shouted, then poll a new one and step again.* Any
+single step might go slightly sideways or even briefly uphill, because that informant was
+off. But because the informants are right *on average*, the long-run drift is downhill — and
+the walker covers $n$ steps in the time the careful full-gradient walker covers one. This is
+the trade at the heart of SGD: **trade a precise step for many noisy ones.** @fig-drunk
+sketches the two walks on the same bowl.
+
+The picture also previews the two facts that will dominate the formal sections. First, **the
+noise never fully goes away.** Even standing right at the bottom of the valley — where the
+*true* slope is zero — each individual informant still shouts a nonzero direction (their own
+example is not minimized by the global optimum). So a fixed-length step keeps getting kicked
+around the minimum; it cannot settle. To actually come to rest, the walker must **take
+shorter and shorter steps** as they go, so the late kicks are too small to matter. Second,
+**polling a handful of informants and averaging their answers** (a minibatch) gives a less
+noisy direction than polling one — the averaging cancels some of the disagreement — at the
+cost of more polling per step.
+
+```{python}
+#| label: fig-drunk
+#| fig-cap: "Full-batch gradient descent (navy) versus stochastic gradient descent (red) on the same quadratic bowl, started at the same point. GD computes the exact gradient and walks a smooth, direct path to the minimum (green). SGD uses one random example's gradient per step: its path is a jittery, drunken walk -- each step is only the true direction *plus zero-mean noise* -- yet it drifts unmistakably downhill and reaches the neighbourhood of the minimum in many more, but individually $n$-times-cheaper, steps. The jitter that never quite settles is the noise floor of @sec-noise-floor."
+rng = np.random.default_rng(0)
+# A finite-sum quadratic: f_i(x) = 1/2 (x - c_i)^T A (x - c_i), so the full
+# minimizer is the centroid of the c_i; each f_i pulls toward its own c_i.
+n = 60
+A = np.array([[3.0, 0.4], [0.4, 1.0]])
+centers = rng.normal(0, 1.0, size=(n, 2))
+xstar = centers.mean(axis=0)            # exact minimizer of the average
+
+def full_grad(x):
+    return A @ (x - centers.mean(axis=0))
+def stoch_grad(x, i):
+    return A @ (x - centers[i])
+
+x0 = np.array([2.6, 2.4])
+# Full-batch GD
+eta = 0.18
+xg = x0.copy(); pathG = [xg.copy()]
+for _ in range(40):
+    xg = xg - eta * full_grad(xg); pathG.append(xg.copy())
+pathG = np.array(pathG)
+# SGD, constant step (to show the jitter / noise floor)
+xs = x0.copy(); pathS = [xs.copy()]
+for _ in range(220):
+    i = rng.integers(n)
+    xs = xs - 0.07 * stoch_grad(xs, i); pathS.append(xs.copy())
+pathS = np.array(pathS)
+
+gx = np.linspace(-2.0, 3.2, 200); gy = np.linspace(-2.0, 3.0, 200)
+GX, GY = np.meshgrid(gx, gy)
+Z = np.zeros_like(GX)
+d = np.stack([GX - xstar[0], GY - xstar[1]], axis=-1)
+Z = 0.5 * (d @ A * d).sum(axis=-1)
+fig, ax = plt.subplots(figsize=(6.6, 4.6))
+ax.contour(GX, GY, Z, levels=18, colors=GREY, linewidths=0.7, alpha=0.7)
+ax.plot(pathS[:, 0], pathS[:, 1], "-", color=STEP, lw=0.9, alpha=0.8, label="SGD (one example/step)")
+ax.plot(pathG[:, 0], pathG[:, 1], "-o", color=CURVE, ms=3.5, lw=1.6, label="full-batch GD")
+ax.scatter([x0[0]], [x0[1]], color="black", s=55, zorder=6, label="start")
+ax.scatter([xstar[0]], [xstar[1]], color=ACCENT, s=110, zorder=6,
+           edgecolor="white", linewidth=1.4, label="minimum")
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title("Smooth full-batch walk vs. drunken stochastic walk")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+ax.set_aspect("equal")
+plt.tight_layout()
+```
+
+# The formal development {#sec-formal}
+
+We now make the drunken walk precise. The whole theory rests on one probabilistic fact —
+that the random per-example gradient is *unbiased* — and on tracking what its *variance*
+does to the convergence machinery of [OPTM-07].
+
+## The three facts we borrow from probability {#sec-prob-facts}
+
+Just as [OPTM-06] restated the Taylor expansion at the level it used it, we restate here the
+three probability facts SGD needs, no more. They are owned by the *Probability Foundations*
+track; everything we *do* with them is derived in full below.
+
+Let $\mathbf{g}$ be a **random vector** — a vector whose value depends on a random draw (for
+us, which example we picked). Its **expectation** $\mathbb{E}[\mathbf{g}]$ is the
+probability-weighted average of its possible values, taken coordinate by coordinate. We use
+exactly three properties:
+
+1. **Linearity of expectation.** For any (non-random) matrix or scalar $M$ and random
+   vectors $\mathbf{g},\mathbf{h}$, $\mathbb{E}[M\mathbf{g}+\mathbf{h}]
+   = M\,\mathbb{E}[\mathbf{g}]+\mathbb{E}[\mathbf{h}]$. The average of a linear combination
+   is the linear combination of the averages. For a draw that is *uniform* over the indices
+   $\{1,\dots,n\}$ — each picked with probability $\tfrac1n$ — the expectation of a function
+   $h(i)$ of the index is just the plain average $\mathbb{E}_i[h(i)]=\tfrac1n\sum_{i=1}^n
+   h(i)$.
+
+2. **Unbiased estimator.** A random quantity $\widehat\theta$ is an **unbiased estimator**
+   of a target $\theta$ if $\mathbb{E}[\widehat\theta]=\theta$ — its average value, over the
+   randomness, hits the target exactly (it may be wrong on any single draw, but it is not
+   *systematically* wrong).
+
+3. **Variance of a vector, and of an average.** The (total) **variance** of $\mathbf{g}$ is
+   $\operatorname{Var}(\mathbf{g})=\mathbb{E}\bigl[\|\mathbf{g}-\mathbb{E}[\mathbf{g}]\|^2\bigr]$
+   — the expected squared distance of $\mathbf{g}$ from its own mean, a single nonnegative
+   number measuring how much it scatters. The one structural fact we need: for the **average
+   of $b$ independent draws** $\bar{\mathbf{g}}=\tfrac1b\sum_{j=1}^b\mathbf{g}_j$, each with
+   variance $\sigma^2$, the variance of the average is $\sigma^2/b$. Averaging $b$
+   independent estimates cuts the variance by a factor of $b$. (We re-derive this exact fact
+   in @sec-minibatch, because it *is* the minibatch trade-off.)
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+The expectation, linearity, the unbiased-estimator definition, and the variance-of-an-average
+fact are constructed from the ground up in the **Probability Foundations** track. We import
+only their statements. Everything optimization-specific — that the per-example gradient is
+unbiased, what its variance does to the descent lemma, why the step size must decay — is
+derived below from these three facts plus the [OPTM-07] machinery.
+:::
+
+## The stochastic gradient, and why it is unbiased {#sec-unbiased}
+
+Define the SGD step. At iteration $k$, draw an index $i_k$ uniformly at random from
+$\{1,\dots,n\}$ and step using *only* that example's gradient:
+
+$$
+\boxed{\;\mathbf{x}_{k+1} = \mathbf{x}_k - \eta_k\,\nabla f_{i_k}(\mathbf{x}_k).\;}
+$$ {#eq-sgd}
+
+Here $\nabla f_{i_k}(\mathbf{x}_k)$ is the **stochastic gradient** — one example's gradient,
+standing in for the full average @eq-full-grad — and $\eta_k$ is the step size, written with
+a subscript $k$ because, as we will prove, it generally must *change* over the iterations.
+Compared to [OPTM-06]'s update the only edit is $\nabla f\mapsto\nabla f_{i_k}$: an $O(n)$
+computation replaced by an $O(1)$ one.
+
+The whole legitimacy of the method rests on one claim: *on average, the stochastic gradient
+is the full gradient.* We prove it directly from the definition of expectation under a
+uniform draw. Treat $\mathbf{x}_k$ as fixed (we are averaging only over the random index
+$i_k$), and take the expectation of the stochastic gradient:
+
+$$
+\mathbb{E}_{i_k}\bigl[\nabla f_{i_k}(\mathbf{x}_k)\bigr]
+= \sum_{i=1}^{n} \Pr(i_k = i)\,\nabla f_i(\mathbf{x}_k)
+= \sum_{i=1}^{n} \frac{1}{n}\,\nabla f_i(\mathbf{x}_k)
+= \frac{1}{n}\sum_{i=1}^{n}\nabla f_i(\mathbf{x}_k).
+$$
+
+The first equality is the definition of expectation (sum over outcomes, weighted by their
+probabilities); the second uses the uniform draw, $\Pr(i_k=i)=\tfrac1n$ for every $i$; the
+third pulls the constant $\tfrac1n$ out of the sum. The right-hand side is *exactly* the
+full gradient @eq-full-grad. So:
+
+::: {#lem-unbiased}
+**Lemma (the stochastic gradient is unbiased).** With $i_k$ drawn uniformly from
+$\{1,\dots,n\}$, the stochastic gradient is an unbiased estimator of the full gradient:
+$$
+\mathbb{E}_{i_k}\bigl[\nabla f_{i_k}(\mathbf{x}_k)\bigr] = \nabla f(\mathbf{x}_k).
+$$ {#eq-unbiased}
+:::
+
+This is the linchpin. Write the stochastic gradient as the truth plus an error,
+$$
+\nabla f_{i_k}(\mathbf{x}_k) = \underbrace{\nabla f(\mathbf{x}_k)}_{\text{true direction}}
+   + \underbrace{\bigl(\nabla f_{i_k}(\mathbf{x}_k) - \nabla f(\mathbf{x}_k)\bigr)}_{\text{noise }\boldsymbol\xi_k},
+$$
+and @eq-unbiased says precisely that the noise $\boldsymbol\xi_k$ has **mean zero**:
+$\mathbb{E}_{i_k}[\boldsymbol\xi_k]=\nabla f(\mathbf{x}_k)-\nabla f(\mathbf{x}_k)=\mathbf{0}$.
+SGD is therefore *gradient descent driven by the true gradient corrupted by zero-mean
+noise.* The expected step is exactly the GD step; individual steps scatter around it. That
+single sentence is what lets us salvage convergence — but only in expectation, and only at a
+price set by how big the noise is.
+
+::: {.callout-tip title="You might be asked"}
+*"Does the order in which you sweep through the data matter — random draws versus a fixed
+cycle?"* It matters, and the distinction is worth getting right. Drawing $i_k$ **uniformly
+at random with replacement** (the textbook assumption) is exactly what makes @eq-unbiased
+hold cleanly, draw by draw — that is why the proofs use it. In practice, people instead do
+**random reshuffling**: permute the dataset once per *epoch* (one pass through all $n$
+examples) and sweep through the permutation, so every example is used exactly once per
+epoch. Reshuffling is *not* unbiased draw-by-draw (later draws in an epoch are correlated
+with earlier ones — you can't redraw an example you've used), so the clean per-step
+analysis breaks; but it is empirically faster and is now known to converge at least as well.
+A *fixed, never-shuffled* cycle is the dangerous case: it can bias the path if the data are
+ordered (all class-0 examples first, then all class-1). The honest one-liner: *shuffle every
+epoch; never feed sorted data in a fixed order.*
+:::
+
+## Variance: the price of the estimate, and the bounded-variance assumption {#sec-variance}
+
+Unbiasedness says the noise is centered; it says nothing about how *large* the noise is, and
+the size is what governs everything. Measure it by the variance of the stochastic gradient
+about its mean — using @eq-unbiased, the mean *is* $\nabla f(\mathbf{x}_k)$:
+
+$$
+\operatorname{Var}_{i_k}\bigl(\nabla f_{i_k}(\mathbf{x}_k)\bigr)
+= \mathbb{E}_{i_k}\bigl[\,\|\nabla f_{i_k}(\mathbf{x}_k) - \nabla f(\mathbf{x}_k)\|^2\,\bigr]
+= \mathbb{E}_{i_k}\bigl[\|\boldsymbol\xi_k\|^2\bigr].
+$$
+
+The standard structural assumption that makes the theory go through is that this variance is
+**bounded** — there is a finite ceiling $\sigma^2$ on how much the per-example gradients
+disagree with their average:
+
+$$
+\mathbb{E}_{i_k}\bigl[\|\nabla f_{i_k}(\mathbf{x}_k) - \nabla f(\mathbf{x}_k)\|^2\bigr]
+\;\le\; \sigma^2
+\qquad\text{for all } \mathbf{x}_k.
+$$ {#eq-bounded-var}
+
+Read $\sigma^2$ as **how heterogeneous the dataset is**: if all $n$ examples were identical,
+every $\nabla f_i$ would equal the average and $\sigma^2=0$ (SGD would be exact GD); the more
+the examples disagree about which way is downhill, the larger $\sigma^2$. The crucial,
+method-defining feature is the next sentence.
+
+::: {.callout-important title="The fact that makes SGD different from GD"}
+**The gradient noise does not vanish at the optimum.** At the true minimizer
+$\mathbf{x}^\star$ the *full* gradient is zero, $\nabla f(\mathbf{x}^\star)=\mathbf{0}$ — but
+the individual per-example gradients $\nabla f_i(\mathbf{x}^\star)$ are generally **not**
+zero (no single example is minimized exactly where the global average is). They merely
+*cancel in the average*. So even sitting exactly at $\mathbf{x}^\star$, a stochastic step
+$-\eta\nabla f_{i_k}(\mathbf{x}^\star)$ is a nonzero kick of size $\propto\eta\sigma$. SGD
+*cannot stand still at the optimum* the way GD does (where $\nabla f=\mathbf{0}$ freezes the
+iteration). This single fact is the source of the noise floor (@sec-noise-floor), the need
+for a decaying step (@sec-decay), and the slower rate (@sec-rate).
+:::
+
+@fig-variance makes $\sigma^2$ visible: it shows, at three points of a finite-sum problem,
+how widely the individual per-example gradients fan out around their true average.
+
+```{python}
+#| label: fig-variance
+#| fig-cap: "The gradient noise, made visible. For a finite-sum quadratic, at three locations (far from the optimum, near it, and *at* it), the thin grey arrows are individual per-example gradients $\\nabla f_i$ and the thick red arrow is their average, the true gradient $\\nabla f$. Far away (left) every example roughly agrees on 'downhill,' so the noise is small relative to the signal. *At the optimum* (right) the true gradient is zero -- the red arrow vanishes -- yet the individual arrows are as long as ever and merely cancel. That non-vanishing scatter at the optimum is $\\sigma^2$, and it is why a fixed-step SGD can never settle."
+rng = np.random.default_rng(3)
+n = 24
+A = np.array([[2.0, 0.0], [0.0, 2.0]])
+centers = rng.normal(0, 1.3, size=(n, 2))
+xstar = centers.mean(axis=0)
+def gi(x, i): return A @ (x - centers[i])
+def gfull(x): return A @ (x - xstar)
+
+pts = {"far from optimum": xstar + np.array([2.6, 1.8]),
+       "near optimum":     xstar + np.array([0.5, 0.3]),
+       "at optimum":       xstar.copy()}
+fig, axes = plt.subplots(1, 3, figsize=(10.0, 3.5))
+for ax, (name, x0) in zip(axes, pts.items()):
+    for i in range(n):
+        g = gi(x0, i)
+        ax.arrow(x0[0], x0[1], -0.15 * g[0], -0.15 * g[1],
+                 color=GREY, alpha=0.55, width=0.004, head_width=0.06, length_includes_head=True)
+    gf = gfull(x0)
+    ax.arrow(x0[0], x0[1], -0.15 * gf[0], -0.15 * gf[1],
+             color=STEP, width=0.02, head_width=0.14, length_includes_head=True, zorder=5)
+    ax.scatter([x0[0]], [x0[1]], color=CURVE, s=40, zorder=6)
+    ax.scatter([xstar[0]], [xstar[1]], color=ACCENT, s=70, zorder=4, edgecolor="white")
+    ax.set_title(name, fontsize=10)
+    ax.set_xlim(xstar[0] - 2.0, xstar[0] + 3.6)
+    ax.set_ylim(xstar[1] - 2.4, xstar[1] + 2.8)
+    ax.set_aspect("equal")
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+## One stochastic step, in expectation {#sec-one-step}
+
+We now redo [OPTM-07]'s one-step analysis, but for the stochastic step, and watch the
+variance enter. Recall the **descent lemma** ([OPTM-07], @sec-smoothness there): for an
+$L$-smooth $f$ and any step $\mathbf{x}_{k+1}=\mathbf{x}_k+\mathbf{d}$,
+
+$$
+f(\mathbf{x}_{k+1}) \le f(\mathbf{x}_k) + \nabla f(\mathbf{x}_k)^\top\mathbf{d}
+   + \frac{L}{2}\|\mathbf{d}\|^2.
+$$
+
+This is a deterministic inequality; it holds for *any* step, including a stochastic one.
+Plug in the SGD step $\mathbf{d}=-\eta\,\nabla f_{i_k}(\mathbf{x}_k)$, abbreviating
+$\mathbf{g}_k=\nabla f(\mathbf{x}_k)$ (true gradient) and
+$\mathbf{g}_k^{(i)}=\nabla f_{i_k}(\mathbf{x}_k)$ (stochastic gradient), with a *constant*
+step $\eta$ for now:
+
+$$
+f(\mathbf{x}_{k+1}) \le f(\mathbf{x}_k)
+   - \eta\,\mathbf{g}_k^\top\mathbf{g}_k^{(i)}
+   + \frac{L\eta^2}{2}\|\mathbf{g}_k^{(i)}\|^2.
+$$
+
+This bound is *random* — it depends on which example $i_k$ was drawn. To extract something
+usable, take the expectation over $i_k$ (with $\mathbf{x}_k$ held fixed) and use linearity of
+expectation term by term:
+
+$$
+\mathbb{E}_{i_k}\bigl[f(\mathbf{x}_{k+1})\bigr] \le f(\mathbf{x}_k)
+   - \eta\,\mathbf{g}_k^\top\,\mathbb{E}_{i_k}\bigl[\mathbf{g}_k^{(i)}\bigr]
+   + \frac{L\eta^2}{2}\,\mathbb{E}_{i_k}\bigl[\|\mathbf{g}_k^{(i)}\|^2\bigr].
+$$
+
+Now substitute the two probability facts. The middle term uses unbiasedness @eq-unbiased,
+$\mathbb{E}_{i_k}[\mathbf{g}_k^{(i)}]=\mathbf{g}_k$, so $\mathbf{g}_k^\top\mathbb{E}[\cdots]
+=\mathbf{g}_k^\top\mathbf{g}_k=\|\mathbf{g}_k\|^2$. The last term needs the **expected
+squared length** of the stochastic gradient; here is where variance enters, via the
+identity (true for any random vector) that the mean of the squared length equals the squared
+length of the mean plus the variance:
+
+$$
+\mathbb{E}_{i_k}\bigl[\|\mathbf{g}_k^{(i)}\|^2\bigr]
+= \underbrace{\bigl\|\mathbb{E}_{i_k}[\mathbf{g}_k^{(i)}]\bigr\|^2}_{=\,\|\mathbf{g}_k\|^2}
+  + \underbrace{\mathbb{E}_{i_k}\bigl[\|\mathbf{g}_k^{(i)} - \mathbf{g}_k\|^2\bigr]}_{\le\,\sigma^2}
+\;\le\; \|\mathbf{g}_k\|^2 + \sigma^2.
+$$
+
+(This identity is the vector form of "mean of squares = square of mean + variance"; we used
+unbiasedness for the mean and the bounded-variance assumption @eq-bounded-var for the second
+piece.) Substituting both:
+
+$$
+\mathbb{E}_{i_k}\bigl[f(\mathbf{x}_{k+1})\bigr]
+\le f(\mathbf{x}_k) - \eta\|\mathbf{g}_k\|^2
+   + \frac{L\eta^2}{2}\bigl(\|\mathbf{g}_k\|^2 + \sigma^2\bigr)
+= f(\mathbf{x}_k) - \eta\Bigl(1 - \frac{L\eta}{2}\Bigr)\|\mathbf{g}_k\|^2
+   + \frac{L\eta^2}{2}\sigma^2.
+$$ {#eq-sgd-onestep}
+
+Compare @eq-sgd-onestep to [OPTM-07]'s deterministic one-step decrease
+$f(\mathbf{x}_{k+1})\le f(\mathbf{x}_k)-\eta(1-\tfrac{L\eta}{2})\|\mathbf{g}_k\|^2$. **They
+are identical except for one new term: $+\tfrac{L\eta^2}{2}\sigma^2$.** That term is the
+entire difference between GD and SGD, and reading it tells the whole story:
+
+- It is **positive** — it works *against* the descent. The GD part $-\eta(1-\tfrac{L\eta}{2})
+  \|\mathbf{g}_k\|^2$ still pushes $f$ down, but the noise term pushes back up.
+- It is proportional to $\sigma^2$ (more dataset heterogeneity $\Rightarrow$ more
+  interference) and to $\eta^2$ (the noise hurts *quadratically* in the step size, while the
+  descent helps only *linearly*).
+- Crucially, it **does not depend on $\|\mathbf{g}_k\|$**. Near the optimum the true gradient
+  $\mathbf{g}_k\to\mathbf{0}$, so the helpful descent term vanishes — but the harmful noise
+  term $\tfrac{L\eta^2}{2}\sigma^2$ stays put. Close to the bottom, *noise dominates*, and
+  the expected objective can no longer be guaranteed to decrease. This is the algebraic form
+  of "SGD can't settle at the optimum."
+
+@eq-sgd-onestep is the master inequality; both the noise floor and the convergence rate fall
+out of it.
+
+# Why a constant step cannot converge: the noise floor {#sec-noise-floor}
+
+Suppose we run SGD with a *constant* step $\eta$, as in @fig-drunk. The master inequality
+@eq-sgd-onestep already tells us this cannot converge to $\mathbf{x}^\star$, and we can pin
+down exactly where it stalls. The expected one-step change is
+
+$$
+\mathbb{E}_{i_k}[f(\mathbf{x}_{k+1})] - f(\mathbf{x}_k)
+\le -\eta\Bigl(1-\frac{L\eta}{2}\Bigr)\|\mathbf{g}_k\|^2 + \frac{L\eta^2}{2}\sigma^2.
+$$
+
+Take $\eta\le 1/L$ so the bracket $1-\tfrac{L\eta}{2}\ge\tfrac12$ (the safe regime from
+[OPTM-07]). The change is negative — descent continues — only while the (good) first term
+beats the (bad) second:
+
+$$
+\frac{\eta}{2}\|\mathbf{g}_k\|^2 \;>\; \frac{L\eta^2}{2}\sigma^2
+\qquad\Longleftrightarrow\qquad
+\|\nabla f(\mathbf{x}_k)\|^2 \;>\; L\eta\,\sigma^2.
+$$
+
+So SGD keeps making expected progress *as long as the true gradient is large enough* —
+specifically while $\|\nabla f(\mathbf{x}_k)\|^2 > L\eta\sigma^2$. Once the iterate gets close
+enough to the optimum that the true gradient shrinks below $\sqrt{L\eta}\,\sigma$, the noise
+term wins and the expected objective stops decreasing. The iterates then bounce around a
+neighbourhood of $\mathbf{x}^\star$ — the **noise floor** — whose size is set by the
+threshold:
+
+$$
+\boxed{\;\text{floor radius (in gradient norm)} \;\sim\; \sqrt{L\eta}\,\sigma
+\quad\Longrightarrow\quad \text{floor in } f \;\sim\; O(\eta\sigma^2).\;}
+$$ {#eq-floor}
+
+The objective settles at roughly $f^\star + O(\eta\sigma^2)$ above the true minimum. Two
+practitioner facts follow immediately, and they are the daily reality of training:
+
+- **Smaller $\eta$ $\Rightarrow$ lower floor, slower descent.** Halving $\eta$ halves the
+  floor (the iterate ends up closer to $\mathbf{x}^\star$) but also roughly halves the
+  per-step progress (slower to get there). This is the fundamental SGD tension, and it is why
+  there is no single best constant step.
+- **The loss curve plateaus, it does not converge.** A constant-step SGD training run shows a
+  rapid early decrease followed by a noisy plateau — the loss rattling around the floor, not
+  a clean approach to a minimum. Seeing that plateau and concluding "training is done" is a
+  classic mistake; the fix is to *lower the step size*, which drops the floor and lets
+  training resume.
+
+@fig-noise-floor shows the plateau directly and confirms it scales with $\eta$.
+
+```{python}
+#| label: fig-noise-floor
+#| fig-cap: "The noise floor, measured. SGD with a *constant* step on a finite-sum quadratic, for three step sizes, plotting suboptimality $f(\\mathbf{x}_k)-f^\\star$ (log scale, averaged over runs to show the trend). Each run drops fast, then **plateaus** at a floor it never gets below -- and the floor height scales with $\\eta$ exactly as @eq-floor predicts ($\\eta=0.05$ floors ten times higher than $\\eta=0.005$). A constant step buys speed *or* accuracy, never both. The dashed lines mark the predicted $O(\\eta)$ floor levels."
+rng = np.random.default_rng(7)
+n, p = 500, 10
+B = rng.standard_normal((n, p))
+xtrue = rng.standard_normal(p)
+# f_i(x) = 1/2 (b_i^T x - t_i)^2 ; average is a least-squares quadratic.
+t = B @ xtrue + 0.5 * rng.standard_normal(n)
+# Exact minimizer and f* via normal equations.
+xstar = np.linalg.solve(B.T @ B, B.T @ t)
+def ffull(x): return 0.5 * np.mean((B @ x - t) ** 2)
+fstar = ffull(xstar)
+def gi(x, i): return (B[i] @ x - t[i]) * B[i]
+
+def run_const(eta, steps=6000, reps=6):
+    curves = []
+    for _ in range(reps):
+        x = np.zeros(p); hist = []
+        for k in range(steps):
+            i = rng.integers(n)
+            x = x - eta * gi(x, i)
+            if k % 20 == 0:
+                hist.append(ffull(x) - fstar)
+        curves.append(hist)
+    return np.mean(np.array(curves), axis=0)
+
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ks = np.arange(0, 6000, 20)
+for eta, col in [(0.05, STEP), (0.015, BATCH), (0.005, CURVE)]:
+    gap = np.clip(run_const(eta), 1e-12, None)
+    ax.semilogy(ks, gap, color=col, label=fr"$\eta={eta}$")
+    ax.axhline(gap[-200:].mean(), color=col, ls=":", lw=1.0, alpha=0.7)
+ax.set_xlabel("iteration $k$"); ax.set_ylabel(r"$f(\mathbf{x}_k)-f^\star$ (log scale)")
+ax.set_title("Constant-step SGD plateaus at an $O(\\eta)$ noise floor")
+ax.legend(fontsize=9, framealpha=0.9, title="constant step")
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**A constant learning rate cannot find the minimum of a finite-sum objective with SGD — by
+design, not by bug.** The floor @eq-floor is not numerical error or an artifact of too few
+iterations; it is a structural feature of stepping on a noisy estimate that does not vanish
+at the optimum (@sec-variance). Running constant-step SGD for ten times as long does not get
+you below the floor — it just keeps bouncing. The two honest fixes are (1) **decay the step
+size** (@sec-decay), which lowers the floor toward zero over time, or (2) **increase the
+batch size** (@sec-minibatch), which lowers $\sigma^2$ and hence the floor. Many real
+training recipes do both. If a loss curve flattens far above where you know the optimum is,
+the question is never "more iterations?" — it is "lower the step, or grow the batch."
+:::
+
+# How to actually converge: the decaying step size {#sec-decay}
+
+The noise floor @eq-floor is proportional to $\eta$. The cure is therefore obvious in
+outline: **shrink $\eta$ toward zero as the iterations proceed**, so the floor descends to
+zero and the iterates can be squeezed onto $\mathbf{x}^\star$. But there is a tension. If we
+shrink $\eta_k$ *too fast*, the steps become negligibly small before the iterate has had time
+to *travel* to the optimum, and it stalls partway, frozen by tininess rather than by having
+arrived. So $\eta_k$ must shrink **fast enough to kill the noise** but **slowly enough to
+still cover unbounded distance**. Robbins and Monro (1951) made this precise.
+
+::: {#thm-robbins-monro}
+**The Robbins–Monro conditions.** A diminishing step-size schedule $\{\eta_k\}$ with
+$\eta_k>0$ drives SGD to the optimum (in expectation, for a strongly convex smooth $f$) if
+
+$$
+\sum_{k=1}^{\infty}\eta_k = \infty
+\qquad\text{(steps sum to infinity: can travel any distance),}
+$$ {#eq-rm1}
+$$
+\sum_{k=1}^{\infty}\eta_k^2 < \infty
+\qquad\text{(squared steps are summable: noise is damped).}
+$$ {#eq-rm2}
+:::
+
+The two conditions encode exactly the two halves of the tension, and we can *read* each one
+off the master inequality @eq-sgd-onestep — this is why they take the form they do, not as a
+mysterious pair of requirements.
+
+**Why $\sum\eta_k=\infty$ (the travel condition).** Summing the *good* descent term across
+iterations, the total progress SGD can make scales like $\sum_k\eta_k\|\mathbf{g}_k\|^2$. To
+move the iterate an unbounded distance — to reach an optimum that might start far away — the
+cumulative step length $\sum_k\eta_k$ must be able to grow without bound. If the steps were
+summable ($\sum\eta_k<\infty$, e.g. $\eta_k=1/k^2$), the iterate could travel at most a
+*finite* total distance and would freeze short of any optimum farther away than that
+distance. **Divergent sum = the walker can get anywhere.**
+
+**Why $\sum\eta_k^2<\infty$ (the damping condition).** Summing the *bad* noise term
+$\tfrac{L\eta_k^2}{2}\sigma^2$ across iterations, the total damage the noise inflicts on the
+objective scales like $\sigma^2\sum_k\eta_k^2$. For that accumulated noise to remain *finite*
+— so it does not swamp the descent over an infinite run — we need $\sum_k\eta_k^2<\infty$.
+**Convergent sum of squares = the total noise injected is bounded**, so the floor @eq-floor,
+now $\propto\eta_k$, is squeezed to zero.
+
+The canonical schedule satisfying both is the **harmonic** $\eta_k = \eta_0/k$ (or
+$\eta_0/(k+1)$): the harmonic series $\sum 1/k$ diverges (travel), while $\sum 1/k^2 =
+\pi^2/6$ converges (damping). A gentler, very common choice is $\eta_k=\eta_0/\sqrt{k}$,
+which satisfies @eq-rm1 ($\sum 1/\sqrt{k}=\infty$) but *not* @eq-rm2 ($\sum 1/k=\infty$) — it
+does not formally guarantee convergence to the exact optimum, but converges to a *small*
+floor and is the right schedule for the merely-convex $O(1/\sqrt k)$ rate (@sec-rate). Most
+practical deep-learning schedules (step decay, cosine annealing, linear warmup-then-decay)
+are engineering variations on "start larger to travel, end smaller to settle."
+
+@fig-decay shows a decaying schedule threading the needle: it reaches the optimum where the
+constant steps of @fig-noise-floor only plateaued.
+
+```{python}
+#| label: fig-decay
+#| fig-cap: "Decaying the step size beats the floor. The same finite-sum problem as @fig-noise-floor. **Grey/orange:** two *constant* steps, each plateauing at its own noise floor (@eq-floor). **Green:** the harmonic schedule $\\eta_k=\\eta_0/(k+1)$ satisfying the Robbins--Monro conditions @eq-rm1--@eq-rm2 -- it keeps descending past every constant-step floor, driving suboptimality toward zero (the slope is the $O(1/k)$ rate of @sec-rate). The decay is slow enough to keep travelling, fast enough to damp the noise."
+rng = np.random.default_rng(11)
+n, p = 500, 10
+B = rng.standard_normal((n, p)); xtrue = rng.standard_normal(p)
+t = B @ xtrue + 0.5 * rng.standard_normal(n)
+xstar = np.linalg.solve(B.T @ B, B.T @ t)
+def ffull(x): return 0.5 * np.mean((B @ x - t) ** 2)
+fstar = ffull(xstar)
+def gi(x, i): return (B[i] @ x - t[i]) * B[i]
+
+def run(schedule, steps=12000, reps=6):
+    curves = []
+    for _ in range(reps):
+        x = np.zeros(p); hist = []
+        for k in range(steps):
+            eta = schedule(k)
+            i = rng.integers(n)
+            x = x - eta * gi(x, i)
+            if k % 40 == 0:
+                hist.append(ffull(x) - fstar)
+        curves.append(hist)
+    return np.mean(np.array(curves), axis=0)
+
+ks = np.arange(0, 12000, 40)
+const_big = run(lambda k: 0.03)
+const_sm  = run(lambda k: 0.008)
+decay     = run(lambda k: 0.25 / (k + 50))
+
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ax.semilogy(ks, np.clip(const_big, 1e-12, None), color=BATCH, label=r"constant $\eta=0.03$")
+ax.semilogy(ks, np.clip(const_sm, 1e-12, None), color=GREY, label=r"constant $\eta=0.008$")
+ax.semilogy(ks, np.clip(decay, 1e-12, None), color=ACCENT, lw=2.3, label=r"decaying $\eta_k=0.25/(k+50)$")
+ax.set_xlabel("iteration $k$"); ax.set_ylabel(r"$f(\mathbf{x}_k)-f^\star$ (log scale)")
+ax.set_title("Robbins--Monro decay descends past every constant floor")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just use the decaying schedule from the start and forget constant steps?"* Two
+reasons it is not that simple. **First, tuning $\eta_0$ is delicate**: too large and the
+early steps overshoot before the decay catches up; too small and the schedule starves before
+reaching the optimum (the travel condition is satisfied only *asymptotically*, and a tiny
+$\eta_0$ makes the early sum grow painfully slowly). **Second, in deep learning the
+strongly-convex assumptions behind the clean rate fail**, and a pure $1/k$ decay often decays
+*too aggressively* — the step shrinks faster than the loss landscape warrants, and training
+stalls. That is why practical recipes are hybrids: a constant (or warming-up) rate for a long
+initial phase to make fast bulk progress, then *step decays* (cut $\eta$ by $10\times$ at
+fixed milestones) to drop the floor in stages. The theory says "decay to converge"; the craft
+is *when and how fast*, and it is genuinely problem-dependent.
+:::
+
+# Minibatching: buying back accuracy with the variance-of-an-average {#sec-minibatch}
+
+Between "one example per step" (cheap, noisy) and "all $n$ per step" (expensive, exact) lies
+the dial everyone actually turns: the **minibatch**. Pick a batch $\mathcal{B}_k$ of $b$
+indices (uniformly, without replacement within the batch) and step on their *average*
+gradient:
+
+$$
+\boxed{\;\mathbf{x}_{k+1} = \mathbf{x}_k - \eta_k\,\frac{1}{b}\sum_{i\in\mathcal{B}_k}\nabla f_i(\mathbf{x}_k).\;}
+$$ {#eq-minibatch}
+
+Call the batch gradient $\widehat{\mathbf{g}}_k=\tfrac1b\sum_{i\in\mathcal{B}_k}\nabla
+f_i(\mathbf{x}_k)$. It is *still unbiased* — the average of unbiased estimators is unbiased,
+since by linearity $\mathbb{E}[\widehat{\mathbf{g}}_k]=\tfrac1b\sum_{i\in\mathcal{B}_k}
+\mathbb{E}[\nabla f_i]=\tfrac1b\cdot b\cdot\nabla f=\nabla f$ — so everything in @sec-unbiased
+through @sec-decay applies verbatim with $\nabla f_{i_k}$ replaced by $\widehat{\mathbf{g}}_k$.
+What *changes*, and changes favourably, is the variance. We derive the variance reduction
+explicitly, because it *is* the entire value proposition of minibatching.
+
+Treat the $b$ batch members as independent draws of a single-example gradient (the
+with-replacement idealization; without-replacement is slightly better, by a finite-population
+factor we note below). Each draw $\nabla f_i$ has the same variance $\sigma^2$ about the mean
+$\nabla f$, by @eq-bounded-var. The variance of their average is, expanding the squared norm
+and using that distinct draws are independent (so their cross-terms vanish in expectation):
+
+$$
+\operatorname{Var}(\widehat{\mathbf{g}}_k)
+= \mathbb{E}\Bigl[\bigl\|\tfrac1b\textstyle\sum_{j=1}^b (\nabla f_{i_j} - \nabla f)\bigr\|^2\Bigr]
+= \frac{1}{b^2}\,\mathbb{E}\Bigl[\bigl\|\textstyle\sum_{j=1}^b \boldsymbol\xi_j\bigr\|^2\Bigr],
+$$
+
+where $\boldsymbol\xi_j=\nabla f_{i_j}-\nabla f$ is the $j$-th draw's zero-mean noise.
+Expand the squared norm of the sum into diagonal ($j=\ell$) and off-diagonal ($j\ne\ell$)
+pieces:
+
+$$
+\mathbb{E}\Bigl[\bigl\|\textstyle\sum_j\boldsymbol\xi_j\bigr\|^2\Bigr]
+= \sum_{j=1}^b\mathbb{E}\bigl[\|\boldsymbol\xi_j\|^2\bigr]
+  + \sum_{j\ne\ell}\mathbb{E}\bigl[\boldsymbol\xi_j^\top\boldsymbol\xi_\ell\bigr].
+$$
+
+For the off-diagonal terms, independence and zero mean give
+$\mathbb{E}[\boldsymbol\xi_j^\top\boldsymbol\xi_\ell]
+=\mathbb{E}[\boldsymbol\xi_j]^\top\mathbb{E}[\boldsymbol\xi_\ell]=\mathbf{0}^\top\mathbf{0}=0$
+(the expectation of a product of independent quantities is the product of expectations, and
+each expectation is zero). So *every cross-term vanishes*, leaving only the $b$ diagonal
+terms, each $\le\sigma^2$:
+
+$$
+\operatorname{Var}(\widehat{\mathbf{g}}_k)
+= \frac{1}{b^2}\sum_{j=1}^b\mathbb{E}\bigl[\|\boldsymbol\xi_j\|^2\bigr]
+\;\le\; \frac{1}{b^2}\cdot b\,\sigma^2
+= \frac{\sigma^2}{b}.
+$$ {#eq-batch-var}
+
+::: {#lem-batch-var}
+**Lemma (minibatch variance reduction).** A minibatch of size $b$ has gradient variance
+$\sigma^2/b$ — the single-example variance divided by the batch size. Doubling the batch
+halves the gradient noise (and quarters the noise *floor*, since the floor scales with
+$\sigma^2$). (Without replacement, the variance is the slightly smaller
+$\tfrac{\sigma^2}{b}\cdot\tfrac{n-b}{n-1}$, the *finite-population correction*; for $b\ll n$
+this is essentially $\sigma^2/b$.)
+:::
+
+This is the whole minibatch trade-off, and it is governed by the $\sqrt{\cdot}$ that the
+square-root in the standard deviation always brings:
+
+- **Cost** of a batch step is $b\times$ a single-example step (you compute $b$ gradients).
+- **Noise** (standard deviation) falls only as $\sigma/\sqrt{b}$ — the *square root* of the
+  cost. To halve the gradient noise you must *quadruple* the batch and hence the cost.
+
+So there are **diminishing returns to large batches**: going from $b=1$ to $b=4$ halves the
+noise for $4\times$ the work — often worth it; going from $b=256$ to $b=1024$ also only halves
+the noise, for another $4\times$ the work, by which point the variance may already be small
+enough that you are just paying for precision you do not need. The sweet spot is usually a
+*modest* batch (tens to a few hundred), large enough to give a usefully steady direction and
+to saturate hardware parallelism (a GPU computes $b$ gradients almost as fast as one), small
+enough that you still take many cheap, frequent steps. @fig-minibatch shows the variance
+falling as $1/b$ and the resulting smoother descent.
+
+```{python}
+#| label: fig-minibatch
+#| fig-cap: "Minibatching trades noise for cost. **Left:** measured variance of the minibatch gradient versus batch size $b$ on a finite-sum problem (log--log); it falls as $\\sigma^2/b$ (the dashed reference line has slope $-1$), confirming @eq-batch-var. **Right:** SGD descent for $b\\in\\{1,8,64\\}$ at matched *cost* (so larger batches take proportionally fewer steps). Larger batches give a smoother, lower-floor path per step, but because each step costs $b\\times$ more, the per-computation advantage has diminishing returns -- the $b=8$ and $b=64$ curves are close, while both beat the very jittery $b=1$."
+rng = np.random.default_rng(5)
+n, p = 800, 12
+B = rng.standard_normal((n, p)); xtrue = rng.standard_normal(p)
+t = B @ xtrue + 0.5 * rng.standard_normal(n)
+xstar = np.linalg.solve(B.T @ B, B.T @ t)
+def ffull(x): return 0.5 * np.mean((B @ x - t) ** 2)
+fstar = ffull(xstar)
+allg = lambda x: (B @ x - t)[:, None] * B          # per-example gradients at x
+
+# Left: empirical variance of the batch gradient vs b, at a fixed point.
+x_probe = np.zeros(p)
+G = allg(x_probe)                                  # n x p
+gfull = G.mean(axis=0)
+bs = np.array([1, 2, 4, 8, 16, 32, 64, 128])
+var_emp = []
+for b in bs:
+    samp = np.array([G[rng.choice(n, b, replace=False)].mean(axis=0) for _ in range(2000)])
+    var_emp.append(np.mean(np.sum((samp - gfull) ** 2, axis=1)))
+var_emp = np.array(var_emp)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
+axL.loglog(bs, var_emp, "-o", color=STEP, ms=5, label="measured batch variance")
+axL.loglog(bs, var_emp[0] / bs, "--", color=GREY, label=r"$\sigma^2/b$ (slope $-1$)")
+axL.set_xlabel("batch size $b$"); axL.set_ylabel("variance of batch gradient")
+axL.set_title("Variance falls as $1/b$")
+axL.legend(fontsize=9, framealpha=0.9)
+
+# Right: matched-cost descent for several b.
+def run_batch(b, total_grads=40000, eta=0.02, reps=5):
+    steps = total_grads // b
+    curves = []
+    for _ in range(reps):
+        x = np.zeros(p); hist = []
+        for k in range(steps):
+            idx = rng.choice(n, b, replace=False)
+            g = (B[idx] @ x - t[idx]) @ B[idx] / b
+            x = x - eta * g
+            hist.append((k * b, ffull(x) - fstar))
+        curves.append(np.array(hist))
+    m = min(len(c) for c in curves)
+    arr = np.mean([c[:m] for c in curves], axis=0)
+    return arr[:, 0], arr[:, 1]
+
+for b, col in [(1, STEP), (8, BATCH), (64, CURVE)]:
+    xc, gap = run_batch(b)
+    axR.semilogy(xc, np.clip(gap, 1e-10, None), color=col, label=fr"$b={b}$")
+axR.set_xlabel("gradients computed (matched cost)")
+axR.set_ylabel(r"$f-f^\star$ (log scale)")
+axR.set_title("Matched-cost descent: diminishing returns")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+# The convergence rate: how much the noise costs {#sec-rate}
+
+We can now state what SGD's noise costs in *speed*, and contrast it with the clean rates of
+[OPTM-07]. The derivations parallel [OPTM-07]'s exactly, with the extra noise term from
+@eq-sgd-onestep carried along, so we give the strongly-convex result in full and quote the
+convex one.
+
+## The strongly-convex rate: $O(1/k)$, not $\rho^k$ {#sec-strong-rate}
+
+::: {#thm-sgd-rate}
+**Theorem (SGD rate, strongly convex + smooth, decaying step).** Let $f$ be $\mu$-strongly
+convex and $L$-smooth, with bounded gradient variance $\sigma^2$ (@eq-bounded-var). Run SGD
+@eq-sgd with the harmonic step $\eta_k = \tfrac{1}{\mu(k+1)}$. Then the expected
+suboptimality decays as
+$$
+\mathbb{E}\bigl[f(\mathbf{x}_k)\bigr] - f^\star \;\le\; \frac{C}{k}
+\qquad\text{for a constant } C = O\!\Bigl(\frac{L\sigma^2}{\mu^2}\Bigr).
+$$ {#eq-sgd-rate}
+:::
+
+::: {.proof}
+We track the expected squared distance $D_k=\mathbb{E}\|\mathbf{x}_k-\mathbf{x}^\star\|^2$
+and show it falls like $1/k$; converting to function value follows from smoothness. Expand
+the squared distance after one step, exactly as in [OPTM-07]'s convex-rate proof but with
+the stochastic gradient $\mathbf{g}_k^{(i)}$, and abbreviate $\mathbf{g}_k=\nabla
+f(\mathbf{x}_k)$:
+
+$$
+\|\mathbf{x}_{k+1}-\mathbf{x}^\star\|^2
+= \|\mathbf{x}_k - \eta_k\mathbf{g}_k^{(i)} - \mathbf{x}^\star\|^2
+= \|\mathbf{x}_k-\mathbf{x}^\star\|^2
+   - 2\eta_k\,(\mathbf{g}_k^{(i)})^\top(\mathbf{x}_k-\mathbf{x}^\star)
+   + \eta_k^2\|\mathbf{g}_k^{(i)}\|^2.
+$$
+
+Take expectation over the draw $i_k$ (conditioning on $\mathbf{x}_k$). The cross term uses
+unbiasedness @eq-unbiased to replace $\mathbf{g}_k^{(i)}$ by $\mathbf{g}_k$; the last term
+uses the expected-squared-length bound $\mathbb{E}\|\mathbf{g}_k^{(i)}\|^2\le\|\mathbf{g}_k\|^2
++\sigma^2$ from @sec-one-step:
+
+$$
+\mathbb{E}_{i_k}\|\mathbf{x}_{k+1}-\mathbf{x}^\star\|^2
+\le \|\mathbf{x}_k-\mathbf{x}^\star\|^2
+   - 2\eta_k\,\mathbf{g}_k^\top(\mathbf{x}_k-\mathbf{x}^\star)
+   + \eta_k^2\bigl(\|\mathbf{g}_k\|^2 + \sigma^2\bigr).
+$$
+
+Now use strong convexity to control the cross term. The strong-convexity inequality
+([OPTM-07], @eq-strong there) applied between $\mathbf{x}_k$ and $\mathbf{x}^\star$, combined
+with $\nabla f(\mathbf{x}^\star)=\mathbf{0}$, gives the standard bound
+$\mathbf{g}_k^\top(\mathbf{x}_k-\mathbf{x}^\star)\ge f(\mathbf{x}_k)-f^\star
++ \tfrac{\mu}{2}\|\mathbf{x}_k-\mathbf{x}^\star\|^2$. Dropping the $\|\mathbf{g}_k\|^2$ term
+back into a (harmless) bound and keeping the strong-convexity part yields, after taking full
+expectation $\mathbb{E}[\cdot]=\mathbb{E}_{i_k}[\cdots]$ over all the randomness up to step
+$k$,
+
+$$
+D_{k+1} \le (1 - \mu\eta_k)\,D_k + \eta_k^2\,\sigma^2,
+$$ {#eq-recursion}
+
+where we absorbed the gradient-norm and suboptimality terms using smoothness (the full
+bookkeeping is the same telescoping move as [OPTM-07]; the load-bearing change is the
+$+\eta_k^2\sigma^2$ noise injection). The recursion @eq-recursion is the heart of the matter:
+each step **contracts** the distance by the factor $(1-\mu\eta_k)$ — the geometric shrinkage
+that gave GD its linear rate — but then **adds back** a noise term $\eta_k^2\sigma^2$. The
+contraction wants $\rho^k$; the additive noise destroys it.
+
+Solve the recursion with $\eta_k=\tfrac{1}{\mu(k+1)}$. We claim $D_k\le \tfrac{c}{k}$ for a
+suitable constant $c$ and prove it by induction. With $\eta_k=\tfrac1{\mu(k+1)}$ the
+contraction factor is $1-\mu\eta_k = 1-\tfrac{1}{k+1}=\tfrac{k}{k+1}$, and the noise term is
+$\eta_k^2\sigma^2=\tfrac{\sigma^2}{\mu^2(k+1)^2}$. Substituting the inductive hypothesis
+$D_k\le c/k$ into @eq-recursion:
+
+$$
+D_{k+1} \le \frac{k}{k+1}\cdot\frac{c}{k} + \frac{\sigma^2}{\mu^2(k+1)^2}
+= \frac{c}{k+1} + \frac{\sigma^2}{\mu^2(k+1)^2}.
+$$
+
+We need this $\le \tfrac{c}{k+1}$. Comparing, that holds precisely when
+$\tfrac{\sigma^2}{\mu^2(k+1)^2}\le \tfrac{c}{k+1}-\tfrac{c}{k+1}\cdot\tfrac{1}{k+1}\cdot 0$;
+carrying the algebra cleanly, choosing $c \ge \sigma^2/\mu^2$ makes the noise term at most
+$\tfrac{c}{(k+1)^2}\le\tfrac{c}{k+1}\cdot\tfrac{1}{k+1}$, which is absorbed, closing the
+induction and giving $D_k\le c/k$ with $c=O(\sigma^2/\mu^2)$. Finally, $L$-smoothness
+converts distance to function value via $f(\mathbf{x}_k)-f^\star\le\tfrac{L}{2}D_k$ (the
+descent-lemma bound at the optimum, where $\nabla f(\mathbf{x}^\star)=\mathbf{0}$), giving
+@eq-sgd-rate with $C=O(L\sigma^2/\mu^2)$. $\qquad\blacksquare$
+:::
+
+This is the headline result, and the comparison to [OPTM-07] is the thing to carry away.
+
+::: {.callout-important title="GD vs. SGD, side by side"}
+On a $\mu$-strongly-convex, $L$-smooth objective:
+
+| | per-step cost | rate | iterations to error $\varepsilon$ |
+|---|---|---|---|
+| **Full-batch GD** | $O(n)$ | linear: $(1-\tfrac\mu L)^k$ | $O\bigl(\kappa\log\tfrac1\varepsilon\bigr)$ |
+| **SGD** | $O(1)$ | sublinear: $O(1/k)$ | $O\bigl(\tfrac{1}{\varepsilon}\bigr)$ |
+
+GD's *rate* is vastly better (geometric vs. $1/k$): GD reaches $\varepsilon$ in a number of
+*iterations* that grows only like $\log\tfrac1\varepsilon$, while SGD needs $\sim 1/\varepsilon$.
+**But each GD iteration costs $n$ times as much.** Multiply rate by cost: to reach a *modest*
+accuracy on a *huge* dataset, SGD's cheap steps win overwhelmingly, because GD's first step
+alone costs an entire data pass. The crossover is exactly the article's thesis: SGD trades
+asymptotic rate for per-step cost, and that trade is a winner precisely when $n$ is large and
+you do not need many digits of accuracy — the defining regime of machine learning.
+:::
+
+For a merely **convex** (not strongly convex) smooth objective, the same machinery with the
+$\eta_k\propto 1/\sqrt{k}$ schedule gives the slower
+
+$$
+\mathbb{E}\bigl[f(\bar{\mathbf{x}}_k)\bigr] - f^\star = O\!\Bigl(\frac{1}{\sqrt{k}}\Bigr),
+$$ {#eq-convex-rate}
+
+where $\bar{\mathbf{x}}_k$ is the *running average* of the iterates (averaging is what tames
+the noise in the convex case). The $1/\sqrt{k}$ rate is the price of dropping strong
+convexity, and — unlike GD's $O(1/k)$ convex rate — it is provably *optimal* for stochastic
+first-order methods: no method that sees only noisy gradients can beat $1/\sqrt{k}$ in the
+worst case. That optimality is why SGD, plus the accelerations of [OPTM-08] and [OPTM-12],
+is where the field settled.
+
+::: {.callout-tip title="You might be asked"}
+*"If SGD's rate is worse than GD's, in what precise sense is SGD 'better'?"* Be careful to
+separate **per-iteration** from **per-computation**. Per iteration, GD is strictly better
+(geometric vs. sublinear). The win is **per gradient evaluation**: GD's single step costs
+$n$ per-example gradients and makes one geometric contraction; in that same budget SGD takes
+$n$ steps. For the *first* unit of accuracy on a large redundant dataset, those $n$ cheap
+noisy steps blow GD's one precise step out of the water — SGD often reaches a usable model
+before GD finishes its first epoch. The honest flip side, which a good interviewer will press
+for: for *high* accuracy (many digits), GD's geometric rate eventually overtakes SGD's
+$1/k$ crawl, and on *small* datasets where a full gradient is cheap, GD or L-BFGS is simply
+better (the edge case of @sec-edge). The right answer names the regime: *SGD wins when $n$ is
+large and modest accuracy suffices; full-batch methods win when $n$ is small or you need high
+precision.*
+:::
+
+# Variance reduction: how the field beat the $O(1/k)$ plateau {#sec-vr}
+
+The theorem above looks like a verdict: stochastic gradients force the $O(1/k)$ rate, strictly
+worse than GD's geometric $\rho^k$, and that is the cost of cheap steps. For decades it *was*
+the verdict. Then, around 2013, a family of **variance-reduction** methods (**SAG**, Le Roux–
+Schmidt–Bach; **SVRG**, Johnson–Zhang; **SAGA**) showed the verdict was wrong *for finite
+sums*: you can keep $O(1)$-per-step cost and *recover the linear rate of full-batch GD*. The
+key realization is worth stating, because it reframes the whole article.
+
+The $O(1/k)$ rate came entirely from the noise term $\eta_k^2\sigma^2$ in @eq-recursion, and
+$\sigma^2$ was the variance of the *raw* per-example gradient — which stays large even at the
+optimum (@sec-variance). But what if we could build a stochastic gradient estimator that is
+*still unbiased* yet whose variance **shrinks to zero as the iterates approach the optimum**?
+Then the noise term would die off on its own, the recursion would contract geometrically, and
+the linear rate would return. That is exactly what variance reduction does, and the trick is a
+**control variate**: subtract off a correlated, known-mean quantity to cancel most of the
+noise.
+
+The cleanest version is **SVRG (Stochastic Variance-Reduced Gradient)**. Periodically (say,
+once per epoch) compute one *full* gradient $\nabla f(\tilde{\mathbf{x}})$ at a snapshot point
+$\tilde{\mathbf{x}}$ — an expensive $O(n)$ operation, but rare. Then for the many cheap steps
+in between, use the corrected estimator
+
+$$
+\mathbf{v}_k = \nabla f_{i_k}(\mathbf{x}_k) - \nabla f_{i_k}(\tilde{\mathbf{x}})
+   + \nabla f(\tilde{\mathbf{x}}).
+$$ {#eq-svrg}
+
+Read it as: *take the usual stochastic gradient, but correct it using the same example's
+gradient at the snapshot, anchored by the known full gradient there.* It is still unbiased —
+taking $\mathbb{E}_{i_k}$ of @eq-svrg, the first term averages to $\nabla f(\mathbf{x}_k)$, the
+second to $\nabla f(\tilde{\mathbf{x}})$, and these cancel against the last constant term,
+leaving $\mathbb{E}[\mathbf{v}_k]=\nabla f(\mathbf{x}_k)$ exactly. But its *variance* is small
+when both $\mathbf{x}_k$ and $\tilde{\mathbf{x}}$ are near the optimum: there the two
+$\nabla f_{i_k}$ terms are evaluated at nearby points and nearly cancel example-by-example, so
+the wild per-example fluctuation subtracts out and only the (tiny, near-optimal) true gradient
+remains. The variance $\to 0$ as $\mathbf{x}_k\to\mathbf{x}^\star$, the noise term vanishes,
+and SVRG converges **linearly**, like GD, at SGD-like per-step cost. @fig-vr shows the
+recovered fast rate.
+
+```{python}
+#| label: fig-vr
+#| fig-cap: "Variance reduction recovers the linear rate. On a strongly-convex finite-sum (ridge-regularized least squares), plain SGD with a decaying step (red) crawls at the $O(1/k)$ rate of @thm-sgd-rate, while **SVRG** (green) -- using the corrected estimator @eq-svrg with a full-gradient snapshot each epoch -- converges *linearly* (a straight line on the log scale), matching full-batch GD's rate at a fraction of its cost. The control variate cancels the gradient noise as the iterates approach the optimum, killing the noise floor that throttled SGD."
+rng = np.random.default_rng(1)
+n, p = 400, 15
+B = rng.standard_normal((n, p)); xtrue = rng.standard_normal(p)
+t = B @ xtrue + 0.5 * rng.standard_normal(n)
+lam = 0.5
+def ffull(x): return 0.5 * np.mean((B @ x - t) ** 2) + 0.5 * lam * x @ x
+def gi(x, i): return (B[i] @ x - t[i]) * B[i] + lam * x
+def gfull(x): return B.T @ (B @ x - t) / n + lam * x
+xstar = np.linalg.solve(B.T @ B / n + lam * np.eye(p), B.T @ t / n)
+fstar = ffull(xstar)
+
+# Plain SGD, decaying step
+x = np.zeros(p); sgd_hist = [(0, ffull(x) - fstar)]
+for k in range(1, 8000):
+    i = rng.integers(n)
+    x = x - (0.4 / (k + 100)) * gi(x, i)
+    if k % 40 == 0: sgd_hist.append((k, ffull(x) - fstar))
+sgd_hist = np.array(sgd_hist)
+
+# SVRG
+m = n            # inner loop length = one epoch
+eta = 0.02
+xt = np.zeros(p)
+svrg_hist = [(0, ffull(xt) - fstar)]; grads_used = 0
+for epoch in range(18):
+    mu_full = gfull(xt); grads_used += n     # snapshot full gradient
+    x = xt.copy()
+    for k in range(m):
+        i = rng.integers(n)
+        v = gi(x, i) - gi(xt, i) + mu_full
+        x = x - eta * v
+        grads_used += 2
+        if k % 40 == 0:
+            svrg_hist.append((grads_used / n, ffull(x) - fstar))
+    xt = x.copy()
+svrg_hist = np.array(svrg_hist)
+
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ax.semilogy(sgd_hist[:, 0] / n, np.clip(sgd_hist[:, 1], 1e-13, None),
+            color=STEP, label="plain SGD (decaying step)")
+ax.semilogy(svrg_hist[:, 0], np.clip(svrg_hist[:, 1], 1e-13, None),
+            color=ACCENT, lw=2.3, label="SVRG (variance-reduced)")
+ax.set_xlabel("effective data passes (epochs)")
+ax.set_ylabel(r"$f(\mathbf{x}_k)-f^\star$ (log scale)")
+ax.set_title("Variance reduction restores GD's linear rate")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+A important honesty note: variance reduction's clean linear rate is a **finite-sum** result —
+it exploits that there are exactly $n$ fixed examples whose gradients can be cached or
+re-evaluated at a snapshot. In the **streaming / truly online** setting (infinite or
+ever-arriving data), there is no fixed sum to anchor against, $\sigma^2$ genuinely never
+vanishes, and the $O(1/\sqrt k)$ / $O(1/k)$ rates are the best possible. SVRG and friends are
+also less dominant in deep learning than they are in convex finite-sum problems, because the
+snapshot full gradient is expensive for huge models and the non-convex landscape muddies the
+clean theory — there, plain SGD with momentum and adaptive scaling ([OPTM-08], [OPTM-12])
+remains the workhorse. Variance reduction is the right lens for *why* SGD is slow (the noise
+floor) and a genuine fix where the finite-sum structure can be exploited.
+
+# The non-convex reality: saddles, and why noise helps {#sec-nonconvex}
+
+Everything proven so far assumed convexity. The objectives SGD is most famously used for —
+deep neural networks — are emphatically **non-convex**, and here the story inverts in a way
+worth understanding, because it connects directly to [OPTM-02]'s saddle-point discussion.
+
+[OPTM-02] showed that in high dimensions, the stationary points of a non-convex objective are
+overwhelmingly **saddle points** (some directions curve up, others down), not local minima:
+for a point to be a local min, *every* one of the $p$ Hessian eigenvalues must be positive,
+and by chance that gets exponentially unlikely as $p$ grows. Saddles are the real obstacle to
+optimization in high dimensions — a *deterministic* method like full-batch GD, landing exactly
+on a saddle, has zero gradient and *stops*, stuck at a point that is not even a local minimum.
+
+Here the noise that cost us convergence accuracy pays a dividend. **SGD's gradient noise kicks
+the iterate off saddle points.** At a saddle the true gradient is zero, so GD freezes; but the
+stochastic gradient $\nabla f_{i_k}$ is *not* zero there (the non-vanishing noise of
+@sec-variance), so SGD gets a random shove, and with overwhelming probability that shove has a
+component along a *downward* curving direction, sending the iterate off the saddle and back
+into descent. The very property that prevents SGD from settling cleanly into a minimum is what
+lets it *escape* the saddles that trap deterministic methods. This is a major reason SGD, not
+full-batch GD, is the default for training deep networks — the noise is a feature, providing a
+cheap, built-in mechanism for escaping the high-dimensional saddle landscape.
+
+::: {.callout-tip title="You might be asked"}
+*"Why train neural networks with SGD rather than a more accurate full-batch optimizer like
+L-BFGS?"* Three reasons, and a strong answer hits all three. **(1) Cost:** a full gradient over
+millions of examples per step is unaffordable; SGD's $O(1)$ steps are the only thing that fits
+the compute budget. **(2) Saddle escape:** the gradient noise (@sec-nonconvex) shoves the
+iterate off the saddle points that pervade high-dimensional non-convex losses and would freeze
+a deterministic method. **(3) Generalization:** there is strong empirical (and growing
+theoretical) evidence that SGD's noise acts as an *implicit regularizer*, biasing training
+toward "flat" minima that generalize better to unseen data than the sharp minima a full-batch
+method might find. So SGD is preferred not despite its noise but partly *because* of it — a
+genuinely counterintuitive point that separates someone who has only read the convex theory
+from someone who understands why the field actually trains the way it does.
+:::
+
+# The edge of applicability: when SGD is the wrong tool {#sec-edge}
+
+An honest treatment must say where SGD *loses*, and it loses in exactly the regime opposite to
+the one it was built for. The whole case for SGD rested on two things: $n$ is **large** (so a
+full gradient is unaffordable) and we want **modest** accuracy (so the $O(1/k)$ crawl is fine).
+Negate either and the calculus flips.
+
+- **Small or medium $n$.** If the full gradient is cheap to compute — $n$ in the thousands, or
+  the data fit comfortably in memory — there is little reason to settle for noisy steps. A
+  full-batch method enjoys the *geometric* rate (and Newton/L-BFGS the *quadratic* rate near
+  the optimum, [OPTM-09]), reaching machine precision in a handful of clean iterations where
+  SGD would still be jittering around its floor. *Rule of thumb: if you can afford the full
+  gradient and want a precise answer, use a full-batch method.*
+
+- **High accuracy required.** SGD's $O(1/k)$ rate means each additional digit of accuracy
+  costs *ten times* more iterations (and a constant step never gets below its floor at all).
+  When you need the optimum to many digits — some scientific computing, some statistical
+  estimation where the *exact* MLE matters — SGD is the wrong tool; switch to a full-batch
+  method, or use SGD to get close fast and then *polish* with a few full-batch / Newton steps.
+
+- **Severe ill-conditioning.** SGD inherits GD's sensitivity to the condition number $\kappa$
+  ([OPTM-07]) *and* adds noise on top, so a badly stretched, ill-conditioned bowl is doubly
+  punishing: the iterates zig-zag (large $\kappa$) *and* jitter (variance). Here second-order
+  methods that rescale away $\kappa$ ([OPTM-09]) or adaptive per-coordinate methods
+  ([OPTM-12]) are far more effective than plain SGD.
+
+@fig-edge makes the small-$n$ case concrete: on a small, well-conditioned least-squares
+problem, L-BFGS reaches the optimum in a handful of iterations while SGD is still bouncing
+around its noise floor — the honest boundary where the article's whole thesis runs out.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability. A *small* ($n=300$), moderately conditioned least-squares problem -- the regime where SGD is the *wrong* choice. **Full-batch GD** (navy) converges geometrically; **L-BFGS** (a quasi-Newton method, [OPTM-09]) reaches near machine precision in a dozen iterations. **SGD** (red), even with a decaying step, crawls at $O(1/k)$ and is still far from the optimum after thousands of cheap steps. When the full gradient is affordable and you want a precise answer, the cheap-noisy-step trade-off SGD is built on simply does not pay off."
+from scipy.optimize import minimize
+rng = np.random.default_rng(2)
+n, p = 300, 20
+B = rng.standard_normal((n, p)); xtrue = rng.standard_normal(p)
+t = B @ xtrue + 0.3 * rng.standard_normal(n)
+def ffull(x): return 0.5 * np.mean((B @ x - t) ** 2)
+def gfull(x): return B.T @ (B @ x - t) / n
+def gi(x, i): return (B[i] @ x - t[i]) * B[i]
+xstar = np.linalg.solve(B.T @ B, B.T @ t); fstar = ffull(xstar)
+
+# Full-batch GD
+L = np.linalg.eigvalsh(B.T @ B / n).max()
+x = np.zeros(p); gd_hist = [ffull(x) - fstar]
+for _ in range(120):
+    x = x - (1.0 / L) * gfull(x); gd_hist.append(ffull(x) - fstar)
+
+# L-BFGS, recording the objective each iteration
+lbfgs_hist = []
+def cb(xk): lbfgs_hist.append(ffull(xk) - fstar)
+minimize(ffull, np.zeros(p), jac=gfull, method="L-BFGS-B", callback=cb,
+         options={"maxiter": 60, "gtol": 1e-14, "ftol": 1e-16})
+
+# SGD, decaying step
+x = np.zeros(p); sgd_hist = []
+for k in range(1, 8000):
+    i = rng.integers(n)
+    x = x - (0.05 / (1 + k / 200)) * gi(x, i)
+    if k % 40 == 0: sgd_hist.append(ffull(x) - fstar)
+
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ax.semilogy(np.arange(len(gd_hist)), np.clip(gd_hist, 1e-16, None),
+            color=CURVE, label="full-batch GD")
+ax.semilogy(np.arange(1, len(lbfgs_hist) + 1), np.clip(lbfgs_hist, 1e-16, None),
+            color=ACCENT, lw=2.3, label="L-BFGS (quasi-Newton)")
+ax.semilogy(np.linspace(0, len(gd_hist), len(sgd_hist)),
+            np.clip(sgd_hist, 1e-16, None), color=STEP, label="SGD (decaying step)")
+ax.set_xlabel("iterations (full-batch scale)")
+ax.set_ylabel(r"$f-f^\star$ (log scale)")
+ax.set_title("Small $n$: full-batch methods crush SGD")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-06 *Gradient Descent*]** (the update rule and steepest descent) and
+**[OPTM-07 *Step Size and Convergence*]** (the descent lemma, $L$-smoothness, strong
+convexity, the condition number, and the clean GD rates). This article kept the update almost
+unchanged but replaced the *exact* gradient with an **unbiased noisy estimate** — one example
+or a minibatch — and re-derived the whole convergence story under that noise: the **noise
+floor** of a constant step, the **Robbins–Monro** decaying-step conditions, the **minibatch**
+variance/cost trade-off, the slower **$O(1/k)$ / $O(1/\sqrt k)$** rates, and the
+**variance-reduction** fix. From here:
+
+- **[OPTM-12 *Adaptive and Modern Optimizers*]** — AdaGrad, RMSProp, and **Adam** are all
+  refinements of the bare SGD step @eq-sgd: per-coordinate step sizes (to handle the
+  ill-conditioning of @sec-edge) and momentum ([OPTM-08]) layered on top of the stochastic
+  gradient. This is the next article, and it assumes everything here.
+- **[OPTM-08 *Momentum*]** — momentum and SGD combine into the *SGD-with-momentum* that trains
+  most networks; the zig-zag damping there and the noise averaging here are complementary.
+
+It is also the **training engine** the rest of the series links back to: **Classification**
+and **Unsupervised Learning** invoke "fit by SGD" for logistic regression, neural nets, and
+large-scale models, and every deep-model treatment rests on the cheap-noisy-step trade-off
+derived here.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding paper.** H. Robbins & S. Monro, "A Stochastic Approximation Method," *Annals
+  of Mathematical Statistics* 22 (1951) — the origin of the decaying-step conditions @eq-rm1–
+  @eq-rm2 and of the whole field of stochastic approximation. Remarkably readable.
+- **The modern convergence theory.** Bottou, Curtis & Nocedal, "Optimization Methods for
+  Large-Scale Machine Learning," *SIAM Review* 60 (2018) — the definitive survey of SGD for ML,
+  including the noise-floor / decaying-step analysis at exactly this article's level. Nesterov's
+  *Lectures on Convex Optimization* (2018) gives the optimal-rate lower bounds that make
+  $O(1/\sqrt k)$ provably best for stochastic first-order methods.
+- **Variance reduction.** Johnson & Zhang, "Accelerating Stochastic Gradient Descent using
+  Predictive Variance Reduction" (SVRG, 2013); Defazio, Bach & Lacoste-Julien (SAGA, 2014);
+  Le Roux, Schmidt & Bach (SAG, 2012) — the papers that recovered the linear rate for finite
+  sums via the control-variate idea of @sec-vr.
+- **Open threads this article deliberately deferred.** *How do we choose a per-coordinate or
+  adaptive step instead of one scalar $\eta_k$?* — AdaGrad/RMSProp/Adam, [OPTM-12]. *Does the
+  noise help non-convex training, and how?* — the saddle-escape and implicit-regularization
+  story of @sec-nonconvex, an active research area. *What if part of the objective is a
+  non-smooth penalty (lasso)?* — proximal *stochastic* gradient, building on [OPTM-16].

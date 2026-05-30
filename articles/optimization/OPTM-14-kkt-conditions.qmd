@@ -1,0 +1,1024 @@
+---
+title: "Inequality Constraints and the KKT Conditions"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style, matched to the rest of the
+# Optimization track (and to OPTM-13, this article's direct predecessor).
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # objective / level sets of f
+CONSTR  = "#c1121f"    # the constraint boundary / feasible region edge
+GRADF   = "#0a7d4d"    # gradient of f
+GRADG   = "#b8860b"    # gradient of g (constraint normal)
+GREY    = "#6c757d"
+FEAS    = "#9db4d4"    # feasible-region shading
+```
+
+> **Where this sits in the track.** This is the second article of the Optimization
+> track's **constrained-optimization** branch, and it picks up exactly where [OPTM-13
+> *Optimizing Under Equality Constraints: Lagrange Multipliers*] left off. There we
+> fenced the decision variable onto a *two-sided* surface $g(\mathbf{x})=0$ and found
+> that at an optimum the gradients align, $\nabla f=\lambda\,\nabla g$. Here the fence
+> becomes **one-sided**: $g(\mathbf{x})\le 0$, a region you may sit *inside* or *on the
+> boundary of*. That single relaxation — from "$=$" to "$\le$" — forces three genuinely
+> new ideas, and packaging all of them gives the **Karush–Kuhn–Tucker (KKT) conditions**,
+> the optimality test that covers essentially every constrained problem in machine
+> learning. It assumes [OPTM-13] for the Lagrangian and the **shadow-price** reading of
+> the multiplier (we lean on it to *derive* the new sign condition), [OPTM-02] for the
+> gradient and $\nabla f=\mathbf{0}$, and [OPTM-04] for **convexity** and the fact that for
+> a convex objective a stationary point is the global minimum (the result that turns KKT
+> from *necessary* into *sufficient*).
+>
+> **What it sets up.** It is the backbone of [OPTM-15 *Duality*] (the multipliers become
+> the variables of a twin problem and the sign condition $\mu\ge0$ becomes *dual
+> feasibility*), of [OPTM-16 *Proximal and Projected Methods*] (the numerical engines that
+> solve KKT systems at scale), and it is the exact optimality theory the **Support Vector
+> Machine** in the Classification track links here for.
+
+## Abstract {.unnumbered}
+
+We minimize $f(\mathbf{x})$ subject to inequality constraints $g_i(\mathbf{x})\le 0$. The
+equality machinery of [OPTM-13] does not transfer unchanged, because a one-sided fence
+behaves in two utterly different ways depending on where the optimum lands. If the
+optimum sits in the *interior* of the feasible region, the constraint is **inactive** and
+plays no role at all — the problem is locally unconstrained, $\nabla f=\mathbf{0}$. If the
+optimum is pushed up *against* the boundary, the constraint is **active**, behaves exactly
+like an equality, and contributes a multiplier term $\mu_i\nabla g_i$ — but now with a
+**sign**: the multiplier must be nonnegative, $\mu_i\ge0$, because the constraint can only
+push *one way*. These two regimes are unified by one elegant bookkeeping rule,
+**complementary slackness** $\mu_i\,g_i(\mathbf{x})=0$: for each constraint, either the
+multiplier is zero (inactive) or the constraint is tight (active), never both nonzero. The
+four conditions — stationarity, primal feasibility, dual feasibility $\mu_i\ge0$, and
+complementary slackness — are the **KKT conditions**. We derive each from the geometry and
+the shadow-price reading, prove that for a convex problem with a constraint qualification
+(Slater's condition) they are not merely necessary but **sufficient** for the global
+optimum, and carry them through three honest examples: the constrained ($\|\boldsymbol\beta\|\le
+t$) view of ridge and lasso, the maximum-margin SVM, and a non-convex case at the edge
+where KKT flags a point that is not the global minimum.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+For $\min f(\mathbf{x})$ subject to $g_i(\mathbf{x})\le 0$, the optimum obeys four
+conditions — the **KKT conditions**. With the Lagrangian
+$\mathcal{L}(\mathbf{x},\boldsymbol\mu)=f(\mathbf{x})+\sum_i\mu_i\,g_i(\mathbf{x})$:
+
+1. **Stationarity:** $\displaystyle \nabla f(\mathbf{x}^\star)+\sum_i\mu_i^\star\,\nabla g_i(\mathbf{x}^\star)=\mathbf{0}$.
+2. **Primal feasibility:** $g_i(\mathbf{x}^\star)\le 0$ for all $i$ — the answer is legal.
+3. **Dual feasibility:** $\mu_i^\star\ge 0$ for all $i$ — the new ingredient; a one-sided
+   fence can only push **inward**, so its multiplier cannot be negative.
+4. **Complementary slackness:** $\mu_i^\star\,g_i(\mathbf{x}^\star)=0$ for all $i$ — for
+   each constraint, *either* it is slack ($g_i<0$) and its multiplier is zero, *or* it is
+   tight ($g_i=0$) and its multiplier may fire. Never both at once.
+
+These are always **necessary** at a (suitably regular) optimum. When the problem is
+**convex** and a constraint qualification holds (e.g. Slater's: some strictly feasible
+point exists), they are also **sufficient** — any $(\mathbf{x}^\star,\boldsymbol\mu^\star)$
+satisfying all four is the global minimum.
+:::
+
+Everything below orbits that box. KKT can look like four unrelated rules dropped from the
+sky. By the end you should see them as the *forced* consequence of one question — *can I
+still go downhill without leaving the feasible region?* — answered separately for the two
+ways the answer "no" can happen: blocked by the boundary, or already at a flat spot inside.
+
+# Why we are here: the fence becomes one-sided {#sec-why}
+
+Hold one question for the whole article: **what is genuinely new when a constraint becomes
+an inequality, and what is the smallest amount of new machinery that captures it?** Every
+move below answers a piece of that.
+
+## What changed from OPTM-13
+
+In [OPTM-13] the constraint was an equality, $g(\mathbf{x})=0$ — a hard surface the
+solution had to *lie on*. There was no choice about it: feasible meant *on the surface*,
+and the optimum was always a tangency, $\nabla f=\lambda\nabla g$, with $\lambda$ free to
+be any sign.
+
+An inequality constraint is softer and, paradoxically, harder. We now want
+$$
+\min_{\mathbf{x}}\; f(\mathbf{x})
+\quad\text{subject to}\quad
+g_i(\mathbf{x})\le 0,\quad i=1,\dots,m,
+$$ {#eq-problem}
+where each $g_i:\mathbb{R}^n\to\mathbb{R}$ carves out a **half-region** — the set where
+$g_i\le 0$ — and the **feasible set** $C=\{\mathbf{x}:g_i(\mathbf{x})\le 0\ \forall i\}$ is
+the intersection of all of them. The decision variable may now roam *anywhere inside* $C$,
+not just on a surface. (We adopt the convention that all inequalities are written
+"$\le 0$"; a constraint $h(\mathbf{x})\ge 0$ is rewritten $g(\mathbf{x})=-h(\mathbf{x})\le
+0$, and $h(\mathbf{x})\le c$ becomes $g(\mathbf{x})=h(\mathbf{x})-c\le0$. So "$\le 0$" loses
+no generality, and the sign discipline that follows stays clean.)
+
+These are, if anything, *more* common than equalities:
+
+- **The constrained view of ridge and lasso.** Minimize squared error subject to a
+  *budget* $\|\boldsymbol\beta\|^2\le t$ (ridge) or $\|\boldsymbol\beta\|_1\le t$ (lasso) —
+  a one-sided cap on coefficient size, not a forced equality. This is the $\le$ that
+  [REGR-14]/[REGR-15] link here for, and we carry it through in @sec-ridge-lasso.
+- **The Support Vector Machine.** Maximize the margin subject to every training point
+  lying on the correct side by at least a unit: $y_i(\mathbf{w}^\top\mathbf{x}_i+b)\ge1$.
+  The whole SVM is an inequality-constrained quadratic program, and KKT is what produces
+  its defining feature — the *support vectors*. We carry it through in @sec-svm.
+- **Resource limits.** Maximize output subject to "spend no more than the budget"
+  ($\sum_i p_ix_i\le B$), "use no more than the available labor," and so on — the natural
+  language of every economics and operations problem is $\le$, not $=$.
+- **Box and nonnegativity constraints.** Probabilities $p_i\ge0$, physical quantities
+  $x\ge0$, weights in $[0,1]$ — these are inequalities, and they are everywhere.
+
+## The one genuinely new phenomenon: a constraint can be irrelevant
+
+Here is the thing that *cannot happen* with an equality and *defines* the inequality case.
+With $g(\mathbf{x})=0$, the constraint always matters — you are always pinned to the
+surface. With $g(\mathbf{x})\le0$, the optimum might land in the strict **interior**
+($g<0$), where the constraint is doing *nothing*: you could wiggle in any direction and
+still be feasible, so locally the problem is *unconstrained* and the answer is just
+$\nabla f=\mathbf{0}$. Or the optimum might be shoved against the **boundary** ($g=0$),
+where the constraint is the only thing stopping $f$ from dropping further — and there it
+behaves exactly like the equality of [OPTM-13].
+
+@fig-active-inactive shows both regimes on the same one-constraint problem, just by moving
+where the unconstrained minimum sits relative to the feasible region.
+
+```{python}
+#| label: fig-active-inactive
+#| fig-cap: "The one new phenomenon. We minimize $f(\\mathbf{x})=\\|\\mathbf{x}-\\mathbf{a}\\|^2$ (concentric blue level circles centered at the open marker $\\mathbf{a}$, the *unconstrained* minimum) over the feasible disk $g(\\mathbf{x})=\\|\\mathbf{x}\\|^2-1\\le0$ (shaded, red boundary). **Left:** $\\mathbf{a}$ is *inside* the disk, so the constrained optimum is $\\mathbf{a}$ itself — the constraint is **inactive** ($g<0$), and $\\nabla f=\\mathbf{0}$ there. **Right:** $\\mathbf{a}$ is *outside*, so the optimum is pushed onto the boundary (green) — the constraint is **active** ($g=0$), and $\\nabla f$ points straight out, opposed by the constraint's inward push."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.7))
+
+def draw(ax, a, title):
+    gx = np.linspace(-2.2, 2.4, 400); gy = np.linspace(-2.0, 2.0, 400)
+    GX, GY = np.meshgrid(gx, gy)
+    F = (GX - a[0])**2 + (GY - a[1])**2
+    ax.contour(GX, GY, F, levels=[0.1,0.4,0.9,1.6,2.5,3.6], colors=CURVE,
+               linewidths=0.9, alpha=0.6)
+    th = np.linspace(0, 2*np.pi, 200)
+    ax.fill(np.cos(th), np.sin(th), color=FEAS, alpha=0.5, zorder=0)
+    ax.plot(np.cos(th), np.sin(th), color=CONSTR, lw=2.2)
+    ax.scatter([a[0]], [a[1]], facecolor="white", edgecolor=CURVE, s=90,
+               linewidth=1.8, zorder=5)
+    if np.hypot(*a) <= 1:
+        star = a
+        ax.scatter([star[0]], [star[1]], color=GRADF, s=120, zorder=6,
+                   edgecolor="white", linewidth=1.4)
+        ax.text(star[0]+0.08, star[1]+0.12, "min (interior)", color=GRADF, fontsize=9)
+    else:
+        star = a / np.hypot(*a)  # projection onto unit circle
+        ax.scatter([star[0]], [star[1]], color=GRADF, s=120, zorder=6,
+                   edgecolor="white", linewidth=1.4)
+        # grad f = 2(x-a), points from a toward star direction (outward)
+        gf = (star - a); gf = gf/np.linalg.norm(gf)*0.7
+        ax.annotate("", xy=(star[0]+gf[0], star[1]+gf[1]), xytext=(star[0], star[1]),
+                    arrowprops=dict(arrowstyle="-|>", color=GRADF, lw=2.0))
+        ax.text(star[0]+gf[0]-0.1, star[1]+gf[1]+0.08, r"$-\nabla f$", color=GRADF, fontsize=11)
+    ax.set_xlim(-2.2, 2.4); ax.set_ylim(-2.0, 2.0); ax.set_aspect("equal")
+    ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$"); ax.set_title(title)
+
+draw(axL, np.array([0.35, -0.2]), "Inactive: optimum inside, $\\mu=0$")
+draw(axR, np.array([1.7, 0.9]),   "Active: optimum on boundary, $\\mu>0$")
+plt.tight_layout()
+```
+
+That picture is the whole article in miniature. The left panel is "$\nabla f=\mathbf{0}$,
+forget the constraint." The right panel is "Lagrange tangency, with a twist about which
+*direction* the constraint can push." KKT is the single statement that handles both at
+once and tells you, per constraint, which case you are in.
+
+## The historical why
+
+The conditions carry three names because they were discovered twice. William Karush stated
+them in his 1939 University of Chicago master's thesis — and they sat essentially unread.
+Harold Kuhn and Albert Tucker rediscovered and published them in 1951, in a paper that
+launched nonlinear programming as a field. The motivating problem in 1951 was concrete:
+the new tools of *linear programming* (Dantzig's simplex method, born of wartime logistics)
+solved problems with linear objectives and linear inequality constraints, and the question
+was how to generalize the optimality conditions to *nonlinear* objectives while keeping the
+inequality constraints. KKT is that generalization. Keep this lineage in mind: the sign
+condition $\mu\ge0$ is the direct descendant of the *nonnegativity* that pervades linear
+programming (you cannot produce a negative quantity of a good), and complementary slackness
+is the nonlinear cousin of LP's own complementary slackness between primal constraints and
+dual variables — the seed of duality in [OPTM-15].
+
+# Intuition before symbols: blocked, or already flat {#sec-intuition}
+
+We build all four conditions from one question, no formulas yet. Stand at a candidate
+optimum $\mathbf{x}^\star$ inside the feasible region $C$ and ask: **is there a direction I
+can step that (a) lowers $f$ and (b) keeps me feasible?** If yes, $\mathbf{x}^\star$ is not
+optimal — take the step. So at a true optimum the answer is *no*, and there are exactly two
+ways the answer can be no.
+
+**Case 1 — I am in the deep interior.** Every constraint is slack ($g_i<0$ with room to
+spare), so *every* direction keeps me feasible for at least a little while. The only way
+"no downhill feasible direction" can hold is if there is no downhill direction *at all* —
+i.e. $\nabla f(\mathbf{x}^\star)=\mathbf{0}$. The constraints are spectators. This is the
+left panel of @fig-active-inactive.
+
+**Case 2 — I am pressed against one or more boundaries.** Some constraints are active
+($g_i=0$). Now not every direction is feasible: stepping in the direction that increases an
+active $g_i$ would shove me *out* of $C$, so those directions are forbidden. The downhill
+direction $-\nabla f$ might be exactly one of those forbidden directions — pointing out of
+the region. If so, I am blocked: I *want* to go downhill, but the fence is in the way. That
+is optimal even though $\nabla f\ne\mathbf{0}$. This is the right panel.
+
+The genius of KKT is to express "the downhill direction points out of every active
+constraint" algebraically. Recall from [OPTM-13]/[OPTM-02] that $\nabla g_i$ points in the
+direction of *increasing* $g_i$ — i.e., **out** of the feasible region (since feasible is
+$g_i\le0$, leaving means $g_i$ rising). So "$-\nabla f$ points out" means $-\nabla f$ is a
+nonnegative combination of the outward normals $\nabla g_i$, which rearranges to
+$$
+\nabla f = -\sum_i \mu_i\nabla g_i,\quad \mu_i\ge0
+\qquad\Longleftrightarrow\qquad
+\nabla f + \sum_i\mu_i\nabla g_i=\mathbf{0},\quad\mu_i\ge0.
+$$
+That is stationarity *and* the sign condition, read straight off the geometry. The
+$\mu_i\ge0$ is not decoration: it is the statement that the fence pushes you *in*, never
+pulls you out. @fig-cone draws this "blocked" geometry — the downhill direction trapped
+inside the cone of forbidden directions.
+
+```{python}
+#| label: fig-cone
+#| fig-cap: "Why $\\mu\\ge0$: at an active optimum, $-\\nabla f$ (the downhill direction, green) must lie *inside the cone* spanned by the outward constraint normals $\\nabla g_i$ (gold). Two active constraints are shown; their normals point out of the feasible wedge (shaded). Because $-\\nabla f$ is a **nonnegative** combination of them, $\\nabla f=-\\mu_1\\nabla g_1-\\mu_2\\nabla g_2$ with both $\\mu_i\\ge0$. If $-\\nabla f$ pointed *outside* the cone, some feasible downhill step would remain and we would not be optimal. This cone picture is the geometric content of stationarity-plus-dual-feasibility."
+fig, ax = plt.subplots(figsize=(5.8, 5.2))
+# Feasible wedge at origin bounded by two constraint boundaries.
+# Outward normals n1, n2; feasible region is where g_i<=0, i.e. inside the wedge.
+n1 = np.array([1.0, 0.3]); n1 /= np.linalg.norm(n1)
+n2 = np.array([0.3, 1.0]); n2 /= np.linalg.norm(n2)
+# boundary directions are perpendicular to normals
+b1 = np.array([-n1[1], n1[0]])
+b2 = np.array([ n2[1], -n2[0]])
+# feasible wedge (opposite the normals): shade the region pointing away from normals
+import matplotlib.patches as mpatches
+wedge = np.array([[0,0], -2.4*n1 - 0.0*n2, -1.6*(n1+n2), -2.4*n2 - 0.0*n1])
+ax.fill(*zip(*[[0,0], (-2.6*n1+0.6*b1), (-1.8*(n1+n2)), (-2.6*n2+0.6*b2)]),
+        color=FEAS, alpha=0.45, zorder=0)
+# normals (outward)
+for n, lab, dx in [(n1, r"$\nabla g_1$", 0.05), (n2, r"$\nabla g_2$", 0.05)]:
+    ax.annotate("", xy=(1.6*n[0], 1.6*n[1]), xytext=(0,0),
+                arrowprops=dict(arrowstyle="-|>", color=GRADG, lw=2.2))
+    ax.text(1.65*n[0]+dx, 1.65*n[1], lab, color=GRADG, fontsize=12)
+# -grad f as a nonneg combo inside the cone of normals
+mgf = 0.7*n1 + 0.55*n2
+ax.annotate("", xy=(mgf[0], mgf[1]), xytext=(0,0),
+            arrowprops=dict(arrowstyle="-|>", color=GRADF, lw=2.4))
+ax.text(mgf[0]+0.06, mgf[1]-0.08, r"$-\nabla f$", color=GRADF, fontsize=12)
+ax.scatter([0],[0], color=CONSTR, s=80, zorder=6, edgecolor="white", linewidth=1.2)
+ax.text(0.05, -0.28, r"$\mathbf{x}^\star$ (active corner)", color=CONSTR, fontsize=9)
+ax.set_xlim(-2.0, 2.0); ax.set_ylim(-2.0, 2.0); ax.set_aspect("equal")
+ax.set_xlabel("direction"); ax.set_ylabel("direction")
+ax.set_title("$-\\nabla f$ trapped in the cone of normals")
+plt.tight_layout()
+```
+
+And complementary slackness is just the bookkeeping that *links* the two cases. In Case 1
+(interior), every $g_i<0$, and the only way stationarity $\nabla f+\sum\mu_i\nabla
+g_i=\mathbf{0}$ can reduce to $\nabla f=\mathbf{0}$ is if every $\mu_i=0$. In Case 2
+(boundary), the inactive constraints (still $g_i<0$) must again have $\mu_i=0$ so they do
+not corrupt the stationarity sum, while the active ones ($g_i=0$) may carry $\mu_i>0$. In
+both cases: **$\mu_i=0$ whenever $g_i<0$, and $g_i=0$ whenever $\mu_i>0$** — which is
+exactly $\mu_ig_i=0$. The product is zero because at least one factor always is.
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what is complementary slackness saying?"* That a constraint and its
+price cannot both be 'on' at once: a constraint that is not binding ($g_i<0$, you have
+slack) has zero price ($\mu_i=0$, relaxing it buys you nothing), and a constraint with a
+positive price ($\mu_i>0$, valuable to relax) must be binding ($g_i=0$). It is the
+shadow-price reading of [OPTM-13] turned into an on/off switch: *you only pay for fences
+you are pressed against.* This single idea is what makes the SVM's support vectors
+(@sec-svm) fall out — only the points on the margin boundary have nonzero multipliers.
+:::
+
+# Formal development {#sec-formal}
+
+## Setup and the active set {#sec-active-set}
+
+Fix the problem @eq-problem. At a feasible point $\mathbf{x}$, partition the constraints by
+whether they are tight.
+
+::: {#def-active}
+**Definition (active set).** A constraint $g_i$ is **active** (or **binding**) at a
+feasible point $\mathbf{x}$ if $g_i(\mathbf{x})=0$ — the point sits exactly on that
+boundary. It is **inactive** (or **slack**) if $g_i(\mathbf{x})<0$ — strictly interior to
+that one half-region. The **active set** is
+$\mathcal{A}(\mathbf{x})=\{\,i : g_i(\mathbf{x})=0\,\}$.
+:::
+
+The entire difficulty of inequality constraints is that **we do not know the active set in
+advance.** With equalities, every constraint was active by definition. Here, *which*
+constraints bind at the optimum is part of the answer, not the question — and if we knew
+$\mathcal{A}(\mathbf{x}^\star)$ ahead of time we could drop the inactive constraints
+entirely and treat the active ones as equalities, reducing to [OPTM-13]. KKT is precisely
+the set of conditions that lets us *solve for* the active set and the point together.
+
+## Deriving the four conditions {#sec-derive}
+
+We now derive KKT for the single-constraint case ($m=1$, write $g$ for $g_1$ and $\mu$ for
+$\mu_1$) where the geometry is cleanest, then state the general result. Let
+$\mathbf{x}^\star$ be a local minimizer of @eq-problem. Two cases, exactly the two of
+@sec-intuition.
+
+**Case 1 — the constraint is inactive, $g(\mathbf{x}^\star)<0$.** Then $\mathbf{x}^\star$
+is strictly interior: a small ball around it is entirely feasible. Inside that ball the
+problem is *unconstrained*, so the ordinary first-order condition of [OPTM-02] applies:
+$$
+\nabla f(\mathbf{x}^\star)=\mathbf{0}.
+$$
+Now *define* $\mu^\star=0$. With that choice, observe that all four KKT statements hold:
+stationarity $\nabla f+\mu^\star\nabla g=\nabla f+0=\mathbf{0}$ ✓; primal feasibility
+$g<0\le0$ ✓; dual feasibility $\mu^\star=0\ge0$ ✓; complementary slackness
+$\mu^\star g=0\cdot g=0$ ✓. The inactive case is captured by forcing the multiplier to
+zero — which is exactly what complementary slackness will demand.
+
+**Case 2 — the constraint is active, $g(\mathbf{x}^\star)=0$.** Now $\mathbf{x}^\star$ sits
+on the boundary surface $g=0$, and we are back in the equality world of [OPTM-13] *with one
+extra piece of information about direction*. We argue in two steps.
+
+*Step 2a — parallelism.* Restricted to the boundary surface $g=0$, $\mathbf{x}^\star$ is a
+constrained minimizer, so the equality result of [OPTM-13, @thm-lagrange] applies: there
+is a scalar $\mu^\star$ with
+$$
+\nabla f(\mathbf{x}^\star) = -\mu^\star\,\nabla g(\mathbf{x}^\star).
+$$
+(We write the multiplier as $-\mu^\star$ so that the stationarity condition comes out as
+$\nabla f+\mu^\star\nabla g=\mathbf{0}$, matching the Core's sign convention
+$\mathcal{L}=f+\mu g$. This is purely a naming choice; the *content* is the parallelism
+from [OPTM-13].) This needs the constraint qualification $\nabla g(\mathbf{x}^\star)\ne
+\mathbf{0}$, just as before.
+
+*Step 2b — the sign of $\mu^\star$ is forced.* This is the genuinely new content, and it
+is where the one-sidedness bites. Here is the full argument, every step. Because the
+optimum is on the boundary, consider stepping a tiny amount $\varepsilon>0$ in a direction
+$\mathbf{v}$ that goes *into* the feasible region — a direction for which $g$ *decreases*,
+i.e. the directional derivative of $g$ is negative,
+$$
+\nabla g(\mathbf{x}^\star)^\top\mathbf{v} < 0
+\qquad(\text{stepping along }\mathbf{v}\text{ moves us to }g<0,\ \text{feasible}).
+$$
+Such a feasible inward direction exists (the region has interior near a regular boundary
+point). Because $\mathbf{x}^\star$ is a *minimum* and $\mathbf{x}^\star+\varepsilon\mathbf{v}$
+is feasible, taking that step cannot *lower* $f$: the directional derivative of $f$ along
+any feasible inward direction must be nonnegative,
+$$
+\nabla f(\mathbf{x}^\star)^\top\mathbf{v} \ge 0.
+$$
+(If it were negative, $\mathbf{v}$ would be a feasible descent direction and we could
+improve — contradicting optimality.) Now substitute the parallelism $\nabla
+f=-\mu^\star\nabla g$ from Step 2a into this inequality:
+$$
+\bigl(-\mu^\star\nabla g(\mathbf{x}^\star)\bigr)^\top\mathbf{v}\ge0
+\quad\Longrightarrow\quad
+-\mu^\star\,\bigl(\nabla g(\mathbf{x}^\star)^\top\mathbf{v}\bigr)\ge0.
+$$
+We already fixed $\nabla g(\mathbf{x}^\star)^\top\mathbf{v}<0$ — call this negative number
+$d<0$. The inequality reads $-\mu^\star d\ge0$, i.e. $\mu^\star d\le0$. Since $d<0$,
+dividing by $d$ *flips* the inequality:
+$$
+\mu^\star \ge 0.
+$$
+There it is. The multiplier *cannot be negative*. Geometrically: $\nabla
+f=-\mu^\star\nabla g$ with $\mu^\star\ge0$ says $-\nabla f$ (downhill) points along
+$+\nabla g$ (out of the region) — the downhill direction is blocked by the fence, pointing
+straight out, which is exactly why we are stuck. A negative $\mu^\star$ would put $-\nabla
+f$ pointing *into* the region, meaning a feasible downhill step remained and we were not
+optimal after all.
+
+Finally, complementary slackness $\mu^\star g(\mathbf{x}^\star)=0$ holds in this case too,
+trivially, because $g(\mathbf{x}^\star)=0$ (the constraint is active) makes the product
+zero regardless of $\mu^\star$.
+
+**Unifying the two cases.** Notice the beautiful collapse. In Case 1 we forced $\mu^\star=0$
+(and $g<0$); in Case 2 we got $g=0$ (and $\mu^\star\ge0$). In *both* cases the product
+$\mu^\star g(\mathbf{x}^\star)=0$, because one factor or the other vanishes. So
+complementary slackness is not a third independent assumption — it is the single condition
+that *selects which case applies to each constraint*, automatically. We can now state the
+general theorem (the multi-constraint version follows the identical logic, with the cone of
+@fig-cone replacing the single normal, exactly as the multi-constraint Lagrange argument in
+[OPTM-13, §multiple constraints] replaced one normal with a span).
+
+::: {#thm-kkt}
+**Theorem (KKT necessary conditions).** Let $f,g_1,\dots,g_m:\mathbb{R}^n\to\mathbb{R}$ be
+continuously differentiable, and let $\mathbf{x}^\star$ be a local minimizer of
+$\min f(\mathbf{x})$ subject to $g_i(\mathbf{x})\le0$. Suppose a **constraint
+qualification** holds at $\mathbf{x}^\star$ (e.g. the gradients $\{\nabla
+g_i(\mathbf{x}^\star):i\in\mathcal{A}(\mathbf{x}^\star)\}$ of the active constraints are
+linearly independent — the LICQ). Then there exist multipliers
+$\mu_1^\star,\dots,\mu_m^\star$ such that
+
+$$
+\begin{aligned}
+&\textbf{(stationarity)}      && \nabla f(\mathbf{x}^\star)+\sum_{i=1}^m\mu_i^\star\,\nabla g_i(\mathbf{x}^\star)=\mathbf{0},\\[2pt]
+&\textbf{(primal feasibility)}&& g_i(\mathbf{x}^\star)\le0 \quad (i=1,\dots,m),\\[2pt]
+&\textbf{(dual feasibility)}  && \mu_i^\star\ge0 \quad (i=1,\dots,m),\\[2pt]
+&\textbf{(complementary slackness)} && \mu_i^\star\,g_i(\mathbf{x}^\star)=0 \quad (i=1,\dots,m).
+\end{aligned}
+$$
+:::
+
+::: {.proof}
+The single-constraint case is Cases 1–2 above: stationarity and dual feasibility come from
+Step 2 (or the $\mu=0$ choice of Case 1), primal feasibility is the hypothesis that
+$\mathbf{x}^\star$ is feasible, and complementary slackness is the case-collapse just
+shown. For $m$ constraints, restrict attention to the active set
+$\mathcal{A}=\mathcal{A}(\mathbf{x}^\star)$; the inactive ones get $\mu_i^\star=0$ by fiat
+(Case 1 logic, preserving complementary slackness). For the active ones, a feasible
+direction $\mathbf{v}$ must satisfy $\nabla g_i^\top\mathbf{v}\le0$ for every $i\in\mathcal{A}$
+(stepping along it cannot increase any active $g_i$ above $0$), and optimality forces
+$\nabla f^\top\mathbf{v}\ge0$ for every such feasible $\mathbf{v}$. Farkas' lemma — the
+linear-algebra fact that a vector making a nonnegative inner product with every member of a
+polyhedral cone lies in the cone generated by the defining normals — then yields $-\nabla
+f=\sum_{i\in\mathcal{A}}\mu_i^\star\nabla g_i$ with all $\mu_i^\star\ge0$. The constraint
+qualification (LICQ) is what guarantees the cone is generated by *these* normals and the
+multipliers exist; @sec-cq shows what breaks without it. $\qquad\blacksquare$
+:::
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+This proof leaned on two imported facts, each flagged so the prerequisite chain stays
+explicit. The **equality parallelism** $\nabla f=-\mu\nabla g$ (Step 2a) is
+[OPTM-13, @thm-lagrange], derived there in full. **Farkas' lemma** (the multi-constraint
+step) is a separating-hyperplane statement owned by the convexity material — it is the
+same separating-hyperplane idea introduced geometrically in [OPTM-03] and used again for
+strong duality in [OPTM-15]. We use its statement here; its proof via the separating
+hyperplane is in [OPTM-15]. For the *single*-constraint case — which is all our
+hand-worked examples need — no Farkas is required; the sign argument of Step 2b is fully
+self-contained.
+:::
+
+## The Lagrangian and the four conditions as one stationarity {#sec-lagrangian}
+
+Exactly as in [OPTM-13], we can bundle the conditions into one object. Define the
+**Lagrangian** for the inequality problem,
+$$
+\mathcal{L}(\mathbf{x},\boldsymbol\mu)
+= f(\mathbf{x}) + \sum_{i=1}^m \mu_i\,g_i(\mathbf{x}),
+$$ {#eq-lagrangian}
+now with the multipliers restricted to $\boldsymbol\mu\ge\mathbf{0}$. (Note the **plus**
+sign and the $\le0$ convention together force the right geometry: minimizing
+$\mathcal{L}$ over $\mathbf{x}$ for fixed $\boldsymbol\mu\ge0$ *penalizes* infeasibility,
+since a violated constraint $g_i>0$ adds the positive amount $\mu_ig_i$ to the objective.)
+Then:
+
+- **Stationarity** is $\nabla_{\mathbf{x}}\mathcal{L}=\nabla f+\sum_i\mu_i\nabla
+  g_i=\mathbf{0}$ — the $\mathbf{x}$-gradient of $\mathcal{L}$ set to zero.
+- **Primal feasibility** $g_i\le0$ and **dual feasibility** $\mu_i\ge0$ are the *domains*
+  of the two variable blocks (where $\mathbf{x}$ and $\boldsymbol\mu$ are allowed to live).
+- **Complementary slackness** $\mu_ig_i=0$ is the new condition that couples them.
+
+The reason this is not *literally* "set the full gradient to zero" the way equalities were
+is the inequalities: $\partial\mathcal{L}/\partial\mu_i=g_i$, and we do *not* set that to
+zero (that would force every constraint active). Instead, the pair "(dual feasibility
+$\mu_i\ge0$) and (complementary slackness $\mu_ig_i=0$)" is exactly the optimality
+condition for *maximizing* $\mathcal{L}$ over $\mu_i\ge0$ with $g_i\le0$ fixed: if $g_i<0$,
+pushing $\mu_i>0$ would only *lower* $\mathcal{L}$ (we are adding $\mu_i\cdot(\text{negative})$),
+so the maximizing choice is $\mu_i=0$; if $g_i=0$, any $\mu_i\ge0$ leaves $\mathcal{L}$
+unchanged. So KKT is the stationarity of a **min over $\mathbf{x}$, max over
+$\boldsymbol\mu\ge0$** saddle problem — the primal–dual min–max structure that [OPTM-15]
+makes its entire subject.
+
+::: {.callout-tip title="You might be asked"}
+*"Walk me through applying KKT on a whiteboard."* The ritual the examples follow verbatim:
+1. **Write the Lagrangian** $\mathcal{L}=f+\sum_i\mu_ig_i$ (put every constraint in
+   $g_i\le0$ form first).
+2. **Stationarity:** set $\nabla_{\mathbf{x}}\mathcal{L}=\mathbf{0}$ — one equation per
+   original variable.
+3. **Complementary slackness:** for each constraint, split into cases — *either* $\mu_i=0$
+   (guess inactive) *or* $g_i=0$ (guess active). With $m$ constraints this is up to $2^m$
+   case combinations; in practice you reason about which can bind.
+4. **Solve each case** for $(\mathbf{x},\boldsymbol\mu)$, then **discard** any solution that
+   violates primal feasibility ($g_i>0$) or dual feasibility ($\mu_i<0$). What survives
+   are the KKT points.
+The single most common interview slip: forgetting to *check the signs* at the end and
+reporting a "solution" with a negative multiplier — which is not a valid optimum, just an
+algebraic artifact of having guessed the wrong active set.
+:::
+
+## When KKT is *sufficient*: the convex case {#sec-sufficiency}
+
+@thm-kkt is **necessary**: every regular local optimum satisfies KKT, but so might saddles
+and maxima — KKT alone does not certify a minimum, exactly as $\nabla f=\mathbf{0}$ alone
+did not in the unconstrained world. The payoff of convexity is that it closes this gap
+completely.
+
+::: {#thm-kkt-sufficient}
+**Theorem (KKT is sufficient for convex problems).** Suppose $f$ is convex and each $g_i$
+is convex (so the feasible set $C=\{g_i\le0\}$ is a convex set, [OPTM-03]). If a point
+$\mathbf{x}^\star$ and multipliers $\boldsymbol\mu^\star\ge\mathbf{0}$ satisfy all four KKT
+conditions, then $\mathbf{x}^\star$ is a **global** minimizer of @eq-problem.
+:::
+
+::: {.proof}
+This is short and worth seeing in full, because it is *why* convex constrained problems are
+the well-behaved heart of the field. Build the Lagrangian at the optimal multipliers,
+$$
+L(\mathbf{x}) \;=\; \mathcal{L}(\mathbf{x},\boldsymbol\mu^\star)
+\;=\; f(\mathbf{x}) + \sum_i \mu_i^\star\,g_i(\mathbf{x}).
+$$
+Each $\mu_i^\star\ge0$ (dual feasibility) and each $g_i$ is convex, so $\mu_i^\star g_i$ is
+convex (a nonnegative multiple of a convex function is convex). A sum of convex functions
+is convex, so $L(\mathbf{x})$ is convex in $\mathbf{x}$. Now use the headline theorem of
+[OPTM-04]: **for a convex function, any stationary point is a global minimum.** By KKT
+stationarity, $\nabla L(\mathbf{x}^\star)=\nabla f(\mathbf{x}^\star)+\sum_i\mu_i^\star\nabla
+g_i(\mathbf{x}^\star)=\mathbf{0}$, so $\mathbf{x}^\star$ is a stationary point of the convex
+function $L$, hence its global minimizer over **all** of $\mathbb{R}^n$:
+$$
+L(\mathbf{x}^\star)\le L(\mathbf{x})
+\qquad\text{for every }\mathbf{x}\in\mathbb{R}^n.
+$$
+Write that out:
+$$
+f(\mathbf{x}^\star) + \sum_i\mu_i^\star g_i(\mathbf{x}^\star)
+\;\le\;
+f(\mathbf{x}) + \sum_i\mu_i^\star g_i(\mathbf{x})
+\qquad\text{for every }\mathbf{x}.
+$$
+On the **left**, complementary slackness kills the whole sum: every term $\mu_i^\star
+g_i(\mathbf{x}^\star)=0$. So the left side is just $f(\mathbf{x}^\star)$. On the **right**,
+restrict to *feasible* $\mathbf{x}$ (the points we actually compete against): there every
+$g_i(\mathbf{x})\le0$, and every $\mu_i^\star\ge0$, so every product $\mu_i^\star
+g_i(\mathbf{x})\le0$, making the sum $\le0$. Therefore, for every feasible $\mathbf{x}$,
+$$
+f(\mathbf{x}^\star)
+= f(\mathbf{x}^\star)+\underbrace{\textstyle\sum_i\mu_i^\star g_i(\mathbf{x}^\star)}_{=\,0}
+\;\le\;
+f(\mathbf{x})+\underbrace{\textstyle\sum_i\mu_i^\star g_i(\mathbf{x})}_{\le\,0}
+\;\le\;
+f(\mathbf{x}).
+$$
+Reading the chain end to end: $f(\mathbf{x}^\star)\le f(\mathbf{x})$ for every feasible
+$\mathbf{x}$. That is exactly the definition of $\mathbf{x}^\star$ being a global
+minimizer. $\qquad\blacksquare$
+:::
+
+Look at how the three new conditions each earned their place in that proof:
+**dual feasibility** ($\mu_i^\star\ge0$) made $\mu_i^\star g_i$ convex *and* made the
+right-hand sum $\le0$; **complementary slackness** killed the left-hand sum so the bound
+landed on $f(\mathbf{x}^\star)$ cleanly; **primal feasibility** of the competitors
+($g_i\le0$) supplied the sign on the right. None is spare.
+
+The constraint qualification reappears for the *necessary* direction. For convex problems
+the standard one is **Slater's condition**: there exists a strictly feasible point
+$\tilde{\mathbf{x}}$ with $g_i(\tilde{\mathbf{x}})<0$ for all *non-affine* $g_i$ (affine
+constraints need only be satisfiable). Slater guarantees the multipliers in @thm-kkt
+actually exist; without some qualification, even a convex problem can have an optimum at
+which no valid multipliers exist (we see this in @sec-cq). Slater's geometric meaning — the
+feasible set has nonempty interior, so the constraint gradients genuinely span a cone — is
+made precise in [OPTM-15], where it is also the exact condition that closes the duality gap.
+
+# Worked examples {#sec-examples}
+
+We run the ritual on three honest problems: the ridge/lasso budget (where the constraint
+toggles between active and inactive, showing complementary slackness in action), the SVM
+(where complementary slackness *creates* the support vectors), and a non-convex case at the
+edge where KKT is only necessary and misleads.
+
+## Example 1 — ridge and lasso as inequality-constrained problems {#sec-ridge-lasso}
+
+In [OPTM-13, §ridge] we treated ridge with an *equality* budget $\|\boldsymbol\beta\|^2=t$.
+That was a simplification: the honest statistical object is the **inequality** budget
+$\|\boldsymbol\beta\|^2\le t$ — you are allowed to use *less* than the full budget if the
+data want you to. This is the form [REGR-14]/[REGR-15] actually link here for, and the
+inequality is what makes complementary slackness do visible work. Consider
+$$
+\min_{\boldsymbol\beta}\ \tfrac12\|\mathbf{y}-X\boldsymbol\beta\|^2
+\quad\text{subject to}\quad
+g(\boldsymbol\beta)=\|\boldsymbol\beta\|^2 - t \le 0 .
+$$ {#eq-ridge-ineq}
+
+**Step 1 — Lagrangian** ($\mathcal{L}=f+\mu g$, one constraint, $\mu\ge0$):
+$$
+\mathcal{L}(\boldsymbol\beta,\mu)
+= \tfrac12\|\mathbf{y}-X\boldsymbol\beta\|^2 + \mu\bigl(\|\boldsymbol\beta\|^2 - t\bigr).
+$$
+
+**Step 2 — stationarity.** Using $\nabla_{\boldsymbol\beta}\tfrac12\|\mathbf{y}-X\boldsymbol\beta\|^2
+= -X^\top(\mathbf{y}-X\boldsymbol\beta)$ and $\nabla_{\boldsymbol\beta}\|\boldsymbol\beta\|^2
+= 2\boldsymbol\beta$ (both from [OPTM-02]):
+$$
+\nabla_{\boldsymbol\beta}\mathcal{L}
+= -X^\top(\mathbf{y}-X\boldsymbol\beta) + 2\mu\,\boldsymbol\beta = \mathbf{0}
+\;\Longrightarrow\;
+(X^\top X + 2\mu I)\,\boldsymbol\beta = X^\top\mathbf{y}
+\;\Longrightarrow\;
+\boldsymbol\beta(\mu) = (X^\top X + 2\mu I)^{-1}X^\top\mathbf{y}.
+$$
+This is the ridge estimator with penalty $\alpha=2\mu$ — *but now $\mu$ is constrained to
+be $\ge0$*, which is exactly why ridge penalties are never negative. A negative penalty
+would be dual-infeasible.
+
+**Step 3 — complementary slackness $\mu(\|\boldsymbol\beta\|^2-t)=0$ splits into two cases,
+and this is the whole point.**
+
+- **Case A — the budget is slack ($\mu=0$).** Then $\boldsymbol\beta(0)=(X^\top
+  X)^{-1}X^\top\mathbf{y}=\hat{\boldsymbol\beta}_{\text{OLS}}$, the *unconstrained* least
+  squares solution. This is valid *only if it is primal-feasible*:
+  $\|\hat{\boldsymbol\beta}_{\text{OLS}}\|^2\le t$. In words: **if the OLS solution already
+  fits inside the budget, the constraint does nothing and ridge returns OLS.** The fence is
+  there but you never touch it.
+- **Case B — the budget binds ($g=0$, i.e. $\|\boldsymbol\beta\|^2=t$).** Then $\mu>0$ is
+  chosen so the solution's norm hits exactly $t$. This is the genuine shrinkage regime: OLS
+  was too big, the budget reins it in, and the multiplier $\mu$ is the shadow price of one
+  unit of coefficient budget (the [OPTM-13] reading, now with the guarantee $\mu\ge0$).
+
+The two cases are *mutually exclusive and exhaustive* — exactly what complementary
+slackness encodes. @fig-ridge-toggle shows the toggle as we shrink the budget $t$.
+
+```{python}
+#| label: fig-ridge-toggle
+#| fig-cap: "Complementary slackness in ridge, as the budget $t$ shrinks. **Top:** the solution norm $\\|\\boldsymbol\\beta(t)\\|$. For large $t$ (right of the dashed line) the OLS solution already fits: the constraint is **inactive**, $\\mu=0$, and the norm is flat at $\\|\\hat\\beta_{OLS}\\|$. Once $t$ drops below $\\|\\hat\\beta_{OLS}\\|^2$ the constraint **activates**: the norm tracks the budget exactly ($\\|\\beta\\|^2=t$), and **bottom**, the multiplier $\\mu>0$ switches on and grows as the budget tightens. The kink is the moment complementary slackness flips which case holds."
+rng = np.random.default_rng(1)
+n, p = 60, 4
+Xd = rng.normal(size=(n, p))
+beta_true = np.array([2.0, -1.5, 1.0, 0.5])
+yd = Xd @ beta_true + rng.normal(0, 1.0, size=n)
+XtX = Xd.T @ Xd; Xty = Xd.T @ yd
+beta_ols = np.linalg.solve(XtX, Xty)
+ols_norm2 = beta_ols @ beta_ols
+
+def ridge_for_alpha(alpha):
+    b = np.linalg.solve(XtX + alpha * np.eye(p), Xty)
+    return b
+
+alphas = np.concatenate([[0.0], np.logspace(-2, 2.2, 200)])
+norms2 = np.array([ridge_for_alpha(a) @ ridge_for_alpha(a) for a in alphas])
+mus = alphas / 2.0   # alpha = 2 mu
+
+fig, (axT, axB) = plt.subplots(2, 1, figsize=(6.6, 5.6), sharex=True)
+axT.plot(norms2, np.sqrt(norms2), color=CURVE, lw=2.2)
+axT.axhline(np.sqrt(ols_norm2), color=GREY, ls="--", lw=1.4,
+            label=r"$\|\hat\beta_{OLS}\|$ (slack regime)")
+axT.set_ylabel(r"solution norm $\|\beta(t)\|$")
+axT.set_title("Ridge: the constraint toggles active / inactive")
+axT.legend(fontsize=9, framealpha=0.95)
+axB.plot(norms2, mus, color=CONSTR, lw=2.2)
+axB.set_xlabel(r"budget $t=\|\beta\|^2$ (larger $t$ to the right)")
+axB.set_ylabel(r"multiplier $\mu$")
+axB.axhline(0, color=GREY, lw=1.0)
+axB.annotate(r"$\mu=0$ here (inactive)", xy=(ols_norm2*0.97, 0.04),
+             xytext=(ols_norm2*0.55, 0.9), color=GREY, fontsize=9,
+             arrowprops=dict(arrowstyle="->", color=GREY))
+plt.tight_layout()
+print(f"OLS squared norm = {ols_norm2:.3f}: for budgets t >= this, mu=0 (constraint inactive).")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"For lasso, the budget is $\|\boldsymbol\beta\|_1\le t$ — does KKT still apply, and what is
+different?"* KKT is the *right* framework — lasso is exactly an inequality-constrained
+convex problem — but the constraint $g(\boldsymbol\beta)=\|\boldsymbol\beta\|_1-t$ is
+**non-differentiable** at the axes (its corners), so $\nabla g$ does not exist there and
+the smooth stationarity of @thm-kkt must be replaced by its **subgradient** version,
+$\mathbf{0}\in\partial\mathcal{L}$ (the optimality condition of [OPTM-05]). That
+subgradient KKT condition is *precisely* what produces sparsity: at a corner where a
+coefficient is exactly zero, the subdifferential of $\|\cdot\|_1$ is a whole interval, wide
+enough to satisfy stationarity for a *range* of data — so the optimum *prefers* to sit on
+corners. Complementary slackness still governs the *budget* constraint (slack budget ⇒
+OLS; tight budget ⇒ shrinkage), but the per-coordinate sparsity comes from the kink, which
+is why lasso lives in the subgradient/proximal world of [OPTM-05], [OPTM-10], and
+[OPTM-16]. This is the clean statement of where smooth KKT ends and subgradient KKT begins.
+:::
+
+## Example 2 — the Support Vector Machine: complementary slackness builds the support vectors {#sec-svm}
+
+This is the example KKT was practically made for, and the exact optimality theory the
+Classification track's SVM article links here for. Given linearly separable training data
+$(\mathbf{x}_i,y_i)$ with labels $y_i\in\{-1,+1\}$, the **maximum-margin** classifier finds
+the separating hyperplane $\mathbf{w}^\top\mathbf{x}+b=0$ with the widest possible gap to
+the nearest points. Maximizing the margin $2/\|\mathbf{w}\|$ is minimizing
+$\tfrac12\|\mathbf{w}\|^2$, subject to every point being on the correct side by at least a
+unit:
+$$
+\min_{\mathbf{w},b}\ \tfrac12\|\mathbf{w}\|^2
+\quad\text{subject to}\quad
+g_i(\mathbf{w},b) = 1 - y_i(\mathbf{w}^\top\mathbf{x}_i + b) \le 0,\quad i=1,\dots,n.
+$$ {#eq-svm}
+There is one inequality constraint *per training point*. This is a convex quadratic
+objective with affine constraints — the cleanest possible KKT problem, and Slater's
+condition holds (separable data have a strictly feasible margin), so KKT is sufficient.
+
+**Step 1 — Lagrangian** with one multiplier $\mu_i\ge0$ per point:
+$$
+\mathcal{L}(\mathbf{w},b,\boldsymbol\mu)
+= \tfrac12\|\mathbf{w}\|^2 + \sum_{i=1}^n \mu_i\bigl(1 - y_i(\mathbf{w}^\top\mathbf{x}_i+b)\bigr).
+$$
+
+**Step 2 — stationarity** in $\mathbf{w}$ and $b$. Differentiating in $\mathbf{w}$
+($\nabla_{\mathbf{w}}\tfrac12\|\mathbf{w}\|^2=\mathbf{w}$, and the constraint term
+contributes $-\mu_iy_i\mathbf{x}_i$):
+$$
+\nabla_{\mathbf{w}}\mathcal{L} = \mathbf{w} - \sum_i \mu_i y_i \mathbf{x}_i = \mathbf{0}
+\;\Longrightarrow\;
+\boxed{\ \mathbf{w} = \sum_i \mu_i y_i \mathbf{x}_i.\ }
+$$
+Read that boxed equation slowly: **the optimal weight vector is a linear combination of the
+training points, weighted by $\mu_iy_i$.** Differentiating in $b$ gives the side condition
+$\partial\mathcal{L}/\partial b = -\sum_i\mu_iy_i=0$, i.e. $\sum_i\mu_iy_i=0$.
+
+**Step 3 — complementary slackness, where the magic happens.** For each point,
+$$
+\mu_i\,\bigl(1 - y_i(\mathbf{w}^\top\mathbf{x}_i+b)\bigr)=0.
+$$
+Split per point, exactly as the ritual demands:
+
+- If a point is **strictly inside the margin's correct side**, $y_i(\mathbf{w}^\top\mathbf{x}_i+b)>1$,
+  then its constraint is slack ($g_i<0$), so complementary slackness forces $\mu_i=0$. By
+  the boxed equation, **this point contributes nothing to $\mathbf{w}$.** It could be moved
+  (as long as it stays on its side) or deleted, and the classifier would not change.
+- If a point sits **exactly on the margin boundary**, $y_i(\mathbf{w}^\top\mathbf{x}_i+b)=1$
+  ($g_i=0$), then $\mu_i$ may be positive — and only these points contribute to
+  $\mathbf{w}$. **These are the support vectors.**
+
+So the entire classifier is built from the handful of points on the margin. That is not a
+heuristic or an approximation; it is *forced* by complementary slackness. @fig-svm draws a
+trained margin and marks exactly the support vectors (the nonzero-$\mu$ points).
+
+```{python}
+#| label: fig-svm
+#| fig-cap: "The SVM and its KKT structure. A maximum-margin separator (red) with its margin boundaries (dashed). The points with nonzero multiplier $\\mu_i>0$ — the **support vectors** — are circled; they lie exactly on the margin boundary, where their constraint is active ($g_i=0$). Every other point has $\\mu_i=0$ by complementary slackness and contributes nothing to $\\mathbf{w}=\\sum_i\\mu_i y_i\\mathbf{x}_i$. Deleting all the non-support points would leave the boundary unchanged. KKT *is* the SVM's defining structure."
+from scipy.optimize import minimize
+
+rng = np.random.default_rng(4)
+npos, nneg = 12, 12
+Xpos = rng.normal(loc=[2.4, 2.0], scale=0.7, size=(npos, 2))
+Xneg = rng.normal(loc=[-1.2, -0.8], scale=0.7, size=(nneg, 2))
+Xs = np.vstack([Xpos, Xneg])
+ys = np.concatenate([np.ones(npos), -np.ones(nneg)])
+
+# Solve the (primal) hard-margin SVM: min 1/2||w||^2 s.t. y_i(w.x+b)>=1.
+def obj(z): w = z[:2]; return 0.5 * w @ w
+def grad(z): w = z[:2]; return np.array([w[0], w[1], 0.0])
+cons = [{"type": "ineq",
+         "fun": (lambda z, i=i: ys[i]*(Xs[i] @ z[:2] + z[2]) - 1.0)}
+        for i in range(len(ys))]
+res = minimize(obj, np.array([0.1, 0.1, 0.0]), jac=grad,
+               constraints=cons, method="SLSQP",
+               options={"maxiter": 500, "ftol": 1e-9})
+w = res.x[:2]; b = res.x[2]
+margins = ys * (Xs @ w + b)
+sv = margins < 1.0 + 1e-4   # active constraints = support vectors
+
+fig, ax = plt.subplots(figsize=(6.2, 5.4))
+ax.scatter(Xpos[:,0], Xpos[:,1], color=CONSTR, s=40, label="class $+1$", zorder=3)
+ax.scatter(Xneg[:,0], Xneg[:,1], color=CURVE, s=40, label="class $-1$", zorder=3)
+ax.scatter(Xs[sv,0], Xs[sv,1], facecolor="none", edgecolor=GRADF, s=180,
+           linewidth=2.2, zorder=4, label="support vectors ($\\mu>0$)")
+xx = np.linspace(Xs[:,0].min()-1, Xs[:,0].max()+1, 50)
+yy = -(w[0]*xx + b) / w[1]
+yy_up = -(w[0]*xx + b - 1) / w[1]
+yy_dn = -(w[0]*xx + b + 1) / w[1]
+ax.plot(xx, yy, color=CONSTR, lw=2.2, label="separator")
+ax.plot(xx, yy_up, color=GREY, ls="--", lw=1.4)
+ax.plot(xx, yy_dn, color=GREY, ls="--", lw=1.4, label="margin")
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title("Support vectors are the active-constraint points")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.95)
+ax.set_aspect("equal")
+plt.tight_layout()
+print(f"number of training points = {len(ys)};  support vectors (mu>0) = {int(sv.sum())}")
+```
+
+The printout makes the point quantitatively: of all the training points, only a small
+number are support vectors. The rest have $\mu_i=0$ and are, for the trained model,
+invisible. This sparsity in the *points* is the dual mirror of lasso's sparsity in the
+*coefficients*, and both are children of complementary slackness — the article [OPTM-15]
+makes the duality explicit by passing entirely to the multipliers $\boldsymbol\mu$ as the
+decision variables (the *dual SVM*, where the kernel trick lives).
+
+## Example 3 — the edge of applicability: KKT on a non-convex problem {#sec-edge}
+
+Every honest treatment shows where the tool misleads. @thm-kkt is *necessary* at any
+regular optimum, but @thm-kkt-sufficient bought us "*sufficient*" only under **convexity**.
+Strip convexity away and KKT keeps flagging points — but they need not be global, or even
+local, minima. Consider minimizing a double-well objective on an interval:
+$$
+\min_{x}\ f(x) = x^4 - 3x^2 + x
+\quad\text{subject to}\quad
+g(x) = x^2 - 4 \le 0\ \ (\text{i.e. } -2\le x\le 2).
+$$
+The objective is non-convex (the quartic has two valleys). The feasible interval is convex,
+but $f$ is not, so @thm-kkt-sufficient does not apply. Run KKT.
+
+**Stationarity** of $\mathcal{L}=f+\mu g$: $f'(x)+\mu\cdot2x = 4x^3-6x+1+2\mu x=0$.
+**Complementary slackness:** either $\mu=0$ (constraint inactive, interior) or $g=0$
+($x=\pm2$, on the boundary).
+
+- **Interior case ($\mu=0$):** solve $f'(x)=4x^3-6x+1=0$. This cubic has three real roots —
+  two valley bottoms and one interior local *maximum*. KKT (with $\mu=0\ge0$, feasibility
+  $|x|<2$) flags **all three**, because $f'(x)=0$ is necessary at each. Only one is the
+  global minimum.
+- **Boundary case ($x=\pm2$):** check whether a valid $\mu\ge0$ exists. These are
+  additional KKT candidates if the sign works out.
+
+So KKT hands us a *list* of candidate points, and — without convexity — provides **no way
+to rank them**. You must evaluate $f$ at each survivor and compare. @fig-edge shows the
+landscape with every KKT point marked; one is the global min, one is a local min, one is a
+local max that KKT flagged anyway.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "KKT is only *necessary* without convexity. The non-convex objective $f(x)=x^4-3x^2+x$ (blue) on $[-2,2]$ (feasible region shaded). The stationarity condition $f'(x)=0$ flags **three** interior KKT points (markers): the global minimum (green), a higher local minimum (gold), and a local **maximum** (red X) — KKT cannot tell them apart. The honest workflow is to enumerate all KKT points and evaluate $f$ at each; with convexity (Example 1, 2) this enumeration is unnecessary because any KKT point is automatically global."
+xv = np.linspace(-2.3, 2.3, 400)
+fv = xv**4 - 3*xv**2 + xv
+# interior stationary points: roots of 4x^3 - 6x + 1
+roots = np.roots([4, 0, -6, 1])
+roots = np.sort(roots[np.isreal(roots)].real)
+roots = roots[(roots > -2) & (roots < 2)]
+fr = roots**4 - 3*roots**2 + roots
+# classify by second derivative f'' = 12x^2 - 6
+fpp = 12*roots**2 - 6
+
+fig, ax = plt.subplots(figsize=(6.6, 4.4))
+ax.axvspan(-2, 2, color=FEAS, alpha=0.35, zorder=0, label="feasible $|x|\\leq2$")
+ax.plot(xv, fv, color=CURVE, lw=2.2)
+gmin = np.argmin(fr)
+for k, (r, fr_k, c2) in enumerate(zip(roots, fr, fpp)):
+    if k == gmin:
+        ax.scatter([r],[fr_k], color=GRADF, s=130, zorder=5, edgecolor="white",
+                   linewidth=1.4, label="global min")
+    elif c2 > 0:
+        ax.scatter([r],[fr_k], color=GRADG, s=110, zorder=5, edgecolor="white",
+                   linewidth=1.2, label="local min (KKT point)")
+    else:
+        ax.scatter([r],[fr_k], color=CONSTR, s=130, marker="X", zorder=5,
+                   label="local MAX (also a KKT point!)")
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("Non-convex: KKT flags minima AND maxima")
+ax.legend(loc="upper center", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+print("interior KKT points (f'(x)=0):", np.round(roots, 4))
+print("f at those points           :", np.round(fr, 4))
+```
+
+**What you reach for instead.** When the problem is non-convex, KKT is a *filter*, not a
+solver: it narrows the search to stationary points, but you must then (i) enumerate all KKT
+candidates and compare $f$ values, (ii) add second-order conditions to discard the maxima
+and saddles (the constrained second-order test, the inequality cousin of [OPTM-13,
+§second-order]), or (iii) accept that global optimization is genuinely hard and use a
+global method (multistart, branch-and-bound) or settle for a good local optimum — which is
+the everyday reality of training neural networks, where KKT-style stationarity is all you
+ever certify. The lesson: **the sufficiency of KKT lives and dies with convexity. Verify
+convexity before you trust a single KKT point as the answer.**
+
+# Failure modes and when to reach for something else {#sec-failure}
+
+## The constraint qualification can fail {#sec-cq}
+
+@thm-kkt carried a hypothesis — a constraint qualification — exactly as the equality case
+needed $\nabla g\ne\mathbf{0}$. When it fails, the multipliers in @thm-kkt **may not
+exist**, even at a perfectly good optimum, and a student who writes the KKT system gets an
+unsolvable or empty answer. The cleanest teaching example: minimize $f(x,y)=x$ subject to
+$$
+g_1(x,y)=y - (1-x)^3 \le 0,\qquad g_2(x,y)=-y\le 0,
+$$
+whose feasible region pinches to a cusp at $(1,0)$, the true minimizer. There both active
+gradients $\nabla g_1$ and $\nabla g_2$ become parallel (linearly *dependent*), the cone of
+@fig-cone degenerates to a single ray, and $-\nabla f=(-1,0)$ does not lie in it — so **no
+nonnegative multipliers reproduce stationarity**, even though $(1,0)$ is optimal. KKT
+silently misses it.
+
+```{python}
+#| label: fig-cq-fail
+#| fig-cap: "A constraint-qualification failure. The feasible region (shaded) is pinched between $y\\ge0$ and $y\\le(1-x)^3$, meeting in a **cusp** at $(1,0)$ — the true minimizer of $f(x,y)=x$ (green). At the cusp the two active constraint normals are linearly dependent (the cone collapses), so no valid $\\mu_1,\\mu_2\\ge0$ satisfy stationarity. The lesson mirrors the equality case of [OPTM-13]: always check a constraint qualification (linear independence of active gradients, or Slater's condition) before trusting the multiplier system."
+xv = np.linspace(-0.4, 1.3, 400)
+upper = (1 - xv)**3
+fig, ax = plt.subplots(figsize=(6.0, 4.6))
+# feasible: 0 <= y <= (1-x)^3, only where upper>=0 (x<=1)
+mask = upper >= 0
+ax.fill_between(xv[mask], 0, upper[mask], color=FEAS, alpha=0.5, zorder=0,
+                label="feasible region")
+ax.plot(xv[mask], upper[mask], color=CONSTR, lw=2.0, label=r"$y=(1-x)^3$")
+ax.axhline(0, color=CONSTR, lw=2.0)
+ax.scatter([1],[0], color=GRADF, s=130, zorder=5, edgecolor="white", linewidth=1.4,
+           label="true min (cusp)")
+ax.annotate("", xy=(1-0.28, 0.0), xytext=(1.0, 0.0),
+            arrowprops=dict(arrowstyle="-|>", color=GRADF, lw=2.2))
+ax.text(0.55, 0.06, r"$-\nabla f=(-1,0)$", color=GRADF, fontsize=10)
+ax.set_xlim(-0.4, 1.3); ax.set_ylim(-0.15, 1.2)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("Cusp: active normals dependent, no valid multipliers")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+```
+
+For **convex** problems, Slater's condition (a strictly feasible point exists) is the
+practical qualification that rules this out, and it holds for every convex example in this
+article. The pathology bites only on degenerate geometry — cusps, tangent constraints,
+dependent active gradients — and almost never on the affine-constrained convex programs
+(ridge, lasso, SVM, LP, QP) that dominate machine learning.
+
+::: {.callout-warning title="Pitfall"}
+**The three ways KKT misleads**, in order of how often they bite:
+
+1. **No sign-checking.** The most common error is solving the stationarity-plus-slackness
+   *equations* and reporting a solution with a **negative multiplier** as an optimum.
+   $\mu_i<0$ is dual-*infeasible*: it is an algebraic artifact of guessing the wrong active
+   set. Always verify $\mu_i\ge0$ *and* $g_i\le0$ at the end and discard violators.
+2. **Trusting KKT without convexity.** KKT is *necessary* always but *sufficient* only for
+   convex problems (@sec-edge). On a non-convex objective it flags maxima and saddles too;
+   a KKT point is not automatically a minimum, let alone the global one.
+3. **Ignoring the constraint qualification.** At a cusp or a point of dependent active
+   gradients (@sec-cq), the multipliers may not exist and KKT silently misses the true
+   optimum. Check Slater's condition (convex case) or independence of active gradients.
+:::
+
+## Where KKT shines, and where it does not {#sec-applicability}
+
+::: {.callout-tip title="You might be asked"}
+*"When are the KKT conditions the right tool, and when are they the wrong one?"* The honest
+summary to recite:
+
+- **Use them** when (a) the problem has differentiable objective and constraints, (b) it is
+  **convex** — convex objective, convex feasible set — so KKT is sufficient and any KKT
+  point is the global optimum, and (c) a constraint qualification holds (Slater's, trivial
+  for affine constraints). In that regime — ridge, lasso's budget, the SVM, linear and
+  quadratic programs, equality-and-inequality-constrained least squares — KKT is the
+  definitive optimality certificate: solve the system, check the signs, done.
+- **Adapt them** when the objective or constraints are **non-smooth** (an $\ell_1$ ball, a
+  polytope corner): replace $\nabla$ with the **subgradient** and use $\mathbf{0}\in
+  \partial\mathcal{L}$ ([OPTM-05]). This is the lasso/sparsity regime.
+- **Do not rely on them alone** when the problem is **non-convex** (neural nets, mixtures):
+  KKT becomes a *necessary filter*, not a certificate — pair it with second-order checks
+  or global methods, and accept you are certifying a local optimum.
+- **Reach past hand-solving** when the problem is **large**: you will not solve a
+  million-variable KKT system by hand. The conditions are the *theory*; the *engines* that
+  iterate toward them are interior-point methods, active-set methods, and the
+  projected/proximal algorithms of [OPTM-16] — all of which are, under the hood, solving
+  KKT.
+:::
+
+**Where it does not apply, and the alternative:**
+
+- **Non-smooth** objectives/constraints → subgradient KKT ([OPTM-05]), proximal/projected
+  methods ([OPTM-16]).
+- **Non-convex** → KKT is necessary only; use second-order conditions, multistart, or
+  global optimizers, and certify local optimality only.
+- **Constraint-qualification failures** (cusps, dependent normals) → the more general Fritz
+  John conditions, or reparameterize/handle the bad point directly, exactly as in
+  [OPTM-13, §edge].
+- **Very large scale** → the numerical KKT solvers (interior-point, active-set,
+  ADMM/augmented-Lagrangian, projected/proximal gradient, [OPTM-16]).
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-13 *Lagrange Multipliers*]**, which handled the two-sided equality
+fence $g=0$ and gave the parallelism $\nabla f=\lambda\nabla g$ and the shadow-price reading
+of the multiplier. This article relaxed the fence to one-sided $g\le0$ and found that the
+single new geometric fact — *a fence can only push inward* — forces three new conditions
+(dual feasibility $\mu\ge0$, complementary slackness $\mu g=0$, and primal feasibility),
+which together with stationarity are the KKT conditions. The shadow-price reading you
+carried in from [OPTM-13] is exactly what made $\mu\ge0$ and complementary slackness
+*inevitable* rather than arbitrary. The constrained branch continues:
+
+- **[OPTM-15 *Duality*]** — the multipliers $\boldsymbol\mu$, read as prices, become the
+  *decision variables* of a twin problem. The min-over-$\mathbf{x}$/max-over-$\boldsymbol\mu\ge0$
+  saddle structure of the Lagrangian (@sec-lagrangian) *is* the primal–dual relationship;
+  weak duality always holds, and Slater's condition (which we met as a constraint
+  qualification here) is exactly what closes the **duality gap**. The Farkas' lemma we
+  borrowed in @thm-kkt is proved there via the separating hyperplane of [OPTM-03]. This is
+  where the **dual SVM** and the kernel trick live.
+- **[OPTM-16 *Proximal and Projected Methods*]** — the numerical engines that solve KKT
+  systems when you cannot do it by hand: projection onto a feasible set, and the proximal
+  operator for the non-smooth ($\ell_1$) case where the subgradient KKT of @sec-ridge-lasso
+  applies.
+
+Downstream of the track: the **SVM** (@sec-svm) is the exact KKT structure the
+Classification track's SVM article links here for — support vectors *are* the
+active-constraint points; and the **constrained ridge/lasso** picture (@sec-ridge-lasso) is
+the inequality-budget form [REGR-14]/[REGR-15] link here for.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** W. Karush, *Minima of Functions of Several Variables with
+  Inequalities as Side Conditions* (M.Sc. thesis, University of Chicago, 1939) — the
+  original, unpublished for over a decade; and H. W. Kuhn and A. W. Tucker, "Nonlinear
+  Programming," *Proc. 2nd Berkeley Symposium* (1951), the rediscovery that founded the
+  field and gave the conditions their working name.
+- **The standard reference.** Boyd & Vandenberghe, *Convex Optimization*, §5.5 (the KKT
+  conditions) and §5.2–5.4 (the duality that [OPTM-15] develops) — the treatment whose path
+  from the Lagrangian through KKT to duality this track follows. Nocedal & Wright,
+  *Numerical Optimization*, Ch. 12, for the constraint qualifications (LICQ, MFCQ),
+  second-order conditions, and the Fritz John generalization stated but not proved here.
+- **Open threads this article deliberately deferred.** *Why does the min–max saddle of the
+  Lagrangian let me solve a twin problem, and when does the dual equal the primal?* —
+  duality, [OPTM-15], where weak duality, strong duality, and Slater's condition close the
+  loop, and where Farkas' lemma (used here for the multi-constraint @thm-kkt) is proved.
+  *What is the rigorous statement and proof of the constraint qualifications and the
+  constrained second-order sufficient conditions?* — Nocedal & Wright, Ch. 12; we used them
+  honestly (flagging LICQ, Slater, and the second-order test as imported) but did not prove
+  the qualification theory or the bordered-Hessian test end-to-end, the one place this
+  article stated rather than derived. *How are KKT systems actually solved at scale?* —
+  interior-point and active-set methods, and the proximal/projected algorithms of [OPTM-16].

@@ -1,0 +1,933 @@
+---
+title: "Convex Sets"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the series.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+REGION = "#2b3a67"    # the convex set / region fill
+EDGE   = "#1b2440"    # region boundary
+SEG    = "#c1121f"    # the segment between two points / a violation
+ACCENT = "#0a7d4d"    # hyperplanes, highlights
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the first article of the **convexity spine**
+> of the Optimization track. It assumes [OPTM-00 *What Is an Optimization Problem?*] — in
+> particular the **feasible set** $\mathcal{C}$, the region of allowed choices in
+> $\min_x f(x)$ subject to $x\in\mathcal{C}$. From the Geometry-of-Data track it borrows
+> only the vocabulary of **vectors, linear combinations, and the dot product**; those are
+> *used*, not rebuilt here. Its single job is to pin down one geometric property of a
+> feasible region — *convexity, "no dents"* — and to show why that property is the dividing
+> line that decides whether an optimization problem is tractable. It sets up
+> [OPTM-04 *Convex Functions*] (where a function is called convex exactly when the region
+> *above its graph* is a convex set), the constrained-optimization articles
+> [OPTM-13]–[OPTM-15] (whose feasible sets are convex), and [OPTM-16] (projection onto a
+> convex set). The **separating-hyperplane** picture introduced at the end is the seed of
+> duality in [OPTM-15] and of the SVM margin in the Classification track.
+
+## Abstract {.unnumbered}
+
+A set is **convex** when the straight segment joining any two of its points never leaves
+the set — geometrically, the set has *no dents, no holes, no notches*. This article makes
+that one-line idea precise, starting from the definition of a line segment as a
+**convex combination** $(1-t)x + t y$, and then follows it to the place it earns its
+keep: convexity is the property of a feasible region that lets a *local* search find the
+*global* best, the reason the whole field of optimization splits into "convex" (solvable,
+reliably) and "non-convex" (hard, in general). We build the standard convex sets a data
+scientist actually meets — **half-spaces**, **balls**, **polyhedra** (the feasible set of
+any system of linear inequalities) — and the standard non-examples (a crescent, a union of
+two disks, the set of sparse vectors). We then prove the two **operations that preserve
+convexity** — *intersection* and *affine image* — which together explain why the feasible
+set of a linear program is automatically convex without checking it by hand. We close with
+the **separating-hyperplane** idea: two disjoint convex sets can always be cleanly split by
+a flat wall, the geometric fact that later becomes duality and the support-vector margin.
+The single claim this article defends is that **convexity is not a technical nicety bolted
+onto optimization — it is the structural property that makes optimization *work*, and
+recognizing it (or its absence) is the first applicability call a practitioner makes.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A set $\mathcal{C}$ is **convex** if, for *every* pair of points $x,y\in\mathcal{C}$, the
+entire line segment between them stays inside $\mathcal{C}$:
+$$
+x,y\in\mathcal{C}
+\quad\Longrightarrow\quad
+(1-t)\,x + t\,y \in \mathcal{C}
+\quad\text{for all } t\in[0,1].
+$$
+In one phrase: **you can always see from any point to any other in a straight line without
+leaving the set** — no dents, no holes. This is the property that turns optimization from
+hard to tractable: over a convex region, "downhill in every direction" can only mean you
+have reached the *global* bottom, so a local search cannot be fooled. Convexity is
+preserved by **intersection** and by **affine maps**, which is why the feasible set of any
+collection of linear constraints is automatically convex.
+:::
+
+Everything below orbits that box. The definition will look almost too simple to matter.
+The work of the article is to convince you that this single inequality — *the segment
+stays inside* — is the exact hinge on which the difficulty of an optimization problem
+turns, and to give you the fluency to look at a feasible region and call it convex or not
+on sight.
+
+# Why we are here: the property that decides "easy" from "hard" {#sec-why}
+
+Keep one question in view for the whole article: **why does optimization care so much about
+the *shape* of the feasible region, and why is "no dents" the shape that makes everything
+work?** Every definition and proof below is an answer to one piece of that question.
+
+## What the earlier articles left open
+
+[OPTM-01] and [OPTM-02] taught the *local* test for a minimum: find where the derivative
+(or the gradient) is zero, then check the curvature. That test is genuinely local — it
+inspects the function in an infinitesimal neighborhood of a point and pronounces "this is a
+minimum." But a minimum *of what scope*? The second-derivative test can only ever certify a
+**local** minimum: the lowest point *in some small neighborhood*. It is completely silent
+about whether some far-away valley is lower still.
+
+This is not a pedantic worry. Almost every model in the rest of the series is fit by
+minimizing something, and what we actually want is the *global* best parameters, not merely
+a point that looks good to its immediate neighbors. So a gap opened in [OPTM-02] that we
+never closed: **when is a local minimum guaranteed to be the global one?** When can we trust
+that "downhill in every direction" means "the bottom," full stop?
+
+The answer turns out to have two halves, and they are the two articles of this spine. One
+half is a property of the *function* being minimized (convex functions, [OPTM-04]). The
+other — the one we tackle first, here — is a property of the *region* we are minimizing
+over. That property is **convexity of the feasible set**, and it is what this article is
+about.
+
+## A picture of why dents are fatal {#sec-why-dents}
+
+Here is the intuition, before any symbols, for why the *shape* of the region matters.
+Imagine you are standing inside a region, trying to walk to its lowest point (lowest by
+some objective), and your only rule is "take a step in a downhill direction that stays
+inside the region." If the region is a nice solid blob, this works: keep stepping downhill
+and you reach the bottom. But suppose the region has a **dent** — a notch carved into it,
+like a kidney bean or a crescent. Then you can get *trapped*. You walk downhill into a tip
+of the crescent, and to reach a genuinely lower point on the *other* tip you would have to
+walk *uphill first*, or step *outside* the region across the notch. A purely local
+"downhill and stay inside" rule cannot do either. The dent has manufactured a fake bottom.
+
+@fig-dent-trap shows exactly this. The whole reason we are about to spend an article on a
+geometric definition is that **the dent is the enemy of local search**, and convexity is
+precisely "no dents."
+
+```{python}
+#| label: fig-dent-trap
+#| fig-cap: "Why a dent is fatal to local search. **Left:** a convex region — any straight path between two interior points stays inside, so following a downhill direction can only end at the one true bottom. **Right:** a crescent (non-convex). The straight segment between the two marked points (red) cuts *outside* the region across the notch. A local 'step downhill but stay inside' rule walking into the upper tip is trapped: the lower tip is unreachable without first going up or leaving. The dent fabricates a local minimum that is not global."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 4.0))
+
+# Left: a convex blob (a disk) with an interior chord.
+th = np.linspace(0, 2*np.pi, 200)
+axL.fill(np.cos(th), np.sin(th), color=REGION, alpha=0.35, edgecolor=EDGE, lw=2)
+p, q = np.array([-0.7, 0.3]), np.array([0.6, -0.5])
+axL.plot([p[0], q[0]], [p[1], q[1]], color=SEG, lw=2.5, zorder=3)
+axL.scatter(*np.array([p, q]).T, color=SEG, s=55, zorder=4)
+axL.set_title("Convex: segment stays inside")
+axL.set_xlim(-1.4, 1.4); axL.set_ylim(-1.4, 1.4); axL.set_aspect("equal")
+axL.set_xticks([]); axL.set_yticks([])
+
+# Right: a crescent = big disk minus a shifted disk.
+gx, gy = np.meshgrid(np.linspace(-1.5, 1.7, 400), np.linspace(-1.5, 1.5, 400))
+inbig = gx**2 + gy**2 <= 1.2**2
+incut = (gx - 0.85)**2 + gy**2 <= 1.0**2
+crescent = inbig & ~incut
+axR.contourf(gx, gy, crescent.astype(float), levels=[0.5, 1.5], colors=[REGION], alpha=0.35)
+axR.contour(gx, gy, crescent.astype(float), levels=[0.5], colors=[EDGE], linewidths=2)
+a, b = np.array([-0.9, 0.55]), np.array([-0.9, -0.55])
+axR.plot([a[0], b[0]], [a[1], b[1]], color=SEG, lw=2.5, zorder=3)
+axR.scatter(*np.array([a, b]).T, color=SEG, s=55, zorder=4)
+axR.set_title("Non-convex: segment leaves the set")
+axR.set_xlim(-1.5, 1.7); axR.set_ylim(-1.5, 1.5); axR.set_aspect("equal")
+axR.set_xticks([]); axR.set_yticks([])
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, why does convexity matter in optimization?"* Because over a convex
+feasible set, with a convex objective, **every local minimum is automatically a global
+minimum** — so a local search (gradient descent, Newton's method) provably finds the right
+answer, and you never have to worry about being trapped in a false valley. That single
+guarantee, proved in [OPTM-04], is the entire payoff, and it rests on the feasible region
+being convex (this article) *and* the objective being convex (the next one). Non-convex
+problems lose the guarantee: the best you can certify is a local minimum, which is why
+training a neural network is fundamentally harder than fitting a linear model.
+:::
+
+## A one-paragraph history
+
+The systematic study of convex sets is younger than calculus. Hermann Minkowski, around
+1900, built the geometry of convex bodies — support functions, the separating hyperplane,
+mixed volumes — originally for number theory. The separating-hyperplane theorems were
+sharpened in the 1900s–1940s (Minkowski, then Hahn and Banach in infinite dimensions). The
+payoff for *optimization* arrived with linear programming: George Dantzig's simplex method
+(1947) optimizes a linear objective over a polyhedron — a convex set — and its correctness
+is a fact about convex geometry. Convex *analysis* as a unified field is largely the work of
+Werner Fenchel (1950s) and R. Tyrrell Rockafellar (whose 1970 *Convex Analysis* is the
+standard reference); modern convex optimization as practiced in data science is codified in
+Boyd and Vandenberghe (2004). The thread running through all of it is the one in
+@sec-why-dents: convexity is the structural assumption that makes "find the best" reliably
+answerable.
+
+# Intuition before symbols {#sec-intuition}
+
+Before the formal definition, fix the one geometric object the whole article rests on: the
+**straight line segment between two points**.
+
+Take two points $x$ and $y$ in the plane (or in any number of dimensions — the picture is
+the same). As you slide from $x$ to $y$ along the straight line connecting them, your
+position is a *blend* of the two endpoints: start all-$x$, end all-$y$, and in between, a
+weighted mix. Write the mixing weight as $t$, running from $0$ to $1$. At weight $t$ your
+position is
+$$
+(1-t)\,x + t\,y.
+$$
+Check the endpoints: at $t=0$ this is $x$ (all of $x$, none of $y$); at $t=1$ it is $y$;
+at $t=\tfrac12$ it is the midpoint $\tfrac12 x + \tfrac12 y$. As $t$ sweeps $[0,1]$ the
+expression traces out *exactly* the segment from $x$ to $y$ and nothing more. That is what a
+segment **is**, written in vector arithmetic. @fig-segment draws it.
+
+```{python}
+#| label: fig-segment
+#| fig-cap: "A line segment as a blend of its endpoints. Each point on the segment from $x$ to $y$ is $(1-t)x + ty$ for some $t\\in[0,1]$: the weight $t$ slides the blend from all-$x$ ($t=0$) to all-$y$ ($t=1$), passing through the midpoint at $t=\\tfrac12$. The weights are non-negative and sum to one — this is what makes it a *convex* combination, and the segment is the set of all of them."
+x = np.array([0.5, 0.6]); y = np.array([3.4, 2.3])
+ts = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+pts = np.array([(1-t)*x + t*y for t in ts])
+
+fig, ax = plt.subplots()
+ax.plot([x[0], y[0]], [x[1], y[1]], color=REGION, lw=2.5, zorder=1)
+ax.scatter(pts[:, 0], pts[:, 1], color=SEG, s=55, zorder=3)
+for t, p in zip(ts, pts):
+    ax.annotate(f"$t={t:g}$", p, textcoords="offset points", xytext=(6, 8), fontsize=9)
+ax.scatter(*x, color=ACCENT, s=90, zorder=4); ax.annotate("$x$", x, textcoords="offset points", xytext=(-16, -4), fontsize=12)
+ax.scatter(*y, color=ACCENT, s=90, zorder=4); ax.annotate("$y$", y, textcoords="offset points", xytext=(8, -2), fontsize=12)
+ax.set_xlim(0, 4); ax.set_ylim(0, 3); ax.set_aspect("equal")
+ax.set_title("The segment is all blends $(1-t)x + ty$")
+ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+Now the definition of convexity is just a sentence about this object: a set is convex when,
+no matter which two of its points you pick, *every* blend between them is also in the set.
+The set is "closed under blending." With the segment understood, the rest is precise
+bookkeeping.
+
+# The formal development {#sec-formal}
+
+## Convex combinations and the definition {#sec-defn}
+
+::: {#def-convex-comb}
+**Definition (convex combination).** Given points $x_1,\dots,x_k$ in $\mathbb{R}^n$, a
+**convex combination** of them is a weighted sum
+$$
+\theta_1 x_1 + \theta_2 x_2 + \cdots + \theta_k x_k,
+\qquad
+\theta_i \ge 0 \ \text{for all } i,
+\qquad
+\sum_{i=1}^k \theta_i = 1.
+$$
+The two requirements — weights **non-negative** and weights **summing to one** — are what
+make it *convex* rather than an arbitrary linear combination.
+:::
+
+The two conditions are doing specific geometric work, and it is worth naming what each one
+forbids:
+
+- **Weights sum to one ($\sum\theta_i = 1$).** This is what keeps the blend an *average*.
+  If the weights summed to something else, the "blend" of $x$ with itself
+  ($\theta x + \theta x$) would drift away from $x$. Summing to one pins the combination
+  inside the *affine* span — the flat plane/line through the points — rather than letting it
+  scale off toward the origin.
+- **Weights non-negative ($\theta_i\ge 0$).** This is what keeps the blend *between* the
+  points rather than *beyond* them. With $k=2$, writing $\theta_1 = 1-t$ and $\theta_2 = t$,
+  non-negativity forces $t\in[0,1]$ — you stay on the segment. Allow a negative weight and
+  you shoot off past an endpoint along the extended line.
+
+For two points the convex combinations are exactly the segment of @fig-segment. For three
+points (not all on one line) they fill the solid triangle with those corners; for $k$ points
+they fill the **convex hull**, the smallest convex set containing them — the shape a rubber
+band snaps to around a scatter of pins.
+
+::: {#def-convex-set}
+**Definition (convex set).** A set $\mathcal{C}\subseteq\mathbb{R}^n$ is **convex** if for
+every $x,y\in\mathcal{C}$ and every $t\in[0,1]$,
+$$
+(1-t)\,x + t\,y \;\in\; \mathcal{C}.
+$$
+Equivalently: $\mathcal{C}$ contains every convex combination of *any two* of its points.
+By convention the empty set and any single point are convex (there is nothing to violate).
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"The definition only mentions two points and a segment. Do I also need to check
+combinations of three, four, or more points?"* No — and this is worth being able to argue.
+If a set contains the segment between any two of its points, it automatically contains every
+convex combination of *any* finite number of its points. The reason is that a $k$-point
+convex combination can be built up two points at a time. Take
+$z = \theta_1 x_1 + \cdots + \theta_k x_k$ with the $\theta_i\ge 0$ summing to one, and
+assume $\theta_k < 1$ (if $\theta_k = 1$ then $z = x_k\in\mathcal{C}$ and we are done). Peel
+off the last point:
+$$
+z = (1-\theta_k)\underbrace{\left[\tfrac{\theta_1}{1-\theta_k}x_1 + \cdots + \tfrac{\theta_{k-1}}{1-\theta_k}x_{k-1}\right]}_{\textstyle w} + \theta_k\,x_k.
+$$
+The new weights $\theta_i/(1-\theta_k)$ are non-negative and sum to
+$\frac{\theta_1+\cdots+\theta_{k-1}}{1-\theta_k} = \frac{1-\theta_k}{1-\theta_k}=1$, so $w$
+is a convex combination of *fewer* points; by induction $w\in\mathcal{C}$. Then
+$z = (1-\theta_k)w + \theta_k x_k$ is a two-point convex combination of $w$ and $x_k$, both
+in $\mathcal{C}$, hence in $\mathcal{C}$ by the definition. So the two-point condition is the
+whole story — a genuinely convenient fact, because it means *checking* convexity only ever
+involves a single segment.
+:::
+
+## Examples you will actually meet {#sec-examples-sets}
+
+The definition is abstract; the value is in recognizing convex sets on sight. Here are the
+ones that appear constantly in data science and optimization, each verified directly from
+@def-convex-set.
+
+**The whole space $\mathbb{R}^n$, and any line or plane through it.** Trivially convex: a
+blend of two points in $\mathbb{R}^n$ is in $\mathbb{R}^n$. More usefully, an **affine set**
+— a solution set of linear equations $\{x : Ax = b\}$, e.g. a line or a plane — is convex.
+If $Ax=b$ and $Ay=b$, then for any $t$,
+$$
+A\big((1-t)x + ty\big) = (1-t)Ax + t\,Ay = (1-t)b + t\,b = b,
+$$
+using only that matrix-times-vector distributes over addition and pulls out scalars. The
+blend still satisfies the equations, so it is in the set.
+
+**A half-space.** Pick a direction (a nonzero vector $a$) and a threshold $b$. The set of
+points on one side of the flat wall perpendicular to $a$,
+$$
+H^- = \{\,x : a^\top x \le b\,\},
+$$
+is a **half-space**. It is convex, and we will prove it carefully in @sec-halfspace because
+half-spaces are the atoms from which most useful convex sets are built — every linear
+inequality constraint carves out exactly one.
+
+**A ball.** The set of points within radius $r$ of a center $x_0$,
+$$
+B = \{\,x : \|x - x_0\| \le r\,\},
+$$
+is convex. Take $x,y$ with $\|x-x_0\|\le r$ and $\|y-x_0\|\le r$, and blend. Subtract the
+center and use that the norm of a sum is at most the sum of the norms (the **triangle
+inequality**, $\|u+v\|\le\|u\|+\|v\|$, an imported fact about distance), together with
+$\|c u\| = |c|\,\|u\|$:
+$$
+\big\|\,(1-t)x + ty - x_0\,\big\|
+= \big\|\,(1-t)(x-x_0) + t(y-x_0)\,\big\|
+\le (1-t)\|x-x_0\| + t\|y-x_0\|
+\le (1-t)r + t r = r.
+$$
+The first line just rewrites $x_0 = (1-t)x_0 + tx_0$ and regroups; the inequalities use the
+triangle inequality and $0\le t\le 1$. So the blend is within radius $r$ — the ball is
+convex.
+
+**A polyhedron.** The feasible set of a *system* of linear inequalities,
+$$
+P = \{\,x : a_1^\top x \le b_1,\ \dots,\ a_m^\top x \le b_m\,\},
+$$
+is a **polyhedron** (a polygon in 2-D, a polytope when bounded). This is the single most
+important convex set in applied optimization: it is the feasible region of every linear
+program, and the constraint set of countless real problems ("spend no more than the budget,
+use no less than the minimum, keep every quantity non-negative"). We will see in
+@sec-intersection that it is convex *because it is an intersection of half-spaces* — no
+separate proof needed.
+
+@fig-convex-zoo draws the convex menagerie.
+
+```{python}
+#| label: fig-convex-zoo
+#| fig-cap: "Convex sets a practitioner meets. A half-space (everything on one side of a line), a ball (a disk), and a polyhedron (here a polygon, the intersection of five half-spaces). In each, any segment between two points of the set stays inside — the defining property."
+fig, axes = plt.subplots(1, 3, figsize=(9.0, 3.3))
+
+# Half-space a^T x <= b with a=(1,1), b=2.
+ax = axes[0]
+gx, gy = np.meshgrid(np.linspace(-1, 4, 300), np.linspace(-1, 4, 300))
+ax.contourf(gx, gy, (gx + gy <= 2).astype(float), levels=[0.5, 1.5], colors=[REGION], alpha=0.35)
+xs = np.linspace(-1, 4, 50)
+ax.plot(xs, 2 - xs, color=EDGE, lw=2)
+ax.set_title(r"Half-space $a^\top x \leq b$")
+ax.set_xlim(-1, 4); ax.set_ylim(-1, 4); ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
+
+# Ball.
+ax = axes[1]
+th = np.linspace(0, 2*np.pi, 200)
+ax.fill(1.5 + 1.2*np.cos(th), 1.5 + 1.2*np.sin(th), color=REGION, alpha=0.35, edgecolor=EDGE, lw=2)
+ax.set_title(r"Ball $\|x - x_0\| \leq r$")
+ax.set_xlim(-0.3, 3.3); ax.set_ylim(-0.3, 3.3); ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
+
+# Polyhedron: a convex polygon.
+ax = axes[2]
+verts = np.array([[0.4, 0.6], [2.4, 0.3], [3.2, 1.7], [2.0, 3.0], [0.5, 2.2]])
+ax.fill(verts[:, 0], verts[:, 1], color=REGION, alpha=0.35, edgecolor=EDGE, lw=2)
+ax.set_title("Polyhedron (∩ of half-spaces)")
+ax.set_xlim(-0.2, 3.6); ax.set_ylim(-0.2, 3.4); ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+## Non-examples: what convexity rules out {#sec-nonexamples}
+
+Equally important is recognizing what is *not* convex, because the non-convex feasible set
+is the one that will quietly defeat your optimizer. A set fails to be convex the moment you
+can find **one** pair of points whose connecting segment pokes outside it.
+
+- **A crescent** (@fig-dent-trap, right): the segment between the two horns leaves the set.
+- **A union of two disjoint disks.** Pick a point in each disk; the segment between them
+  crosses the empty gap. The union of two convex sets is *almost never* convex — a fact worth
+  carrying, because it is the reason "or" constraints ("the point is in region A *or* region
+  B") destroy convexity.
+- **An annulus (a ring).** A segment across the hole in the middle leaves the set.
+- **The set of sparse vectors** — vectors with at most $k$ nonzero entries. In two
+  dimensions, "at most one nonzero entry" is the union of the two coordinate axes; the
+  segment from $(1,0)$ to $(0,1)$ passes through $(\tfrac12,\tfrac12)$, which has *two*
+  nonzeros and is not in the set. This is exactly why the natural sparsity constraint
+  ($\|\beta\|_0\le k$) is non-convex and intractable, and why the lasso replaces it with the
+  convex $\ell_1$ ball — a substitution the Regression track makes and that
+  [OPTM-04]–[OPTM-05] justify.
+- **The integers, or any grid.** Between $0$ and $1$ lies $\tfrac12$, not an integer.
+  Integrality is non-convex, which is the deep reason integer programming is hard while its
+  continuous (linear-programming) relaxation is easy.
+
+```{python}
+#| label: fig-nonconvex-zoo
+#| fig-cap: "Non-convex sets. The union of two disks, an annulus, and the 'at most one nonzero coordinate' sparse set (the two axes). In each panel a single red segment between two points of the set escapes it — one witness is all it takes to break convexity. These are not exotic: 'A or B' constraints, ring-shaped feasible regions, and sparsity constraints all appear in real problems, and all are non-convex."
+fig, axes = plt.subplots(1, 3, figsize=(9.0, 3.3))
+
+# Union of two disks.
+ax = axes[0]
+th = np.linspace(0, 2*np.pi, 200)
+ax.fill(-0.9 + 0.8*np.cos(th), 1.5 + 0.8*np.sin(th), color=REGION, alpha=0.35, edgecolor=EDGE, lw=2)
+ax.fill(1.4 + 0.8*np.cos(th), 1.5 + 0.8*np.sin(th), color=REGION, alpha=0.35, edgecolor=EDGE, lw=2)
+ax.plot([-0.9, 1.4], [1.5, 1.5], color=SEG, lw=2.5, zorder=3)
+ax.scatter([-0.9, 1.4], [1.5, 1.5], color=SEG, s=45, zorder=4)
+ax.set_title("Union of two disks")
+ax.set_xlim(-2, 2.5); ax.set_ylim(0, 3); ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
+
+# Annulus.
+ax = axes[1]
+gx, gy = np.meshgrid(np.linspace(-1.6, 1.6, 400), np.linspace(-1.6, 1.6, 400))
+ring = (gx**2 + gy**2 <= 1.4**2) & (gx**2 + gy**2 >= 0.6**2)
+ax.contourf(gx, gy, ring.astype(float), levels=[0.5, 1.5], colors=[REGION], alpha=0.35)
+ax.plot([-1.1, 1.1], [0.6, 0.6], color=SEG, lw=2.5, zorder=3)
+ax.scatter([-1.1, 1.1], [0.6, 0.6], color=SEG, s=45, zorder=4)
+ax.set_title("Annulus (a ring)")
+ax.set_xlim(-1.7, 1.7); ax.set_ylim(-1.7, 1.7); ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
+
+# Sparse set: the two axes.
+ax = axes[2]
+ax.plot([-1.5, 1.5], [0, 0], color=REGION, lw=4, alpha=0.6)
+ax.plot([0, 0], [-1.5, 1.5], color=REGION, lw=4, alpha=0.6)
+ax.plot([1.2, 0], [0, 1.2], color=SEG, lw=2.5, zorder=3)
+ax.scatter([1.2, 0, 0.6], [0, 1.2, 0.6], color=[SEG, SEG, "black"], s=50, zorder=4)
+ax.annotate(r"$(\frac{1}{2},\frac{1}{2})$ has 2 nonzeros", (0.6, 0.6),
+            textcoords="offset points", xytext=(8, 6), fontsize=8)
+ax.set_title(r"$\leq 1$ nonzero coordinate")
+ax.set_xlim(-1.6, 1.6); ax.set_ylim(-1.6, 1.6); ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**A set being "round" or "smooth" is neither necessary nor sufficient for convexity.** A
+square (sharp corners) is convex; a smooth crescent (no corners at all) is not. Convexity is
+about *segments staying inside*, not about the boundary being curved or smooth. Likewise,
+do not assume the *union* of convex sets is convex — it almost never is. The reliable test is
+always the same: can you find two points whose connecting segment leaves the set? If yes, not
+convex; if you can prove no such pair exists, convex.
+:::
+
+## The half-space, proved {#sec-halfspace}
+
+Half-spaces deserve their own proof because they are the building block of every polyhedron,
+and because the proof is a clean template for "this linear-constraint set is convex."
+
+::: {#lem-halfspace}
+**Lemma (half-spaces are convex).** For any nonzero $a\in\mathbb{R}^n$ and any
+$b\in\mathbb{R}$, the half-space $H^- = \{x : a^\top x \le b\}$ is convex. The same holds for
+$\{x : a^\top x \ge b\}$ and for the hyperplane $\{x : a^\top x = b\}$.
+:::
+
+::: {.proof}
+Take any $x,y\in H^-$, so $a^\top x \le b$ and $a^\top y \le b$, and any $t\in[0,1]$. We must
+show the blend $(1-t)x + ty$ also satisfies the constraint. Compute $a^\top$ applied to the
+blend, using only that the dot product is **linear** — it distributes over sums and pulls out
+scalars, $a^\top(u+v) = a^\top u + a^\top v$ and $a^\top(cu) = c\,a^\top u$:
+$$
+a^\top\big((1-t)x + ty\big)
+= (1-t)\,a^\top x + t\,a^\top y.
+$$
+Now bound each piece. Since $t\in[0,1]$, both $(1-t)$ and $t$ are $\ge 0$, so multiplying the
+true inequalities $a^\top x \le b$ and $a^\top y\le b$ by these non-negative weights preserves
+their direction:
+$$
+(1-t)\,a^\top x \le (1-t)\,b,
+\qquad
+t\,a^\top y \le t\,b.
+$$
+Add the two:
+$$
+a^\top\big((1-t)x + ty\big) = (1-t)\,a^\top x + t\,a^\top y \le (1-t)b + tb = b.
+$$
+So the blend satisfies $a^\top z\le b$, i.e. $z\in H^-$. As $x,y,t$ were arbitrary, $H^-$ is
+convex. For $\{a^\top x\ge b\}$ run the identical argument with the inequality flipped; the
+hyperplane $\{a^\top x = b\}$ is the intersection of the two half-spaces $\{a^\top x\le b\}$
+and $\{a^\top x\ge b\}$, hence convex by @sec-intersection below (or directly: equalities are
+preserved by blending, exactly as in the affine-set example of @sec-examples-sets). $\qquad\blacksquare$
+:::
+
+The crucial line of the proof is "multiplying a true inequality by a non-negative number
+keeps it true." That is exactly where the requirement $t\in[0,1]$ — the non-negativity of the
+convex-combination weights — earns its place. If we allowed a negative weight, the inequality
+could flip, and the blend could land on the wrong side. This is the algebraic shadow of the
+geometric fact from @sec-defn: negative weights let you escape the segment.
+
+# Operations that preserve convexity {#sec-operations}
+
+Checking convexity from scratch every time would be miserable. The practical power of convex
+analysis is a small calculus of **operations that take convex sets to convex sets**, so you
+can build complicated feasible regions from simple atoms and *know* the result is convex
+without re-proving anything. We establish the two that matter most.
+
+## Intersection {#sec-intersection}
+
+::: {#thm-intersection}
+**Theorem (intersection preserves convexity).** If $\mathcal{C}_1, \mathcal{C}_2, \dots$ is
+any collection of convex sets (finitely or infinitely many), then their intersection
+$\mathcal{C} = \bigcap_\alpha \mathcal{C}_\alpha$ is convex.
+:::
+
+::: {.proof}
+Take any two points $x,y$ in the intersection $\mathcal{C}$, and any $t\in[0,1]$. By
+definition of intersection, $x$ and $y$ lie in *every* set $\mathcal{C}_\alpha$
+simultaneously. Fix one of them, $\mathcal{C}_\alpha$. Since $x,y\in\mathcal{C}_\alpha$ and
+$\mathcal{C}_\alpha$ is convex, the blend $(1-t)x + ty$ lies in $\mathcal{C}_\alpha$. But this
+holds for *every* $\alpha$ — each set is convex and contains both points — so the blend lies
+in every $\mathcal{C}_\alpha$, which is precisely the statement that it lies in the
+intersection $\mathcal{C}$. As $x,y,t$ were arbitrary, $\mathcal{C}$ is convex. $\qquad\blacksquare$
+:::
+
+This short proof carries enormous weight. It immediately explains the most important example
+of @sec-examples-sets:
+
+> **A polyhedron is convex because it is an intersection of half-spaces.** Each constraint
+> $a_i^\top x \le b_i$ defines one half-space, convex by @lem-halfspace; the polyhedron
+> $P = \{x : a_i^\top x \le b_i,\ i=1,\dots,m\}$ is the set of points satisfying *all* of
+> them at once, i.e. $P = \bigcap_i \{x : a_i^\top x\le b_i\}$, and by @thm-intersection an
+> intersection of convex sets is convex.
+
+So *any* feasible set described by a list of linear inequality (and equality) constraints is
+automatically convex — no per-problem check required. @fig-intersection shows three
+half-spaces intersecting into a convex wedge.
+
+```{python}
+#| label: fig-intersection
+#| fig-cap: "Intersection preserves convexity. Three half-spaces (each bounded by a line) overlap; the dark region satisfies all three constraints at once and is their intersection — a convex polygon. Because each half-space is convex and intersection preserves convexity, the feasible set of *any* system of linear inequalities is convex by construction, with no separate proof."
+gx, gy = np.meshgrid(np.linspace(-1, 5, 500), np.linspace(-1, 5, 500))
+# Three constraints: x>=0.3, y>=0.3, x+y<=4 (rewritten as half-spaces).
+c1 = gx >= 0.3
+c2 = gy >= 0.3
+c3 = gx + gy <= 4
+feas = c1 & c2 & c3
+
+fig, ax = plt.subplots(figsize=(5.2, 4.6))
+# Shade each half-space faintly, then the intersection darkly.
+for c in (c1, c2, c3):
+    ax.contourf(gx, gy, c.astype(float), levels=[0.5, 1.5], colors=[GREY], alpha=0.12)
+ax.contourf(gx, gy, feas.astype(float), levels=[0.5, 1.5], colors=[REGION], alpha=0.55)
+# Boundary lines.
+xs = np.linspace(-1, 5, 50)
+ax.axvline(0.3, color=ACCENT, lw=1.6); ax.axhline(0.3, color=ACCENT, lw=1.6)
+ax.plot(xs, 4 - xs, color=ACCENT, lw=1.6)
+ax.set_title("∩ of three half-spaces is convex")
+ax.set_xlim(-1, 5); ax.set_ylim(-1, 5); ax.set_aspect("equal")
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Intersection preserves convexity — does union?"* No, and being able to say *why* in one
+breath signals you understand the definition rather than memorizing a list. The intersection
+proof worked because a point in the intersection is in *every* set, so the blend inherits
+membership from each. For a union, a point is in *at least one* set — but the two endpoints
+might live in different members of the union, and the segment between them can cross the gap.
+The union-of-two-disks non-example (@fig-nonconvex-zoo) is the standard counterexample. The
+clean summary: convex sets are closed under **intersection ("and")** but not under **union
+("or")** — which is exactly why "and"-constraints keep problems convex and "or"-constraints
+break them.
+:::
+
+## Affine image {#sec-affine}
+
+The second preserving operation is the **affine map** — the stretch-rotate-shift $x\mapsto
+Ax+b$ that linear algebra runs on. We need a small fact first.
+
+A map $f:\mathbb{R}^n\to\mathbb{R}^m$ of the form $f(x) = Ax + b$ (with $A$ an $m\times n$
+matrix and $b\in\mathbb{R}^m$) is called **affine** — linear, plus a constant shift. The one
+property we use is that **an affine map sends a blend to the blend of the images**: for any
+$x,y$ and $t\in[0,1]$,
+$$
+f\big((1-t)x + ty\big)
+= A\big((1-t)x + ty\big) + b
+= (1-t)Ax + t\,Ay + b.
+$$
+Now split the constant $b = (1-t)b + tb$ (legal because $(1-t)+t = 1$ — here is where
+"weights sum to one" pays off) and regroup:
+$$
+(1-t)Ax + tAy + (1-t)b + tb
+= (1-t)(Ax + b) + t(Ay + b)
+= (1-t)f(x) + t\,f(y).
+$$
+So $f\big((1-t)x + ty\big) = (1-t)f(x) + tf(y)$: applying $f$ to a point on the segment lands
+you on the segment between the images. This is the engine of the next theorem.
+
+::: {#thm-affine}
+**Theorem (affine maps preserve convexity).** Let $f(x) = Ax + b$ be affine and let
+$\mathcal{C}\subseteq\mathbb{R}^n$ be convex. Then the **image**
+$f(\mathcal{C}) = \{\,Ax + b : x\in\mathcal{C}\,\}$ is convex. Conversely, the **preimage**
+$f^{-1}(\mathcal{D}) = \{\,x : Ax + b\in\mathcal{D}\,\}$ of a convex set $\mathcal{D}$ is
+convex.
+:::
+
+::: {.proof}
+*Image.* Take any two points $u,v$ in $f(\mathcal{C})$. By definition of the image, each is
+$f$ of some source point: $u = f(x)$ and $v = f(y)$ for some $x,y\in\mathcal{C}$. Fix
+$t\in[0,1]$ and consider the blend $(1-t)u + tv$. Using the boxed property above *in reverse*,
+$$
+(1-t)u + tv = (1-t)f(x) + t\,f(y) = f\big((1-t)x + ty\big).
+$$
+The point $(1-t)x + ty$ lies in $\mathcal{C}$ because $\mathcal{C}$ is convex and
+$x,y\in\mathcal{C}$. Therefore its image under $f$ lies in $f(\mathcal{C})$. But that image is
+exactly $(1-t)u + tv$. So the blend of $u$ and $v$ is in $f(\mathcal{C})$; as $u,v,t$ were
+arbitrary, $f(\mathcal{C})$ is convex.
+
+*Preimage.* Take any $x,y$ in $f^{-1}(\mathcal{D})$, meaning $f(x)\in\mathcal{D}$ and
+$f(y)\in\mathcal{D}$, and any $t\in[0,1]$. By the boxed property,
+$$
+f\big((1-t)x + ty\big) = (1-t)f(x) + t\,f(y),
+$$
+which is a blend of two points $f(x),f(y)$ of the convex set $\mathcal{D}$, hence lies in
+$\mathcal{D}$. So $(1-t)x + ty$ maps into $\mathcal{D}$, i.e. it belongs to
+$f^{-1}(\mathcal{D})$. Thus $f^{-1}(\mathcal{D})$ is convex. $\qquad\blacksquare$
+:::
+
+The preimage half is quietly the more useful one. It says: **if you describe a feasible set
+by passing a linear function through a convex constraint, the set is convex.** For instance,
+$\{x : Ax\le b\}$ — the polyhedron again — is the preimage of the convex "non-positive
+orthant" $\{z : z \le b\}$ under the affine map $x\mapsto Ax$, so it is convex. And it
+explains why the **probability simplex** $\{\theta : \theta_i\ge 0,\ \sum_i\theta_i = 1\}$ —
+the set of all probability distributions over $n$ outcomes, ubiquitous in classification and
+mixture models — is convex: it is the intersection of the non-negative orthant (convex,
+half-spaces) with the affine hyperplane $\sum_i\theta_i = 1$ (convex), so it is convex by
+@thm-intersection.
+
+@fig-affine shows a convex polygon stretched and rotated by an affine map, staying convex.
+
+```{python}
+#| label: fig-affine
+#| fig-cap: "An affine map preserves convexity. **Left:** a convex polygon $\\mathcal{C}$. **Right:** its image under $f(x)=Ax+b$ (a rotation, a stretch, and a shift). The shape is sheared, but it stays convex — straight segments map to straight segments, so 'no dents' is inherited. This is why you can build a convex feasible set in convenient coordinates and transform it freely."
+verts = np.array([[0.4, 0.6], [2.4, 0.3], [3.2, 1.7], [2.0, 3.0], [0.5, 2.2]])
+A = np.array([[0.8, -0.5], [0.4, 0.9]])
+b = np.array([1.0, -0.5])
+img = verts @ A.T + b
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.8))
+axL.fill(verts[:, 0], verts[:, 1], color=REGION, alpha=0.35, edgecolor=EDGE, lw=2)
+axL.set_title(r"Convex set $\mathcal{C}$")
+axL.set_xlim(-1, 4); axL.set_ylim(-2, 4); axL.set_aspect("equal"); axL.set_xticks([]); axL.set_yticks([])
+
+axR.fill(img[:, 0], img[:, 1], color=ACCENT, alpha=0.35, edgecolor="#06502f", lw=2)
+axR.set_title(r"Affine image $A\mathcal{C}+b$ (still convex)")
+axR.set_xlim(-1, 4); axR.set_ylim(-2, 4); axR.set_aspect("equal"); axR.set_xticks([]); axR.set_yticks([])
+plt.tight_layout()
+```
+
+There are more preserving operations — scaling, sums, Cartesian products, perspective maps —
+but intersection and affine image are the two that carry almost all the practical weight, and
+they are the two the rest of the track will lean on. The others are built the same way (find
+the right blend identity), and we will introduce any we need when we need them.
+
+# Hyperplanes and the separating-hyperplane idea {#sec-separating}
+
+We now reach the geometric fact that makes convexity *do something* far beyond "local search
+works": two convex sets that do not overlap can always be cleanly split by a flat wall. This
+is the seed of duality ([OPTM-15]) and of the support-vector machine's margin (Classification
+track), so it is worth meeting now even though we only state it geometrically.
+
+## Hyperplanes and half-spaces, named precisely {#sec-hyperplane}
+
+A **hyperplane** is the flat $(n{-}1)$-dimensional wall
+$$
+H = \{\,x : a^\top x = b\,\},
+\qquad a\ne 0,
+$$
+a line in 2-D, an ordinary plane in 3-D. The vector $a$ is the **normal** — it points
+perpendicular to the wall — and $b$ fixes the wall's offset from the origin. (Why is $a$
+perpendicular to $H$? If $x$ and $y$ both lie on $H$, then $a^\top x = a^\top y = b$, so
+$a^\top(x-y) = 0$: the normal is orthogonal to every direction $x-y$ lying *within* the
+hyperplane. That orthogonality is the dot-product fact imported from the Geometry track.)
+
+Each hyperplane splits the whole space into the two **half-spaces** $\{a^\top x\le b\}$ and
+$\{a^\top x\ge b\}$ of @lem-halfspace — the two sides of the wall. So a hyperplane is the
+*boundary* and a half-space is *one side*. With this vocabulary the central theorem is one
+sentence.
+
+## The separating-hyperplane theorem {#sec-sep-thm}
+
+::: {#thm-separating}
+**Theorem (separating hyperplane).** Let $\mathcal{C}$ and $\mathcal{D}$ be two convex sets
+in $\mathbb{R}^n$ that do not intersect ($\mathcal{C}\cap\mathcal{D}=\varnothing$). Then there
+exist a nonzero vector $a$ and a scalar $b$ such that
+$$
+a^\top x \le b \ \text{ for all } x\in\mathcal{C},
+\qquad
+a^\top x \ge b \ \text{ for all } x\in\mathcal{D}.
+$$
+That is, the hyperplane $\{x : a^\top x = b\}$ has *all* of $\mathcal{C}$ on one side and
+*all* of $\mathcal{D}$ on the other — a single flat wall separates them.
+:::
+
+We give the geometric argument rather than the full topological proof (the complete proof,
+handling the boundary cases where the sets touch, lives in the convex-analysis references of
+@sec-deeper; the construction below is the heart of it and is fully rigorous when the sets are
+closed and at least one is bounded).
+
+::: {.proof}
+*(Construction, the heart of the theorem.)* Because $\mathcal{C}$ and $\mathcal{D}$ are
+disjoint convex sets, there is a **closest pair**: points $c^\star\in\mathcal{C}$ and
+$d^\star\in\mathcal{D}$ achieving the smallest possible distance between the two sets. (Such a
+closest pair exists whenever the sets are closed and one is bounded — a fact from the same
+"continuous function on a closed bounded set attains its minimum" principle used in [OPTM-00]
+for the existence of minimizers.) Since the sets do not meet, $c^\star\ne d^\star$, so the gap
+vector
+$$
+a = d^\star - c^\star \ne 0
+$$
+is a genuine direction — point it from $\mathcal{C}$ toward $\mathcal{D}$. Now place the wall
+*squarely across the middle of the gap*, perpendicular to $a$, choosing the offset
+$$
+b = a^\top\!\left(\frac{c^\star + d^\star}{2}\right)
+$$
+so the hyperplane passes through the midpoint of the closest pair. The claim is that no point
+of $\mathcal{C}$ crosses to $\mathcal{D}$'s side, and vice versa.
+
+Here is why $\mathcal{C}$ stays on its side. Suppose, for contradiction, some
+$x\in\mathcal{C}$ had $a^\top x > b$ — it poked past the wall toward $\mathcal{D}$. Walk a tiny
+step from $c^\star$ toward $x$ along the segment inside $\mathcal{C}$ (legal:
+$\mathcal{C}$ is convex, so the whole segment $c^\star \to x$ is in $\mathcal{C}$). Because
+$x$ is on the far side of the wall, stepping toward it moves you *closer to $\mathcal{D}$'s
+representative $d^\star$* than $c^\star$ was — contradicting that $c^\star$ was the closest
+point of $\mathcal{C}$ to $\mathcal{D}$. (Concretely: the derivative of the squared distance
+$\|c^\star + s(x-c^\star) - d^\star\|^2$ with respect to the step size $s$ at $s=0$ is
+$2(c^\star - d^\star)^\top(x - c^\star) = -2a^\top(x-c^\star)$, and $a^\top x > b \ge a^\top
+c^\star$ — the right inequality because $c^\star$ sits on $\mathcal{C}$'s side of the
+midpoint wall — makes this derivative negative, so a small step *reduces* the distance.) The
+contradiction forces $a^\top x \le b$ for all $x\in\mathcal{C}$. The identical argument with
+the roles of $\mathcal{C}$ and $\mathcal{D}$ swapped gives $a^\top x \ge b$ for all
+$x\in\mathcal{D}$. So the wall separates them. $\qquad\blacksquare$
+:::
+
+The construction is the entire intuition: **find the closest pair of points across the gap,
+and lay the wall across the middle of that gap, facing along the gap direction.** @fig-separate
+draws it, and also shows why disjointness alone is not enough without convexity — two
+*non-convex* disjoint sets (interlocking C-shapes) cannot be split by any single flat wall.
+
+```{python}
+#| label: fig-separate
+#| fig-cap: "The separating hyperplane. **Left:** two disjoint *convex* sets. The closest pair of points (red) defines the gap direction $a = d^\\star - c^\\star$; the separating line (green) sits across the middle of the gap, perpendicular to $a$, with all of one set on each side. **Right:** two disjoint *non-convex* sets (interlocking shapes) — no single straight wall can separate them, showing the theorem genuinely needs convexity, not just disjointness."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
+
+# Left: two disjoint convex blobs (an ellipse-ish polygon and a disk).
+poly = np.array([[0.2, 1.0], [1.2, 0.4], [1.6, 1.6], [1.0, 2.6], [0.1, 2.1]])
+axL.fill(poly[:, 0], poly[:, 1], color=REGION, alpha=0.35, edgecolor=EDGE, lw=2)
+th = np.linspace(0, 2*np.pi, 200)
+cx, cy, r = 3.6, 1.7, 0.7
+axL.fill(cx + r*np.cos(th), cy + r*np.sin(th), color=ACCENT, alpha=0.30, edgecolor="#06502f", lw=2)
+# Closest pair (approx): right tip of poly toward disk center.
+cstar = np.array([1.6, 1.6]); dstar = np.array([cx - r, cy])  # left edge of disk approx
+mid = (cstar + dstar) / 2
+a = dstar - cstar
+# Separating line through mid, perpendicular to a.
+perp = np.array([-a[1], a[0]]); perp = perp / np.linalg.norm(perp)
+L = 1.8
+p1 = mid - L*perp; p2 = mid + L*perp
+axL.plot([p1[0], p2[0]], [p1[1], p2[1]], color="#06502f", lw=2.2, zorder=2)
+axL.plot([cstar[0], dstar[0]], [cstar[1], dstar[1]], color=SEG, lw=1.8, ls="--", zorder=3)
+axL.scatter([cstar[0], dstar[0]], [cstar[1], dstar[1]], color=SEG, s=55, zorder=4)
+axL.annotate(r"$c^\star$", cstar, textcoords="offset points", xytext=(-22, 2), fontsize=11)
+axL.annotate(r"$d^\star$", dstar, textcoords="offset points", xytext=(6, -4), fontsize=11)
+axL.set_title("Convex + disjoint ⇒ separable")
+axL.set_xlim(-0.4, 4.8); axL.set_ylim(0, 3.2); axL.set_aspect("equal"); axL.set_xticks([]); axL.set_yticks([])
+
+# Right: two interlocking C-shapes (non-convex), not separable by a line.
+def cshape(cx, cy, flip=1):
+    th = np.linspace(-2.2, 2.2, 100) * flip
+    outer = np.column_stack([cx + 1.0*np.cos(th), cy + 1.0*np.sin(th)])
+    inner = np.column_stack([cx + 0.55*np.cos(th[::-1]), cy + 0.55*np.sin(th[::-1])])
+    return np.vstack([outer, inner])
+c1 = cshape(1.7, 1.6, flip=1)
+c2 = cshape(2.3, 1.6, flip=-1)
+axR.fill(c1[:, 0], c1[:, 1], color=REGION, alpha=0.40, edgecolor=EDGE, lw=2)
+axR.fill(c2[:, 0], c2[:, 1], color=ACCENT, alpha=0.35, edgecolor="#06502f", lw=2)
+axR.set_title("Non-convex: no separating line")
+axR.set_xlim(0, 4); axR.set_ylim(0, 3.2); axR.set_aspect("equal"); axR.set_xticks([]); axR.set_yticks([])
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Where does the separating hyperplane actually show up in machine learning?"* Two headline
+places, and naming both shows range.
+
+1. **Support-vector machines.** A linearly separable classification problem is two convex
+   sets — the convex hulls of the positive and negative training points — and the SVM's
+   decision boundary is *the* separating hyperplane, chosen to be the one with the widest gap
+   (the *maximum margin*). The closest-pair construction of @thm-separating is literally what
+   the SVM optimizes. (Classification track owns the SVM; it links here for this geometry.)
+2. **Duality.** The reason the *dual* of a convex optimization problem touches the primal
+   with no gap (strong duality) is a separating-hyperplane argument applied to a cleverly
+   constructed convex set in "value space." [OPTM-15] makes this precise. When data are *not*
+   separable — the convex hulls overlap — the theorem's hypothesis fails, which is exactly the
+   case that motivates soft-margin SVMs and the kernel trick (mapping to a higher-dimensional
+   space where they *are* separable).
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The honest boundary of this article is not "when is a set convex" — that is just the
+definition — but **what convexity does and does not buy you, and where the assumption
+silently fails in practice.**
+
+**Convexity of the region is only half the guarantee.** This article secured the *feasible
+set*. But "local minimum = global minimum" also needs the *objective* to be convex
+([OPTM-04]). A convex feasible region with a non-convex objective (e.g. minimizing a wiggly
+loss over a box constraint) can still have spurious local minima — the box did not save you.
+Both halves are required; do not over-claim from this article alone.
+
+**Most real machine-learning objectives are non-convex.** The flagship case: a neural network's
+loss as a function of its weights is wildly non-convex, riddled with local minima and saddle
+points. Convexity is *absent*, and the whole apparatus of guaranteed global optimality is
+gone. What practitioners reach for instead is honest about this: stochastic gradient descent
+([OPTM-11]) that *finds a good local minimum* and relies on empirical luck and architecture,
+not a global guarantee. Likewise, $k$-means clustering, Gaussian mixtures (EM), and matrix
+factorization are all non-convex. The correct mental model is: **convexity is the well-lit
+room where optimization is solved; much of modern ML works in the dark next door, using
+convex intuition as a flashlight.**
+
+**Convexity can be hidden, or recoverable.** Sometimes a problem looks non-convex but a change
+of variables convexifies it (the log-transform of a geometric program; the SVM's lift to
+feature space). The skill is recognizing that a feasible set written one way (e.g.
+$\{x : x_1 x_2 \ge 1,\ x>0\}$, which is convex despite the nonlinear constraint) may be convex
+even when "no linear constraints" suggests otherwise. The reliable test never changes:
+**does every segment between two points of the set stay inside?**
+
+**The edge case the definition quietly covers.** A set that is *almost* convex — convex except
+for a single missing boundary point, or a thin notch — is *not* convex, and the failure can be
+invisible in a coarse plot. The witness is always a specific pair of points whose segment
+escapes; if you cannot rule out every such pair, do not claim convexity. In high dimensions,
+where you cannot draw the set, this is checked algebraically (is the constraint a $\le$ of a
+convex function? an intersection of such? an affine image of one?) using exactly the calculus
+of @sec-operations.
+
+::: {.callout-warning title="Pitfall"}
+**A convex feasible set does not make a problem solvable on its own.** The phrase "convex
+optimization problem" requires *both* a convex feasible set (this article) *and* a convex
+objective ([OPTM-04]) — and even then, "solvable in theory" is not "solvable at your scale."
+Recognizing convexity is a *necessary* first applicability call, not a sufficient one. The
+companion mistake is the reverse: declaring a problem hopeless because it *looks* non-convex,
+when a reformulation (different variables, a relaxation, a lift) would make it convex. Both
+errors come from treating convexity as a surface feature instead of checking the segment
+condition on the actual set.
+:::
+
+# How you would actually check this in practice {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You will rarely verify convexity
+by hand with the segment definition once a problem is larger than a few variables. Instead:
+
+- **Recognize the atoms and the calculus.** In practice you build the feasible set from
+  convex atoms — affine equalities ($Ax=b$), linear inequalities ($Ax\le b$), norm balls
+  ($\|x\|\le r$), the simplex — and combine them only by *convexity-preserving* operations
+  (intersection, affine maps). If every constraint set is a recognized convex set and you only
+  ever intersect, the result is convex by @thm-intersection and @thm-affine. This is exactly
+  how a tool like **CVXPY** works: its *disciplined convex programming* ruleset is, under the
+  hood, this calculus of preserving operations, and it *refuses to compile* a problem it cannot
+  certify convex — turning "is my feasible set convex?" into a check the software performs for
+  you.
+- **When in doubt, test a segment numerically.** For a set defined by a constraint
+  $g(x)\le 0$, sample many random pairs $x,y$ that satisfy it and check whether
+  $(1-t)x + ty$ does too for a grid of $t\in[0,1]$. A single violation disproves convexity; no
+  violations is evidence (not proof) of it. This is a quick sanity check, never a substitute
+  for the structural argument above.
+
+You now know what those tools are checking and why a "DCP error" is the software telling you
+your feasible set (or objective) fell outside the convex calculus of @sec-operations.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-00 *What Is an Optimization Problem?*]**, which named the **feasible
+set** $\mathcal{C}$ in $\min_x f(x)$ subject to $x\in\mathcal{C}$, and from **[OPTM-02]**,
+which left open *when a local minimum is global*. This article gave the first half of the
+answer — the *region* must be convex — and the geometric toolkit for recognizing and building
+convex sets. From here the convexity spine continues:
+
+- **[OPTM-04 *Convex Functions*]** — the second half of the guarantee. A function is convex
+  exactly when the region *above its graph* (the **epigraph**) is a convex set — so convex
+  functions are *defined by* the convex sets of this article. There the headline theorem
+  finally lands: over a convex set, a convex objective's every local minimum is global.
+- **[OPTM-05 *Subgradients*]** — convex calculus for functions with kinks, built on the
+  tangent-below picture that convexity makes available.
+- **[OPTM-13]–[OPTM-15] *Constrained optimization*** — Lagrange multipliers, KKT, and
+  duality, all of which assume the feasible set is convex (a polyhedron, a ball, an
+  intersection of such) and whose deepest theorem (strong duality) is a
+  separating-hyperplane argument (@thm-separating) in disguise.
+- **[OPTM-16] *Projected and proximal methods*** — algorithms that, each step, *project* the
+  iterate back onto a convex feasible set; the projection is well-defined precisely because the
+  set is convex (a unique closest point — the same closest-point idea from @thm-separating).
+
+And outside this track: the **separating hyperplane** is the geometric core of the
+**support-vector machine** in the Classification track, and the convex/non-convex distinction
+is the line between the well-understood models (linear/logistic regression, SVMs, lasso) and
+the empirically-trained ones (deep networks, mixtures) across the whole series.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The standard modern reference.** S. Boyd and L. Vandenberghe, *Convex Optimization*
+  (2004), Chapter 2 ("Convex sets") covers everything here — convex combinations, the
+  operations that preserve convexity, hyperplanes, and the separating- and supporting-
+  hyperplane theorems — with the full topological care we deferred. It is freely available and
+  is the book the data-science world actually learns convex optimization from.
+- **The foundational text.** R. T. Rockafellar, *Convex Analysis* (1970), is the rigorous
+  source for separating hyperplanes, supporting hyperplanes, and the geometry that underlies
+  duality. Heavier going, but definitive.
+- **The historical root.** H. Minkowski's *Geometrie der Zahlen* (1896) originated the
+  systematic geometry of convex bodies and the separation idea, for number theory — a reminder
+  that the geometry came long before the optimization application.
+- **Open threads this article deliberately deferred.** *The full proof of the separating-
+  hyperplane theorem in all boundary cases* (when the sets merely touch, or are both unbounded)
+  — the construction here is the heart, but the edge cases need the supporting-hyperplane
+  theorem and a limiting argument (Boyd–Vandenberghe §2.5). *The dual description of a convex
+  set* — every closed convex set is the intersection of all half-spaces containing it, the
+  "supporting hyperplane" viewpoint that makes duality ([OPTM-15]) inevitable. *Convex hulls
+  and Carathéodory's theorem* (in $\mathbb{R}^n$, every point of a hull is a convex combination
+  of at most $n+1$ of the original points) — the combinatorial side of convexity, which the
+  Geometry-of-Data track takes up.

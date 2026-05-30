@@ -1,0 +1,1114 @@
+---
+title: "Subgradients: Calculus for Functions with Kinks"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the series.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+FUNC   = "#2b3a67"    # the function itself
+SUPP   = "#c1121f"    # a supporting line / subgradient
+ACCENT = "#0a7d4d"    # highlights, optima, the subdifferential interval
+GREY   = "#6c757d"
+FILL   = "#9db4d4"    # shaded regions
+```
+
+> **Where this sits in the track.** This is the third and final article of the
+> **convexity spine** of the Optimization track. It assumes
+> [OPTM-04 *Convex Functions*] — in particular the **first-order / tangent-below
+> characterization** of a *differentiable* convex function,
+> $f(y)\ge f(x)+\nabla f(x)^\top(y-x)$, the single inequality this whole article
+> generalizes. From [OPTM-02 *Minimizing in Many Variables*] it borrows the **gradient**
+> $\nabla f$ and the stationarity condition $\nabla f(x)=\mathbf 0$, whose non-smooth
+> replacement we are about to build; no new cross-track machinery beyond that gradient is
+> needed. Its single job is to extend "set the derivative to zero" to convex functions
+> that *have no derivative* at certain points — functions with **kinks**, like $|x|$ at
+> the origin and the lasso penalty $\|\boldsymbol\beta\|_1$. It **supplies** the
+> *subgradients* prerequisite requested by the Regression track (R15, the lasso), and it
+> sets up [OPTM-10 *Coordinate Descent*] (whose per-coordinate lasso update is the
+> **soft-thresholding** rule derived here) and [OPTM-16 *Proximal and Projected Methods*]
+> (whose $\ell_1$ proximal operator *is* that same soft-threshold).
+
+## Abstract {.unnumbered}
+
+For a smooth convex function, "you are at the minimum" is captured by one equation,
+$\nabla f(x)=\mathbf 0$: the tangent is flat. But the functions optimization cares about
+most are often *not* smooth — the absolute value $|x|$, the hinge loss
+$\max(0,1-t)$, the lasso penalty $\|\boldsymbol\beta\|_1$ all have **kinks**, points
+where no single tangent exists. This article repairs the gap. We notice that the
+defining inequality of a convex function — *the graph lies above every tangent line* —
+never actually needed the tangent to be unique. At a kink there is not one supporting
+line but a whole **fan** of them, and each one's slope is a legitimate stand-in for the
+derivative: a **subgradient**. The set of all of them is the **subdifferential**
+$\partial f(x)$. We define it precisely, compute it for the cases that matter — $|x|$
+(the interval $[-1,1]$ at $0$), the general piecewise-linear convex function, and the
+$\ell_1$ norm — and prove the calculus rules (scaling, sums, the chain rule for affine
+maps) that let us assemble subdifferentials of complicated objectives from simple parts.
+The payoff is the **subgradient optimality condition** $\mathbf 0\in\partial f(x^\star)$,
+the exact non-smooth analogue of $\nabla f=\mathbf 0$, which we prove is *necessary and
+sufficient* for a global minimum of a convex function — no second-order test required.
+We cash it in by solving the scalar lasso problem
+$\min_\beta \tfrac12(\beta-\rho)^2+\lambda|\beta|$ in closed form, deriving
+**soft-thresholding**, the per-coordinate update behind every lasso solver. We close on
+the honest boundary: a subgradient is *not* a descent direction, so naive subgradient
+descent crawls and chatters — which is precisely why the field reaches for proximal
+methods instead. The single claim this article defends is that **the kink is not a defect
+to be smoothed away but a first-class object with its own clean calculus**, and that
+calculus is what makes sparse modeling computable.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A **subgradient** of a convex function $f$ at a point $x$ is any vector $g$ that makes
+the tangent-below inequality hold:
+$$
+f(y)\;\ge\; f(x) + g^\top(y-x)\qquad\text{for all }y.
+$$
+It is a slope whose line passes through $(x,f(x))$ and stays *under* the whole graph. Where
+$f$ is differentiable there is exactly one such slope, $g=\nabla f(x)$. **At a kink there
+are many**, and the set of all of them is the **subdifferential** $\partial f(x)$ — a
+closed convex set, not a single vector. The minimum is no longer "the slope is zero" but
+"**zero is one of the allowed slopes**":
+$$
+x^\star \text{ minimizes } f \iff \mathbf 0 \in \partial f(x^\star).
+$$
+For convex $f$ this is *necessary and sufficient* and global — the entire reason the
+condition is worth having. Applied to the lasso it produces **soft-thresholding**, the
+update that makes coefficients exactly zero.
+:::
+
+Everything below orbits that box. The first inequality looks like a mild relaxation of a
+familiar fact; by the end you should see that dropping the word *"the"* (the tangent) in
+favor of *"a"* (a supporting line) is exactly the move that lets calculus survive contact
+with the absolute value — and that the sparsity of the lasso is a direct consequence of
+the subdifferential of $|x|$ being a fat interval $[-1,1]$ rather than a single number.
+
+# Why we are here: calculus stops at the corner {#sec-why}
+
+Keep one question in view for the whole article: **how do we say "you cannot do better"
+at a point where the function has no derivative?** Every definition and rule below is an
+answer to a piece of that question. If a step feels arbitrary, come back here.
+
+## The problem the smooth theory cannot touch
+
+The Optimization track's spine so far has run on derivatives. [OPTM-01] located a 1-D
+minimum by $f'(x)=0$; [OPTM-02] generalized it to $\nabla f(x)=\mathbf 0$; [OPTM-04]
+showed that for a *convex* function that stationary point is automatically the *global*
+minimum — the headline guarantee the rest of the series leans on. Every one of those
+statements assumes the function is differentiable.
+
+But look at what we actually minimize in practice. The single most important
+regularizer in modern statistics is the **lasso penalty**, $\lambda\|\boldsymbol\beta\|_1
+= \lambda\sum_j|\beta_j|$, added to a regression loss to force coefficients to zero and
+produce a sparse, interpretable model (Regression R15). The **hinge loss**
+$\max(0,1-y\,t)$ that defines the support vector machine has a corner at $t=1/y$. The
+$\ell_1$ and $\ell_\infty$ distances, the $\max$ of several linear functions that appears
+in robust and minimax formulations, the total-variation penalty in image denoising — all
+**convex**, all **non-differentiable** at exactly the points where the action happens.
+
+The absolute value is the cleanest specimen. @fig-kink draws $f(x)=|x|$: a perfect convex
+V with a sharp corner at the origin. To its left the slope is $-1$; to its right it is
+$+1$; *at* the origin there is no slope at all, because the left and right derivatives
+disagree. So the question "where is $f'(x)=0$?" has no answer — and yet the picture makes
+the minimum obvious. The bottom of the V is at $x=0$. The smooth theory cannot *say* that.
+That gap is the entire reason this article exists.
+
+```{python}
+#| label: fig-kink
+#| fig-cap: "The canonical kink. $f(x)=|x|$ is convex — a straight segment between any two points on the graph stays on or above it — but it is not differentiable at $x=0$, where the left slope ($-1$) and the right slope ($+1$) disagree. The smooth condition $f'(x)=0$ has no solution, yet the minimizer is plainly $x=0$. We need a notion of 'derivative' that survives the corner and still pinpoints that bottom."
+x = np.linspace(-2.2, 2.2, 400)
+fig, ax = plt.subplots()
+ax.plot(x, np.abs(x), color=FUNC, lw=2.4, label=r"$f(x)=|x|$")
+# left and right tangents meeting at the kink
+ax.plot([-2.2, 0], [2.2, 0], color=GREY, ls="--", lw=1.3)
+ax.plot([0, 2.2], [0, 2.2], color=GREY, ls="--", lw=1.3)
+ax.annotate("slope $-1$", xy=(-1.3, 1.3), xytext=(-2.0, 1.9), fontsize=10, color=GREY)
+ax.annotate("slope $+1$", xy=(1.3, 1.3), xytext=(0.7, 1.9), fontsize=10, color=GREY)
+ax.scatter([0], [0], color=SUPP, s=70, zorder=5)
+ax.annotate("kink: no\nunique slope", xy=(0, 0), xytext=(0.25, 0.75),
+            fontsize=10, color=SUPP)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("A convex function with no derivative at its minimum")
+ax.legend(loc="upper center", framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just smooth the kink — replace $|x|$ with $\sqrt{x^2+\epsilon}$ — and use ordinary
+calculus?"* You can, and people do; it is called **smoothing** or the **Huber
+approximation**, and it is a legitimate tactic. But it has two real costs. First, the
+sparsity is *gone*: the whole point of the lasso is that it sets coefficients to *exactly*
+zero, and a smoothed penalty has a unique nonzero minimizer for every input, so it only
+shrinks, never zeroes (we prove this contrast in @sec-softthresh). The exact zeros come
+*from* the kink — smoothing it away destroys the feature you wanted. Second, you have
+traded an exactly-solvable problem for an approximately-solvable one and introduced a
+nuisance parameter $\epsilon$ that trades accuracy against conditioning. Subgradient
+calculus lets you keep the kink, keep the sparsity, and *still* write down a clean
+optimality condition. That is the better deal, and it is what this article delivers.
+:::
+
+## The historian's note
+
+The idea is due to the **convex-analysis** school of the 1960s — **Werner Fenchel**,
+**Jean-Jacques Moreau**, and above all **R. Tyrrell Rockafellar**, whose 1970 *Convex
+Analysis* is still the reference. They were not chasing the lasso (which arrived in 1996);
+they were building a complete calculus for convex functions that did not flinch at
+non-differentiability, because non-smooth convex functions arise unavoidably the moment
+you take a $\max$, an $\ell_1$ norm, or the support function of a set. The motivating *why*
+is therefore older and deeper than any single application: **convex functions are closed
+under operations that create kinks** — pointwise maximum, sums of norms, indicator
+functions of constraint sets — so a calculus that only worked for smooth convex functions
+would be a calculus that broke on its own most natural constructions. Subgradients are what
+make convex analysis closed under its own operations. Decades later, the lasso, the SVM,
+total-variation denoising, and compressed sensing turned this "pure" machinery into the
+daily workhorse of statistical learning.
+
+# Intuition before symbols: lines that stay underneath {#sec-intuition}
+
+Before any formula, hold one picture. [OPTM-04] taught the **tangent-below** property of a
+differentiable convex function: at any point, the tangent line lies *on or below* the
+entire graph. The graph curves away upward from its own tangents; that is what convexity
+*is*, read first-order.
+
+Now stare at that picture and ask: *what was special about the tangent?* It was the unique
+line through $(x,f(x))$ that touches without crossing. But at a smooth point that line is
+unique only because the graph has a single well-defined slope there. **At a kink the graph
+has no single slope**, and now there is not one supporting line but a whole *fan* of them,
+all pivoting through the corner, all staying under the graph. @fig-fan shows the fan at the
+bottom of the V: every line through the origin with slope between $-1$ and $+1$ sits under
+$|x|$. Each such slope is just as good a "first-order model" of the function at that point
+as the tangent was at a smooth point. There is no reason to prefer one over another, and no
+reason to throw them away.
+
+```{python}
+#| label: fig-fan
+#| fig-cap: "The fan of supporting lines at a kink. At $x=0$, every line $y=gx$ with slope $g\\in[-1,1]$ passes through the corner $(0,0)$ and lies entirely on or below $f(x)=|x|$ (shaded). Each such slope $g$ is a **subgradient**: a legitimate stand-in for the missing derivative. The whole interval of admissible slopes, $[-1,1]$, is the **subdifferential** $\\partial f(0)$. At a smooth point the fan collapses to a single line — the ordinary tangent."
+x = np.linspace(-2.2, 2.2, 400)
+fig, ax = plt.subplots()
+ax.fill_between(x, np.abs(x), 2.3, color=FILL, alpha=0.25)
+ax.plot(x, np.abs(x), color=FUNC, lw=2.6, label=r"$f(x)=|x|$", zorder=4)
+for g in np.linspace(-1, 1, 9):
+    ax.plot(x, g * x, color=SUPP, lw=1.0, alpha=0.7)
+ax.scatter([0], [0], color="k", s=55, zorder=6)
+ax.annotate("fan of supporting\nlines, slopes in $[-1,1]$",
+            xy=(0.9, 0.0), xytext=(0.55, 1.5), fontsize=10, color=SUPP,
+            arrowprops=dict(arrowstyle="->", color=SUPP, lw=1.2))
+ax.set_ylim(-0.5, 2.3)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("Every slope in $[-1,1]$ supports the V from below")
+ax.legend(loc="upper center", framealpha=0.9)
+plt.tight_layout()
+```
+
+That is the entire idea, in one sentence: **a subgradient is the slope of any line that
+touches the graph at $x$ and stays underneath it everywhere.** Where the function is
+smooth there is exactly one — the gradient. Where it kinks there are many, and we keep all
+of them. The minimum condition then becomes intuitive in advance of any proof: a point is
+the bottom of a convex function exactly when a *flat* line (slope $0$) is among the lines
+that support the graph there — because a flat supporting line says "everything else is at
+least as high." For $|x|$ at the origin, $0$ is squarely inside the fan $[-1,1]$, so the
+origin is the minimum. The smooth theory could not say that; the fan can.
+
+# Formal development {#sec-formal}
+
+## The subgradient and the subdifferential {#sec-def}
+
+We now make the picture precise. We work with a convex function
+$f:\mathbb R^n\to\mathbb R$. (Everything specializes to $n=1$, the picture above, by
+reading vectors as scalars and $g^\top(y-x)$ as $g\,(y-x)$.)
+
+::: {#def-subgradient}
+**Definition (subgradient, subdifferential).** A vector $g\in\mathbb R^n$ is a
+**subgradient** of $f$ at $x$ if
+$$
+f(y)\;\ge\; f(x) + g^\top(y-x)\qquad\text{for all }y\in\mathbb R^n.
+$$ {#eq-subgrad}
+The **subdifferential** of $f$ at $x$, written $\partial f(x)$, is the set of *all*
+subgradients of $f$ at $x$:
+$$
+\partial f(x) \;=\;\bigl\{\,g\in\mathbb R^n : f(y)\ge f(x)+g^\top(y-x)\ \text{for all }y\,\bigr\}.
+$$ {#eq-subdiff}
+:::
+
+Read @eq-subgrad against the tangent-below inequality of [OPTM-04],
+$f(y)\ge f(x)+\nabla f(x)^\top(y-x)$. They are *the same inequality*, with the single
+forced choice $g=\nabla f(x)$ relaxed to *any $g$ that works*. The right-hand side
+$f(x)+g^\top(y-x)$ is the **affine function** (a flat plane in $n$ dimensions, a line in
+1-D) that equals $f$ at $x$ and has slope $g$; the inequality demands that this plane lie
+on or below the graph of $f$ everywhere. We call such a plane a **supporting hyperplane**
+of the graph at $x$, or a **global affine minorant** that is *tight* at $x$ (it touches
+the graph there). A subgradient is exactly the slope of such a plane.
+
+Three facts about $\partial f(x)$ follow immediately from the definition, and we prove
+each because they are used constantly.
+
+::: {#lem-subdiff-closed-convex}
+**Lemma (the subdifferential is closed and convex).** For any $f$ and any $x$, the set
+$\partial f(x)$ is a closed, convex subset of $\mathbb R^n$ (possibly empty).
+:::
+
+::: {.proof}
+Fix $x$. For each fixed $y$, the condition "$f(y)\ge f(x)+g^\top(y-x)$" is a single
+inequality that is **linear in $g$**: writing $a_y = y-x$ and $b_y = f(y)-f(x)$, it reads
+$a_y^\top g \le b_y$. The set of $g$ satisfying one such inequality is a closed half-space
+(or all of $\mathbb R^n$ if $a_y=0$). The subdifferential @eq-subdiff is the set of $g$
+that satisfy this for *every* $y$ simultaneously — that is, the **intersection** over all
+$y$ of these half-spaces:
+$$
+\partial f(x) = \bigcap_{y\in\mathbb R^n}\bigl\{\,g : a_y^\top g \le b_y\,\bigr\}.
+$$
+An intersection of closed half-spaces is closed (each is closed; an arbitrary intersection
+of closed sets is closed) and convex (each half-space is convex; an arbitrary intersection
+of convex sets is convex — proved as the intersection-preservation property in
+[OPTM-03]). Hence $\partial f(x)$ is closed and convex. $\qquad\blacksquare$
+:::
+
+This is why the subdifferential of $|x|$ at $0$ came out as an *interval* $[-1,1]$ and not
+some scattered set of slopes: closed convex subsets of the line $\mathbb R$ are exactly
+closed intervals (possibly infinite, possibly a single point). The fan of @fig-fan had to
+be an interval, and now we know why.
+
+::: {#lem-subdiff-gradient}
+**Lemma (smooth points: the subdifferential is the gradient).** If $f$ is convex and
+differentiable at $x$, then $\partial f(x) = \{\nabla f(x)\}$ — a single point.
+:::
+
+::: {.proof}
+Two directions. **($\nabla f(x)\in\partial f(x)$.)** Convexity plus differentiability gives
+the tangent-below inequality of [OPTM-04], which is precisely @eq-subgrad with
+$g=\nabla f(x)$. So the gradient is a subgradient.
+
+**(Nothing else is.)** Suppose $g\in\partial f(x)$, so $f(y)\ge f(x)+g^\top(y-x)$ for all
+$y$. Take $y = x + t d$ for a fixed direction $d$ and a scalar $t>0$. The inequality gives
+$f(x+td) - f(x) \ge t\,g^\top d$, so dividing by $t>0$,
+$$
+\frac{f(x+td)-f(x)}{t} \;\ge\; g^\top d.
+$$
+Let $t\downarrow 0$. The left side tends to the directional derivative, which for a
+differentiable $f$ equals $\nabla f(x)^\top d$ (the definition of differentiability — see
+[OPTM-02]). So $\nabla f(x)^\top d \ge g^\top d$, i.e. $(\nabla f(x)-g)^\top d\ge 0$. This
+holds for *every* direction $d$. Now also use $d$ replaced by $-d$: it gives
+$(\nabla f(x)-g)^\top(-d)\ge 0$, i.e. $(\nabla f(x)-g)^\top d\le 0$. The two together force
+$(\nabla f(x)-g)^\top d = 0$ for all $d$, and a vector orthogonal to *every* direction is
+the zero vector. Hence $g=\nabla f(x)$. $\qquad\blacksquare$
+:::
+
+So subgradients genuinely *extend* the gradient: they agree with it wherever the gradient
+exists, and only add new content at the kinks. Nothing is lost. The last basic fact we need
+is that for a convex function the subdifferential is never empty in the interior of the
+domain — there is always *at least one* supporting line.
+
+::: {#lem-nonempty}
+**Lemma (existence of a subgradient).** If $f:\mathbb R^n\to\mathbb R$ is convex (and
+finite everywhere, as all our examples are), then $\partial f(x)\neq\varnothing$ for every
+$x$.
+:::
+
+::: {.proof}
+We give the one-dimensional argument in full and flag the $n$-dimensional step as imported.
+**In 1-D:** convexity means the slopes of chords increase as you slide along the graph.
+Concretely, for a convex $f:\mathbb R\to\mathbb R$ and any $x$, the **right derivative**
+$$
+f'_+(x) = \lim_{t\downarrow 0}\frac{f(x+t)-f(x)}{t}
+$$
+exists, because the difference quotient $\frac{f(x+t)-f(x)}{t}$ is nondecreasing in $t>0$
+(a standard consequence of convexity: larger steps see steeper average slopes) and is
+bounded below by any backward difference quotient, so the limit exists. Likewise the
+**left derivative** $f'_-(x)$ exists, and convexity gives $f'_-(x)\le f'_+(x)$. We claim
+*any* $g\in[f'_-(x),f'_+(x)]$ is a subgradient. Take $y>x$; then by the
+increasing-chord-slope property, $\frac{f(y)-f(x)}{y-x}\ge f'_+(x)\ge g$, so
+$f(y)-f(x)\ge g(y-x)$. Take $y<x$; then $\frac{f(y)-f(x)}{y-x}\le f'_-(x)\le g$, and since
+$y-x<0$ multiplying flips the inequality to $f(y)-f(x)\ge g(y-x)$ again. Either way
+@eq-subgrad holds, so $g\in\partial f(x)$ and the interval $[f'_-(x),f'_+(x)]$ is nonempty.
+**In $n$ dimensions** the existence of a supporting hyperplane to the convex
+**epigraph** of $f$ (the region on and above the graph, a convex set by [OPTM-04]) at the
+boundary point $(x,f(x))$ is exactly the **supporting-hyperplane theorem**, the
+$n$-dimensional sibling of the separating-hyperplane fact established in [OPTM-03]; its
+normal vector, normalized, yields a subgradient. We import that one geometric fact rather
+than rebuild it. $\qquad\blacksquare$
+:::
+
+The 1-D proof also handed us a bonus we will reuse: **in one dimension the subdifferential
+is exactly the interval between the left and right derivatives**,
+$$
+\partial f(x) = \bigl[\,f'_-(x),\,f'_+(x)\,\bigr].
+$$ {#eq-1d-subdiff}
+(One can show these are the *only* subgradients by the same squeeze argument as in
+@lem-subdiff-gradient. The two endpoints are the extreme supporting slopes; everything
+between supports too, by the convexity of $\partial f$, @lem-subdiff-closed-convex.) This
+single formula computes the subdifferential of *any* convex function of one variable, and
+we use it now.
+
+## The subdifferential of the absolute value {#sec-abs}
+
+Apply @eq-1d-subdiff to $f(x)=|x|$, the function the whole article is built around.
+
+- **For $x>0$:** near a positive point $f(x)=x$ is smooth with derivative $+1$, so
+  $f'_-(x)=f'_+(x)=1$ and $\partial f(x)=\{+1\}$.
+- **For $x<0$:** near a negative point $f(x)=-x$ is smooth with derivative $-1$, so
+  $\partial f(x)=\{-1\}$.
+- **At $x=0$:** the left derivative is $f'_-(0)=-1$ (approaching from the left, $f(x)=-x$
+  has slope $-1$) and the right derivative is $f'_+(0)=+1$. By @eq-1d-subdiff the
+  subdifferential is the whole interval between them.
+
+Collecting the three cases:
+$$
+\boxed{\;
+\partial |x| =
+\begin{cases}
+\{+1\}, & x>0,\\[2pt]
+[-1,1], & x=0,\\[2pt]
+\{-1\}, & x<0.
+\end{cases}
+\;}
+$$ {#eq-abs-subdiff}
+
+This is the single most-used subdifferential in statistical learning, so it is worth saying
+in words: **away from the corner, the subgradient is just the sign of $x$; at the corner it
+is the entire interval $[-1,1]$.** The "fat" value $[-1,1]$ at the origin — a set, not a
+number — is the object that, three sections from now, produces the lasso's exact zeros.
+Notice it contains $0$: by the optimality condition we are about to prove, that is the
+algebraic statement that $x=0$ minimizes $|x|$.
+
+::: {.callout-tip title="You might be asked"}
+*"What's the subdifferential of $|x|$ at $0$, and why is it an interval?"* The interval
+$[-1,1]$. It is an interval (not a stray pair of slopes $\pm 1$) for two reasons you should
+be able to give. **Geometrically:** every line through the origin with slope between $-1$
+and $+1$ stays under the V (@fig-fan), so every such slope is a valid supporting slope.
+**Structurally:** the subdifferential is always closed and convex (@lem-subdiff-closed-convex),
+and the only closed convex subsets of $\mathbb R$ are intervals — so once $-1$ and $+1$ are
+in, everything between them must be too. The endpoints are the left and right derivatives,
+@eq-1d-subdiff. A common wrong answer is "$\{-1,+1\}$"; that set is not convex and would
+falsely claim no flat supporting line exists, which would contradict $0$ being the minimum.
+:::
+
+@fig-abs-subdiff plots @eq-abs-subdiff as a graph of the *set-valued* map $x\mapsto\partial|x|$:
+a horizontal line at $+1$ to the right, at $-1$ to the left, joined by a *vertical segment*
+covering all of $[-1,1]$ at $x=0$. That vertical jump — the multivaluedness — is the visual
+signature of a kink.
+
+```{python}
+#| label: fig-abs-subdiff
+#| fig-cap: "The subdifferential of $|x|$ as a set-valued map. For $x\\neq 0$ it is the single value $\\operatorname{sign}(x)=\\pm 1$ (the ordinary derivative). At the kink $x=0$ it explodes into the entire vertical segment $[-1,1]$ (green). Because that segment **contains $0$**, the point $x=0$ satisfies the optimality condition $0\\in\\partial f(0)$ — the algebraic certificate that it is the minimum. The vertical jump is the fingerprint of a non-differentiable point."
+fig, ax = plt.subplots()
+xn = np.linspace(-2.2, -0.001, 100)
+xp = np.linspace(0.001, 2.2, 100)
+ax.plot(xn, -np.ones_like(xn), color=SUPP, lw=2.6)
+ax.plot(xp,  np.ones_like(xp), color=SUPP, lw=2.6)
+ax.plot([0, 0], [-1, 1], color=ACCENT, lw=4.0, solid_capstyle="round",
+        label=r"$\partial|x|$ at $x=0$ is $[-1,1]$")
+ax.scatter([0], [0], color="k", s=45, zorder=6)
+ax.annotate("contains $0$\n$\\Rightarrow x=0$ is optimal", xy=(0, 0), xytext=(0.35, -0.15),
+            fontsize=10, color=ACCENT)
+ax.axhline(0, color="k", lw=0.6)
+ax.set_ylim(-1.8, 1.8)
+ax.set_xlabel("$x$"); ax.set_ylabel(r"slope $g\in\partial|x|$")
+ax.set_title(r"The set-valued derivative $x\mapsto\partial|x|$")
+ax.legend(loc="lower right", framealpha=0.9)
+plt.tight_layout()
+```
+
+## The general piecewise-linear case: a max of lines {#sec-max}
+
+Before the calculus rules, one more worked subdifferential, because it covers the hinge
+loss, the $\ell_\infty$ norm, and any function built as a maximum of linear pieces. Let
+$$
+f(x) = \max_{1\le i\le m}\,\bigl(a_i^\top x + b_i\bigr),
+$$
+the pointwise maximum of $m$ affine functions. (This is convex: a max of convex functions
+is convex, a fact from [OPTM-04]. The graph is a "fan vault" — flat panels meeting at
+ridges.) At a point $x$, let
+$$
+I(x) = \bigl\{\,i : a_i^\top x + b_i = f(x)\,\bigr\}
+$$
+be the set of pieces that are **active** — the lines actually achieving the maximum there.
+Then the subdifferential is the **convex hull of the active slopes**:
+$$
+\partial f(x) = \operatorname{conv}\{\,a_i : i\in I(x)\,\}.
+$$ {#eq-max-subdiff}
+
+Let us prove the two halves separately at the floor's level.
+
+::: {.proof}
+**(Every active slope is a subgradient.)** Fix $i\in I(x)$, so $a_i^\top x + b_i = f(x)$.
+For any $y$, the max is at least the $i$-th piece: $f(y)\ge a_i^\top y + b_i$. Subtract the
+equality at $x$:
+$$
+f(y)-f(x) \;\ge\; (a_i^\top y+b_i)-(a_i^\top x + b_i) \;=\; a_i^\top(y-x).
+$$
+That is exactly @eq-subgrad with $g=a_i$, so each active $a_i\in\partial f(x)$. Because
+$\partial f(x)$ is convex (@lem-subdiff-closed-convex), it contains every convex
+combination of the active $a_i$ as well — i.e. it contains
+$\operatorname{conv}\{a_i:i\in I(x)\}$.
+
+**(Nothing outside that hull is a subgradient.)** This is the supporting-hyperplane content
+again; we argue the clean 1-D / generic case and flag the general one. Suppose $g$ is a
+subgradient. Move in a direction $d$; for small $t>0$ only the active pieces can stay
+active, and $f(x+td)=\max_{i\in I(x)}(a_i^\top x+b_i+t\,a_i^\top d)+o(t)$, so the
+directional derivative is $f'(x;d)=\max_{i\in I(x)} a_i^\top d$. The subgradient inequality,
+divided by $t$ and sent to $0$ as in @lem-subdiff-gradient, forces
+$g^\top d\le \max_{i\in I(x)} a_i^\top d$ for every $d$. A vector $g$ satisfying
+$g^\top d\le \max_{i\in I(x)} a_i^\top d$ for all $d$ is, by the (imported)
+**support-function characterization of a convex hull**, exactly a member of
+$\operatorname{conv}\{a_i:i\in I(x)\}$ — the support function of a compact convex set equals
+that of its hull, and equality of support functions means equality of sets. Hence no $g$
+outside the hull qualifies. $\qquad\blacksquare$
+:::
+
+@eq-max-subdiff specializes back to $|x|=\max(x,-x)$ instantly: the two pieces have slopes
+$a_1=+1,a_2=-1$. For $x>0$ only the first is active, $\partial=\{1\}$; for $x<0$ only the
+second, $\partial=\{-1\}$; at $x=0$ both are active and the hull of $\{+1,-1\}$ is the
+interval $[-1,1]$ — recovering @eq-abs-subdiff. The same rule gives the subdifferential of
+the hinge loss and the $\ell_\infty$ norm; we leave those to the worked examples and the
+exercises a reader would do.
+
+# The calculus of subgradients {#sec-calculus}
+
+A single subdifferential is of limited use; the power of ordinary calculus comes from its
+*rules* — the derivative of a sum is the sum of derivatives, constants pull out, the chain
+rule composes. We need the convex analogues, because the objectives we minimize are built
+by adding a smooth loss to a non-smooth penalty (lasso = $\tfrac12\|y-X\beta\|^2 +
+\lambda\|\beta\|_1$) and by composing norms with affine maps. We prove the three rules we
+will actually use; each is the inequality @eq-subgrad pushed through the operation.
+
+## Nonnegative scaling {#sec-scaling}
+
+::: {#lem-scaling}
+**Lemma (scaling).** For a convex $f$ and a constant $\alpha\ge 0$,
+$\partial(\alpha f)(x) = \alpha\,\partial f(x) = \{\alpha g : g\in\partial f(x)\}$.
+:::
+
+::: {.proof}
+If $g\in\partial f(x)$ then $f(y)\ge f(x)+g^\top(y-x)$. Multiply both sides by $\alpha\ge 0$
+(legal — multiplying an inequality by a nonnegative number preserves its direction):
+$\alpha f(y)\ge \alpha f(x)+(\alpha g)^\top(y-x)$, which says $\alpha g\in\partial(\alpha f)(x)$.
+Conversely if $\alpha>0$ and $h\in\partial(\alpha f)(x)$, divide by $\alpha$ to get
+$h/\alpha\in\partial f(x)$, so $h=\alpha(h/\alpha)\in\alpha\,\partial f(x)$. (For $\alpha=0$
+both sides are $\{0\}$.) $\qquad\blacksquare$
+:::
+
+This is why the penalty weight $\lambda$ in $\lambda|x|$ simply scales the interval:
+$\partial(\lambda|x|)$ at $0$ is $\lambda\cdot[-1,1]=[-\lambda,\lambda]$. Hold that; it sets
+the lasso's threshold.
+
+## The sum rule {#sec-sum}
+
+::: {#thm-sum}
+**Theorem (sum rule).** For convex functions $f$ and $h$ (finite everywhere),
+$$
+\partial(f+h)(x) \;=\; \partial f(x) + \partial h(x)
+\;=\;\{\,g_f+g_h : g_f\in\partial f(x),\ g_h\in\partial h(x)\,\},
+$$
+the **Minkowski sum** of the two subdifferentials.
+:::
+
+::: {.proof}
+We prove the easy inclusion $\supseteq$ fully — it is the only direction the optimality
+proofs need — and flag the reverse. Take $g_f\in\partial f(x)$ and $g_h\in\partial h(x)$.
+By definition, for all $y$,
+$$
+f(y)\ge f(x)+g_f^\top(y-x),\qquad h(y)\ge h(x)+g_h^\top(y-x).
+$$
+Add the two inequalities (adding two true inequalities of the same direction is always
+valid):
+$$
+f(y)+h(y)\;\ge\; \bigl(f(x)+h(x)\bigr) + (g_f+g_h)^\top(y-x).
+$$
+That is exactly @eq-subgrad for the function $f+h$ with subgradient $g_f+g_h$, so
+$g_f+g_h\in\partial(f+h)(x)$. Hence $\partial f(x)+\partial h(x)\subseteq\partial(f+h)(x)$.
+The reverse inclusion $\subseteq$ — that *every* subgradient of the sum decomposes this way
+— is the **Moreau–Rockafellar theorem**; it requires a mild regularity condition (here
+satisfied automatically because $f,h$ are finite everywhere) and a separation argument we
+import from convex analysis rather than rebuild. With finite convex summands the two sets
+coincide. $\qquad\blacksquare$
+:::
+
+The $\supseteq$ direction is the workhorse: it lets us *build* a subgradient of a sum by
+adding a subgradient of each part. For the lasso objective $f(\beta)+h(\beta)$ with $f$
+smooth and $h=\lambda\|\beta\|_1$, the smooth part contributes its single gradient
+$\nabla f$ (by @lem-subdiff-gradient) and the penalty contributes its interval-valued
+subdifferential, and we add them. That is precisely the move @sec-softthresh makes.
+
+## Separability: the $\ell_1$ norm {#sec-l1}
+
+The lasso penalty is $\|\beta\|_1=\sum_{j=1}^p |\beta_j|$ — a **separable** sum, each term
+depending on its own coordinate. Separability makes its subdifferential a clean product.
+
+::: {#lem-l1}
+**Lemma (subdifferential of the $\ell_1$ norm).** For
+$\|\beta\|_1=\sum_{j=1}^p|\beta_j|$, the subdifferential at $\beta$ is the box-like set
+$$
+\partial\|\beta\|_1 = \bigl\{\,g\in\mathbb R^p : g_j=\operatorname{sign}(\beta_j)\text{ if }\beta_j\neq 0,\ \ g_j\in[-1,1]\text{ if }\beta_j=0\,\bigr\}.
+$$ {#eq-l1-subdiff}
+Coordinatewise: each $g_j\in\partial|\beta_j|$, with the active coordinates pinned to their
+sign and the zero coordinates free to roam in $[-1,1]$.
+:::
+
+::: {.proof}
+Write $\|\beta\|_1=\sum_j h_j(\beta)$ where $h_j(\beta)=|\beta_j|$ depends only on the
+$j$-th coordinate. Each $h_j$ is convex, so the sum rule (@thm-sum, applied $p-1$ times)
+gives $\partial\|\beta\|_1=\sum_j \partial h_j(\beta)$. Now $h_j$ as a function on
+$\mathbb R^p$ is $|\beta_j|$ composed with "pick coordinate $j$." Its subgradient set is
+therefore all vectors that are $\partial|\cdot|$ in the $j$-th slot and $0$ elsewhere: if
+$g\in\partial h_j(\beta)$ then for the perturbation $y=\beta+te_k$ in any coordinate $k$,
+the inequality $h_j(y)\ge h_j(\beta)+g^\top(y-\beta)$ becomes $|\beta_j + t[k=j]|\ge
+|\beta_j| + t\,g_k$; for $k\neq j$ this forces $g_k=0$ (the left side does not move), and
+for $k=j$ it is exactly the scalar condition $g_j\in\partial|\beta_j|$ from @eq-abs-subdiff.
+Summing these single-coordinate sets (Minkowski sum) over $j$ stacks one independent
+$\partial|\beta_j|$ into each coordinate — giving precisely @eq-l1-subdiff. $\qquad\blacksquare$
+:::
+
+In words, exactly as we will need it: **at a coordinate that is currently nonzero, the
+$\ell_1$ subgradient there is locked to $\pm 1$ (the sign); at a coordinate sitting at zero,
+the subgradient there is a free dial in $[-1,1]$.** That free dial is the slack that lets a
+coordinate *stay* at zero — the seed of sparsity.
+
+## The affine chain rule {#sec-chain}
+
+One last rule, because penalties and losses usually act on a *linear transform* of the
+variable (think $\|y - X\beta\|_1$, an $\ell_1$ loss on the residual $X\beta$, or a norm of
+$A x + b$).
+
+::: {#lem-chain}
+**Lemma (affine composition).** Let $f(x) = h(Ax+b)$ with $h$ convex, $A$ a matrix, $b$ a
+vector. Then
+$$
+\partial f(x) \;\supseteq\; A^\top\,\partial h(Ax+b) \;=\;\{\,A^\top g : g\in\partial h(Ax+b)\,\},
+$$
+with equality under the same mild regularity as the sum rule (here, always).
+:::
+
+::: {.proof}
+Take $g\in\partial h(Ax+b)$, so $h(z)\ge h(Ax+b)+g^\top(z-(Ax+b))$ for all $z$. Specialize
+$z=Ay+b$ for an arbitrary $y$ (a legal choice, since $z$ ranges over all of its space as
+$y$ does over its domain along the affine image):
+$$
+h(Ay+b)\;\ge\; h(Ax+b) + g^\top\bigl((Ay+b)-(Ax+b)\bigr) = f(x) + g^\top A(y-x).
+$$
+Now use the transpose identity $g^\top A(y-x) = (A^\top g)^\top(y-x)$ (this is just the
+definition of the transpose: $g^\top A v = (A^\top g)^\top v$). The left side is $f(y)$.
+So $f(y)\ge f(x)+(A^\top g)^\top(y-x)$, which is @eq-subgrad with subgradient $A^\top g$.
+Hence $A^\top g\in\partial f(x)$. $\qquad\blacksquare$
+:::
+
+These four rules — scaling, sum, separability, affine composition — are enough to assemble
+the subdifferential of essentially every regularized objective in this series. We now use
+them for the one result that justifies the whole article.
+
+# The optimality condition: zero is a subgradient {#sec-optimality}
+
+This is the destination. For a smooth convex function, $x^\star$ is the global minimum iff
+$\nabla f(x^\star)=\mathbf 0$. The non-smooth replacement is breathtakingly clean: **$x^\star$
+is the global minimum iff $\mathbf 0$ is one of the subgradients there.** And unlike the
+smooth first-order condition, which is only *necessary* in general and needs a second-order
+test to confirm a minimum, the convex subgradient condition is **necessary and sufficient
+and global**, with a one-line proof.
+
+::: {#thm-optimality}
+**Theorem (subgradient optimality, Fermat's rule for convex functions).** Let $f$ be
+convex. Then $x^\star$ is a **global** minimizer of $f$ if and only if
+$$
+\mathbf 0 \in \partial f(x^\star).
+$$
+:::
+
+::: {.proof}
+The proof is a tautology once you read the definition correctly — that is the beauty of it.
+By @eq-subdiff, the statement "$\mathbf 0\in\partial f(x^\star)$" means: $\mathbf 0$ is a
+subgradient at $x^\star$, i.e.
+$$
+f(y)\;\ge\; f(x^\star) + \mathbf 0^\top(y-x^\star) \;=\; f(x^\star)\qquad\text{for all }y.
+$$
+But "$f(y)\ge f(x^\star)$ for all $y$" is *exactly the definition* of $x^\star$ being a
+global minimizer of $f$. So the two statements are literally the same statement. No
+convexity was even needed for *this* equivalence — but convexity is what guarantees (via
+@lem-nonempty) that a subdifferential exists to test, and it is what makes this a *global*
+statement rather than a local one. $\qquad\blacksquare$
+:::
+
+That deserves a pause. The smooth condition $\nabla f=\mathbf 0$ required an argument
+(steepest descent, the tangent plane) to connect "flat" to "optimal," and even then it only
+gave a stationary point. The subgradient condition $\mathbf 0\in\partial f$ *is* optimality,
+unpacked — because the subgradient inequality was *defined* as a global lower bound. The
+flat supporting plane through $(x^\star,f(x^\star))$ literally says "the entire graph sits
+on or above this height," which is what "minimum" means. @fig-optimality makes it visible
+for $|x|$: at any nonzero point the only supporting line is sloped, so it cuts below the
+function on one side and cannot certify optimality; at the origin the *flat* line is a valid
+support, certifying the minimum.
+
+```{python}
+#| label: fig-optimality
+#| fig-cap: "The optimality condition $0\\in\\partial f$ for $f(x)=|x|$. **Left:** at a non-optimal point $x_0=1$ the only supporting line has slope $+1$ (the derivative); no flat line supports the graph there, so $0\\notin\\partial f(1)$ and the point is not optimal. **Right:** at $x=0$ the flat line $y=0$ (slope $0$) is a legitimate supporting line — it lies under the whole graph — so $0\\in\\partial f(0)=[-1,1]$, certifying $x=0$ as the global minimum. Optimality is exactly 'a horizontal supporting line exists.'"
+x = np.linspace(-2.2, 2.2, 400)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.8), sharey=True)
+
+axL.plot(x, np.abs(x), color=FUNC, lw=2.4, label=r"$|x|$")
+x0 = 1.0
+axL.plot(x, 1.0 * (x - x0) + abs(x0), color=SUPP, lw=1.8, label="supporting line, slope $1$")
+axL.scatter([x0], [abs(x0)], color="k", s=45, zorder=5)
+axL.set_title(r"At $x_0=1$: only sloped support, $0\notin\partial f$")
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+axL.legend(loc="upper center", fontsize=8.5, framealpha=0.9)
+
+axR.plot(x, np.abs(x), color=FUNC, lw=2.4, label=r"$|x|$")
+axR.axhline(0, color=ACCENT, lw=2.0, label="flat support, slope $0$")
+axR.scatter([0], [0], color="k", s=45, zorder=5)
+axR.annotate(r"$0\in\partial f(0)$" "\nminimum certified", xy=(0, 0),
+             xytext=(0.3, 1.1), fontsize=9.5, color=ACCENT)
+axR.set_title(r"At $x=0$: flat support exists, $0\in\partial f$")
+axR.set_xlabel("$x$")
+axR.legend(loc="upper center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"How does $\mathbf 0\in\partial f(x^\star)$ relate to $\nabla f(x^\star)=\mathbf 0$, and why
+is the subgradient version automatically global while the gradient version needs a
+second-order check?"* Two parts.
+**Relation:** where $f$ is differentiable, $\partial f=\{\nabla f\}$ (@lem-subdiff-gradient),
+so $\mathbf 0\in\partial f$ collapses to $\nabla f=\mathbf 0$ — it is a strict generalization,
+identical on smooth functions, with extra reach at kinks.
+**Global vs. needing a check:** the gradient condition $\nabla f=\mathbf 0$ is *stationarity*,
+a *local, first-order* statement that is satisfied by minima, maxima, and saddles alike — you
+need the Hessian (a second-order check) to tell which, *unless* you already know $f$ is convex.
+The subgradient condition $\mathbf 0\in\partial f$ has the global lower bound *built into its
+definition* (@eq-subgrad is "$f(y)\ge$ everywhere"), so for convex $f$ it certifies a global
+minimum directly, no second-order anything. The cost of that power is that it only works for
+convex functions; for non-convex $f$, $\mathbf 0\in\partial f$ (suitably generalized) is again
+just a necessary local condition.
+:::
+
+# Cashing it in: the lasso and soft-thresholding {#sec-softthresh}
+
+We now spend the optimality condition on the result the Regression track links here for and
+that [OPTM-10] and [OPTM-16] both build on: the closed-form solution of the **scalar lasso
+problem**. Every coordinate update of a lasso solver is one instance of it.
+
+The problem is
+$$
+\min_{\beta\in\mathbb R}\ \phi(\beta),\qquad
+\phi(\beta) = \tfrac12(\beta-\rho)^2 + \lambda|\beta|,
+$$ {#eq-scalar-lasso}
+with a fixed target $\rho\in\mathbb R$ and penalty $\lambda> 0$. Read it as a tug-of-war:
+the quadratic $\tfrac12(\beta-\rho)^2$ wants $\beta=\rho$ (stay near the data's preferred
+value $\rho$), while $\lambda|\beta|$ wants $\beta=0$ (be sparse), paying $\lambda$ per unit
+of $|\beta|$. (In the multivariate lasso, $\rho$ is the correlation of one predictor with
+the current partial residual; this scalar problem is the per-coordinate subproblem solved in
+[OPTM-10]. Here we treat it on its own.)
+
+$\phi$ is convex — a sum of a convex quadratic and the convex $\lambda|\beta|$ — so by
+@thm-optimality the minimizer $\beta^\star$ is characterized *exactly* by
+$0\in\partial\phi(\beta^\star)$. Build $\partial\phi$ with the calculus: the smooth part has
+gradient $(\beta-\rho)$ (by @lem-subdiff-gradient its subdifferential is the singleton
+$\{\beta-\rho\}$), and the penalty contributes $\lambda\,\partial|\beta|$ (by @lem-scaling).
+By the sum rule (@thm-sum),
+$$
+\partial\phi(\beta) = (\beta-\rho) + \lambda\,\partial|\beta|.
+$$
+The optimality condition $0\in\partial\phi(\beta)$ splits into the three cases of
+@eq-abs-subdiff. We solve each in full.
+
+**Case $\beta>0$.** Here $\partial|\beta|=\{+1\}$, so the condition is the single equation
+$0 = (\beta-\rho)+\lambda$, giving $\beta=\rho-\lambda$. This is *self-consistent* (we
+assumed $\beta>0$) precisely when $\rho-\lambda>0$, i.e. $\rho>\lambda$. So: if
+$\rho>\lambda$, the minimizer is $\beta^\star=\rho-\lambda$.
+
+**Case $\beta<0$.** Here $\partial|\beta|=\{-1\}$, so $0=(\beta-\rho)-\lambda$, giving
+$\beta=\rho+\lambda$. Self-consistent ($\beta<0$) iff $\rho+\lambda<0$, i.e. $\rho<-\lambda$.
+So: if $\rho<-\lambda$, the minimizer is $\beta^\star=\rho+\lambda$.
+
+**Case $\beta=0$.** Here $\partial|\beta|=[-1,1]$, so the condition $0\in\partial\phi(0)$
+reads
+$$
+0 \in (0-\rho) + \lambda[-1,1] = [-\rho-\lambda,\ -\rho+\lambda].
+$$
+A number lies in an interval $[a,b]$ iff $a\le 0\le b$, here $-\rho-\lambda\le 0$ and
+$-\rho+\lambda\ge 0$, i.e. $-\lambda\le\rho\le\lambda$, i.e. $|\rho|\le\lambda$. So: whenever
+the target $\rho$ is **smaller in magnitude than the penalty $\lambda$**, the minimizer is
+*exactly* $\beta^\star=0$.
+
+The three cases are exhaustive and mutually exclusive ($\rho>\lambda$, $|\rho|\le\lambda$,
+$\rho<-\lambda$ partition the line), so collecting them gives the closed-form minimizer, the
+**soft-thresholding operator**:
+$$
+\boxed{\;
+\beta^\star = S_\lambda(\rho) =
+\operatorname{sign}(\rho)\,\bigl(|\rho|-\lambda\bigr)_+ =
+\begin{cases}
+\rho-\lambda, & \rho>\lambda,\\[2pt]
+0, & |\rho|\le\lambda,\\[2pt]
+\rho+\lambda, & \rho<-\lambda,
+\end{cases}
+\;}
+$$ {#eq-soft}
+where $(z)_+=\max(0,z)$. In one phrase: **pull $\rho$ toward zero by $\lambda$, and snap to
+exactly zero anything already within $\lambda$ of zero.** @fig-soft draws it.
+
+```{python}
+#| label: fig-soft
+#| fig-cap: "Soft-thresholding $S_\\lambda(\\rho)=\\operatorname{sign}(\\rho)(|\\rho|-\\lambda)_+$ (red), the exact minimizer of the scalar lasso $\\tfrac12(\\beta-\\rho)^2+\\lambda|\\beta|$, derived from $0\\in\\partial\\phi$. It is the identity (grey dashed) shifted toward zero by $\\lambda$, with a flat **dead zone** $|\\rho|\\le\\lambda$ where the answer is exactly $0$. That dead zone — produced by the interval $[-1,1]$ in $\\partial|\\beta|$ — is *why the lasso zeroes coefficients*. The smooth ridge solution $\\rho/(1+2\\lambda)$ (green) only shrinks proportionally and never reaches zero: no kink, no sparsity."
+def soft(rho, lam):
+    return np.sign(rho) * np.maximum(np.abs(rho) - lam, 0.0)
+
+rho = np.linspace(-3, 3, 600)
+lam = 1.0
+fig, ax = plt.subplots(figsize=(5.8, 4.6))
+ax.plot(rho, rho, color=GREY, ls="--", lw=1.4, label=r"identity $\beta=\rho$ (no penalty)")
+ax.plot(rho, soft(rho, lam), color=SUPP, lw=2.6, label=r"soft-threshold $S_\lambda(\rho)$ (lasso)")
+ax.plot(rho, rho / (1 + 2 * lam), color=ACCENT, lw=1.8, alpha=0.85,
+        label=r"ridge $\rho/(1+2\lambda)$ (no kink)")
+ax.axvspan(-lam, lam, color=GREY, alpha=0.12)
+ax.text(0, 2.3, "dead zone\n$|\\rho|\\leq\\lambda$", ha="center", fontsize=9, color=GREY)
+ax.axhline(0, color="k", lw=0.6); ax.axvline(0, color="k", lw=0.6)
+ax.set_xlabel(r"target $\rho$")
+ax.set_ylabel(r"minimizer $\beta^\star$")
+ax.set_title(r"Soft-thresholding from $0\in\partial\phi$  ($\lambda=1$)")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+```
+
+The dead zone is the whole story, and it traces straight back to @eq-abs-subdiff. **The
+sparsity of the lasso is the interval $[-1,1]$ in $\partial|\beta|$, made operational.**
+Contrast the ridge penalty $\lambda\beta^2$: redo the derivation and there is *no kink*, so
+the optimality condition is the ordinary equation $(\beta-\rho)+2\lambda\beta=0$, giving
+$\beta^\star=\rho/(1+2\lambda)$ — proportional shrinkage that pulls toward zero but reaches
+it only in the limit $\lambda\to\infty$. Exact zeros require the corner; the corner requires
+subgradients; subgradients are this article. The circle is closed.
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on three honest problems — one we can check by hand against the
+formula, one a real sparse-recovery task, and one at the edge of applicability where the
+naive use of subgradients fails and tells us to reach for something else.
+
+## Example 1 — soft-thresholding a single coefficient, by hand and by code {#sec-ex-scalar}
+
+Take the scalar lasso @eq-scalar-lasso with a concrete target and penalty and walk every
+step. We verify the closed form @eq-soft against a brute-force grid minimization — the
+formula and the numerics must agree, and the optimality condition $0\in\partial\phi$ must
+hold at the answer.
+
+```{python}
+#| label: fig-scalar-check
+#| fig-cap: "Solving the scalar lasso $\\phi(\\beta)=\\tfrac12(\\beta-\\rho)^2+\\lambda|\\beta|$ three ways for $\\rho=1.8,\\ \\lambda=0.7$. The objective (blue) has a kink at $\\beta=0$; its minimizer from the closed form $S_\\lambda(\\rho)$ (red dot) coincides with a fine-grid brute-force search (black ring). The subgradient set $\\partial\\phi(\\beta^\\star)=(\\beta^\\star-\\rho)+\\lambda\\,\\partial|\\beta^\\star|$ contains $0$, the printed certificate of optimality."
+def phi(beta, rho, lam):
+    return 0.5 * (beta - rho) ** 2 + lam * np.abs(beta)
+
+rho_val, lam_val = 1.8, 0.7
+beta_grid = np.linspace(-1.5, 3.0, 20001)
+phi_grid = phi(beta_grid, rho_val, lam_val)
+beta_brute = beta_grid[np.argmin(phi_grid)]
+beta_soft = np.sign(rho_val) * max(abs(rho_val) - lam_val, 0.0)
+
+fig, ax = plt.subplots()
+ax.plot(beta_grid, phi_grid, color=FUNC, lw=2.2, label=r"$\phi(\beta)$")
+ax.scatter([beta_soft], [phi(beta_soft, rho_val, lam_val)], color=SUPP, s=80,
+           zorder=5, label=fr"closed form $S_\lambda(\rho)={beta_soft:.2f}$")
+ax.scatter([beta_brute], [phi(beta_brute, rho_val, lam_val)], facecolors="none",
+           edgecolors="k", s=160, lw=1.6, zorder=4, label=f"brute force = {beta_brute:.2f}")
+ax.axvline(0, color=GREY, lw=0.8, ls=":")
+ax.set_xlabel(r"$\beta$"); ax.set_ylabel(r"$\phi(\beta)$")
+ax.set_title(r"Scalar lasso: closed form vs. brute force")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.95)
+plt.tight_layout()
+
+# Optimality certificate: 0 in partial phi(beta*) = (beta*-rho) + lam*partial|beta*|
+smooth_part = beta_soft - rho_val
+if beta_soft > 0:
+    subdiff = [smooth_part + lam_val]            # singleton {+1}
+elif beta_soft < 0:
+    subdiff = [smooth_part - lam_val]            # singleton {-1}
+else:
+    subdiff = [smooth_part - lam_val, smooth_part + lam_val]  # interval endpoints
+print(f"rho = {rho_val}, lambda = {lam_val}")
+print(f"closed-form minimizer S_lambda(rho) = {beta_soft:.4f}")
+print(f"brute-force minimizer                = {beta_brute:.4f}")
+lo, hi = (subdiff[0], subdiff[0]) if len(subdiff) == 1 else (subdiff[0], subdiff[1])
+print(f"subdifferential at minimizer = [{lo:.4f}, {hi:.4f}]  -> contains 0: {lo <= 0 <= hi}")
+```
+
+By hand: $\rho=1.8>\lambda=0.7$, so we are in the first case of @eq-soft and
+$\beta^\star=\rho-\lambda=1.8-0.7=1.1$, matching the figure. The certificate at the bottom
+confirms $0\in\partial\phi(1.1)=\{(1.1-1.8)+0.7\}=\{0\}$ — the subgradient is *exactly* zero
+because the minimizer is at a smooth point. Now lower the target below the penalty: with
+$\rho=0.5<\lambda=0.7$ the second case fires and $\beta^\star=0$, and there the
+subdifferential is the *interval* $(0-0.5)+0.7[-1,1]=[-1.2,0.2]$, which contains $0$ — the
+optimality is certified by the corner, not by a single vanishing derivative. That is the
+qualitative difference between shrinkage and selection, visible in one number.
+
+## Example 2 — sparse signal recovery with the subgradient certificate {#sec-ex-sparse}
+
+A genuine use case: we observe a noisy, *underdetermined* linear measurement of a sparse
+signal and recover it by the lasso. This is the regime of compressed sensing and
+high-dimensional regression — more unknowns than equations, rescued by the prior belief
+that the truth is sparse. We solve $\min_\beta \tfrac{1}{2}\|y-X\beta\|_2^2 +
+\lambda\|\beta\|_1$ by coordinate-wise soft-thresholding (the algorithm [OPTM-10] is built
+on, used here as a black box to *exhibit* the subgradient theory), and then **verify the
+solution with the optimality condition $\mathbf 0\in\partial f(\beta^\star)$** — the global
+multivariate version, which is the article's headline put to work.
+
+```{python}
+#| label: fig-sparse
+#| fig-cap: "Lasso recovery of a sparse signal ($n=80$ measurements, $p=160$ unknowns, only $5$ truly nonzero). **Left:** recovered coefficients (red stems) against the ground truth (green circles); the $155$ irrelevant coordinates are driven to *exactly* zero and the $5$ true spikes are recovered (slightly shrunk — the honest price of the $\\ell_1$ penalty). **Right:** the subgradient certificate. For each coordinate we plot the required subgradient $g_j=-[\\nabla(\\tfrac12\\|y-X\\beta\\|^2)]_j/\\lambda$ implied by optimality; the theory demands $g_j=\\operatorname{sign}(\\beta_j)$ on active coordinates and $g_j\\in[-1,1]$ on zero coordinates. Every point lands where @eq-l1-subdiff says it must — the numerical solution satisfies $\\mathbf 0\\in\\partial f$ to tolerance."
+rng = np.random.default_rng(0)
+n, p, k = 80, 160, 5
+X = rng.standard_normal((n, p))
+X /= np.linalg.norm(X, axis=0) / np.sqrt(n)   # standardize columns: (1/n)||x_j||^2 = 1
+beta_true = np.zeros(p)
+support = rng.choice(p, size=k, replace=False)
+beta_true[support] = rng.uniform(2.0, 4.0, size=k) * rng.choice([-1, 1], size=k)
+y = X @ beta_true + 0.1 * rng.standard_normal(n)
+
+def soft(z, t):
+    return np.sign(z) * np.maximum(np.abs(z) - t, 0.0)
+
+# Coordinate descent (the OPTM-10 engine), used here only to produce a solution to certify.
+lam = 0.25
+beta = np.zeros(p)
+for _ in range(400):
+    for j in range(p):
+        r_partial = y - X @ beta + X[:, j] * beta[j]
+        rho_j = (X[:, j] @ r_partial) / n
+        beta[j] = soft(rho_j, lam)
+
+# Optimality certificate: at optimum, -grad_smooth in lambda * partial||beta||_1, i.e.
+# g_j := -(1/n) X_j^T (X beta - y) / lambda  must satisfy g_j = sign(beta_j) (active)
+#        and |g_j| <= 1 (zero coords).
+grad_smooth = (X.T @ (X @ beta - y)) / n
+g = -grad_smooth / lam
+active = np.abs(beta) > 1e-6
+max_violation_active = np.max(np.abs(g[active] - np.sign(beta[active]))) if active.any() else 0.0
+max_violation_zero = np.max(np.abs(g[~active])) if (~active).any() else 0.0
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+axL.stem(np.arange(p), beta, linefmt=f"{SUPP}", markerfmt="o", basefmt=" ")
+axL.scatter(support, beta_true[support], facecolors="none", edgecolors=ACCENT, s=90,
+            lw=1.8, zorder=5, label="true nonzeros")
+axL.set_xlabel("coordinate $j$"); axL.set_ylabel(r"$\beta_j$")
+axL.set_title(f"Recovered signal ({int(active.sum())} nonzeros of {p})")
+axL.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+
+axR.axhspan(-1, 1, color=FILL, alpha=0.3, label=r"allowed band $[-1,1]$ at $\beta_j=0$")
+axR.scatter(np.arange(p)[~active], g[~active], color=GREY, s=14, label="zero coords")
+axR.scatter(np.arange(p)[active], g[active], color=SUPP, s=40, zorder=5, label="active coords")
+axR.axhline(1, color="k", lw=0.7, ls=":"); axR.axhline(-1, color="k", lw=0.7, ls=":")
+axR.set_xlabel("coordinate $j$"); axR.set_ylabel(r"required subgradient $g_j$")
+axR.set_title(r"Subgradient certificate $0\in\partial f$")
+axR.legend(loc="lower right", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+
+print(f"active coordinates: {int(active.sum())}  (true: {k})")
+print(f"max |g_j - sign(beta_j)| on active coords = {max_violation_active:.2e}")
+print(f"max |g_j| on zero coords                  = {max_violation_zero:.3f}  (must be <= 1)")
+```
+
+The certificate is the point of the example, and it is exactly the multivariate optimality
+condition. At the optimum, $\mathbf 0\in\partial f(\beta^\star)$ with $f=\tfrac12\|y-X\beta\|^2
++ \lambda\|\beta\|_1$ unpacks via the sum rule into
+$$
+\mathbf 0 \in \nabla\bigl(\tfrac12\|y-X\beta\|^2\bigr) + \lambda\,\partial\|\beta\|_1
+= X^\top(X\beta-y) + \lambda\,\partial\|\beta\|_1,
+$$
+so the (scaled) negative smooth gradient $g_j = -[X^\top(X\beta-y)]_j/(n\lambda)$ must be a
+member of $\partial|\beta_j|$ coordinate by coordinate (@eq-l1-subdiff): equal to
+$\operatorname{sign}(\beta_j)$ wherever $\beta_j\neq 0$, and inside $[-1,1]$ wherever
+$\beta_j=0$. The printout confirms both to numerical tolerance, and the right panel shows
+every zero coordinate sitting *inside* the band $[-1,1]$ and every active coordinate pinned
+to $\pm 1$. **This is how you check a lasso solution without re-running the solver:** the
+subgradient condition is a certificate, computable from one gradient evaluation. That is a
+practical, interview-grade use of the theory.
+
+::: {.callout-tip title="You might be asked"}
+*"Given a candidate lasso solution, how would you verify it is optimal — and explain the
+'KKT-style' check practitioners mention?"* Compute the smooth gradient
+$\nabla(\tfrac12\|y-X\beta\|^2)=X^\top(X\beta-y)$ and check the **stationarity / subgradient
+condition** $\mathbf 0\in\partial f(\beta)$ coordinatewise: on every nonzero coordinate the
+gradient must equal $-\lambda\operatorname{sign}(\beta_j)$ (so the implied subgradient is
+$\pm 1$), and on every zero coordinate $|[X^\top(X\beta-y)]_j|\le\lambda$ (the implied
+subgradient lies in $[-1,1]$). These *are* the KKT conditions for the lasso (the formal KKT
+machinery is [OPTM-14]); the "$\le\lambda$ on the zeros" inequality is exactly the interval
+$[-1,1]$ of $\partial|0|$ scaled by $\lambda$. If any zero coordinate violates it, that
+coordinate *should* enter the model and the solver has not converged. This check is $O(np)$,
+far cheaper than another solve, and it is the standard convergence test in `glmnet`-style
+solvers.
+:::
+
+## Example 3 — the edge of applicability: subgradient descent crawls {#sec-ex-edge}
+
+The honest boundary. Having a subgradient is *not* the same as having a descent direction.
+For gradient descent ([OPTM-06]) we step against $\nabla f$ because $-\nabla f$ is
+guaranteed to decrease $f$ locally. **A subgradient carries no such guarantee**: at a kink,
+some subgradients point in directions that *increase* $f$. So the naive "subgradient
+method" — step against an arbitrary subgradient — does not reliably descend; it can only be
+made to converge with a *decaying* step size, and even then it crawls and chatters near the
+optimum. We show this honestly, minimizing the simplest non-smooth convex function $f(x)=|x|$
+two ways and watching the subgradient method oscillate around the kink it cannot settle into.
+
+```{python}
+#| label: fig-subgrad-crawl
+#| fig-cap: "Why a subgradient is not a descent direction. Minimizing $f(x)=|x|$ (minimizer $x^\\star=0$). **Left:** the subgradient method $x_{k+1}=x_k-\\eta_k\\,g_k$ with $g_k\\in\\partial|x_k|$ (here $\\operatorname{sign}(x_k)$). With a *constant* step $\\eta$ (grey) it cannot converge — it overshoots zero and bounces between $\\pm\\eta$ forever, because the subgradient is $\\pm 1$ no matter how close to $0$ it gets. Only a *decaying* step $\\eta_k=\\eta_0/\\sqrt{k}$ (red) inches in, and slowly. **Right:** the objective value — the decaying-step run grinds down at the textbook $O(1/\\sqrt k)$ crawl, while the constant-step run plateaus at a noise floor. The fix is not a better step rule but a different algorithm: the **proximal** method of [OPTM-16], which solves the kink exactly via soft-thresholding."
+def subgrad_descent(x0, steps, eta_fn):
+    xs = [x0]; fs = [abs(x0)]
+    x = x0
+    for k in range(1, steps + 1):
+        g = np.sign(x)          # a subgradient of |x|; sign(0)=0 is valid but x rarely hits 0
+        x = x - eta_fn(k) * g
+        xs.append(x); fs.append(abs(x))
+    return np.array(xs), np.array(fs)
+
+steps = 200
+# Start off-grid so the constant step never lands exactly on the kink:
+# it overshoots 0 every step and bounces between +/- ~eta forever.
+xs_const, fs_const = subgrad_descent(1.05, steps, lambda k: 0.1)
+xs_decay, fs_decay = subgrad_descent(1.05, steps, lambda k: 0.3 / np.sqrt(k))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+axL.axhline(0, color=ACCENT, lw=1.5, ls="--", label=r"optimum $x^\star=0$")
+axL.plot(xs_const, color=GREY, lw=1.5, label=r"constant step $\eta=0.1$ (chatters)")
+axL.plot(xs_decay, color=SUPP, lw=1.8, label=r"decaying $\eta_k=0.3/\sqrt{k}$")
+axL.set_xlabel("iteration $k$"); axL.set_ylabel(r"$x_k$")
+axL.set_title("Iterates: constant step never settles")
+axL.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+
+axR.plot(fs_const, color=GREY, lw=1.5, label="constant step")
+axR.plot(fs_decay, color=SUPP, lw=1.8, label="decaying step")
+axR.set_xlabel("iteration $k$"); axR.set_ylabel(r"$f(x_k)=|x_k|$")
+axR.set_yscale("log")
+axR.set_title(r"Objective: a slow $O(1/\sqrt{k})$ crawl at best")
+axR.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"constant-step final |x| = {fs_const[-1]:.4f}  (stuck oscillating)")
+print(f"decaying-step final |x| = {fs_decay[-1]:.4f}  (slowly approaching 0)")
+```
+
+This is the genuinely cautionary picture, not a rigged one. The subgradient method *works*
+— it converges with a decaying step — but its rate is the dismal $O(1/\sqrt{k})$ even for
+this trivial problem, versus the $O(1/k)$ or linear rates smooth gradient descent enjoys
+([OPTM-07]). The reason is structural: near the kink the subgradient stays at full magnitude
+$\pm 1$ no matter how close you are, so the method has no built-in slowdown and must be
+forced to one by shrinking the step. **When you reach for something else:** almost always.
+For the lasso and friends — a *smooth* loss plus a *simple non-smooth* penalty whose prox is
+cheap — the right tool is the **proximal-gradient** method ([OPTM-16]): take an ordinary
+gradient step on the smooth part, then apply soft-thresholding (the exact solver of the kink,
+@eq-soft) to the penalty. It recovers the smooth method's fast rate and produces exact zeros.
+Coordinate descent ([OPTM-10]) is the other right tool when the penalty is separable. The
+plain subgradient method is the option of last resort, used when the non-smooth part has *no*
+exploitable structure — but it is the conceptual foundation those better methods are built on,
+which is why we derived it.
+
+::: {.callout-warning title="Pitfall"}
+**A subgradient is not a descent direction, and $0\in\partial f$ is not "$\partial f=\{0\}$."**
+Two errors that sink interview answers and code alike. (1) Stepping against an arbitrary
+subgradient can *increase* the objective; only the *negative gradient* (at smooth points) is
+a guaranteed descent direction. This is why subgradient descent needs decaying steps and is
+slow — do not expect gradient-descent behavior from it. (2) Optimality is $0\in\partial f$
+(zero is *one of* the subgradients), **not** $\partial f=\{0\}$ (zero is the *only*
+subgradient). At a kink the subdifferential is a whole set; demanding it equal $\{0\}$ would
+wrongly reject the minimum of $|x|$, whose subdifferential there is the interval $[-1,1]$.
+The condition is *membership*, not *equality*.
+:::
+
+# Failure modes and the honest boundary {#sec-failure}
+
+The subgradient theory is exact and complete — *for convex functions*. Its boundaries are
+worth stating plainly, because each marks where the clean guarantees evaporate.
+
+**Non-convexity dissolves the guarantee.** Theorem @thm-optimality is biconditional and
+global *because $f$ is convex*. Drop convexity — neural-network losses, mixtures, anything
+with multiple basins — and the subgradient inequality @eq-subgrad simply has no solutions $g$
+at most points (no single global affine minorant touches there), so the subdifferential as we
+defined it is *empty*. The field repairs this with weaker, *local* notions (the **Clarke
+generalized gradient**, **limiting/Fréchet subdifferentials**), for which "$0\in\partial f$"
+recovers only a necessary, local stationarity condition — the non-smooth analogue of "could
+be a min, max, or saddle." Everything that made the convex condition a *certificate* is gone.
+If your objective is non-convex, do not expect a subgradient to certify a global optimum.
+
+**The subdifferential can still be a single point — and then nothing is new.** If $f$ happens
+to be differentiable at $x$, $\partial f(x)=\{\nabla f(x)\}$ (@lem-subdiff-gradient) and the
+whole apparatus collapses to ordinary calculus. Subgradients earn their keep *only* at the
+kinks; away from them they are an expensive way to write $\nabla f$. The art is recognizing
+*where* the kinks are (where the model wants a hard zero, a corner, a max) and applying the
+set-valued calculus exactly there.
+
+**Computing the full subdifferential can be hard for complicated compositions.** Our calculus
+rules (sum, scaling, affine chain) cover the objectives in this series, but they have
+regularity conditions (the Moreau–Rockafellar caveat in @thm-sum), and for deeply nested
+non-smooth compositions the subdifferential can be genuinely awkward to write down. In
+practice one rarely needs the *whole* set — a *single* subgradient suffices to run a
+subgradient or proximal method, and that is usually cheap (e.g. $\operatorname{sign}(x)$ for
+$|x|$). Knowing you need only one element, not the entire set, is a practitioner's shortcut.
+
+::: {.callout-tip title="You might be asked"}
+*"When is subgradient theory the right framework, and when isn't it?"* The crisp answer:
+**Use it** when your objective is **convex** and **non-smooth** at points that matter — an
+$\ell_1$ or $\ell_\infty$ penalty, a hinge loss, a max of linear functions, a total-variation
+term. There it gives an exact, global optimality certificate ($\mathbf 0\in\partial f$) and,
+through soft-thresholding and the prox, fast algorithms. **Don't reach for it** when (a) the
+function is smooth — ordinary gradients are simpler and faster; (b) the function is
+non-convex — the global guarantee is gone and you want local stationarity tools or a
+different strategy entirely; or (c) you were about to run *plain* subgradient descent on a
+structured problem — its $O(1/\sqrt k)$ crawl (@sec-ex-edge) is almost always beaten by a
+proximal or coordinate method ([OPTM-16], [OPTM-10]) that solves the kink exactly. The
+deepest framing: subgradients are the *analysis* (what optimality means at a kink); proximal
+methods are the *algorithm* (how to exploit a kink efficiently). You want both, and this
+article is the analysis half.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-04 *Convex Functions*]**, which gave the tangent-below inequality
+$f(y)\ge f(x)+\nabla f(x)^\top(y-x)$ for smooth convex functions and the headline that local
+minima are global. This article kept that inequality and *dropped the uniqueness of the
+tangent*, producing the **subgradient**, the **subdifferential** $\partial f$, its calculus,
+and the optimality condition $\mathbf 0\in\partial f$ that replaces $\nabla f=\mathbf 0$ at
+kinks. This **closes the convexity spine** (OPTM-03–OPTM-05). From here:
+
+- **[OPTM-10 *Coordinate Descent*]** — cashes in the **soft-thresholding** rule @eq-soft as
+  the per-coordinate lasso update, making coordinate descent the standard `glmnet` solver.
+  The scalar subproblem there *is* @eq-scalar-lasso.
+- **[OPTM-16 *Proximal and Projected Methods*]** — the algorithmic answer to the
+  @sec-ex-edge crawl. The **proximal operator** of $\lambda\|\cdot\|_1$ *is* soft-thresholding,
+  and proximal gradient descent (ISTA/FISTA) is the modern lasso solver that subgradient
+  descent could not be. This article is its theoretical foundation.
+- **[OPTM-14 *KKT Conditions*]** — the subgradient certificate of @sec-ex-sparse is the
+  lasso's KKT condition; OPTM-14 develops the general constrained-optimality machinery of
+  which $\mathbf 0\in\partial f$ is the unconstrained, non-smooth case.
+- **Regression R15 (lasso)** links here for exactly this content — the *subgradients*
+  prerequisite the supply-depot contract promises — to justify why the lasso zeroes
+  coefficients and how its solvers work.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The reference.** R. T. Rockafellar, *Convex Analysis* (Princeton, 1970) — the
+  subdifferential, the sum rule (Moreau–Rockafellar), and the optimality condition in their
+  original, complete form. Dense but definitive.
+- **The modern textbook treatment.** Boyd & Vandenberghe, *Convex Optimization* (2004),
+  §3 and the subgradient/optimality material; Nesterov, *Lectures on Convex Optimization*,
+  for the $O(1/\sqrt k)$ subgradient-method rate and why it is unimprovable in general.
+- **The application that made this famous.** Tibshirani, "Regression Shrinkage and Selection
+  via the Lasso," *JRSS-B* 58 (1996) — soft-thresholding and sparsity, the downstream payoff
+  of @eq-abs-subdiff.
+- **Open threads this article deferred.** *How do you minimize $f+g$ efficiently when $g$ is
+  non-smooth?* — the proximal operator, [OPTM-16]. *What is the subdifferential of a
+  non-convex function?* — Clarke and limiting subdifferentials, a graduate convex-analysis or
+  variational-analysis course (Rockafellar & Wets, *Variational Analysis*). *Is $\partial f$
+  the right object for constrained problems?* — yes, through the KKT conditions, [OPTM-14].

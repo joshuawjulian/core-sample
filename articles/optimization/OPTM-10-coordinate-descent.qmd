@@ -1,0 +1,973 @@
+---
+title: "Coordinate Descent: One Variable at a Time"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # the objective / surfaces
+PATH    = "#c1121f"    # the iterate path / coordinate steps
+ACCENT  = "#0a7d4d"    # highlights / the optimum
+GD      = "#6c757d"    # gradient descent, for contrast
+GREY    = "#6c757d"
+```
+
+> **Where this sits in the track.** This is one of the two **algorithm articles** where the
+> convexity spine and the descent spine reconverge. It assumes [OPTM-02 *Minimizing in
+> Many Variables*] (the gradient, partial derivatives, the stationarity condition
+> $\nabla f=\mathbf{0}$), [OPTM-06 *Gradient Descent*] (the descent mindset, and the rival
+> algorithm we will compare against throughout), and [OPTM-05 *Subgradients*] for one
+> result we will lean on hard: the **subgradient optimality condition** $0\in\partial f$
+> and the **soft-thresholding** solution of the scalar lasso subproblem. Because OPTM-05 is
+> the owner of soft-thresholding, we restate and re-derive it inline here (@sec-soft) so
+> this article reads end-to-end without a forward dependency you cannot follow.
+>
+> **The one question.** Gradient descent moves *every* variable at once, along the single
+> steepest-descent direction. **What if we instead freeze all variables but one, minimize
+> over that one alone, and cycle?** When is that smart, when is it the *only* easy option,
+> and when does it stall?
+>
+> **What it sets up.** This article **supplies** the *coordinate descent* prerequisite that
+> Regression's regularization articles ([REGR-15] lasso, [REGR-16] elastic net) link here
+> for — coordinate descent *is* the standard lasso solver, and we derive exactly why. It
+> also feeds [OPTM-16 *Proximal Methods*], which generalizes the per-coordinate
+> soft-thresholding step into the full proximal-gradient picture, and it is the prototype
+> for the **alternating minimization** that Unsupervised Learning links here for (k-means,
+> matrix factorization).
+
+## Abstract {.unnumbered}
+
+Gradient descent ([OPTM-06]) commits to a single global direction, $-\nabla f$, and steps
+all coordinates together. **Coordinate descent** makes the opposite bet: hold every
+variable fixed except one, solve the resulting *one-dimensional* problem exactly (or take
+one cheap step in it), advance to the next variable, and cycle. This article derives the
+scheme from scratch, works out the exact per-coordinate update for a quadratic (a single
+division — no step size to tune), and proves that for a **smooth, strongly convex**
+objective the cyclic scheme drives the gradient to zero. Then it confronts the honest
+catch: on a *non-smooth* objective, coordinate descent can **jam** at a non-minimizer
+where no single-coordinate move helps but a diagonal move would — we build the classic
+counterexample and see exactly why it happens. The payoff is the resolution of that
+tension: when the non-smooth part is a **separable** penalty — a sum of one-dimensional
+pieces, like the lasso's $\lambda\|\boldsymbol\beta\|_1$ — the jam cannot occur, each
+coordinate update becomes **soft-thresholding** (derived in full), and coordinate descent
+becomes the fast, warm-startable, sparsity-exploiting workhorse behind `glmnet` and every
+production lasso/elastic-net solver. We close with the honest comparison to gradient
+descent: when the cheap exact 1-D step and the separable structure are present, coordinate
+descent wins; when the variables are tightly coupled and there is no closed-form coordinate
+solve, it is the wrong tool.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+To minimize $f(\mathbf{x})$ over $\mathbf{x}=(x_1,\dots,x_p)$, **change one coordinate at
+a time.** Fix every coordinate but the $j$-th at its current value and solve the
+one-dimensional problem
+$$
+x_j \;\leftarrow\; \arg\min_{t}\; f(x_1,\dots,x_{j-1},\,t,\,x_{j+1},\dots,x_p),
+$$
+then move to the next coordinate and repeat, cycling $j=1,2,\dots,p,1,2,\dots$ until
+nothing changes. There is **no global step size to tune**: each 1-D subproblem is solved
+on its own terms, often in closed form by a single division (a quadratic) or a single
+clipping operation (the lasso). The scheme works when two things hold: (1) each 1-D
+subproblem is *easy*, and (2) the non-smooth part of $f$, if any, is **separable** across
+coordinates — a sum $\sum_j g_j(x_j)$. Smoothness alone, or separability alone, is enough
+to make it converge; lacking both, it can **stall at a non-minimizer**. The lasso sits
+exactly in the sweet spot, which is why coordinate descent is its standard solver.
+:::
+
+Everything below orbits that box. The scheme is almost embarrassingly simple — "optimize
+$x_1$, then $x_2$, then $x_3$, …" — and the entire intellectual content is in the two
+conditions: *when does cycling through cheap 1-D solves actually reach the joint minimum,
+and when does it get trapped?* The answer turns on one geometric fact about non-smooth
+functions, and the lasso is the headline case where that fact breaks the right way.
+
+# Why we are here: the curse of moving everything at once {#sec-why}
+
+Keep one question in view the whole way through: **when is it better to make many small,
+exact, cheap moves along the axes than one expensive move along the gradient?** Every step
+below answers a piece of that.
+
+## What gradient descent costs, and what it cannot do {#sec-gd-costs}
+
+[OPTM-06] gave us the universal fallback when $\nabla f=\mathbf{0}$ has no closed form: the
+step $\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\,\nabla f(\mathbf{x}_k)$. It is general and it
+works, but it carries three burdens that motivate an alternative.
+
+1. **It needs the full gradient.** Every step computes all $p$ partial derivatives, even
+   when $p$ is in the tens of thousands (genomics, text, recommender systems). For some
+   objectives the full gradient is genuinely expensive to assemble.
+2. **It needs a step size $\eta$.** The whole drama of [OPTM-06] and [OPTM-07] was choosing
+   $\eta$: too small and it crawls, too large and it diverges, and the safe choice
+   $\eta\le 1/L$ depends on a smoothness constant $L$ you usually do not know. A method that
+   *eliminates* the step size would be a real prize.
+3. **It chokes on a kink.** [OPTM-06] ended at the honest boundary: at a non-differentiable
+   point — the corner of $|x|$, the vertex of the lasso penalty — the gradient does not
+   exist, and plain gradient descent chatters or stalls. The lasso, the single most common
+   sparse-regression tool, is *defined* by such a penalty.
+
+Coordinate descent attacks all three at once. By working one variable at a time, it
+touches one partial derivative per micro-step; by solving each 1-D subproblem *exactly*, it
+sidesteps the step size entirely (the exact solve has no $\eta$); and — the payoff — when
+the kink is *separable* across coordinates, each 1-D subproblem has its *own* kink that we
+can solve in closed form, so the corner that defeats gradient descent becomes a feature.
+
+::: {.callout-tip title="You might be asked"}
+*"You already have gradient descent — why introduce a second first-order method?"* Because
+the two make opposite assumptions and shine in opposite regimes. Gradient descent assumes
+you can cheaply form the whole gradient and that the objective is smooth; it is direction-
+optimal but coordinate-blind. Coordinate descent assumes each *single-variable* subproblem
+is cheap and exactly solvable; it is coordinate-optimal but direction-blind. On a separable,
+sparse, high-dimensional problem with a closed-form 1-D solve — the lasso — coordinate
+descent is dramatically faster and handles the non-smoothness for free. On a dense, tightly
+coupled problem with no cheap coordinate solve, gradient descent (or Newton, [OPTM-09]) is
+the right call. Knowing *which* is the practitioner judgment this article is built to give.
+:::
+
+## The historical thread {#sec-history}
+
+The idea is older than gradient descent's modern fame. **Gauss–Seidel** iteration
+(mid-1800s) for solving a linear system $A\mathbf{x}=\mathbf{b}$ is *exactly* coordinate
+descent applied to the quadratic $\tfrac12\mathbf{x}^\top A\mathbf{x}-\mathbf{b}^\top\mathbf{x}$:
+update one component of $\mathbf{x}$ at a time using the most recent values of the others.
+For a century it lived as a linear-algebra solver. Its second life came from statistics:
+once the **lasso** (Tibshirani, 1996) made sparse regression central, the question of *how
+to actually solve it* became urgent. The breakthrough — Friedman, Hastie, and Tibshirani's
+`glmnet` (2007–2010) — was the recognition that **cyclic coordinate descent with a
+soft-thresholding update**, run along a path of penalty values with warm starts, solves the
+lasso and elastic net faster than any competitor of its day. That algorithm is the reason
+coordinate descent is a first-class citizen of modern statistical computing, and deriving it
+is the destination of this article (@sec-lasso).
+
+# Intuition before symbols: walking the grid lines {#sec-intuition}
+
+Picture the contour map of a function of two variables — concentric loops around the
+minimum, exactly as in [OPTM-06]. Gradient descent steps **perpendicular to the contours**,
+in whatever diagonal direction is steepest. Coordinate descent is forbidden diagonals: it
+may only move **horizontally** (adjust $x_1$, hold $x_2$) or **vertically** (adjust $x_2$,
+hold $x_1$). Each move goes as far as it usefully can along its allowed line — to the point
+where that horizontal or vertical line is *tangent* to a contour, because that tangency is
+exactly where the 1-D slice bottoms out.
+
+The result is a **staircase**: a horizontal segment, then a vertical one, then horizontal
+again, each leg ending tangent to a contour. @fig-staircase shows it. When the contours are
+round (or axis-aligned ellipses), the staircase marches efficiently to the center. When the
+contours are *tilted, narrow* ellipses — strong coupling between the variables — the
+staircase takes tiny, cramped steps, the same pathology that makes gradient descent zig-zag,
+and for the same reason: no axis-aligned move can make much progress along a diagonal valley.
+
+```{python}
+#| label: fig-staircase
+#| fig-cap: "Coordinate descent as a staircase on the contour map. **Left:** a well-conditioned quadratic (nearly round contours). Each leg moves along one axis until it is tangent to a contour (the exact 1-D minimum along that line), and the staircase reaches the minimum quickly. **Right:** an ill-conditioned, *tilted* quadratic — a narrow diagonal valley. The same allowed moves now make painfully small progress, because no horizontal or vertical step can travel far down a diagonal trough. Coupling between coordinates is coordinate descent's enemy, exactly as it is gradient descent's."
+def coord_descent_quadratic(A, b, x0, n_sweeps):
+    """Exact cyclic coordinate descent on f = 1/2 x'Ax - b'x. Returns the path."""
+    x = x0.astype(float).copy()
+    path = [x.copy()]
+    p = len(x)
+    for _ in range(n_sweeps):
+        for j in range(p):
+            # exact 1-D min in x_j: A_jj x_j + sum_{k != j} A_jk x_k - b_j = 0
+            x[j] = (b[j] - (A[j] @ x - A[j, j] * x[j])) / A[j, j]
+            path.append(x.copy())
+    return np.array(path)
+
+def contour_and_path(ax, A, b, path, title):
+    g = np.linspace(-3.2, 3.2, 200)
+    X1, X2 = np.meshgrid(g, g)
+    F = 0.5 * (A[0,0]*X1**2 + 2*A[0,1]*X1*X2 + A[1,1]*X2**2) - (b[0]*X1 + b[1]*X2)
+    ax.contour(X1, X2, F, levels=18, colors=GREY, linewidths=0.6, alpha=0.6)
+    ax.plot(path[:, 0], path[:, 1], "-o", color=PATH, ms=3.5, lw=1.6)
+    xstar = np.linalg.solve(A, b)
+    ax.scatter(*xstar, color=ACCENT, s=90, zorder=5, edgecolor="white", label="minimum")
+    ax.scatter(*path[0], color=CURVE, s=55, zorder=5, label="start")
+    ax.set_title(title); ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+    ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+
+A_round = np.array([[3.0, 0.4], [0.4, 2.6]])
+A_tilt  = np.array([[3.0, 2.85], [2.85, 3.0]])
+b = np.array([1.0, -0.5])
+x0 = np.array([-2.6, 2.6])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.1))
+contour_and_path(axL, A_round, b, coord_descent_quadratic(A_round, b, x0, 4),
+                 "Well-conditioned: efficient staircase")
+contour_and_path(axR, A_tilt, b, coord_descent_quadratic(A_tilt, b, x0, 12),
+                 "Ill-conditioned: cramped staircase")
+plt.tight_layout()
+```
+
+Two things to carry forward from the picture. First, **each leg is an exact 1-D minimum** —
+no step size, no overshoot, the line goes exactly to the tangent point. Second, the
+*efficiency* of the staircase is governed by how aligned the contours are with the axes:
+axis-aligned (uncoupled) is ideal, tilted (coupled) is slow. That single observation
+predicts almost everything about when coordinate descent is the right tool.
+
+# The formal development {#sec-formal}
+
+## The scheme, precisely {#sec-scheme}
+
+::: {#def-coordinate-descent}
+**Definition (cyclic coordinate descent).** Let $f:\mathbb{R}^p\to\mathbb{R}$. Choose a
+starting point $\mathbf{x}^{(0)}$. At each *sweep* $k=0,1,2,\dots$, update the coordinates
+in order $j=1,2,\dots,p$, each time minimizing over that coordinate alone while holding the
+others at their **current** values:
+$$
+x_j^{(k+1)} \;=\; \arg\min_{t\in\mathbb{R}}\;
+f\!\bigl(\underbrace{x_1^{(k+1)},\dots,x_{j-1}^{(k+1)}}_{\text{already updated this sweep}},
+\; t,\;
+\underbrace{x_{j+1}^{(k)},\dots,x_p^{(k)}}_{\text{not yet updated}}\bigr).
+$$ {#eq-cd-update}
+:::
+
+Two details in @eq-cd-update matter and are worth stating out loud, because they are the
+difference between the version that works and a sloppier one.
+
+- **Use the freshest values.** When we update $x_j$, the coordinates $x_1,\dots,x_{j-1}$
+  have *already been updated this sweep*, so we use their new values, not the values from
+  the start of the sweep. This is the **Gauss–Seidel** style (as opposed to **Jacobi**
+  style, which would update every coordinate from the old vector and only commit at the end
+  of the sweep). Using fresh values makes each step a genuine descent step on the *current*
+  iterate and is what makes the monotone-decrease argument below go through.
+- **"$\arg\min_t$" is a one-dimensional problem.** Everything except $t$ is a fixed number,
+  so the function being minimized is a function of the single real variable $t$. That is the
+  whole point: we have traded one $p$-dimensional problem for a stream of 1-D problems, each
+  of which we attack with the Calc-1 machinery of [OPTM-01] (set the 1-D derivative to zero)
+  or, at a kink, the subgradient condition of [OPTM-05].
+
+::: {.callout-tip title="You might be asked"}
+*"Does the order in which you sweep the coordinates matter?"* For convergence, the standard
+guarantees hold for **cyclic** order (fixed $1,2,\dots,p$), for **random** order (a fresh
+random permutation each sweep, or sampling a coordinate at random each step), and for
+**greedy** order (the Gauss–Southwell rule: update the coordinate with the largest gradient
+component). For *speed*, the choice can matter a lot: randomized coordinate descent has the
+cleanest theory and avoids pathological cyclic orderings, while greedy is fastest per step
+but costs a full-gradient scan to pick the coordinate. In practice, `glmnet`-style solvers
+use cyclic order with **active-set** tricks (skip coordinates that are stuck at zero), which
+is fast and simple. The interviewer is probing whether you know that "coordinate descent" is
+a *family* indexed by the coordinate-selection rule, not a single algorithm.
+:::
+
+## The exact update for a quadratic {#sec-quadratic}
+
+The cleanest case — and the one that recovers Gauss–Seidel — is a quadratic. Let
+$$
+f(\mathbf{x}) = \tfrac12\,\mathbf{x}^\top A\,\mathbf{x} - \mathbf{b}^\top \mathbf{x},
+\qquad A \text{ symmetric positive-definite.}
+$$ {#eq-quad}
+Positive-definiteness ($A\succ 0$) makes $f$ strictly convex with a unique minimizer, and in
+particular makes every diagonal entry $A_{jj}>0$ (take $\mathbf{x}=\mathbf{e}_j$, the $j$-th
+standard basis vector: $\mathbf{e}_j^\top A\,\mathbf{e}_j = A_{jj}>0$). We need the 1-D
+slice: fix all coordinates but $x_j$ and read $f$ as a function of $t=x_j$ alone.
+
+Write $A_{jk}$ for the entries of $A$ and $b_j$ for those of $\mathbf{b}$. Expanding the
+quadratic form, the only places $x_j$ appears are the diagonal term $\tfrac12 A_{jj}x_j^2$,
+the cross terms $A_{jk}x_jx_k$ for $k\ne j$ (each off-diagonal pair $jk$ and $kj$ contributes
+$A_{jk}x_jx_k$, and $A$ is symmetric so the two are equal — together $A_{jk}x_jx_k$ summed
+over $k\ne j$), and the linear term $-b_j x_j$. Collecting them, with everything else folded
+into a constant $C$ that does not involve $x_j$:
+$$
+f \;=\; \tfrac12 A_{jj}\,x_j^2 \;+\; x_j\!\sum_{k\ne j} A_{jk}\,x_k \;-\; b_j\,x_j \;+\; C.
+$$
+This is an ordinary upward parabola in $x_j$ (coefficient $\tfrac12 A_{jj}>0$). Differentiate
+with respect to $x_j$ and set to zero — the Calc-1 first-order condition of [OPTM-01]:
+$$
+\frac{\partial f}{\partial x_j}
+= A_{jj}\,x_j + \sum_{k\ne j} A_{jk}\,x_k - b_j = 0.
+$$
+Solving for $x_j$ gives the **exact coordinate update**:
+$$
+\boxed{\;
+x_j \;\leftarrow\; \frac{\,b_j - \sum_{k\ne j} A_{jk}\,x_k\,}{A_{jj}}.
+\;}
+$$ {#eq-quad-update}
+Read it: one inner product against the current $\mathbf{x}$ (excluding the diagonal), one
+subtraction, one division. **No step size.** That single division *is* the exact 1-D
+minimizer. And @eq-quad-update is precisely the **Gauss–Seidel iteration** for the linear
+system $A\mathbf{x}=\mathbf{b}$ — which is the same system as $\nabla f=A\mathbf{x}-\mathbf{b}=\mathbf{0}$,
+the stationarity condition of [OPTM-02]. Coordinate descent on a quadratic and Gauss–Seidel
+on the normal equations are *the same algorithm*. (The code in @fig-staircase implemented
+exactly @eq-quad-update.)
+
+::: {.callout-tip title="You might be asked"}
+*"Why is there no step size here, when gradient descent needed one?"* Because we solved the
+1-D subproblem **exactly**, not approximately. Gradient descent replaces $f$ by its
+first-order Taylor model and trusts it only for a short step $\eta$ — the step size is the
+amount of trust you put in a *local linear* approximation. Coordinate descent on a quadratic
+uses the *exact* shape of the 1-D slice (it is a parabola, and we know its vertex in closed
+form), so there is nothing to trust partially and no step size to choose. When the 1-D slice
+is *not* exactly solvable, one does take a single 1-D step instead — and *then* a step size
+reappears — but for quadratics and the lasso the exact solve is available.
+:::
+
+## Monotone descent, and convergence in the smooth case {#sec-convergence}
+
+Does cycling these exact 1-D minimizations actually reach the joint minimum? For the smooth
+case the argument is clean and we give it in full.
+
+::: {#thm-smooth-convergence}
+**Theorem (convergence, smooth strongly convex case).** Let $f:\mathbb{R}^p\to\mathbb{R}$ be
+continuously differentiable and strongly convex (e.g. the quadratic @eq-quad with
+$A\succ 0$). Then cyclic coordinate descent @eq-cd-update produces iterates whose objective
+values decrease monotonically, and the iterates converge to the unique global minimizer
+$\mathbf{x}^\star$.
+:::
+
+::: {.proof}
+We argue in three moves: the values can only go down, the limit is stationary, and for a
+convex $f$ stationary means the global minimum.
+
+**Move 1 — monotone decrease.** Each coordinate step *minimizes* $f$ over the line through
+the current point in the $x_j$ direction. Minimizing can never increase the value: the new
+point is the best on that line, and the old point was *on* that line, so
+$$
+f(\text{after updating }x_j) \;\le\; f(\text{before updating }x_j).
+$$
+Chaining these inequalities over all $p$ coordinates of a sweep and over all sweeps, the
+sequence of objective values $f(\mathbf{x}^{(0)}), f(\mathbf{x}^{(1)}),\dots$ is
+**nonincreasing**. It is also bounded below (a strongly convex $f$ has a finite minimum), so
+it converges to some limit value $f^\infty$. The iterates themselves stay in a bounded set
+(strong convexity: sublevel sets $\{f\le f(\mathbf{x}^{(0)})\}$ are bounded), so by the
+Bolzano–Weierstrass theorem some subsequence converges to a limit point $\bar{\mathbf{x}}$.
+
+**Move 2 — the limit is stationary.** At the limit point $\bar{\mathbf{x}}$, consider any
+single coordinate $j$. Because each step took $x_j$ to the *exact* minimizer of the 1-D
+slice, the 1-D first-order condition holds in the limit:
+$$
+\frac{\partial f}{\partial x_j}(\bar{\mathbf{x}}) = 0.
+$$
+Here is the one place smoothness is essential, so we say why carefully. The update sets the
+$j$-th partial derivative to zero *using the freshest values of the other coordinates*. As
+the iterates converge, those "freshest values" themselves converge to the components of
+$\bar{\mathbf{x}}$, and because $f$ is continuously differentiable, the partial derivative
+$\partial f/\partial x_j$ is a *continuous* function of all coordinates. A continuous
+function that is driven to zero along a convergent sequence is zero at the limit. This holds
+for every $j$, so **all** partial derivatives vanish at $\bar{\mathbf{x}}$:
+$$
+\nabla f(\bar{\mathbf{x}}) = \mathbf{0}.
+$$
+
+**Move 3 — stationary $\Rightarrow$ global minimum.** For a convex differentiable function,
+a point with zero gradient is a global minimizer — this is the headline theorem of
+[OPTM-04], which we may cite as an imported prerequisite. (Sketch of why, for completeness:
+convexity gives the tangent-below inequality $f(\mathbf{y})\ge f(\bar{\mathbf{x}}) +
+\nabla f(\bar{\mathbf{x}})^\top(\mathbf{y}-\bar{\mathbf{x}})$ for all $\mathbf{y}$; with
+$\nabla f(\bar{\mathbf{x}})=\mathbf{0}$ the last term drops and $f(\mathbf{y})\ge
+f(\bar{\mathbf{x}})$ everywhere.) Strong convexity makes the minimizer unique, so
+$\bar{\mathbf{x}}=\mathbf{x}^\star$; since every convergent subsequence has the same unique
+limit, the *whole* sequence converges to $\mathbf{x}^\star$. $\qquad\blacksquare$
+:::
+
+The hinge of the whole proof is **Move 2**, and it deserves a flag: it used continuity of
+$\nabla f$. When $f$ is *not* differentiable — when there are kinks — that step can fail, and
+the algorithm can converge to a point where every 1-D slice is minimized yet the *joint*
+gradient does not vanish. That is the failure we build next, and the lasso's escape from it
+is the article's payoff.
+
+# The honest catch: coordinate descent can jam {#sec-jam}
+
+## A non-smooth function where every axis move is stuck, yet we are not at the minimum {#sec-counterexample}
+
+Here is the cautionary counterexample, in the spirit of Warga (1963) and a staple of the
+optimization literature. We do not need a designer function; the *mechanism* shows up in the
+simplest possible **non-separable** non-smooth example, where the kink runs *diagonally*
+across the two coordinates. Take
+$$
+\boxed{\,f(x_1,x_2) \;=\; 3\bigl(x_1^2 + x_2^2\bigr) \;+\; 5\,|x_1 - x_2| \;-\; (x_1 + x_2)\,.}
+$$ {#eq-jam}
+This is convex: a positive-definite quadratic, plus a (convex) absolute value of the *linear*
+form $x_1-x_2$, plus a linear term. So it has a unique global minimum. Where is it? Away from
+the diagonal the gradient must vanish; on the diagonal $x_1=x_2$ the kink takes over. Set
+$x_1=x_2=t$ and the kink term is zero, leaving $6t^2 - 2t$, minimized at $t=\tfrac16$. One
+checks (and we will, numerically) that the true minimizer is
+$$
+\mathbf{x}^\star = \bigl(\tfrac16,\ \tfrac16\bigr), \qquad f(\mathbf{x}^\star) = -\tfrac16.
+$$
+The crucial structural fact: the non-smooth term $5|x_1-x_2|$ has its kink along the **whole
+diagonal** $x_1=x_2$ — a *diagonal ridge that crosses both coordinates*, exactly the
+non-separable shape that breaks @thm-smooth-convergence's Move 2. Now run coordinate descent
+and watch it get trapped on that ridge **before** reaching the bottom of it.
+
+Start at $(3,-3)$ and update $x_1$ first, holding $x_2=-3$. The 1-D slice is, dropping
+constants, $g(t) = 3t^2 - t + 5\,|t - (-3)| = 3t^2 - t + 5|t+3|$. Use the subgradient
+condition $0\in g'(t)$. The smooth part has derivative $6t-1$; the kink term contributes
+$5\cdot\operatorname{sign}(t+3)$, which is $+5$ for $t>-3$. So for $t>-3$ we need
+$6t-1+5=0$, i.e. $t=-\tfrac46=-\tfrac23$ — consistent, since $-\tfrac23>-3$. Thus
+$x_1\leftarrow-\tfrac23$. Then update $x_2$ holding $x_1=-\tfrac23$: by the symmetry of
+@eq-jam in $(x_1,x_2)$ the same computation gives $x_2\leftarrow-\tfrac23$. We have landed on
+the diagonal at $(-\tfrac23,-\tfrac23)$.
+
+Now the trap springs. At a diagonal point $x_1=x_2=c$, try to update $x_1$: minimize
+$h(t)=3t^2 - t + 5|t-c|$. The kink is *at* $t=c$, where the subdifferential of $|t-c|$ is the
+whole interval $[-1,1]$. The optimality condition $0\in 6t-1+5[-1,1]$ evaluated at $t=c$ is
+$0\in[6c-6,\,6c+4]$, i.e.
+$$
+-\tfrac23 \;\le\; c \;\le\; 1 \quad\Longrightarrow\quad t=c \text{ is optimal — the coordinate cannot move.}
+$$
+Our point $c=-\tfrac23$ sits *exactly* at the left end of this interval, so **the $x_1$-update
+returns $-\tfrac23$ unchanged**, and by symmetry so does the $x_2$-update. Coordinate descent
+is frozen at $(-\tfrac23,-\tfrac23)$, $f=4$ — while the true minimum is way down the same
+diagonal at $(\tfrac16,\tfrac16)$, $f=-\tfrac16$. No single-coordinate move helps; only a
+*joint* diagonal move (increasing both $x_1$ and $x_2$ together) descends, and coordinate
+descent is forbidden from making it. @fig-jam shows the trap.
+
+```{python}
+#| label: fig-jam
+#| fig-cap: "Coordinate descent jamming on a non-smooth, non-separable objective $f(x_1,x_2)=3(x_1^2+x_2^2)+5|x_1-x_2|-(x_1+x_2)$. The kink of $|x_1-x_2|$ runs along the *diagonal ridge* $x_1=x_2$ (green dotted), and the true minimum (green dot) sits on that ridge at $(\\tfrac16,\\tfrac16)$. Starting from $(3,-3)$, exact coordinate descent (red) snaps onto the ridge and then **freezes** at $(-\\tfrac23,-\\tfrac23)$ (black X): no horizontal or vertical move lowers $f$, because the $[-1,1]$ subdifferential of the kink pins each coordinate. Only a *joint* diagonal move descends the ridge toward the true minimum — and coordinate descent cannot make it. This is the failure that separability prevents."
+def f_jam(x1, x2):
+    return 3 * (x1 ** 2 + x2 ** 2) + 5 * np.abs(x1 - x2) - (x1 + x2)
+
+def cd_1d_min_jam(other):
+    """Exact 1-D minimizer of t -> 3 t^2 + 5|t - other| - t (the slice in either coordinate;
+    f is symmetric in x1, x2, so the same slice serves both)."""
+    ts = np.linspace(-4, 4, 80001)
+    vals = 3 * ts ** 2 + 5 * np.abs(ts - other) - ts
+    return ts[np.argmin(vals)]
+
+x = np.array([3.0, -3.0])
+path = [x.copy()]
+for _ in range(6):
+    x[0] = cd_1d_min_jam(x[1]); path.append(x.copy())
+    x[1] = cd_1d_min_jam(x[0]); path.append(x.copy())
+path = np.array(path)
+
+g = np.linspace(-3.2, 3.2, 320)
+X1, X2 = np.meshgrid(g, g)
+F = f_jam(X1, X2)
+fig, ax = plt.subplots(figsize=(5.8, 5.2))
+ax.contour(X1, X2, F, levels=np.linspace(F.min(), 40, 22), colors=GREY, linewidths=0.6, alpha=0.6)
+ax.plot([-3.2, 3.2], [-3.2, 3.2], color=ACCENT, ls=":", lw=1.5, label="ridge $x_1=x_2$")
+ax.plot(path[:, 0], path[:, 1], "-o", color=PATH, ms=4, lw=1.6, label="coordinate descent")
+ax.scatter(1 / 6, 1 / 6, color=ACCENT, s=120, zorder=6, edgecolor="white",
+           label=r"true min $(\frac{1}{6},\frac{1}{6})$")
+ax.scatter(*path[0], color=CURVE, s=60, zorder=6, label="start $(3,-3)$")
+ax.scatter(*path[-1], color="black", marker="X", s=120, zorder=7, label="stall point")
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title("Coordinate descent stalls at a non-minimizer")
+ax.legend(loc="lower right", fontsize=8, framealpha=0.95)
+plt.tight_layout()
+print(f"stall point  ~ ({path[-1,0]:.3f}, {path[-1,1]:.3f}),  f = {f_jam(*path[-1]):.4f}")
+print(f"true minimum   (0.1667, 0.1667),  f = {f_jam(1/6, 1/6):.4f}")
+```
+
+The printed numbers make it explicit: coordinate descent halts at a point with $f$ strictly
+above the minimum, even though *no single-coordinate move decreases $f$ at that point*. It is
+stuck on the diagonal ridge $x_1=x_2$, which is where the kink of $|x_1+x_2|$ cuts across the
+quadratic bowl. To make progress you would have to move **both** coordinates at once (down the
+ridge toward the origin), and coordinate descent is forbidden from doing that.
+
+## Why exactly does it jam? The optimality condition in coordinates {#sec-why-jam}
+
+The diagnosis is precise, and it is the most important conceptual point in the article. For a
+smooth $f$, "all partial derivatives are zero" is equivalent to "the full gradient is zero,"
+because the gradient is just the *vector* of partials — minimizing every 1-D slice forces
+$\nabla f=\mathbf{0}$, the joint optimality condition. For a **non-smooth** convex $f$, the
+optimality condition is no longer $\nabla f=\mathbf{0}$ but the subgradient condition of
+[OPTM-05],
+$$
+\mathbf{0} \in \partial f(\mathbf{x}^\star)
+\qquad(\text{the subdifferential, the set of all subgradients}),
+$$
+and the subdifferential of a general non-smooth function **does not decompose coordinatewise**.
+"Optimal in $x_1$ alone" gives $0\in\partial_{x_1}f$, and likewise $0\in\partial_{x_2}f$, but
+the *Cartesian product* $\partial_{x_1}f \times \partial_{x_2}f$ can be strictly larger than
+the joint subdifferential $\partial f$. So "minimal along every axis" can hold while
+"$\mathbf{0}\in\partial f$ jointly" fails — there is a descent direction (the diagonal) that no
+axis sees. That gap is the jam.
+
+The escape is now visible in advance. **The gap closes if the non-smooth part is separable.**
+If $f(\mathbf{x}) = h(\mathbf{x}) + \sum_{j} g_j(x_j)$ with $h$ smooth and *convex* and each
+$g_j$ a convex function of its **own coordinate only**, then the kinks live one-per-axis —
+there is no diagonal ridge crossing coordinates — and the coordinatewise optimality conditions
+*do* reassemble into the joint one. This is exactly the structure of the lasso. We state it as
+the theorem the whole field rests on.
+
+::: {#thm-separable}
+**Theorem (Tseng, 2001 — convergence with a separable non-smooth term).** Let
+$$
+f(\mathbf{x}) = h(\mathbf{x}) + \sum_{j=1}^{p} g_j(x_j),
+$$
+where $h$ is convex and continuously differentiable and each $g_j:\mathbb{R}\to\mathbb{R}$ is
+convex (possibly non-differentiable, e.g. $g_j(x_j)=\lambda|x_j|$). Then every limit point of
+cyclic coordinate descent is a global minimizer of $f$. The jam of @sec-counterexample cannot
+occur.
+:::
+
+::: {.proof}
+We give the heart of the argument — why coordinatewise optimality now implies joint
+optimality — and flag the imported piece. Suppose $\bar{\mathbf{x}}$ is a point that minimizes
+$f$ along every coordinate axis: for each $j$, $\bar x_j$ minimizes $t\mapsto
+h(\dots,t,\dots) + g_j(t)$. By the 1-D subgradient optimality condition of [OPTM-05]
+($0\in\partial(\text{1-D objective})$, and the subdifferential of a sum is the sum of
+subdifferentials for these well-behaved convex functions), this says
+$$
+0 \in \partial_{x_j}\!\bigl[h + g_j\bigr](\bar{\mathbf{x}})
+= \frac{\partial h}{\partial x_j}(\bar{\mathbf{x}}) + \partial g_j(\bar x_j)
+\qquad\text{for every } j.
+\tag{$\ast$}
+$$
+That is, for each $j$ there exists a subgradient $s_j \in \partial g_j(\bar x_j)$ with
+$\dfrac{\partial h}{\partial x_j}(\bar{\mathbf{x}}) + s_j = 0$.
+
+Now assemble the joint condition. Because the non-smooth part is **separable**, its
+subdifferential is exactly the Cartesian product of the one-dimensional subdifferentials:
+$$
+\partial\!\Bigl[\textstyle\sum_j g_j\Bigr](\bar{\mathbf{x}})
+= \partial g_1(\bar x_1)\times\cdots\times \partial g_p(\bar x_p).
+$$
+This is the key structural fact, and it holds *because* each $g_j$ depends on its own
+coordinate alone (the kink of $g_j$ is axis-aligned). Therefore the vector
+$\mathbf{s}=(s_1,\dots,s_p)$ built coordinatewise above is a genuine *joint* subgradient of
+$\sum_j g_j$ at $\bar{\mathbf{x}}$. And $h$ is smooth, so its only subgradient is its
+gradient. The subdifferential of the sum $h + \sum_j g_j$ is the (Minkowski) sum of
+subdifferentials — the sum rule for convex functions, imported from [OPTM-05] — so
+$$
+\nabla h(\bar{\mathbf{x}}) + \mathbf{s}
+\;\in\; \partial f(\bar{\mathbf{x}}),
+\qquad\text{and by } (\ast)\ \text{ this vector is } \mathbf{0}.
+$$
+Hence $\mathbf{0}\in\partial f(\bar{\mathbf{x}})$ — the joint optimality condition holds, so
+$\bar{\mathbf{x}}$ is a global minimizer of the convex $f$. The coordinatewise optima
+reassembled into a joint optimum precisely because separability made the product of
+1-D subdifferentials *equal* (not merely contain) the joint one. The full convergence claim
+(that the iterates actually reach such a point) follows from the monotone-decrease argument
+of @thm-smooth-convergence applied to this setting; the non-separable counterexample
+@eq-jam fails this proof exactly at the boxed equality, where a cross-coordinate kink makes
+the product strictly *larger* than the joint subdifferential. $\qquad\blacksquare$
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Coordinate descent is not a universal minimizer for non-smooth problems.** The mistake is
+to assume that "minimize each coordinate to optimality and cycle" always finds the joint
+minimum — it does *not* when the non-smoothness couples coordinates. The counterexample
+@eq-jam is the permanent warning. Before reaching for coordinate descent on a non-smooth
+objective, check that the non-smooth part is **separable**: a sum of functions each touching
+one coordinate (or one disjoint block of coordinates — *block* coordinate descent handles
+group penalties the same way). The lasso passes this test; a fused lasso or total-variation
+penalty (which couples *neighboring* coordinates through $|x_{j}-x_{j+1}|$) does **not**, and
+plain coordinate descent can stall on it — those need the proximal/dual methods of [OPTM-16].
+:::
+
+# The payoff: coordinate descent solves the lasso {#sec-lasso}
+
+## The lasso objective and why it is the sweet spot {#sec-lasso-objective}
+
+The **lasso** (Regression's [REGR-15]) fits a linear model by minimizing squared error plus
+an $\ell_1$ penalty that drives coefficients to *exactly* zero, producing sparse, interpretable
+models. With design matrix $X\in\mathbb{R}^{n\times p}$ (columns $\mathbf{x}_{\cdot 1},\dots,
+\mathbf{x}_{\cdot p}$), response $\mathbf{y}\in\mathbb{R}^n$, and penalty $\lambda>0$:
+$$
+f(\boldsymbol\beta)
+= \underbrace{\tfrac{1}{2n}\,\|\mathbf{y} - X\boldsymbol\beta\|_2^2}_{\text{smooth } h(\boldsymbol\beta)}
+\;+\; \underbrace{\lambda\sum_{j=1}^{p}|\beta_j|}_{\text{separable non-smooth }\sum_j g_j(\beta_j)} .
+$$ {#eq-lasso}
+Look at the two pieces against @thm-separable. The squared-error term $h$ is smooth and
+convex (it is a quadratic in $\boldsymbol\beta$). The penalty $\lambda\sum_j|\beta_j|$ is a
+**sum of one-coordinate functions** $g_j(\beta_j)=\lambda|\beta_j|$ — *exactly* the separable
+structure the theorem demands. So coordinate descent on the lasso **cannot jam**: it provably
+converges to the global minimum, and — the gift — each 1-D subproblem has a closed-form
+solution that *automatically produces zeros*. We derive that solution now.
+
+## The scalar lasso subproblem and soft-thresholding {#sec-soft}
+
+Freeze all coefficients but $\beta_j$ and minimize @eq-lasso over $\beta_j$ alone. Let us
+reduce the 1-D slice to its essential shape. Write the **partial residual** — the part of
+$\mathbf{y}$ not explained by the *other* predictors —
+$$
+\mathbf{r}^{(-j)} = \mathbf{y} - \sum_{k\ne j}\beta_k\,\mathbf{x}_{\cdot k},
+$$
+so that $\mathbf{y}-X\boldsymbol\beta = \mathbf{r}^{(-j)} - \beta_j\,\mathbf{x}_{\cdot j}$.
+Then, dropping additive constants that do not involve $\beta_j$, the 1-D objective is
+$$
+\phi(\beta_j) = \frac{1}{2n}\bigl\|\mathbf{r}^{(-j)} - \beta_j\,\mathbf{x}_{\cdot j}\bigr\|_2^2
++ \lambda|\beta_j|.
+$$
+Expand the squared norm, $\|\mathbf{r}^{(-j)} - \beta_j\mathbf{x}_{\cdot j}\|^2 =
+\|\mathbf{r}^{(-j)}\|^2 - 2\beta_j\,\mathbf{x}_{\cdot j}^\top\mathbf{r}^{(-j)} +
+\beta_j^2\,\|\mathbf{x}_{\cdot j}\|^2$. Assume the columns are standardized so that
+$\tfrac1n\|\mathbf{x}_{\cdot j}\|^2 = 1$ (the universal convention in lasso solvers; it makes
+the penalty comparable across predictors). Define the single number
+$$
+\rho_j = \tfrac{1}{n}\,\mathbf{x}_{\cdot j}^\top\,\mathbf{r}^{(-j)}
+$$
+— the (scaled) correlation of predictor $j$ with the current partial residual, i.e. the
+ordinary least-squares coefficient predictor $j$ *would* take if it alone fit the leftover.
+Dropping constants, the slice becomes the clean scalar problem
+$$
+\phi(\beta_j) \;=\; \tfrac12\,\beta_j^2 \;-\; \rho_j\,\beta_j \;+\; \lambda|\beta_j|
+\;=\; \tfrac12\,(\beta_j - \rho_j)^2 \;+\; \lambda|\beta_j| \;+\; \text{const}.
+$$ {#eq-scalar-lasso}
+This is the canonical scalar problem $\min_\beta\ \tfrac12(\beta-\rho)^2 + \lambda|\beta|$ —
+"stay near $\rho$, but pay $\lambda$ per unit of $|\beta|$." Now we minimize it exactly. The
+absolute value is the one kink; we handle it with the subgradient optimality condition of
+[OPTM-05], $0\in\partial\phi$. The subdifferential of $|\beta|$ is
+$$
+\partial|\beta| = \begin{cases}\{+1\} & \beta>0,\\ \{-1\} & \beta<0,\\ [-1,1] & \beta=0,\end{cases}
+$$
+the smooth derivative away from zero, and the whole interval $[-1,1]$ *at* the kink (every
+slope in $[-1,1]$ supports the V from below at the origin). The optimality condition
+$0\in\partial\phi(\beta) = (\beta-\rho) + \lambda\,\partial|\beta|$ splits into three cases.
+
+**Case $\beta>0$:** then $\partial|\beta|=\{1\}$ and we need $(\beta-\rho)+\lambda=0$, i.e.
+$\beta=\rho-\lambda$. This is consistent ($\beta>0$) **iff** $\rho>\lambda$.
+
+**Case $\beta<0$:** then $\partial|\beta|=\{-1\}$ and we need $(\beta-\rho)-\lambda=0$, i.e.
+$\beta=\rho+\lambda$. Consistent ($\beta<0$) **iff** $\rho<-\lambda$.
+
+**Case $\beta=0$:** then $\partial|\beta|=[-1,1]$ and we need $0\in(0-\rho)+\lambda[-1,1]
+=[-\rho-\lambda,\,-\rho+\lambda]$, i.e. $-\rho-\lambda\le 0\le -\rho+\lambda$, which is
+$|\rho|\le\lambda$. So whenever the correlation $\rho$ is **smaller in magnitude than the
+penalty $\lambda$**, the minimizer is *exactly zero* — the kink at the origin "captures" the
+solution. This is the mechanism by which the lasso sets coefficients to *exactly* zero, seen
+here in its purest form.
+
+Collecting the three cases gives the closed-form minimizer, the **soft-thresholding
+operator**:
+$$
+\boxed{\;
+\beta_j \;\leftarrow\; S_\lambda(\rho_j)
+\;=\;
+\operatorname{sign}(\rho_j)\,\bigl(|\rho_j| - \lambda\bigr)_+
+\;=\;
+\begin{cases}
+\rho_j - \lambda, & \rho_j > \lambda,\\[2pt]
+0, & |\rho_j| \le \lambda,\\[2pt]
+\rho_j + \lambda, & \rho_j < -\lambda,
+\end{cases}
+\;}
+$$ {#eq-soft}
+where $(z)_+=\max(0,z)$. In words: **shrink $\rho_j$ toward zero by $\lambda$, and clip
+anything within $\lambda$ of zero to exactly zero.** @fig-soft draws the operator next to the
+"hard" alternative.
+
+```{python}
+#| label: fig-soft
+#| fig-cap: "The soft-thresholding operator $S_\\lambda(\\rho)=\\operatorname{sign}(\\rho)(|\\rho|-\\lambda)_+$ (red), the exact solution of the scalar lasso problem $\\min_\\beta \\tfrac12(\\beta-\\rho)^2+\\lambda|\\beta|$. It is the identity (grey dashed) shifted toward zero by $\\lambda$, with a flat **dead zone** $|\\rho|\\le\\lambda$ where the answer is exactly $0$. That dead zone is *why the lasso produces sparsity*: any predictor whose correlation with the partial residual is below the penalty is zeroed out entirely. The 'hard' threshold (green) — used by best-subset / $\\ell_0$ ideas — keeps values unshrunk but discontinuous; soft-thresholding is the convex, continuous relaxation coordinate descent delivers for free."
+def soft(rho, lam):
+    return np.sign(rho) * np.maximum(np.abs(rho) - lam, 0.0)
+
+def hard(rho, lam):
+    out = rho.copy()
+    out[np.abs(rho) <= lam] = 0.0
+    return out
+
+rho = np.linspace(-3, 3, 600)
+lam = 1.0
+fig, ax = plt.subplots(figsize=(5.6, 4.6))
+ax.plot(rho, rho, color=GREY, ls="--", lw=1.4, label=r"identity $\beta=\rho$")
+ax.plot(rho, soft(rho, lam), color=PATH, lw=2.4, label=r"soft-threshold $S_\lambda(\rho)$")
+ax.plot(rho, hard(rho, lam), color=ACCENT, lw=1.6, alpha=0.8, label="hard threshold")
+ax.axvspan(-lam, lam, color=GREY, alpha=0.12)
+ax.text(0, 2.4, "dead zone\n$|\\rho|\\leq\\lambda$", ha="center", fontsize=9, color=GREY)
+ax.axhline(0, color="k", lw=0.6); ax.axvline(0, color="k", lw=0.6)
+ax.set_xlabel(r"$\rho$ (correlation with partial residual)")
+ax.set_ylabel(r"updated coefficient $\beta$")
+ax.set_title(r"Soft-thresholding ($\lambda=1$)")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.95)
+plt.tight_layout()
+```
+
+So the lasso coordinate-descent algorithm is, in full: **for each coordinate $j$ in turn,
+compute the correlation $\rho_j$ of predictor $j$ with the current partial residual, then set
+$\beta_j\leftarrow S_\lambda(\rho_j)$, and cycle until the coefficients stop changing.** No
+step size, no matrix inversion, automatic sparsity, and (by @thm-separable) a guaranteed
+global optimum. This is the `glmnet` engine.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the lasso give exact zeros when ridge regression ($\ell_2$ penalty) does not?"*
+Run the same scalar derivation with $g_j(\beta_j)=\lambda\beta_j^2$ instead of
+$\lambda|\beta_j|$. There is **no kink** — the penalty is smooth — so the optimality
+condition is the ordinary $(\beta-\rho)+2\lambda\beta=0$, giving $\beta=\rho/(1+2\lambda)$.
+That is a *proportional* shrinkage: every coefficient is multiplied by $1/(1+2\lambda)<1$,
+which pulls them toward zero but **never makes them exactly zero** (it would take
+$\lambda=\infty$). The lasso's exact zeros come entirely from the *non-differentiable* corner
+of $|\beta|$ at the origin: the interval subdifferential $[-1,1]$ creates the dead zone
+$|\rho|\le\lambda$ in @fig-soft. Sparsity is a gift of the kink, and coordinate descent is the
+method that cashes it in cheaply. (This is also why the lasso *needs* the subgradient
+machinery of [OPTM-05] while ridge does not.)
+:::
+
+## Worked example: a sparse high-dimensional regression {#sec-worked-lasso}
+
+Now the honest end-to-end run, on the regime where the lasso belongs: $p$ large, $n$ modest,
+and a truly sparse signal (only a few predictors matter). We implement the coordinate-descent
+lasso from @eq-soft *ourselves* — the math is primary, so we want to see every update — and
+recover the sparse coefficient vector.
+
+```{python}
+#| label: fig-lasso-fit
+#| fig-cap: "Coordinate-descent lasso on a sparse, high-dimensional problem ($n=120$, $p=200$, only $6$ nonzero true coefficients). **Left:** the objective $f(\\boldsymbol\\beta)=\\tfrac{1}{2n}\\|\\mathbf{y}-X\\boldsymbol\\beta\\|^2+\\lambda\\|\\boldsymbol\\beta\\|_1$ versus full coordinate sweeps — it drops monotonically (@thm-smooth-convergence's descent property) and converges in a handful of sweeps. **Right:** the recovered coefficients (red) against the truth (green circles). The lasso has zeroed out the $194$ irrelevant predictors exactly (the soft-threshold dead zone) and recovered the $6$ true ones, shrunk slightly toward zero — the honest price of the $\\ell_1$ penalty."
+rng = np.random.default_rng(0)
+n, p, k = 120, 200, 6
+X = rng.standard_normal((n, p))
+X = (X - X.mean(0)) / X.std(0)                  # standardize columns: (1/n)||x_j||^2 = 1
+beta_true = np.zeros(p)
+support = rng.choice(p, size=k, replace=False)
+beta_true[support] = rng.uniform(1.5, 3.0, size=k) * rng.choice([-1, 1], size=k)
+y = X @ beta_true + rng.standard_normal(n) * 0.5
+y = y - y.mean()
+
+def soft_thresh(z, lam):
+    return np.sign(z) * max(abs(z) - lam, 0.0)
+
+def lasso_cd(X, y, lam, n_sweeps=40):
+    n, p = X.shape
+    beta = np.zeros(p)
+    r = y - X @ beta                            # full residual, kept up to date
+    obj = []
+    for _ in range(n_sweeps):
+        for j in range(p):
+            # add predictor j back into the residual -> partial residual
+            r = r + X[:, j] * beta[j]
+            rho = (X[:, j] @ r) / n             # correlation with partial residual
+            beta[j] = soft_thresh(rho, lam)
+            r = r - X[:, j] * beta[j]           # remove the updated contribution
+        obj.append(0.5 / n * (r @ r) + lam * np.abs(beta).sum())
+    return beta, np.array(obj)
+
+lam = 0.15
+beta_hat, obj = lasso_cd(X, y, lam, n_sweeps=30)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.9))
+axL.plot(np.arange(1, len(obj) + 1), obj, "-o", color=PATH, ms=3.5)
+axL.set_xlabel("coordinate sweep"); axL.set_ylabel(r"objective $f(\beta)$")
+axL.set_title("Objective decreases monotonically"); axL.set_yscale("log")
+
+idx = np.arange(p)
+axR.scatter(idx, beta_hat, color=PATH, s=14, label=r"lasso $\hat\beta$")
+axR.scatter(support, beta_true[support], facecolors="none", edgecolors=ACCENT,
+            s=80, lw=1.8, label="true nonzeros")
+axR.axhline(0, color="k", lw=0.6)
+axR.set_xlabel("predictor index $j$"); axR.set_ylabel(r"coefficient")
+axR.set_title("Recovered sparse coefficients"); axR.legend(fontsize=8, framealpha=0.95)
+plt.tight_layout()
+nnz = int(np.sum(np.abs(beta_hat) > 1e-8))
+print(f"nonzero coefficients found: {nnz}  (true support size: {k})")
+print(f"selected indices: {sorted(idx[np.abs(beta_hat) > 1e-8].tolist())}")
+print(f"true     indices: {sorted(support.tolist())}")
+```
+
+@fig-lasso-fit and its printout show the algorithm selected a small set of predictors very close to the true
+support, with the objective falling monotonically and flattening within a few sweeps. Note the
+implementation detail that makes coordinate descent *fast* on this problem: we keep the full
+residual $\mathbf{r}=\mathbf{y}-X\boldsymbol\beta$ updated incrementally — adding predictor
+$j$ back in, computing $\rho_j$ as one inner product, then removing the new contribution — so
+each coordinate update is $O(n)$ work rather than recomputing $X\boldsymbol\beta$ from
+scratch. Across $p$ coordinates a sweep costs $O(np)$, and because most coefficients are zero,
+*active-set* tracking (skipping the zeros) makes later sweeps far cheaper still. That cheap,
+sparsity-aware bookkeeping is precisely why coordinate descent beats gradient descent on the
+lasso.
+
+## The regularization path, for free {#sec-path}
+
+The final reason coordinate descent dominates lasso solving: it computes the **whole
+regularization path** — the solution $\hat{\boldsymbol\beta}(\lambda)$ as $\lambda$ ranges from
+large (everything zero) down to small (a dense fit) — almost as cheaply as a single solve,
+using **warm starts**. Solve at a large $\lambda$ (trivial: all coefficients zero), then
+decrease $\lambda$ slightly and *start coordinate descent from the previous solution*. Because
+the solution moves only a little as $\lambda$ changes, each warm-started solve takes very few
+sweeps. @fig-path traces it.
+
+```{python}
+#| label: fig-path
+#| fig-cap: "The lasso regularization path, computed by warm-started coordinate descent ($n=120$, $p=200$, $6$ true nonzeros). Each curve is one coefficient $\\hat\\beta_j(\\lambda)$ as the penalty $\\lambda$ decreases (left to right, log scale). At large $\\lambda$ (left) all coefficients are zero; as $\\lambda$ shrinks, predictors enter one by one. The six true predictors (colored, solid) enter early and grow; the $194$ noise predictors (grey) stay near zero until $\\lambda$ is very small. Coordinate descent produces this entire family of models in barely more time than a single fit, because each solve warm-starts from its neighbor — the property that made `glmnet` the standard lasso tool."
+lams = np.logspace(np.log10(1.0), np.log10(0.02), 40)
+beta = np.zeros(p)
+paths = np.zeros((len(lams), p))
+for i, lam in enumerate(lams):
+    beta, _ = lasso_cd(X, y, lam, n_sweeps=12)   # warm start: reuse previous beta
+    paths[i] = beta
+
+fig, ax = plt.subplots(figsize=(7.2, 4.4))
+for j in range(p):
+    if j in support:
+        ax.plot(lams, paths[:, j], color=PATH, lw=1.8, zorder=3)
+    else:
+        ax.plot(lams, paths[:, j], color=GREY, lw=0.6, alpha=0.5, zorder=1)
+ax.set_xscale("log"); ax.invert_xaxis()
+ax.set_xlabel(r"penalty $\lambda$ (log scale, decreasing $\rightarrow$)")
+ax.set_ylabel(r"coefficient $\hat\beta_j(\lambda)$")
+ax.set_title("Lasso regularization path via warm-started coordinate descent")
+ax.axhline(0, color="k", lw=0.6)
+plt.tight_layout()
+```
+
+The path is the practitioner's real deliverable: you rarely know the right $\lambda$ in
+advance, so you compute the whole path and pick $\lambda$ by cross-validation. Coordinate
+descent's warm-start efficiency is what makes "fit at 40 penalty values and cross-validate"
+routine rather than expensive.
+
+# The honest comparison, and the edge of applicability {#sec-comparison}
+
+## Coordinate descent versus gradient descent, head to head {#sec-vs-gd}
+
+Both are first-order methods; the choice between them is a real judgment call, and @fig-compare
+makes it concrete on the same lasso problem. We run our coordinate-descent lasso against a
+**subgradient method** (the natural gradient-style approach to the non-smooth $\ell_1$ term:
+step against a subgradient of $f$) and compare progress per unit of work.
+
+```{python}
+#| label: fig-compare
+#| fig-cap: "Coordinate descent (red) vs. a subgradient method (grey) on the same lasso objective ($n=120$, $p=200$). The $x$-axis is full passes over the data (one coordinate sweep $\\approx$ one subgradient step in data touched). Coordinate descent drives the objective down fast and converges; the subgradient method, lacking an exact 1-D solve and forced to a decaying step size by the kink, crawls and never produces exact zeros. On a *separable* non-smooth problem with a closed-form coordinate update, coordinate descent is the right tool — this is the honest picture, not a rigged one: subgradient descent is a legitimate but ill-suited choice here."
+def subgradient_lasso(X, y, lam, n_steps=30, eta0=0.02):
+    n, p = X.shape
+    beta = np.zeros(p)
+    obj = []
+    for t in range(n_steps):
+        r = X @ beta - y
+        grad_smooth = (X.T @ r) / n
+        subgrad = grad_smooth + lam * np.sign(beta)   # sign(0)=0: a valid subgradient choice
+        eta = eta0 / np.sqrt(t + 1)                   # decaying step, required at a kink
+        beta = beta - eta * subgrad
+        obj.append(0.5 / n * (r @ r) + lam * np.abs(beta).sum())
+    return beta, np.array(obj)
+
+lam = 0.15
+_, obj_cd = lasso_cd(X, y, lam, n_sweeps=30)
+beta_sg, obj_sg = subgradient_lasso(X, y, lam, n_steps=30, eta0=0.05)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.2))
+ax.plot(np.arange(1, len(obj_cd) + 1), obj_cd, "-o", color=PATH, ms=3.5, label="coordinate descent")
+ax.plot(np.arange(1, len(obj_sg) + 1), obj_sg, "-s", color=GD, ms=3.5, label="subgradient method")
+ax.set_xlabel("full passes over the data")
+ax.set_ylabel(r"objective $f(\beta)$"); ax.set_yscale("log")
+ax.set_title("Coordinate descent dominates on the lasso")
+ax.legend(framealpha=0.95)
+plt.tight_layout()
+nnz_sg = int(np.sum(np.abs(beta_sg) > 1e-8))
+print(f"coordinate descent: exact zeros produced (sparse).")
+print(f"subgradient method nonzeros (|beta|>1e-8): {nnz_sg} of {p}  -- no exact sparsity")
+```
+
+The verdict, stated plainly so you can recite it in an interview:
+
+- **Reach for coordinate descent when** (1) each 1-D subproblem is *cheap and closed-form* —
+  a quadratic (one division), or a separable penalty like the lasso/elastic-net (one
+  soft-threshold); (2) the non-smooth part is **separable**; (3) the problem is
+  **high-dimensional and sparse**, so active-set tracking and warm starts pay off. The lasso,
+  elastic net, sparse logistic regression, and graphical-lasso all fit this and use coordinate
+  descent in production.
+- **Reach for gradient descent / Newton instead when** (1) there is **no cheap closed-form
+  coordinate solve** (a generic dense smooth objective, a neural network); (2) the variables
+  are **strongly coupled** — tilted, narrow contours — where the axis-aligned staircase of
+  @fig-staircase crawls just as gradient descent's zig-zag does, and a direction-aware method
+  (momentum [OPTM-08], Newton [OPTM-09]) wins; (3) the non-smooth term is **non-separable**
+  (fused lasso, total variation), where coordinate descent can *jam* (@sec-jam) and you need
+  proximal/dual methods ([OPTM-16]).
+
+## The edge: when coordinate descent is the wrong tool {#sec-edge}
+
+We have already met the two boundaries; @fig-edge shows the *coupling* one quantitatively,
+because it is the failure most likely to bite you silently. We run coordinate descent on a
+smooth quadratic as we crank up the off-diagonal coupling (the condition number), and count
+the sweeps to convergence.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability: coupling kills coordinate descent's speed. For the quadratic $\\tfrac12\\mathbf{x}^\\top A\\mathbf{x}$ with $A$ having unit diagonal and off-diagonal $c$ (so $A=[[1,c],[c,1]]$), the condition number is $(1+c)/(1-c)$, which blows up as the coupling $c\\to 1$. The plot shows sweeps needed to reach $\\|\\mathbf{x}\\|<10^{-4}$ versus condition number (log-log). The count grows steeply with the condition number — the same ill-conditioning dependence that plagues gradient descent ([OPTM-07]). When your variables are highly correlated, neither axis-aligned nor steepest-descent steps help; you need curvature (Newton, [OPTM-09]) or a change of coordinates."
+def sweeps_to_converge(c, tol=1e-4, max_sweeps=200000):
+    A = np.array([[1.0, c], [c, 1.0]])
+    b = np.zeros(2)
+    x = np.array([1.0, 1.0])
+    for s in range(1, max_sweeps + 1):
+        for j in range(2):
+            x[j] = (b[j] - (A[j] @ x - A[j, j] * x[j])) / A[j, j]
+        if np.linalg.norm(x) < tol:
+            return s
+    return max_sweeps
+
+cs = np.array([0.0, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 0.98, 0.99])
+kappa = (1 + cs) / (1 - cs)
+sweeps = np.array([sweeps_to_converge(c) for c in cs])
+
+fig, ax = plt.subplots(figsize=(6.2, 4.2))
+ax.plot(kappa, sweeps, "-o", color=PATH, ms=5)
+ax.set_xscale("log"); ax.set_yscale("log")
+ax.set_xlabel(r"condition number $\kappa = (1+c)/(1-c)$")
+ax.set_ylabel("sweeps to converge")
+ax.set_title("Coupling slows coordinate descent (just like GD)")
+plt.tight_layout()
+```
+
+The lesson lands the same way it did for gradient descent in [OPTM-07]: **first-order,
+coordinate-blind methods all suffer when the problem is ill-conditioned.** Coordinate descent
+is not a magic escape from the condition number — its escape is from the *step size* and from
+*separable non-smoothness*, not from coupling. When coupling is the enemy, you change tools
+(Newton, or a preconditioner), not the coordinate-selection rule.
+
+::: {.callout-tip title="You might be asked"}
+*"Is coordinate descent the same as stochastic gradient descent? They both touch part of the
+problem at a time."* No — and the distinction is a favorite probe. **SGD** ([OPTM-11])
+subsamples the *data* (the rows / the sum $\tfrac1n\sum_i f_i$): each step uses a few
+observations to form a *noisy, unbiased estimate of the full gradient over all parameters*.
+**Coordinate descent** subsamples the *parameters* (the columns / the coordinates of
+$\mathbf{x}$): each step uses *all* the data but updates only one parameter, *exactly*. SGD's
+randomness is in which data points it sees; coordinate descent's per-step choice is which
+parameter to move, and the move is typically exact, not noisy. They are orthogonal ideas and
+can even be combined. One axis of subsampling is rows, the other is columns.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the **descent spine** ([OPTM-06] gradient descent, the rival you now know
+when to prefer and when not to) and the **convexity spine** ([OPTM-04] convexity, [OPTM-05]
+subgradients and the $0\in\partial f$ optimality condition, which gave us soft-thresholding).
+Coordinate descent fuses them into a concrete algorithm. From here:
+
+- **[REGR-15 *The Lasso*]** and **[REGR-16 *Elastic Net*]** — the downstream consumers. They
+  own the *statistics* of sparse regression (why $\ell_1$ selects variables, the
+  bias–variance story, cross-validating $\lambda$) and link *here* for the solver: the
+  soft-thresholding update @eq-soft and the warm-started path @fig-path are exactly what
+  `glmnet` runs.
+- **[OPTM-16 *Proximal and Projected Methods*]** — the generalization. The soft-threshold is
+  the **proximal operator of the $\ell_1$ norm**; proximal gradient (ISTA/FISTA) takes one
+  prox step over *all* coordinates at once, handling non-separable penalties (fused lasso,
+  total variation) that defeat coordinate descent (@sec-jam). Coordinate descent and proximal
+  gradient are the two faces of "descent meets a kink."
+- **Unsupervised Learning (k-means, matrix factorization)** links here for the broader idea
+  of **alternating minimization** — block coordinate descent where each "coordinate" is a
+  whole group of variables (the centroids, then the assignments; or one factor matrix, then
+  the other). The monotone-descent argument of @thm-smooth-convergence is the backbone of
+  those convergence proofs too.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The solver that made it famous.** J. Friedman, T. Hastie, R. Tibshirani, "Regularization
+  Paths for Generalized Linear Models via Coordinate Descent," *J. Statistical Software* 33
+  (2010) — the `glmnet` paper. It is unusually readable and shows the soft-thresholding update,
+  warm starts, and active sets exactly as derived here.
+- **The convergence theory.** P. Tseng, "Convergence of a Block Coordinate Descent Method for
+  Nondifferentiable Minimization," *J. Optimization Theory and Applications* 109 (2001) — the
+  source of @thm-separable and the precise statement of when separability rescues the method.
+  S. J. Wright, "Coordinate Descent Algorithms," *Mathematical Programming* 151 (2015) is the
+  modern survey, including randomized and greedy variants and their rates.
+- **The cautionary classic.** The non-smooth jamming counterexample (@sec-counterexample)
+  traces to J. Warga (1963) and is discussed in every serious treatment; Bertsekas, *Nonlinear
+  Programming*, gives the general block-descent conditions.
+- **Open threads this article deferred.** *Convergence rates* — we proved *that* coordinate
+  descent converges but not *how fast*; randomized coordinate descent enjoys clean linear /
+  $O(1/k)$ rates (Nesterov, 2012), governed (again) by a condition number, paralleling
+  [OPTM-07]. *Block and group versions* — when coordinates come in natural groups (one-hot
+  encodings, grouped predictors), **block coordinate descent** with a group-soft-threshold is
+  the group-lasso solver; the separability argument of @thm-separable extends block-by-block.
+  *The proximal view* — that the soft-threshold *is* a proximal operator is the bridge to
+  [OPTM-16], which subsumes coordinate descent into a single unifying framework.

@@ -1,0 +1,1059 @@
+---
+title: "Momentum and Accelerated Gradient Descent"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE  = "#2b3a67"    # the objective / a plain-GD path
+STEP   = "#c1121f"    # momentum / acceleration / the interesting path
+ACCENT = "#0a7d4d"    # the optimum / safe choices / look-ahead
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the third article of the **descent spine** of
+> the Optimization track, and it is the one that makes gradient descent *fast* without ever
+> touching a second derivative. It assumes [OPTM-06 *Gradient Descent*] for the update rule
+> $\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\nabla f(\mathbf{x}_k)$ and the negative-gradient-as-
+> steepest-descent picture, and it leans hard on [OPTM-07 *Step Size and Convergence*] for
+> the three facts it is built to repair: **$L$-smoothness** and the **descent lemma**; the
+> **condition number** $\kappa=L/\mu$ (ratio of steepest to shallowest curvature); and the
+> diagnosis that plain gradient descent **zig-zags** down an ill-conditioned valley, taking
+> $\sim\kappa$ iterations to converge and only $O(1/k)$ on convex-but-not-strongly-convex
+> problems. From the *Geometry of Data / Applied Linear Algebra* track it borrows
+> **eigenvalues** of a symmetric matrix and **diagonalization of a quadratic form** — used,
+> not re-derived.
+>
+> Its single job: show how adding **memory of past steps** — a velocity term — converts the
+> $\kappa$ dependence into $\sqrt\kappa$ and the convex rate from $O(1/k)$ to the optimal
+> $O(1/k^2)$. It sets up [OPTM-12 *Adaptive Optimizers*] (Adam = momentum + per-coordinate
+> scaling) and is the acceleration that [OPTM-16 *Proximal Methods*] reuses as FISTA.
+
+## Abstract {.unnumbered}
+
+[OPTM-07] left gradient descent with a diagnosis but no cure: on an ill-conditioned
+problem it zig-zags across a narrow valley, its progress throttled by the condition number
+$\kappa=L/\mu$, needing $\sim\kappa$ iterations to converge and a mere $O(1/k)$ on convex
+problems. This article supplies the cure, and it is almost free. The fix is **momentum**:
+remember the direction you were already moving and keep going that way, blending the old
+velocity with the new gradient. The rolling-ball intuition is exact — a heavy ball builds
+speed along the consistent gentle direction (the valley floor) while its inertia
+**cancels** the back-and-forth oscillation across the steep walls. We derive **classical
+(heavy-ball) momentum**, analyze it exactly on a quadratic by diagonalizing into
+independent 1-D recurrences, and show the optimally tuned method converges at rate
+$1-2/\sqrt{\kappa}$ instead of $1-2/\kappa$ — a *square-root* improvement that turns
+$10{,}000$ iterations into $100$. We then derive **Nesterov's accelerated gradient**, whose
+single change — evaluate the gradient at a **look-ahead** point, one step into the future
+along the current velocity — earns the provably optimal $O(1/k^2)$ rate for convex smooth
+problems, and we make the look-ahead's "peek before you leap" correction precise. We close
+with the honest boundary: momentum **overshoots** and **oscillates** when mistuned, it is
+*not* a monotone descent method, and on a stochastic or non-convex objective the same
+inertia that accelerates can amplify noise — which is exactly why the modern optimizers of
+[OPTM-12] pair it with damping and adaptivity.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Plain gradient descent is **memoryless**: every step looks only at the current gradient, so
+in a stretched valley it keeps re-correcting the same oscillation across the steep walls and
+crawls along the gentle floor. **Momentum gives it memory.** Maintain a running
+**velocity** $\mathbf{v}_k$ that accumulates past gradients, and step along the velocity:
+$$
+\mathbf{v}_{k+1}=\beta\,\mathbf{v}_k - \eta\,\nabla f(\mathbf{x}_k),
+\qquad
+\mathbf{x}_{k+1}=\mathbf{x}_k+\mathbf{v}_{k+1}.
+$$
+The momentum coefficient $\beta\in[0,1)$ is how much of the old velocity survives. Gradients
+that *agree* step after step (the valley floor) add up and the ball **accelerates**;
+gradients that *flip sign* step after step (the zig-zag across the walls) **cancel**. The
+payoff is a square-root: tuned optimally, momentum converges at rate $1-2/\sqrt{\kappa}$
+versus plain GD's $1-2/\kappa$ — for $\kappa=10^4$, a hundredfold fewer iterations.
+**Nesterov's** refinement evaluates the gradient one step *ahead* along the velocity ("peek
+before you leap"), which corrects the overshoot momentum would otherwise commit and earns
+the provably optimal $O(1/k^2)$ convex rate. The cost of all of this is one extra stored
+vector and zero extra gradient or Hessian evaluations.
+:::
+
+Everything below orbits that box. The logical spine is short: *memorylessness causes the
+zig-zag* $\Rightarrow$ *a velocity term remembers the consistent direction and cancels the
+oscillating one* $\Rightarrow$ *on a quadratic this is two decoupled 1-D recurrences we can
+solve exactly* $\Rightarrow$ *the optimal tuning gives the $\sqrt\kappa$ rate* $\Rightarrow$
+*Nesterov's look-ahead fixes momentum's overshoot and reaches the optimal $O(1/k^2)$.* Hold
+that skeleton; every derivation is a link in it.
+
+# Why we are here: a perfect step in the wrong-shaped bowl {#sec-why}
+
+Keep one question in view for the whole article: **gradient descent already knows the
+downhill direction at every point — so why is it slow, and how can remembering where it has
+been make it fast?** Every recurrence below answers a piece of that.
+
+## What OPTM-07 left as a wound {#sec-wound}
+
+[OPTM-07] proved gradient descent converges, and it diagnosed *exactly* why it can be
+agonizingly slow. The culprit was the **condition number** $\kappa=L/\mu$, the ratio of the
+largest curvature $L$ to the smallest curvature $\mu$ of the bowl. The linear-convergence
+factor was $\rho=1-\mu/L=1-1/\kappa$, so the number of iterations to a fixed accuracy scaled
+like $\kappa$. And the geometric reason was vivid: the negative gradient points
+**perpendicular to the contour lines**, not toward the minimum. In a round bowl the
+perpendicular *is* toward the center and descent walks straight in; in a stretched bowl the
+gradient is dominated by the steep walls and barely registers the gentle floor, so each step
+shoots across the valley — *over*correcting the steep direction — and makes almost no
+progress along the floor, the one direction that actually reaches the minimum. The result
+was the characteristic **zig-zag**, with the step size $\eta\le 1/L$ pinned small by the
+steep walls while the journey length is set by the gentle floor.
+
+That is a structural wound, not a tuning mistake. No constant step size repairs it: a step
+large enough to make real progress along the gentle floor is large enough to diverge up the
+steep walls, and a step safe on the steep walls is glacial on the floor. The diagnosis from
+[OPTM-07] is that *a single scalar step applied to a vector gradient cannot serve two
+directions with wildly different curvatures at once.* @fig-the-wound reproduces the wound so
+we know precisely what we are trying to heal.
+
+```{python}
+#| label: fig-the-wound
+#| fig-cap: "The wound momentum heals. Plain gradient descent on an ill-conditioned quadratic ($\\kappa=25$), run with the step-size-optimal constant $\\eta$. The negative gradient points perpendicular to the elliptical contours, so the path slams back and forth across the narrow valley (the steep direction) while inching along its floor (the gentle direction). Sixty steps and it is still far from the minimum. The information loss is total between steps: each step has *forgotten* that the last one already over-corrected the same way."
+def gd_quad_diag(curv, x0, eta, n):
+    """Plain GD on f(x)=sum_i 0.5*curv_i*x_i^2; gradient = curv*x."""
+    curv = np.asarray(curv, float)
+    xs = [np.asarray(x0, float)]
+    for _ in range(n):
+        x = xs[-1]
+        xs.append(x - eta * (curv * x))
+    return np.array(xs)
+
+mu, kap = 1.0, 25.0
+L = mu * kap
+eta = 2.0 / (L + mu)          # the rate-optimal constant step for a quadratic
+path = gd_quad_diag([L, mu], [-0.9, 2.4], eta, 60)
+
+gx = np.linspace(-1.1, 1.1, 220); gy = np.linspace(-2.7, 2.7, 220)
+GX, GY = np.meshgrid(gx, gy)
+Z = 0.5 * L * GX**2 + 0.5 * mu * GY**2
+
+fig, ax = plt.subplots(figsize=(6.6, 4.4))
+ax.contour(GX, GY, Z, levels=20, colors=GREY, linewidths=0.6, alpha=0.7)
+ax.plot(path[:, 0], path[:, 1], "-o", color=CURVE, ms=3.0, lw=1.2,
+        label="plain GD path")
+ax.scatter([0], [0], color=ACCENT, s=80, zorder=5, edgecolor="white",
+           label="minimum")
+ax.set_xlabel("$x_1$ (steep direction)")
+ax.set_ylabel("$x_2$ (gentle direction)")
+ax.set_title(r"Plain gradient descent zig-zags, $\kappa=25$")
+ax.set_aspect("equal")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"If the problem is just ill-conditioning, why not fix the conditioning instead of patching
+the optimizer?"* You can, and sometimes should — that is **preconditioning** (rescale the
+variables so the bowl is round) and its limit is **Newton's method** ([OPTM-09]), which
+multiplies the gradient by the inverse Hessian to make the problem $\kappa$-independent.
+But that costs curvature information: forming and inverting a $p\times p$ Hessian is
+$O(p^3)$ per step, impossible for the millions of parameters in a modern model. Momentum is
+the answer when you want *most* of the benefit of fixing the geometry but can only afford
+**first-order** information — one gradient per step, one extra stored vector. The
+interviewer is checking whether you see momentum as living on the spectrum between
+do-nothing GD and expensive second-order methods: it buys a $\sqrt\kappa$ improvement at
+essentially zero extra cost.
+:::
+
+## The shape of the answer {#sec-shape}
+
+The cure is a single idea: **stop throwing away the past.** A physical ball rolling down the
+inside of the valley does not re-decide its direction from scratch at every instant — it
+*carries momentum*. Along the gentle floor, where the downhill direction is consistent step
+after step, that momentum **accumulates** and the ball speeds up. Across the steep walls,
+where the ball is pushed left, then right, then left again, the successive pushes **cancel**
+and the oscillation dies down. @fig-roadmap previews the payoff: the same ill-conditioned
+bowl, plain GD versus momentum, side by side.
+
+```{python}
+#| label: fig-roadmap
+#| fig-cap: "The whole article on one slide. **Left:** plain gradient descent on the $\\kappa=25$ bowl zig-zags (reproduced from @fig-the-wound). **Right:** heavy-ball momentum on the *same* bowl, *same* start, with a tuned momentum coefficient. The oscillation across the steep walls is damped by inertia while speed builds along the gentle floor, so the path sweeps almost directly to the minimum in a fraction of the steps. Same gradients, same cost per step — the only difference is that momentum remembers."
+def heavy_ball_diag(curv, x0, eta, beta, n):
+    """Heavy-ball momentum on f(x)=sum_i 0.5*curv_i*x_i^2."""
+    curv = np.asarray(curv, float)
+    x = np.asarray(x0, float)
+    v = np.zeros_like(x)
+    xs = [x.copy()]
+    for _ in range(n):
+        g = curv * x
+        v = beta * v - eta * g
+        x = x + v
+        xs.append(x.copy())
+    return np.array(xs)
+
+mu, kap = 1.0, 25.0
+L = mu * kap
+# Plain GD (left) and tuned heavy ball (right), same bowl and start.
+eta_gd = 2.0 / (L + mu)
+path_gd = gd_quad_diag([L, mu], [-0.9, 2.4], eta_gd, 60)
+
+# Optimal heavy-ball tuning (derived in the article).
+beta_opt = ((np.sqrt(kap) - 1) / (np.sqrt(kap) + 1)) ** 2
+eta_hb = (2.0 / (np.sqrt(L) + np.sqrt(mu))) ** 2
+path_hb = heavy_ball_diag([L, mu], [-0.9, 2.4], eta_hb, beta_opt, 60)
+
+gx = np.linspace(-1.1, 1.1, 220); gy = np.linspace(-2.7, 2.7, 220)
+GX, GY = np.meshgrid(gx, gy)
+Z = 0.5 * L * GX**2 + 0.5 * mu * GY**2
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.4))
+for ax, path, title, col in [
+        (axL, path_gd, r"Plain GD: zig-zag", CURVE),
+        (axR, path_hb, r"Heavy-ball momentum: swept in", STEP)]:
+    ax.contour(GX, GY, Z, levels=20, colors=GREY, linewidths=0.6, alpha=0.7)
+    ax.plot(path[:, 0], path[:, 1], "-o", color=col, ms=3.0, lw=1.2)
+    ax.scatter([0], [0], color=ACCENT, s=70, zorder=5, edgecolor="white")
+    ax.set_title(title); ax.set_xlabel("$x_1$ (steep)")
+    ax.set_aspect("equal")
+axL.set_ylabel("$x_2$ (gentle)")
+plt.tight_layout()
+```
+
+# Intuition before symbols: the heavy ball {#sec-intuition}
+
+Before any algebra, the physics that names the method. Imagine the objective surface as a
+literal landscape and drop a **heavy ball** onto it. Two forces act. The **slope** pushes
+the ball downhill — this is the negative gradient, exactly what plain GD follows. But the
+ball also has **inertia**: it tends to keep moving in whatever direction it was already
+going. Plain gradient descent is the limit of a *massless* ball with so much friction that
+it instantly forgets its motion and re-aligns with the local slope every instant. Momentum
+restores the mass.
+
+Watch what mass does in the stretched valley. The ball enters moving across the valley,
+hits the far wall, and the slope there pushes it back — but by then it has built sideways
+inertia, so instead of slamming straight back across (the GD zig-zag) it is *deflected*, its
+crossing oscillation progressively damped. Meanwhile, every instant the slope has a small,
+**consistent** component pointing down the valley floor, and because the ball never forgets
+its motion, those small consistent pushes **accumulate into real speed** in that direction.
+The net effect is exactly what we want: kill the oscillation, build velocity along the only
+direction that reaches the bottom.
+
+The two coefficients in the Core box are the two physical knobs. The **friction**
+(equivalently $1-\beta$, how fast old velocity decays) controls how much the past survives:
+$\beta=0$ is plain GD (total friction, no memory); $\beta\to 1$ is a nearly frictionless,
+very heavy ball that remembers almost everything. The **step size** $\eta$ controls how hard
+the current slope pushes. @fig-friction shows the ball's path as we dial $\beta$ up from
+GD's zero toward the over-heavy regime where inertia makes it overshoot and ring.
+
+```{python}
+#| label: fig-friction
+#| fig-cap: "Dialing the mass. Heavy-ball momentum on the $\\kappa=25$ bowl for three momentum coefficients, all with the same step size. $\\beta=0$ (navy) is plain gradient descent — full friction, no memory, the familiar zig-zag. A moderate $\\beta=0.7$ (green) damps the oscillation and builds speed down the floor: the sweet spot. Too much, $\\beta=0.95$ (red), and the ball is so heavy it overshoots the minimum and *rings* — inertia is now a liability. Momentum is a tuned quantity, not a free lunch."
+mu, kap = 1.0, 25.0
+L = mu * kap
+eta = 1.0 / L
+starts = [-0.9, 2.4]
+fig, ax = plt.subplots(figsize=(6.8, 4.6))
+gx = np.linspace(-1.1, 1.1, 220); gy = np.linspace(-2.7, 2.7, 220)
+GX, GY = np.meshgrid(gx, gy)
+Z = 0.5 * L * GX**2 + 0.5 * mu * GY**2
+ax.contour(GX, GY, Z, levels=20, colors=GREY, linewidths=0.5, alpha=0.6)
+for beta, col, lab in [(0.0, CURVE, r"$\beta=0$ (plain GD)"),
+                       (0.7, ACCENT, r"$\beta=0.7$ (damped, fast)"),
+                       (0.95, STEP, r"$\beta=0.95$ (over-heavy, rings)")]:
+    p = heavy_ball_diag([L, mu], starts, eta, beta, 80)
+    ax.plot(p[:, 0], p[:, 1], "-o", color=col, ms=2.4, lw=1.1, label=lab)
+ax.scatter([0], [0], color="black", s=60, zorder=6, edgecolor="white")
+ax.set_xlabel("$x_1$ (steep)"); ax.set_ylabel("$x_2$ (gentle)")
+ax.set_title("Momentum is a tuned knob, not a free lunch")
+ax.set_aspect("equal")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Formal development I: classical (heavy-ball) momentum {#sec-heavyball}
+
+## The update rule, stated and unpacked {#sec-hb-rule}
+
+::: {#def-heavyball}
+**Definition (heavy-ball / classical momentum).** Given an objective $f$, a step size
+$\eta>0$, and a momentum coefficient $\beta\in[0,1)$, classical momentum maintains a
+**velocity** vector $\mathbf{v}_k$ and iterates
+$$
+\mathbf{v}_{k+1} = \beta\,\mathbf{v}_k - \eta\,\nabla f(\mathbf{x}_k),
+\qquad
+\mathbf{x}_{k+1} = \mathbf{x}_k + \mathbf{v}_{k+1},
+$$ {#eq-heavyball}
+initialized with $\mathbf{v}_0=\mathbf{0}$.
+:::
+
+Read @eq-heavyball one symbol at a time, because the whole article turns on it. The
+velocity update has two pieces. The term $-\eta\nabla f(\mathbf{x}_k)$ is the ordinary
+gradient-descent step — the new push from the current slope. The term $\beta\mathbf{v}_k$
+is the **memory**: a fraction $\beta$ of last step's velocity carried forward. The position
+then moves *along the velocity*, $\mathbf{x}_{k+1}=\mathbf{x}_k+\mathbf{v}_{k+1}$, rather
+than along the raw gradient. Set $\beta=0$ and the velocity is just $-\eta\nabla f$ and the
+position update collapses to $\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\nabla f(\mathbf{x}_k)$ —
+exactly plain gradient descent ([OPTM-06]). So momentum strictly generalizes GD; $\beta$ is
+the dial from "no memory" to "lots of memory."
+
+To see that the velocity really is an **accumulation of past gradients**, unroll the
+recurrence. With $\mathbf{v}_0=\mathbf{0}$,
+$$
+\mathbf{v}_{k+1}
+= -\eta\nabla f(\mathbf{x}_k) + \beta\mathbf{v}_k
+= -\eta\nabla f(\mathbf{x}_k) + \beta\bigl(-\eta\nabla f(\mathbf{x}_{k-1}) + \beta\mathbf{v}_{k-1}\bigr)
+= \cdots
+$$
+Continuing all the way down to $\mathbf{v}_0$, each older gradient picks up one more factor
+of $\beta$:
+$$
+\mathbf{v}_{k+1} = -\eta\sum_{j=0}^{k}\beta^{\,k-j}\,\nabla f(\mathbf{x}_j).
+$$ {#eq-velocity-sum}
+
+So the velocity is an **exponentially weighted sum of all past gradients**: the most recent
+gradient enters with weight $1$, the one before with weight $\beta$, the one before that
+$\beta^2$, and so on — a fading memory with timescale set by $\beta$. This is the precise
+meaning of "remember where you have been." Now read off the two behaviors the intuition
+promised. If the gradients $\nabla f(\mathbf{x}_j)$ all **point the same way** (the valley
+floor), the sum @eq-velocity-sum adds coherently and the velocity grows toward
+$-\eta\nabla f\cdot\frac{1}{1-\beta}$ — a *speed-up* by the factor $\frac{1}{1-\beta}$ (a
+geometric series we will sum exactly in a moment). If they **alternate sign** step to step
+(the zig-zag across the walls), consecutive terms in the sum partly cancel, shrinking the
+velocity in that direction — the *damping*.
+
+::: {.callout-tip title="You might be asked"}
+*"There are two common ways to write the momentum update — are they the same?"* Yes, and you
+should be able to convert between them. The form @eq-heavyball folds $\eta$ into the
+velocity. A second popular form (used in many deep-learning frameworks) keeps them separate:
+$\mathbf{v}_{k+1}=\beta\mathbf{v}_k+\nabla f(\mathbf{x}_k)$ then
+$\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\mathbf{v}_{k+1}$. Substituting one into the other shows
+they generate the *same iterates* up to a relabeling of what the velocity scales by; only
+the bookkeeping of where $\eta$ multiplies differs. There is also a "$1-\beta$" convention,
+$\mathbf{v}_{k+1}=\beta\mathbf{v}_k+(1-\beta)\nabla f$, which makes $\mathbf{v}$ a
+*weighted average* of gradients (weights summing to $1$) rather than a sum — that is the
+exponential-moving-average view that Adam ([OPTM-12]) uses. The interviewer wants to see you
+not get tripped by the convention; the physics is identical.
+:::
+
+## The key move: a quadratic decouples into independent 1-D problems {#sec-decouple}
+
+To analyze momentum *exactly* — not just bound it — we study it on the **quadratic**
+objective, the same test bed [OPTM-07] used. This is honest, not a dodge: every smooth
+objective looks quadratic near its minimum (its second-order Taylor expansion), so the
+quadratic analysis is exactly the local convergence behavior, and the constants $L,\mu,\kappa$
+we get are the ones that govern the real problem near the optimum. Take
+$$
+f(\mathbf{x}) = \tfrac12\,\mathbf{x}^\top A\,\mathbf{x},
+\qquad
+\nabla f(\mathbf{x}) = A\mathbf{x},
+$$
+with $A$ symmetric positive-definite, so the minimizer is $\mathbf{x}^\star=\mathbf{0}$ and
+the curvatures of the bowl are the eigenvalues of $A$, lying in $[\mu,L]$ with
+$\kappa=L/\mu$ (these eigenvalue facts are owned by the Geometry track; we use them).
+
+Here is the move that makes everything tractable. Because $A$ is symmetric, it can be
+**diagonalized**: there is an orthonormal basis of eigenvectors $\mathbf{q}_1,\dots,\mathbf{q}_n$
+with $A\mathbf{q}_i=\lambda_i\mathbf{q}_i$, and *any* vector decomposes along them. Write the
+iterate and velocity in that basis as coordinates $x_k^{(i)}=\mathbf{q}_i^\top\mathbf{x}_k$
+and $v_k^{(i)}=\mathbf{q}_i^\top\mathbf{v}_k$. Dotting the momentum update @eq-heavyball with
+$\mathbf{q}_i$ and using $\mathbf{q}_i^\top A\mathbf{x}_k=\lambda_i\mathbf{q}_i^\top\mathbf{x}_k
+=\lambda_i x_k^{(i)}$ (because $\mathbf{q}_i$ is an eigenvector and $A$ is symmetric),
+$$
+v_{k+1}^{(i)} = \beta\,v_k^{(i)} - \eta\,\lambda_i\,x_k^{(i)},
+\qquad
+x_{k+1}^{(i)} = x_k^{(i)} + v_{k+1}^{(i)}.
+$$ {#eq-decoupled}
+
+**Every coordinate evolves on its own**, with no coupling between different $i$. The
+$n$-dimensional momentum dynamics is exactly $n$ independent copies of the *same* scalar
+recurrence, one per eigen-direction, differing only in which curvature $\lambda_i$ appears.
+So we only ever have to understand one scalar problem: momentum on a 1-D quadratic
+$\tfrac12\lambda x^2$. The fast eigen-direction (large $\lambda$, the steep walls) and the
+slow one (small $\lambda$, the gentle floor) are just two instances of it, and the overall
+convergence speed is set by the *worst* of them. This decoupling is why the quadratic is
+solvable in closed form where the general case is not.
+
+## Solving the scalar recurrence exactly {#sec-scalar}
+
+Fix one eigen-direction and drop the superscript: with curvature $\lambda$, the pair
+@eq-decoupled is
+$$
+v_{k+1} = \beta v_k - \eta\lambda x_k,
+\qquad
+x_{k+1} = x_k + v_{k+1}.
+$$
+Substitute the first into the second to eliminate the velocity:
+$x_{k+1}=x_k+\beta v_k-\eta\lambda x_k$. We still have a $v_k$; get rid of it using the same
+equation shifted back one step, $v_k = x_k - x_{k-1}$ (from $x_k=x_{k-1}+v_k$). Substituting,
+$$
+x_{k+1} = x_k + \beta\,(x_k - x_{k-1}) - \eta\lambda x_k,
+$$
+which we tidy into a **second-order linear recurrence** in the positions alone:
+$$
+x_{k+1} = (1 + \beta - \eta\lambda)\,x_k \;-\; \beta\,x_{k-1}.
+$$ {#eq-recurrence}
+
+The appearance of $x_{k-1}$ is the memory made visible: where plain GD's update used only
+$x_k$, momentum's uses the *previous two* positions — it knows which way it was already
+heading. Linear recurrences of this form are solved by trying $x_k=r^k$ for an unknown ratio
+$r$. Substituting and dividing by $r^{k-1}$ gives the **characteristic equation**
+$$
+r^2 - (1+\beta-\eta\lambda)\,r + \beta = 0.
+$$ {#eq-characteristic}
+
+The two roots $r_1,r_2$ control everything: the general solution is
+$x_k = c_1 r_1^k + c_2 r_2^k$ for constants fixed by the start, so $x_k\to 0$ (convergence to
+the minimum) **if and only if both roots have modulus $<1$**, and the *speed* of convergence
+is governed by the **larger** modulus $\max(|r_1|,|r_2|)$ — that is the per-step contraction
+factor, the momentum analogue of plain GD's $\rho$. So the entire convergence question
+reduces to: *how large is the bigger root of @eq-characteristic, and how do we choose
+$\eta,\beta$ to make it small for every curvature $\lambda\in[\mu,L]$ at once?*
+
+::: {.callout-tip title="You might be asked"}
+*"Why does momentum need the previous two iterates while plain GD needs only one?"* Because
+momentum is a **second-order recurrence** — @eq-recurrence — and that is the whole point.
+Storing one extra position (equivalently, the velocity) is what lets the method estimate not
+just *where* it is on the slope but *which way and how fast* it was already moving, i.e. a
+crude first derivative of the trajectory. That is also why people call momentum a "first-
+order method with memory": it uses only gradients (no Hessian), but it remembers a window of
+them. The extra storage is one vector — negligible.
+:::
+
+## The complex-root regime: where momentum earns its keep {#sec-complex}
+
+The roots of @eq-characteristic are
+$$
+r = \frac{(1+\beta-\eta\lambda)\pm\sqrt{(1+\beta-\eta\lambda)^2 - 4\beta}}{2}.
+$$ {#eq-roots}
+
+The discriminant $(1+\beta-\eta\lambda)^2-4\beta$ decides their character. When it is
+**negative**, the roots are a **complex-conjugate pair** — and this is precisely the regime
+where momentum behaves like a damped oscillator (the ringing ball of @fig-friction), and,
+crucially, the regime that gives the best worst-case rate. For complex-conjugate roots
+$r=a\pm bi$ of the quadratic $r^2-(\text{sum})r+(\text{product})=0$, the product of the roots
+equals the constant term, and the product of a conjugate pair is its squared modulus:
+$$
+r_1 r_2 = (a+bi)(a-bi) = a^2+b^2 = |r|^2 = \beta.
+$$
+This is a clean, remarkable fact: **in the complex regime both roots have modulus exactly
+$\sqrt{\beta}$, independent of the curvature $\lambda$.** Every eigen-direction whose
+$\lambda$ lands in the complex regime contracts at the *same* rate $\sqrt{\beta}$ — momentum
+has equalized the directions that plain GD could not balance. The contraction no longer
+depends on the curvature spread; it depends only on the momentum coefficient we chose.
+
+For this to hold across the *whole* spectrum $[\mu,L]$ — so that the steep and gentle
+directions contract equally and the zig-zag is gone — we need the discriminant negative for
+every $\lambda\in[\mu,L]$:
+$$
+(1+\beta-\eta\lambda)^2 < 4\beta
+\quad\Longleftrightarrow\quad
+1+\beta-2\sqrt\beta < \eta\lambda < 1+\beta+2\sqrt\beta,
+$$
+where we took square roots of both sides (legitimate since both bounds are non-negative for
+$\beta\in[0,1)$) and recognized $1+\beta\pm2\sqrt\beta=(1\pm\sqrt\beta)^2$:
+$$
+(1-\sqrt\beta)^2 < \eta\lambda < (1+\sqrt\beta)^2
+\qquad\text{for all }\lambda\in[\mu,L].
+$$ {#eq-complex-band}
+
+The tightest constraints are at the spectrum's ends: the lower bound must hold at the
+*smallest* $\lambda=\mu$ and the upper at the *largest* $\lambda=L$.
+
+## The optimal tuning and the $\sqrt\kappa$ payoff {#sec-optimal}
+
+We now choose $\eta,\beta$ to minimize the contraction factor $\sqrt\beta$ subject to keeping
+*every* direction in the complex regime @eq-complex-band. Smaller $\beta$ is faster, so we
+want $\beta$ as small as possible — but shrinking $\beta$ narrows the admissible band
+$\bigl[(1-\sqrt\beta)^2,(1+\sqrt\beta)^2\bigr]$, and the band must still contain the whole
+interval $[\eta\mu,\eta L]$. The band is *exactly* wide enough when its endpoints coincide
+with the spectrum's endpoints:
+$$
+\eta\mu = (1-\sqrt\beta)^2,
+\qquad
+\eta L = (1+\sqrt\beta)^2.
+$$ {#eq-edge-conditions}
+
+Two equations, two unknowns $(\eta,\beta)$ — solve them. Divide the second by the first to
+eliminate $\eta$:
+$$
+\frac{L}{\mu} = \frac{(1+\sqrt\beta)^2}{(1-\sqrt\beta)^2},
+\qquad\text{i.e.}\qquad
+\sqrt\kappa = \frac{1+\sqrt\beta}{1-\sqrt\beta},
+$$
+taking the positive square root of both sides ($\kappa=L/\mu$). Solve for $\sqrt\beta$:
+cross-multiply, $\sqrt\kappa\,(1-\sqrt\beta)=1+\sqrt\beta$, gather the $\sqrt\beta$ terms,
+$\sqrt\kappa-1=\sqrt\beta(\sqrt\kappa+1)$, hence
+$$
+\boxed{\;\sqrt\beta = \frac{\sqrt\kappa-1}{\sqrt\kappa+1},
+\qquad
+\beta = \left(\frac{\sqrt\kappa-1}{\sqrt\kappa+1}\right)^{2}.\;}
+$$ {#eq-beta-opt}
+
+And $\eta$ follows from either edge condition; adding the two equations @eq-edge-conditions
+after writing them as $\eta\mu=(1-\sqrt\beta)^2$ and $\eta L=(1+\sqrt\beta)^2$ and solving,
+the standard convenient form is $\eta=\bigl(\tfrac{2}{\sqrt L+\sqrt\mu}\bigr)^2$, which one
+checks satisfies both. The *rate* is the contraction $\sqrt\beta$ itself:
+$$
+\boxed{\;\text{rate} = \sqrt\beta = \frac{\sqrt\kappa-1}{\sqrt\kappa+1}
+= 1 - \frac{2}{\sqrt\kappa+1} \approx 1 - \frac{2}{\sqrt\kappa}.\;}
+$$ {#eq-hb-rate}
+
+Now stand back and compare to plain gradient descent. [OPTM-07] gave GD the contraction
+$\rho_{\mathrm{GD}}=1-\frac{2}{\kappa+1}\approx 1-\frac{2}{\kappa}$ (the $\eta=2/(L+\mu)$
+optimal-step rate for a quadratic). Momentum replaced $\kappa$ by $\sqrt\kappa$. That is the
+headline:
+
+::: {.callout-important title="The square-root payoff, stated"}
+On a quadratic with condition number $\kappa$, optimally tuned **plain** gradient descent
+needs $\sim\kappa$ iterations to reach a fixed accuracy, while optimally tuned **momentum**
+needs only $\sim\sqrt{\kappa}$. For a well-conditioned problem ($\kappa\approx 1$) the
+difference is nothing; for an ill-conditioned one it is enormous. At $\kappa=10^{4}$, plain
+GD needs on the order of $10{,}000$ iterations and momentum on the order of $100$ — a
+**hundredfold** speed-up, bought with one extra stored vector and *zero* extra gradient or
+Hessian evaluations.
+:::
+
+@fig-rate-compare confirms the $\sqrt\kappa$ law numerically: it runs both methods at their
+optimal tunings across a sweep of condition numbers and shows the iteration counts scaling
+like $\kappa$ for GD and $\sqrt\kappa$ for momentum.
+
+```{python}
+#| label: fig-rate-compare
+#| fig-cap: "The square-root law, measured. For each condition number $\\kappa$ we build the 2-D quadratic with curvatures $\\{1,\\kappa\\}$, run plain GD at its optimal step and heavy-ball momentum at the optimal $(\\eta,\\beta)$ from @eq-beta-opt, and count iterations to reach suboptimality $10^{-8}$. **Left:** iterations vs. $\\kappa$ on log-log axes — GD's curve has slope $\\approx 1$ (iterations $\\propto\\kappa$), momentum's slope $\\approx 1/2$ (iterations $\\propto\\sqrt\\kappa$). **Right:** the predicted per-step contraction factors $1-2/\\kappa$ (GD) and $1-2/\\sqrt\\kappa$ (momentum) — momentum stays far below 1 even when GD's factor is pinned against it."
+def iters_to_tol(curv, eta, beta, tol=1e-8, max_it=200000):
+    curv = np.asarray(curv, float)
+    x = np.array([1.0, 1.0]); v = np.zeros(2)
+    f0 = 0.5 * (curv * x * x).sum()
+    for k in range(1, max_it + 1):
+        g = curv * x
+        v = beta * v - eta * g
+        x = x + v
+        if 0.5 * (curv * x * x).sum() <= tol * f0:
+            return k
+    return max_it
+
+kappas = np.array([3, 10, 30, 100, 300, 1000, 3000, 10000], float)
+it_gd, it_hb = [], []
+for kap in kappas:
+    mu_, L_ = 1.0, kap
+    # plain GD = momentum with beta=0, optimal quadratic step 2/(L+mu)
+    it_gd.append(iters_to_tol([L_, mu_], 2.0 / (L_ + mu_), 0.0))
+    beta = ((np.sqrt(kap) - 1) / (np.sqrt(kap) + 1)) ** 2
+    eta = (2.0 / (np.sqrt(L_) + np.sqrt(mu_))) ** 2
+    it_hb.append(iters_to_tol([L_, mu_], eta, beta))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
+axL.loglog(kappas, it_gd, "-o", color=CURVE, label="plain GD")
+axL.loglog(kappas, it_hb, "-o", color=STEP, label="heavy-ball momentum")
+axL.loglog(kappas, kappas * it_gd[0] / kappas[0], ":", color=CURVE, lw=1.2,
+           label=r"$\propto\kappa$")
+axL.loglog(kappas, np.sqrt(kappas) * it_hb[0] / np.sqrt(kappas[0]), ":",
+           color=STEP, lw=1.2, label=r"$\propto\sqrt{\kappa}$")
+axL.set_xlabel(r"condition number $\kappa$")
+axL.set_ylabel("iterations to $10^{-8}$")
+axL.set_title("Iterations: $\\kappa$ vs. $\\sqrt{\\kappa}$")
+axL.legend(fontsize=8, framealpha=0.9)
+
+kg = np.linspace(2, 1000, 400)
+axR.plot(kg, 1 - 2 / (kg + 1), color=CURVE, label=r"GD: $1-2/(\kappa+1)$")
+axR.plot(kg, 1 - 2 / (np.sqrt(kg) + 1), color=STEP,
+         label=r"momentum: $1-2/(\sqrt{\kappa}+1)$")
+axR.set_xlabel(r"condition number $\kappa$")
+axR.set_ylabel("per-step contraction factor")
+axR.set_title("Contraction factor vs. $\\kappa$")
+axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print("kappa :", kappas.astype(int))
+print("GD    :", np.array(it_gd))
+print("HB    :", np.array(it_hb))
+```
+
+The printout and the left panel make the law concrete: GD's iteration count grows in lockstep
+with $\kappa$ while momentum's grows with $\sqrt\kappa$, exactly as @eq-hb-rate predicts. The
+right panel shows *why* in one glance — as the problem stiffens, GD's contraction factor is
+crushed toward $1$ (no progress per step) while momentum's stays comfortably below it.
+
+# Formal development II: Nesterov's accelerated gradient {#sec-nesterov}
+
+Heavy-ball momentum is superb on quadratics — but it has a flaw that bites on general
+functions and, more subtly, it does not by itself achieve the *provably optimal* convergence
+rate for the broad class of convex smooth problems. The repair is a small, deep change due to
+Yurii Nesterov: **look before you leap.**
+
+## The look-ahead idea {#sec-lookahead}
+
+Recall how heavy-ball decides its step. It is sitting at $\mathbf{x}_k$, it has a velocity
+$\mathbf{v}_k$ it is about to ride, and it computes the gradient **at the current point**
+$\mathbf{x}_k$ — *before* applying the velocity. But the velocity is going to carry it a long
+way: with large $\beta$ the term $\beta\mathbf{v}_k$ can dwarf the gradient term. So
+heavy-ball is correcting based on the slope *where it is standing*, when it is about to be
+flung somewhere quite different. If that somewhere is past the minimum, heavy-ball does not
+find out until next step — it **overshoots**.
+
+Nesterov's fix is to evaluate the gradient not at $\mathbf{x}_k$ but at the **look-ahead
+point** — where the momentum is *about* to take you:
+$$
+\mathbf{y}_k = \mathbf{x}_k + \beta\,\mathbf{v}_k.
+$$
+You first slide along the velocity to $\mathbf{y}_k$, *then* measure the slope there, *then*
+apply the gradient correction. If the velocity is about to overshoot the minimum, the
+gradient at the look-ahead point already points *back*, and so it brakes the step before the
+overshoot happens — a built-in anticipatory correction. "Peek one step into the future and
+let what you see there veto the leap." @fig-lookahead draws the difference between the two
+gradient evaluation points on a single step.
+
+```{python}
+#| label: fig-lookahead
+#| fig-cap: "Heavy-ball versus Nesterov on a single step, in a 1-D valley near the minimum. Both start at $x_k$ (navy) with the same momentum-carried jump $\\beta v_k$ (grey arrow) toward the look-ahead point $y_k$ (green). **Heavy-ball** measures the gradient *at* $x_k$ (navy arrow) — where the slope still says 'keep going,' so it overshoots past the minimum. **Nesterov** measures the gradient at the look-ahead $y_k$ (red arrow) — which has already crossed the minimum and points *back*, braking the step. The look-ahead gradient is the anticipatory correction that prevents the overshoot."
+def f1(x): return 0.5 * x**2
+def g1(x): return x
+xk = -2.0
+beta = 0.9
+vk = 1.6                     # momentum about to carry us across the minimum at 0
+yk = xk + beta * vk          # look-ahead point (lands past 0)
+
+fig, ax = plt.subplots(figsize=(7.0, 4.0))
+xs = np.linspace(-2.6, 1.6, 300)
+ax.plot(xs, f1(xs), color=GREY, lw=1.6)
+ax.scatter([xk], [f1(xk)], color=CURVE, s=70, zorder=5)
+ax.annotate(r"$x_k$", (xk, f1(xk)), textcoords="offset points", xytext=(-22, 2))
+ax.scatter([yk], [f1(yk)], color=ACCENT, s=70, zorder=5)
+ax.annotate(r"$y_k=x_k+\beta v_k$", (yk, f1(yk)),
+            textcoords="offset points", xytext=(4, 8))
+ax.scatter([0], [0], color="black", s=55, zorder=6, edgecolor="white")
+ax.annotate("minimum", (0, 0), textcoords="offset points", xytext=(2, 14))
+# momentum jump (grey) along x-axis level
+ax.annotate("", xy=(yk, f1(xk)), xytext=(xk, f1(xk)),
+            arrowprops=dict(arrowstyle="->", color=GREY, lw=1.6))
+ax.annotate(r"$\beta v_k$", ((xk + yk) / 2, f1(xk)),
+            textcoords="offset points", xytext=(-6, 6), color=GREY)
+# gradient at x_k (heavy-ball): -f'(x_k) = -xk > 0, points right ("keep going")
+ax.annotate("", xy=(xk - 0.9 * g1(xk), f1(xk)), xytext=(xk, f1(xk)),
+            arrowprops=dict(arrowstyle="->", color=CURVE, lw=2.0))
+ax.annotate(r"$-\nabla f(x_k)$ (still 'go')", (xk, f1(xk)),
+            textcoords="offset points", xytext=(6, -20), color=CURVE, fontsize=9)
+# gradient at y_k (Nesterov): points back toward minimum (brake)
+ax.annotate("", xy=(yk - g1(yk) * 0.9, f1(yk)), xytext=(yk, f1(yk)),
+            arrowprops=dict(arrowstyle="->", color=STEP, lw=2.0))
+ax.annotate(r"$-\nabla f(y_k)$ (brake!)", (yk, f1(yk)),
+            textcoords="offset points", xytext=(-30, -22), color=STEP, fontsize=9)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("Look before you leap: where the gradient is measured")
+ax.set_ylim(-0.3, 3.4)
+plt.tight_layout()
+```
+
+## The update rule and its equivalent forms {#sec-nag-rule}
+
+::: {#def-nesterov}
+**Definition (Nesterov accelerated gradient, NAG).** With step size $\eta>0$ and momentum
+coefficient $\beta_k\in[0,1)$, iterate
+$$
+\mathbf{y}_k = \mathbf{x}_k + \beta_k(\mathbf{x}_k - \mathbf{x}_{k-1}),
+\qquad
+\mathbf{x}_{k+1} = \mathbf{y}_k - \eta\,\nabla f(\mathbf{y}_k),
+$$ {#eq-nesterov}
+starting from $\mathbf{x}_0=\mathbf{x}_{-1}$.
+:::
+
+Compare to heavy-ball line by line. The momentum term $\beta_k(\mathbf{x}_k-\mathbf{x}_{k-1})$
+is the velocity (recall $\mathbf{v}_k=\mathbf{x}_k-\mathbf{x}_{k-1}$ from @sec-scalar). The
+*only* structural difference from @eq-heavyball is the **argument of the gradient**:
+heavy-ball uses $\nabla f(\mathbf{x}_k)$, the gradient at the current point; Nesterov uses
+$\nabla f(\mathbf{y}_k)$, the gradient at the look-ahead point. That one substitution — same
+storage, same one gradient per step — is the whole of acceleration.
+
+A second feature is that the momentum coefficient $\beta_k$ is **not constant**: for the
+convex (non-strongly-convex) rate it follows a specific schedule that creeps toward $1$. The
+classical choice uses an auxiliary sequence $t_k$ with $t_0=1$,
+$$
+t_{k+1} = \frac{1+\sqrt{1+4t_k^2}}{2},
+\qquad
+\beta_k = \frac{t_k - 1}{t_{k+1}}.
+$$ {#eq-nag-schedule}
+
+This looks arbitrary; it is not. The schedule is engineered so that a particular weighted
+combination of past suboptimalities telescopes in the convergence proof, and $t_k$ grows
+like $k/2$, so $\beta_k\to 1$ as $1-3/k$ — the method becomes *heavier* as it homes in,
+which is what lets the accumulated velocity reach the $O(1/k^2)$ rate. (For a *strongly*
+convex objective one instead uses the constant
+$\beta=\frac{\sqrt\kappa-1}{\sqrt\kappa+1}$ — the very same optimal coefficient @eq-beta-opt
+we derived for heavy-ball — and gets the linear $1-1/\sqrt\kappa$ rate.)
+
+::: {.callout-tip title="You might be asked"}
+*"What is the actual difference between heavy-ball momentum and Nesterov momentum? People use
+the names interchangeably."* The difference is **where the gradient is evaluated**, and it is
+not cosmetic. Heavy-ball: gradient at the current iterate $\mathbf{x}_k$. Nesterov: gradient
+at the look-ahead $\mathbf{y}_k=\mathbf{x}_k+\beta\mathbf{v}_k$. On a quadratic both achieve
+the $\sqrt\kappa$ rate, so they look equivalent — but on *general* convex functions heavy-ball
+can fail to accelerate (and can even cycle without converging on some non-quadratic examples),
+while Nesterov provably attains the optimal $O(1/k^2)$ rate. The intuition for the gap is the
+overshoot: Nesterov's look-ahead gradient *anticipates and brakes*, heavy-ball's current
+gradient does not. In practice, "Nesterov momentum" in a deep-learning optimizer means
+exactly this look-ahead variant.
+:::
+
+## The optimal rate, and why it is optimal {#sec-optimal-rate}
+
+::: {#thm-nag-rate}
+**Theorem (Nesterov's accelerated rate).** Let $f$ be convex and $L$-smooth with a minimizer
+$\mathbf{x}^\star$. Nesterov accelerated gradient @eq-nesterov with $\eta=1/L$ and the
+schedule @eq-nag-schedule satisfies, after $k$ steps,
+$$
+f(\mathbf{x}_k) - f^\star \;\le\; \frac{2L\,\|\mathbf{x}_0 - \mathbf{x}^\star\|^2}{(k+1)^2}.
+$$ {#eq-nag-rate}
+:::
+
+This is $O(1/k^2)$, a clean improvement over plain GD's $O(1/k)$ convex rate from
+[OPTM-07]. The practical meaning: to reach accuracy $\varepsilon$, plain GD needs
+$\sim 1/\varepsilon$ iterations, Nesterov needs only $\sim 1/\sqrt\varepsilon$ — the square
+root again, now in the convex (not strongly-convex) regime. The full proof builds an
+*estimate-sequence* / Lyapunov potential
+$\Phi_k=t_{k-1}^2(f(\mathbf{x}_k)-f^\star)+\frac{L}{2}\|\mathbf{z}_k-\mathbf{x}^\star\|^2$ and
+shows $\Phi_{k+1}\le\Phi_k$ using the descent lemma and convexity, then unwinds it with
+$t_k\gtrsim k/2$; the bookkeeping is exactly what the strange schedule @eq-nag-schedule is
+tuned for. We flag it as a genuinely longer argument and point to [OPTM-16] and the Going
+Deeper references for the line-by-line version — but the *mechanism* is everything we
+derived above: the look-ahead gradient anticipates and the growing $\beta_k$ accumulates
+velocity, and those two together are what the potential function exploits.
+
+The word **optimal** is literal. Nesterov also proved a matching **lower bound**: for the
+class of convex $L$-smooth functions, *any* method that only ever queries gradients (a
+"first-order method") must, in the worst case, suffer suboptimality at least of order
+$L\|\mathbf{x}_0-\mathbf{x}^\star\|^2/k^2$ after $k$ gradient evaluations. So $O(1/k^2)$ is
+not merely better than $O(1/k)$ — it is the **best any first-order method can possibly do** on
+this class. You cannot beat it without using more than gradients (e.g. the Hessian — Newton,
+[OPTM-09]). That is why acceleration is a landmark: it closes the gap to the theoretical
+floor.
+
+::: {.callout-tip title="You might be asked"}
+*"Acceleration sounds like a free lunch — $O(1/k^2)$ instead of $O(1/k)$ at the same cost.
+What's the catch?"* Three honest catches. **(1) It is not a descent method.** The objective
+can *increase* on individual Nesterov steps — the $O(1/k^2)$ guarantee is on the iterate, not
+a monotone decrease, so a "loss went up this step" alarm is not a bug (a real surprise the
+first time you watch it). **(2) It is fragile to the wrong constants.** The rate assumes the
+right $\eta=1/L$ and schedule; mistune them and you can lose the acceleration or oscillate.
+**(3) It is fragile to noise.** The look-ahead and accumulated velocity that buy acceleration
+also accumulate gradient *errors*; with stochastic gradients ([OPTM-11]) the clean
+$O(1/k^2)$ degrades, which is part of why deep-learning practice uses *damped*, carefully
+scheduled momentum rather than textbook Nesterov. The interviewer wants to hear that you know
+acceleration is optimal *in theory for exact, smooth, convex problems* and where each of those
+three words can break.
+:::
+
+# Worked examples {#sec-examples}
+
+We run all three methods — plain GD, heavy-ball, Nesterov — on two honest problems, and one
+edge case where momentum is the *wrong* instinct.
+
+## Example 1 — ridge-regularized least squares: a quadratic where we know $\kappa$ exactly {#sec-ridge-example}
+
+The cleanest test bed, exactly as in [OPTM-07]: a quadratic objective whose curvature
+matrix we can compute, so $L,\mu,\kappa$ are known and the predicted rates are checkable.
+Minimize the ridge least-squares objective
+$$
+f(\boldsymbol\beta) = \tfrac12\|X\boldsymbol\beta-\mathbf{y}\|^2 + \tfrac{\rho}{2}\|\boldsymbol\beta\|^2,
+\qquad
+\nabla f(\boldsymbol\beta) = X^\top(X\boldsymbol\beta-\mathbf{y}) + \rho\,\boldsymbol\beta,
+\qquad
+\nabla^2 f = X^\top X + \rho I.
+$$
+The Hessian is the constant matrix $A=X^\top X+\rho I$, so $L=\lambda_{\max}(A)$,
+$\mu=\lambda_{\min}(A)$ (the ridge term $\rho I$ lifts every eigenvalue by $\rho$, which is
+*why* ridge regularization improves conditioning — a direct tie to [REGR-07] and [REGR-14]).
+We build a deliberately ill-conditioned design, then race the three methods.
+
+```{python}
+#| label: fig-ridge-race
+#| fig-cap: "Three optimizers on ridge least squares ($\\kappa\\approx 160$). Suboptimality $f(\\beta_k)-f^\\star$ on a log scale. **Plain GD** (navy) descends linearly but slowly — its slope is the $1-2/\\kappa$ rate. **Heavy-ball** (red) and **Nesterov** (green) both descend with the far steeper $1-2/\\sqrt\\kappa$ slope, reaching machine-accuracy in a small fraction of the iterations. Nesterov's slight ripple early on is the non-monotone behavior the look-ahead permits — note the objective is allowed to tick *up* — yet it still wins decisively. The dashed lines are the predicted contraction envelopes from @eq-hb-rate."
+rng = np.random.default_rng(0)
+n, p = 300, 12
+Q, _ = np.linalg.qr(rng.standard_normal((p, p)))
+scales = np.linspace(1.0, 11.0, p)
+X = rng.standard_normal((n, p)) @ (Q * scales)
+beta_true = rng.standard_normal(p)
+y = X @ beta_true + 0.3 * rng.standard_normal(n)
+rho = 0.5
+
+A = X.T @ X + rho * np.eye(p)
+evals = np.linalg.eigvalsh(A)
+L = evals.max(); mu = evals.min(); kappa = L / mu
+beta_star = np.linalg.solve(A, X.T @ y)
+def fval(b): return 0.5 * np.sum((X @ b - y) ** 2) + 0.5 * rho * b @ b
+f_star = fval(beta_star)
+def grad(b): return X.T @ (X @ b - y) + rho * b
+
+def run_gd(eta, n_it):
+    b = np.zeros(p); h = [fval(b) - f_star]
+    for _ in range(n_it):
+        b = b - eta * grad(b); h.append(fval(b) - f_star)
+    return np.array(h)
+
+def run_hb(eta, beta, n_it):
+    b = np.zeros(p); v = np.zeros(p); h = [fval(b) - f_star]
+    for _ in range(n_it):
+        v = beta * v - eta * grad(b); b = b + v; h.append(fval(b) - f_star)
+    return np.array(h)
+
+def run_nag(eta, beta, n_it):
+    b = np.zeros(p); b_prev = b.copy(); h = [fval(b) - f_star]
+    for _ in range(n_it):
+        yk = b + beta * (b - b_prev)
+        b_prev = b
+        b = yk - eta * grad(yk); h.append(fval(b) - f_star)
+    return np.array(h)
+
+n_it = 400
+beta_opt = ((np.sqrt(kappa) - 1) / (np.sqrt(kappa) + 1)) ** 2
+eta_hb = (2.0 / (np.sqrt(L) + np.sqrt(mu))) ** 2
+h_gd = np.clip(run_gd(2.0 / (L + mu), n_it), 1e-18, None)
+h_hb = np.clip(run_hb(eta_hb, beta_opt, n_it), 1e-18, None)
+beta_nag = (np.sqrt(kappa) - 1) / (np.sqrt(kappa) + 1)
+h_nag = np.clip(run_nag(1.0 / L, beta_nag, n_it), 1e-18, None)
+
+ks = np.arange(n_it + 1)
+fig, ax = plt.subplots(figsize=(7.0, 4.4))
+ax.semilogy(ks, h_gd, color=CURVE, label="plain GD")
+ax.semilogy(ks, h_hb, color=STEP, label="heavy-ball momentum")
+ax.semilogy(ks, h_nag, color=ACCENT, label="Nesterov (strongly-convex form)")
+ax.semilogy(ks, h_gd[0] * (1 - 2 / (kappa + 1)) ** (2 * ks), ":", color=CURVE, lw=1.0)
+ax.semilogy(ks, h_hb[0] * (beta_opt) ** ks, ":", color=STEP, lw=1.0)
+ax.set_xlabel("iteration $k$"); ax.set_ylabel(r"$f(\beta_k)-f^\star$ (log scale)")
+ax.set_title(fr"Ridge least squares, $\kappa\approx{kappa:.0f}$")
+ax.legend(fontsize=8.5, framealpha=0.9)
+ax.set_ylim(1e-16, None)
+plt.tight_layout()
+print(f"L = {L:.2f}, mu = {mu:.4f}, kappa = {kappa:.1f}")
+print(f"kappa = {kappa:.0f}  ->  sqrt(kappa) = {np.sqrt(kappa):.1f}")
+print(f"GD per-step rate 1-2/(k+1)   = {1 - 2/(kappa+1):.5f}")
+print(f"momentum per-step rate sqrt(beta) = {np.sqrt(beta_opt):.5f}")
+```
+
+The printout is the theory laid bare: $\kappa\approx 160$, so $\sqrt\kappa\approx 13$, and the
+per-step contraction collapses from GD's $\approx 0.988$ to momentum's $\approx 0.854$ — a
+modest-looking change per step that compounds into the order-of-magnitude gap in total
+iterations visible in the figure. This is the $\sqrt\kappa$ law in action on a real estimator
+the Regression track fits all the time.
+
+## Example 2 — logistic regression: smooth, strongly convex, but not quadratic {#sec-logistic-example}
+
+The honest middle ground from [OPTM-07]: the regularized logistic loss is smooth and (with
+the ridge term) strongly convex, but it is **not** quadratic, so curvature varies across the
+landscape and the quadratic analysis is only *locally* exact. This is where we test whether
+momentum's promise survives contact with a real, non-quadratic objective — and it does.
+
+```{python}
+#| label: fig-logistic-race
+#| fig-cap: "Momentum on a non-quadratic objective: regularized logistic regression ($n=600$, $p=20$). Even though the curvature varies with $\\beta$ (so there is no single matrix to read $\\kappa$ off), heavy-ball and Nesterov momentum sharply outpace plain gradient descent — the local-quadratic intuition holds globally enough to matter. Nesterov is smoothest; heavy-ball shows its characteristic mild overshoot ripple but still converges fast. The same memory trick that helped on the clean quadratic helps here."
+rng = np.random.default_rng(4)
+n, p = 600, 20
+Xl = rng.standard_normal((n, p))
+beta_t = rng.standard_normal(p)
+probs = 1.0 / (1.0 + np.exp(-(Xl @ beta_t)))
+yl = (rng.random(n) < probs).astype(float)
+lam = 2.0
+
+def floss(b):
+    z = Xl @ b
+    return np.sum(np.logaddexp(0, z) - yl * z) + 0.5 * lam * b @ b
+def gloss(b):
+    s = 1.0 / (1.0 + np.exp(-(Xl @ b)))
+    return Xl.T @ (s - yl) + lam * b
+
+# A conservative L: logistic Hessian <= 0.25 X'X + lam I.
+L_est = 0.25 * np.linalg.eigvalsh(Xl.T @ Xl).max() + lam
+eta = 1.0 / L_est
+beta = 0.9
+
+b_ref = np.zeros(p)
+for _ in range(4000):
+    b_ref = b_ref - eta * gloss(b_ref)
+f_star = floss(b_ref)
+
+def run(kind, n_it=250):
+    b = np.zeros(p); v = np.zeros(p); b_prev = b.copy(); h = [floss(b) - f_star]
+    for _ in range(n_it):
+        if kind == "gd":
+            b = b - eta * gloss(b)
+        elif kind == "hb":
+            v = beta * v - eta * gloss(b); b = b + v
+        else:  # nag
+            yk = b + beta * (b - b_prev); b_prev = b
+            b = yk - eta * gloss(yk)
+        h.append(floss(b) - f_star)
+    return np.clip(np.array(h), 1e-14, None)
+
+h_gd, h_hb, h_nag = run("gd"), run("hb"), run("nag")
+fig, ax = plt.subplots(figsize=(7.0, 4.3))
+ax.semilogy(h_gd, color=CURVE, label="plain GD")
+ax.semilogy(h_hb, color=STEP, label=r"heavy-ball ($\beta=0.9$)")
+ax.semilogy(h_nag, color=ACCENT, label=r"Nesterov ($\beta=0.9$)")
+ax.set_xlabel("iteration $k$"); ax.set_ylabel(r"$f(\beta_k)-f^\star$ (log scale)")
+ax.set_title("Logistic regression: momentum still wins on a non-quadratic loss")
+ax.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+The lesson generalizes: although the exact $\sqrt\kappa$ analysis is a *quadratic* statement,
+every smooth objective is locally quadratic near its minimum, so momentum's acceleration kicks
+in as the iterates approach the optimum — which is exactly the regime where plain GD slows to a
+crawl. Momentum is most valuable precisely where plain GD is most painful.
+
+## Example 3 — the edge of applicability: momentum overshoots and the stochastic trap {#sec-edge-example}
+
+Now the honest boundary. Momentum is not a universal accelerant; the same inertia that
+sweeps it down the valley can carry it past the minimum and make it **ring**, and on a
+**noisy** objective the accumulated velocity accumulates noise too. @fig-overshoot shows both
+failure modes on purpose.
+
+```{python}
+#| label: fig-overshoot
+#| fig-cap: "When momentum is the wrong instinct. **Left:** heavy-ball on a well-conditioned 1-D quadratic with an over-large $\\beta=0.95$ — the iterate blows past the minimum and oscillates with slowly decaying amplitude (ringing). For an *easy* problem ($\\kappa\\approx 1$), plain GD (navy) just walks straight in while momentum (red) wastes dozens of steps ringing: momentum can be strictly *worse* when there is no ill-conditioning to fix. **Right:** with *stochastic* gradients (each gradient corrupted by noise), high momentum (red, $\\beta=0.95$) amplifies the noise into a wide, wandering band, while low/zero momentum (navy) settles into a tighter region around the optimum. Inertia integrates noise — the reason practical SGD ([OPTM-11], [OPTM-12]) uses *moderate*, damped momentum."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
+
+# Left: ringing on an easy quadratic.
+def hb_1d(L, x0, eta, beta, n):
+    x = x0; v = 0.0; xs = [x]
+    for _ in range(n):
+        v = beta * v - eta * (L * x); x = x + v; xs.append(x)
+    return np.array(xs)
+Le = 1.0  # kappa = 1, perfectly round
+xs_gd = hb_1d(Le, 1.0, 1.0 / Le, 0.0, 60)
+xs_hb = hb_1d(Le, 1.0, 1.0 / Le, 0.95, 60)
+axL.axhline(0, color=GREY, lw=1.0)
+axL.plot(xs_gd, "-o", color=CURVE, ms=2.5, lw=1.0, label=r"plain GD ($\beta=0$)")
+axL.plot(xs_hb, "-o", color=STEP, ms=2.5, lw=1.0, label=r"momentum ($\beta=0.95$)")
+axL.set_xlabel("iteration $k$"); axL.set_ylabel("$x_k$")
+axL.set_title(r"Easy bowl ($\kappa=1$): momentum rings")
+axL.legend(fontsize=8.5, framealpha=0.9)
+
+# Right: noise amplification.
+rng = np.random.default_rng(11)
+def hb_1d_noisy(L, x0, eta, beta, n, sigma, seed):
+    r = np.random.default_rng(seed)
+    x = x0; v = 0.0; xs = [x]
+    for _ in range(n):
+        g = L * x + r.normal(0, sigma)        # noisy gradient
+        v = beta * v - eta * g; x = x + v; xs.append(x)
+    return np.array(xs)
+n_steps = 200
+xs_lo = hb_1d_noisy(1.0, 2.0, 0.1, 0.0, n_steps, 0.5, 1)
+xs_hi = hb_1d_noisy(1.0, 2.0, 0.1, 0.95, n_steps, 0.5, 1)
+axR.axhline(0, color=GREY, lw=1.0)
+axR.plot(xs_lo, color=CURVE, lw=1.0, alpha=0.9, label=r"$\beta=0$ (tight)")
+axR.plot(xs_hi, color=STEP, lw=1.0, alpha=0.9, label=r"$\beta=0.95$ (wanders)")
+axR.set_xlabel("iteration $k$"); axR.set_ylabel("$x_k$")
+axR.set_title("Noisy gradients: momentum amplifies noise")
+axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**Momentum is not always an improvement, and it is not a descent method.** Three traps to
+keep straight. **(1) On a well-conditioned problem ($\kappa\approx 1$) momentum can be
+*slower* than plain GD** — there is no zig-zag to damp, so the inertia just overshoots and
+rings, as the left panel shows. The benefit scales with how ill-conditioned the problem is.
+**(2) The objective can increase on individual steps.** Both heavy-ball and Nesterov are
+non-monotone; a step where the loss ticks up is expected, not a bug, so do not build a
+stopping rule that panics on a single increase. **(3) High momentum amplifies gradient
+noise.** The velocity is a running sum of gradients @eq-velocity-sum, so it is also a running
+sum of their *errors*; with stochastic gradients, large $\beta$ inflates the variance of the
+iterate (right panel). This is why deep-learning practice pairs *moderate* momentum
+($\beta\approx 0.9$) with a *decaying* learning rate and adaptive scaling — the subject of
+[OPTM-12].
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When should I use momentum, and when should I not?"* The honest summary to recite:
+
+- **Use it** when the problem is **ill-conditioned** (a stretched valley, large $\kappa$) and
+  the gradients are **reliable** (full-batch or low-noise) — this is its home turf, where the
+  $\sqrt\kappa$ speed-up is real and essentially free. Deterministic convex optimization,
+  ridge/logistic fits, and the inner loop of many solvers all qualify; Nesterov is the
+  default when you also want the optimal convex rate or you are accelerating a proximal method
+  (FISTA, [OPTM-16]).
+- **Be cautious or skip it** when the problem is already **well-conditioned** (no zig-zag to
+  fix — momentum only adds ringing), when gradients are **very noisy** and momentum is high
+  (it integrates the noise), or when you need a strictly **monotone** decrease for a safety-
+  critical stopping rule.
+- **What you reach for instead.** If you can afford curvature, **Newton / quasi-Newton**
+  ([OPTM-09]) removes the $\kappa$-dependence entirely rather than softening it. For huge,
+  noisy finite-sum objectives, **SGD with moderate, damped momentum and adaptive scaling**
+  ([OPTM-11], [OPTM-12]) is the practical workhorse — momentum's idea survives, but tamed.
+:::
+
+# How you would actually use this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You almost never hand-code
+momentum or tune $(\eta,\beta)$ from $\kappa$ — you rarely *know* $\kappa$ for a real model.
+Every framework exposes momentum as a flag: PyTorch's `torch.optim.SGD(..., momentum=0.9,
+nesterov=True)` is exactly @eq-heavyball / @eq-nesterov, and the optimizers of [OPTM-12]
+(`Adam`, `RMSprop`) bake the velocity in. The conventional default $\beta=0.9$ is not magic:
+it corresponds to a fading-memory timescale of $\frac{1}{1-\beta}=10$ steps (from the
+geometric-series sum of @eq-velocity-sum), a reasonable window over which gradients on a
+typical loss surface stay coherent. The closed-form optimal $\beta=\bigl(\frac{\sqrt\kappa
+-1}{\sqrt\kappa+1}\bigr)^2$ we derived is the *theory* that tells you why $\beta$ should rise
+toward $1$ as the problem stiffens — and the warning that too high a $\beta$ rings — even when
+you set it by a schedule rather than a formula. You now know what the `momentum=` argument is
+doing and, more importantly, *when it will help and when it will hurt*.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-07 *Step Size and Convergence*]**, which diagnosed gradient descent's
+disease — the **condition number** $\kappa$ throttles it to $\sim\kappa$ iterations and a mere
+$O(1/k)$ convex rate, with a zig-zag down ill-conditioned valleys. This article supplied the
+first-order cure: **memory**. A velocity that accumulates past gradients (@eq-velocity-sum)
+*adds up* along the consistent valley floor and *cancels* the oscillating zig-zag; on a
+quadratic this decouples into 1-D recurrences (@eq-decoupled) we solved exactly, and the
+optimal tuning (@eq-beta-opt) replaced $\kappa$ with $\sqrt\kappa$ (@eq-hb-rate). **Nesterov's**
+look-ahead gradient (@eq-nesterov) fixed momentum's overshoot and reached the **provably
+optimal** $O(1/k^2)$ convex rate. From here the descent spine continues:
+
+- **[OPTM-09 *Newton's Method*]** — the alternative cure: instead of *softening* the
+  $\kappa$-dependence with momentum, *remove* it with the inverse Hessian, at $O(p^3)$ per step.
+  Momentum versus Newton is the central first-order-vs-second-order trade-off.
+- **[OPTM-11 *Stochastic Gradient Descent*]** — when gradients are noisy estimates, the
+  accumulated velocity also accumulates noise (the edge case of @sec-edge-example); SGD needs
+  *damped* momentum and a decaying step.
+- **[OPTM-12 *Adaptive and Modern Optimizers*]** — **Adam** is, almost exactly, *momentum on
+  the gradient* (the velocity here) *plus per-coordinate adaptive scaling* (an RMSProp-style
+  second moment), with bias correction. Everything in this article is half of Adam.
+- **[OPTM-16 *Proximal and Projected Methods*]** — Nesterov acceleration applied to the
+  proximal-gradient method *is* **FISTA**, the modern accelerated lasso solver; the look-ahead
+  derived here transfers verbatim.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The original sources.** B. T. Polyak, "Some methods of speeding up the convergence of
+  iteration methods" (1964) — the heavy-ball method and its $\sqrt\kappa$ analysis on
+  quadratics, the source of @sec-heavyball. Yurii Nesterov, "A method for solving the convex
+  programming problem with convergence rate $O(1/k^2)$" (1983), and his *Lectures on Convex
+  Optimization* (2nd ed., 2018) — the accelerated method, the schedule @eq-nag-schedule, the
+  estimate-sequence proof of @thm-nag-rate, and the matching first-order lower bound that makes
+  $O(1/k^2)$ *optimal*.
+- **The modern intuition.** Goh, "Why Momentum Really Works" (Distill, 2017) — the
+  diagonalization-into-1-D-recurrences argument of @sec-decouple, rendered interactively, and
+  the cleanest visual account of the complex-root regime @sec-complex. Su, Boyd & Candès (2016)
+  derive the *differential equation* whose discretization is Nesterov's method — the rolling-
+  ball intuition made literally a second-order ODE.
+- **Open threads this article deliberately deferred.** *The full line-by-line proof of the
+  $O(1/k^2)$ rate* — the Lyapunov/estimate-sequence argument sketched after @thm-nag-rate, given
+  in full in Nesterov's lectures and reused for FISTA in [OPTM-16]. *Can we get acceleration
+  with noisy gradients?* — only partially; accelerated SGD is subtle, [OPTM-11]/[OPTM-12].
+  *Why does $\beta=0.9$ work so universally in deep learning even though the loss is non-convex
+  and the analysis here is convex?* — an active research question; the local-quadratic argument
+  of @sec-logistic-example is the partial answer, but the non-convex story is still being
+  written.

@@ -1,0 +1,1057 @@
+---
+title: "Convex Functions: Why Convexity Is the Whole Ballgame"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the series.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE  = "#2b3a67"    # the function graph
+CHORD  = "#c1121f"    # chords / violations
+TAN    = "#0a7d4d"    # tangent lines / supporting structure
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the keystone of the **convexity spine** of the
+> Optimization track, and one of the most load-bearing articles in the whole series. It
+> assumes [OPTM-02 *Minimizing in Many Variables*] for **stationarity** $\nabla f=0$, the
+> **Hessian** $\nabla^2 f$, and the second-order (Hessian) test that sorts a stationary
+> point into minimum, maximum, or saddle. It assumes [OPTM-03 *Convex Sets*] for the
+> definition of a **convex set** — the segment between any two of its points stays inside —
+> because a function turns out to be convex exactly when the region *above its graph* is a
+> convex set. From the *Geometry of Data / Applied Linear Algebra* track it borrows the
+> **Hessian** as a matrix of second partials, **quadratic forms** $v^\top A v$, and
+> **positive-semidefiniteness** ($v^\top A v\ge 0$ for all $v$); those are *used*, not
+> rebuilt.
+>
+> Its single job is to define convexity for *functions*, prove the three standard
+> definitions are the same statement in three costumes, and then cash out the one theorem
+> the rest of the series quietly leans on: **for a convex function, a local minimum is a
+> global minimum.** It sets up [OPTM-05 *Subgradients*] (which extends "set the derivative
+> to zero" to convex functions with kinks like $|x|$), [OPTM-07 *Step Size and Convergence*]
+> (whose convergence guarantees *assume* convexity, and whose speed is governed by **strong
+> convexity** defined here), and the constrained-optimization articles
+> [OPTM-13]–[OPTM-15] (where convex problems are the well-behaved case).
+
+## Abstract {.unnumbered}
+
+[OPTM-02] taught us to find a stationary point — a place where $\nabla f=0$ — and warned
+that a stationary point might be a minimum, a maximum, or a saddle, and that even a genuine
+*local* minimum need not be the *global* one. That last gap is fatal for trusting any
+optimizer: how do we know the valley we descended into is the deepest valley and not just
+*a* valley? **Convexity is the structural property that closes the gap.** This article
+defines a convex function three equivalent ways — the **chord lies on or above the graph**
+(the secant-line / Jensen picture, requiring no derivatives at all), the **first-order
+tangent-below** condition $f(y)\ge f(x)+\nabla f(x)^\top(y-x)$ (the graph never dips below
+any of its tangent planes), and the **second-order** condition that the Hessian
+$\nabla^2 f$ is positive-semidefinite everywhere (the function curves up, never down) — and
+*proves* all three describe the same class of functions, every step on the page. From the
+tangent-below form we then prove the headline theorem in two lines: **any point with
+$\nabla f=0$ is a global minimizer**, so for a convex objective "we found *a* minimum" and
+"we found *the* minimum" are the same sentence. We sharpen this with **strict** convexity
+(the minimizer is *unique*) and **strong** convexity (the function sits above a moving
+quadratic, the property that later makes gradient descent provably *fast*), and we assemble
+the practical **convexity calculus** — sums, nonnegative scalings, pointwise maxima, and
+affine composition preserve convexity — that lets you certify $\|y-X\beta\|^2$, the
+logistic loss, and $\|\beta\|_1$ as convex without touching a single Hessian eigenvalue.
+The single claim this article defends is that **convexity is the dividing line of the
+entire field**: on the convex side, local information is global truth and an honest
+algorithm always finds the right answer; on the non-convex side — neural nets, mixtures,
+$k$-means — that guarantee evaporates and "a local min is all you get."
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A function $f$ is **convex** when the straight **chord** joining any two points of its
+graph lies *on or above* the graph between them:
+$$
+f\bigl((1-t)x + t y\bigr)\;\le\;(1-t)\,f(x) + t\,f(y)
+\qquad\text{for all } t\in[0,1].
+$$
+Geometrically: the graph **curves up, never down** — it has no bumps you could roll off.
+That one shape has a colossal payoff. **For a convex function, every stationary point is a
+global minimum, and every local minimum is a global minimum.** So the whole anxiety of
+[OPTM-02] — "is this valley *the* valley?" — simply does not arise. Convexity is the
+property that turns *local* search into a certificate of the *global* answer, which is why
+the field of optimization splits cleanly into "convex" (solvable, reliably) and
+"non-convex" (hard, in general).
+:::
+
+Everything below orbits that box. We will state convexity three ways, prove they are the
+same, and then spend the rest of the article showing that the inequality above is not a
+technical definition to memorize but the *exact* hypothesis that earns the local-is-global
+guarantee — and showing, honestly, where real objectives have it and where they do not.
+
+# Why we are doing this: the gap [OPTM-02] left open {#sec-why}
+
+Keep one question in view for the entire article: **when is a point where the derivative
+vanishes actually the answer we want — the best point, globally, and not merely a flat spot
+or a local dip?** Every definition, every proof below is an answer to a piece of that
+question.
+
+## The problem convexity was invented to solve
+
+[OPTM-01] and [OPTM-02] gave us the engine of optimization: to minimize $f$, find where its
+derivative (or gradient) is zero. That engine has a crack in it that those articles were
+honest about. Setting $\nabla f=0$ finds a **stationary point** — a place where the surface
+is flat — but flatness is *necessary*, not *sufficient*. A flat spot can be the bottom of a
+valley (a minimum), the top of a hill (a maximum), or a saddle. The Hessian test sorts
+those three apart *locally*. But even after the Hessian certifies "local minimum," a
+deeper problem remains: a function can have *several* local minima at different heights,
+and the derivative test cannot tell you whether the one you found is the lowest.
+
+This is not a corner case. It is the central difficulty of optimization. An algorithm walks
+downhill (the descent spine, [OPTM-06] onward); it halts where it can no longer descend;
+and then it reports that point. Whether that report is *trustworthy* — whether "I stopped
+descending" means "this is the best point" — depends entirely on the shape of $f$. For a
+generic function the answer is no, and you are at the mercy of where you started.
+
+Historically, the recognition that this *shape* is the thing that matters crystallized in
+the early twentieth century. Johan Jensen's 1906 inequality pinned down the chord-above
+property for functions; the systematic theory — convex sets, convex functions, the duality
+that flows from them — was built by Hermann Minkowski, Werner Fenchel, and later R.\ Tyrrell
+Rockafellar, whose 1970 *Convex Analysis* is still the canonical reference. By the time
+numerical optimization matured, the dividing line was clear and is now the first thing a
+practitioner checks: **convex problems are the ones we can solve to global optimality
+reliably; everything else, we solve hopefully.**
+
+::: {.callout-tip title="You might be asked"}
+*"Why do people say convexity is 'the whole ballgame' in optimization?"* Because it is the
+single property that converts the only thing an algorithm can actually check — a *local*
+condition like "the gradient is zero here" or "I can't go downhill from here" — into a
+*global* guarantee: "this is the best point anywhere." Without convexity, no amount of local
+checking certifies a global optimum; with it, the cheapest local check is a proof. Every
+convergence guarantee in [OPTM-07], every claim that "fitting this model finds the right
+parameters," and the entire tractability of ridge, lasso, logistic regression, and SVMs
+trace back to the objective being convex. The interviewer wants to hear that convexity is
+not a nicety — it is *what makes optimization work*.
+:::
+
+## What we already have to build on
+
+We arrive with two facts from upstream, and we will lean on both.
+
+From [OPTM-03]: a **convex set** $\mathcal{C}$ is one where the segment between any two of
+its points stays inside, $x,y\in\mathcal{C}\Rightarrow(1-t)x+ty\in\mathcal{C}$ for
+$t\in[0,1]$. The phrase $(1-t)x+ty$ is a **convex combination** — a weighted average of $x$
+and $y$ with nonnegative weights $1-t$ and $t$ summing to $1$ — and as $t$ runs from $0$ to
+$1$ it traces the segment from $x$ to $y$.
+
+From [OPTM-02]: a point $x^\star$ is **stationary** if $\nabla f(x^\star)=0$, and the
+**Hessian** $\nabla^2 f(x)$ — the symmetric matrix of second partial derivatives
+$[\nabla^2 f]_{ij}=\partial^2 f/\partial x_i\partial x_j$ — measures curvature. A symmetric
+matrix $A$ is **positive-semidefinite** (PSD), written $A\succeq 0$, when the quadratic form
+$v^\top A v\ge 0$ for every vector $v$; it is **positive-definite** ($A\succ 0$) when
+$v^\top A v>0$ for every $v\neq 0$. These are exactly the objects we will tie convexity to.
+We *use* them; the Geometry track builds them.
+
+# Intuition before symbols {#sec-intuition}
+
+Three pictures, each of which will become one of our three formal definitions. Hold all
+three side by side; the whole formal section is the claim that they are *the same picture*.
+
+**Picture 1 — the chord stays above.** Pick any two points on the graph and stretch a
+straight string between them. If, no matter which two points you pick, the string never
+sags *below* the graph — it lies on or above the curve — the function is convex. A bowl
+$f(x)=x^2$ passes: any string across it floats above the curve. A hill $f(x)=-x^2$ fails
+spectacularly: every string sinks below. This picture needs no derivatives at all, which is
+its great virtue — it applies even to functions with kinks like $|x|$.
+
+**Picture 2 — the graph stays above its tangents.** Now suppose $f$ is smooth, so at each
+point it has a tangent line (or, in many variables, a tangent plane). Convexity says the
+graph never dips below *any* of its tangents: each tangent is a global *underestimate* of
+the function. A tangent to a bowl touches at one point and lies entirely beneath the rest of
+the bowl; a tangent to a hill pokes *above* the graph everywhere except the touch point. This
+is the picture that makes the local-is-global theorem fall out in one line, because a tangent
+at a stationary point is *flat*, and a flat line below the whole graph is a floor.
+
+**Picture 3 — the curvature never goes negative.** If $f$ is twice differentiable, the
+second derivative measures how the slope is changing. Convex means the slope is
+*non-decreasing*: as you move right, the curve only ever bends upward or stays straight,
+never bends down. In one variable that is $f''(x)\ge 0$ everywhere; in many variables it is
+the Hessian being positive-semidefinite. This is the picture you can *check by computation*,
+which is its great virtue.
+
+@fig-three-pictures draws all three for the same convex function and the same non-convex
+one, side by side, so the equivalence we are about to prove is visible before it is proven.
+
+```{python}
+#| label: fig-three-pictures
+#| fig-cap: "The three faces of convexity, on a convex function $f(x)=\\tfrac14 x^2+1$ (top row) and a non-convex $g(x)=\\sin(x)+0.15x$ (bottom row). **Left:** a chord (red) between two points lies *above* the convex graph but cuts *below* the wiggly one. **Middle:** a tangent line (green) lies *below* the convex graph everywhere but pokes above the wiggly one. **Right:** the second derivative $f''$ stays $\\ge 0$ for the convex function but goes negative for the wiggly one. Convexity is all three of these at once."
+fig, axes = plt.subplots(2, 3, figsize=(9.2, 5.6))
+
+xs = np.linspace(-3.4, 3.4, 400)
+
+def f(x):  return 0.25 * x**2 + 1.0
+def fpp(x): return 0.5 * np.ones_like(x)
+def g(x):  return np.sin(x) + 0.15 * x
+def gpp(x): return -np.sin(x)
+
+for row, (h, hpp, name, col) in enumerate([
+        (f, fpp, "convex  $f$", CURVE),
+        (g, gpp, "non-convex  $g$", CURVE)]):
+    a, b = -2.2, 2.6
+    # chord
+    ax = axes[row, 0]
+    ax.plot(xs, h(xs), color=col)
+    ax.plot([a, b], [h(np.array([a]))[0], h(np.array([b]))[0]], color=CHORD, marker="o", ms=4)
+    ax.set_title(f"{name}: chord", fontsize=10)
+    # tangent at x0
+    ax = axes[row, 1]
+    x0 = 0.7
+    eps = 1e-4
+    slope = (h(np.array([x0+eps]))[0] - h(np.array([x0-eps]))[0]) / (2*eps)
+    ax.plot(xs, h(xs), color=col)
+    ax.plot(xs, h(np.array([x0]))[0] + slope*(xs - x0), color=TAN, lw=1.6)
+    ax.plot([x0], [h(np.array([x0]))[0]], color=TAN, marker="o", ms=5)
+    ax.set_title(f"{name}: tangent", fontsize=10)
+    # second derivative
+    ax = axes[row, 2]
+    ax.axhline(0, color=GREY, lw=1.0)
+    ax.plot(xs, hpp(xs), color=CHORD if row == 1 else TAN)
+    ax.set_title(f"{name}: second deriv", fontsize=10)
+
+for ax in axes.ravel():
+    ax.set_xlabel("$x$")
+plt.tight_layout()
+```
+
+The lone wiggle in the bottom row is the whole story: one stretch where the chord sinks
+below, one tangent that pokes above, one interval where $g''<0$. Those three failures are
+the *same* failure. Proving that is the formal section.
+
+# The formal development {#sec-formal}
+
+## The chord definition (the master definition) {#sec-chord-def}
+
+We take the chord picture as primary, because it asks the least of $f$: no derivatives, not
+even continuity assumed. Throughout, $f$ is a real-valued function whose domain
+$\operatorname{dom} f$ is a **convex set** (so that the convex combination $(1-t)x+ty$ is in
+the domain whenever $x,y$ are — without this the inequality could not even be written).
+
+::: {#def-convex}
+**Definition (convex function).** $f:\operatorname{dom} f\to\mathbb{R}$, with convex domain,
+is **convex** if for all $x,y\in\operatorname{dom} f$ and all $t\in[0,1]$,
+$$
+f\bigl((1-t)\,x + t\,y\bigr)\;\le\;(1-t)\,f(x) + t\,f(y).
+$$ {#eq-jensen2}
+It is **strictly convex** if the inequality is *strict* ($<$) whenever $x\neq y$ and
+$t\in(0,1)$. It is **concave** if $-f$ is convex (the inequality flips to $\ge$).
+:::
+
+Read @eq-jensen2 carefully, because it is the seed of everything. The left side is the
+*function's value at the averaged point* $(1-t)x+ty$. The right side is the *averaged value*
+$(1-t)f(x)+tf(y)$ — which, as $t$ runs from $0$ to $1$, traces exactly the straight chord
+from the point $(x,f(x))$ to the point $(y,f(y))$. So @eq-jensen2 says, in symbols, "the
+function at the averaged input $\le$ the chord at that input": **the graph lies on or below
+the chord, equivalently the chord lies on or above the graph.** @fig-chord-anatomy is the
+literal anatomy of the inequality.
+
+```{python}
+#| label: fig-chord-anatomy
+#| fig-cap: "The anatomy of the chord inequality @eq-jensen2 on $f(x)=0.4x^2$. At the averaged input $z=(1-t)x+ty$ (here $t=0.62$), the chord height (red) is $(1-t)f(x)+tf(y)$ and the graph height (blue dot) is $f(z)$. Convexity is exactly the statement that the blue dot sits at or below the red point, for *every* choice of $x,y,t$. The vertical gap is the 'convexity surplus' the function banks by curving."
+def f(x): return 0.4 * x**2
+x0, y0 = -1.6, 2.4
+t = 0.62
+z = (1 - t) * x0 + t * y0
+chord_h = (1 - t) * f(x0) + t * f(y0)
+xs = np.linspace(-2.4, 3.0, 300)
+
+fig, ax = plt.subplots()
+ax.plot(xs, f(xs), color=CURVE, label="$f(x)=0.4x^2$")
+ax.plot([x0, y0], [f(x0), f(y0)], color=CHORD, marker="o", ms=5,
+        label="chord  $(1-t)f(x)+tf(y)$")
+ax.plot([z], [f(z)], color=TAN, marker="o", ms=8, zorder=5,
+        label=r"$f((1-t)x+ty)$")
+ax.plot([z], [chord_h], color=CHORD, marker="s", ms=7, zorder=5)
+ax.plot([z, z], [f(z), chord_h], color=GREY, lw=1.5)
+ax.annotate("convexity surplus", xy=(z, 0.5*(f(z)+chord_h)),
+            xytext=(z + 0.5, 0.5*(f(z)+chord_h) + 0.6),
+            arrowprops=dict(arrowstyle="->", color=GREY), fontsize=9)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("The chord lies above the graph")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+Two endpoint checks confirm the definition is sensible. At $t=0$, @eq-jensen2 reads
+$f(x)\le f(x)$ (equality — the chord starts on the graph); at $t=1$ it reads $f(y)\le f(y)$
+(equality — the chord ends on the graph). The content is entirely in the *interior*
+$t\in(0,1)$, where the chord is genuinely above an interior point of the graph.
+
+::: {.callout-note title="Two names for one inequality"}
+The two-point inequality @eq-jensen2 extends, by induction, to any convex combination of
+finitely many points: $f(\sum_i t_i x_i)\le\sum_i t_i f(x_i)$ whenever $t_i\ge 0$ and
+$\sum_i t_i=1$. That finite-sum form is **Jensen's inequality**, and its probabilistic
+version, $f(\mathbb{E}[X])\le\mathbb{E}[f(X)]$, is one of the most-used inequalities in all
+of statistics (it is what makes the log-likelihood bound in EM work, [UNSP-05]). We will not
+need the $n$-point form in this article; we flag it only so you recognize @eq-jensen2 and
+"Jensen" as the same fact, and we will return to the two-point version constantly.
+:::
+
+## The epigraph: convex function = convex set {#sec-epigraph}
+
+Before the calculus definitions, one bridge back to [OPTM-03] that makes the name "convex"
+not a coincidence. The **epigraph** of $f$ is the set of all points lying *on or above* its
+graph:
+$$
+\operatorname{epi} f \;=\; \bigl\{(x,s)\;:\; x\in\operatorname{dom} f,\; s\ge f(x)\bigr\}
+\subseteq \mathbb{R}^{n+1}.
+$$
+"Epi" is Greek for "above." @fig-epigraph shades it.
+
+::: {#thm-epigraph}
+**Theorem (function convex $\iff$ epigraph convex).** $f$ is a convex function if and only
+if $\operatorname{epi} f$ is a convex set in the sense of [OPTM-03].
+:::
+
+::: {.proof}
+We prove both directions directly from the two definitions.
+
+**($\Rightarrow$) Convex function gives convex epigraph.** Take two points of the epigraph,
+$(x,s)$ and $(y,r)$, so by definition $s\ge f(x)$ and $r\ge f(y)$. Pick $t\in[0,1]$. Their
+convex combination is $\bigl((1-t)x+ty,\;(1-t)s+tr\bigr)$. To show this lies in
+$\operatorname{epi} f$ we must show its height exceeds the graph there, i.e.
+$(1-t)s+tr\ge f((1-t)x+ty)$. Chain two inequalities. First, because $f$ is convex,
+$$
+f\bigl((1-t)x+ty\bigr)\;\le\;(1-t)f(x)+tf(y).
+$$
+Second, since $1-t\ge 0$ and $t\ge 0$, multiplying the height bounds $s\ge f(x)$ and
+$r\ge f(y)$ by these nonnegative weights and adding preserves the direction:
+$$
+(1-t)f(x)+tf(y)\;\le\;(1-t)s+tr.
+$$
+Combining the two, $f((1-t)x+ty)\le(1-t)s+tr$, which says the combined point is in
+$\operatorname{epi} f$. So the segment between any two epigraph points stays in the
+epigraph: it is a convex set.
+
+**($\Leftarrow$) Convex epigraph gives convex function.** Suppose $\operatorname{epi} f$ is
+convex. Take any $x,y\in\operatorname{dom} f$ and $t\in[0,1]$. The two points $(x,f(x))$ and
+$(y,f(y))$ sit *on* the graph, hence in the epigraph (take $s=f(x)$, $r=f(y)$, satisfying
+$s\ge f(x)$ with equality). Convexity of the epigraph says their combination
+$\bigl((1-t)x+ty,\;(1-t)f(x)+tf(y)\bigr)$ is in the epigraph, which by definition of the
+epigraph means its height is at least the graph value there:
+$$
+(1-t)f(x)+tf(y)\;\ge\;f\bigl((1-t)x+ty\bigr).
+$$
+That is exactly @eq-jensen2. So $f$ is convex. $\qquad\blacksquare$
+:::
+
+```{python}
+#| label: fig-epigraph
+#| fig-cap: "The epigraph of $f(x)=0.4x^2$ is everything on or above the graph (shaded). @thm-epigraph says $f$ is a convex *function* exactly when this region is a convex *set* in the [OPTM-03] sense: the segment between the two marked epigraph points (red) stays inside the shaded region. The two notions of 'convex' are one notion, applied to a function versus to a set."
+def f(x): return 0.4 * x**2
+xs = np.linspace(-2.6, 2.6, 300)
+fig, ax = plt.subplots()
+top = np.full_like(xs, f(xs).max() + 1.5)
+ax.fill_between(xs, f(xs), top, color=CURVE, alpha=0.13, label=r"$\operatorname{epi} f$")
+ax.plot(xs, f(xs), color=CURVE, label="graph of $f$")
+p, q = (-1.8, f(-1.8) + 0.5), (1.4, f(1.4) + 0.9)
+ax.plot([p[0], q[0]], [p[1], q[1]], color=CHORD, marker="o", ms=5,
+        label="segment in the epigraph")
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_ylim(-0.4, f(xs).max() + 1.5)
+ax.set_title("A convex function is one with a convex epigraph")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+This is the cleanest justification of the word: a function is convex precisely when the
+solid region it caps off has no dents — the very property [OPTM-03] studied for sets. It
+also quietly hands us the **convexity calculus** later: operations that preserve convex
+*sets* (intersection!) will preserve convex *functions* via their epigraphs.
+
+## The first-order condition: the graph lies above its tangents {#sec-first-order}
+
+Now assume $f$ is differentiable, so at each point $x$ it has a gradient $\nabla f(x)$ and a
+**tangent plane** — the linear function $\ell_x(y)=f(x)+\nabla f(x)^\top(y-x)$, which agrees
+with $f$ at $x$ ($\ell_x(x)=f(x)$) and has the same gradient there. (In one variable this is
+the familiar tangent line $f(x)+f'(x)(y-x)$.) The first-order condition says this tangent
+never overestimates $f$.
+
+::: {#thm-first-order}
+**Theorem (first-order characterization).** Let $f$ be differentiable on a convex domain.
+Then $f$ is convex **if and only if**
+$$
+f(y)\;\ge\;f(x)+\nabla f(x)^\top(y-x)
+\qquad\text{for all } x,y\in\operatorname{dom} f.
+$$ {#eq-first-order}
+That is, the graph lies on or above each of its tangent planes. $f$ is *strictly* convex iff
+the inequality is strict for $x\neq y$.
+:::
+
+The geometric content of @eq-first-order is exactly Picture 2: $\ell_x(y)\le f(y)$
+everywhere, so every tangent is a global underestimator. Before the proof, note *why we
+want this form*: it is the one with a flat-out gift for optimization. If $x$ is stationary,
+$\nabla f(x)=0$, and @eq-first-order collapses to $f(y)\ge f(x)$ for all $y$ — the
+definition of a global minimum. We will cash that in immediately in @sec-local-global. First
+the proof.
+
+::: {.proof}
+We prove both directions from the chord definition @eq-jensen2. We do the one-variable
+core first because the multivariable case reduces to it along a line.
+
+**($\Rightarrow$) Convexity implies the tangent-below inequality.** Fix $x,y$ and let
+$t\in(0,1]$. Write the convex combination as $x+t(y-x)=(1-t)x+ty$. Apply @eq-jensen2:
+$$
+f\bigl(x+t(y-x)\bigr)\;\le\;(1-t)f(x)+tf(y)=f(x)+t\bigl(f(y)-f(x)\bigr).
+$$
+Subtract $f(x)$ from both sides and divide by $t>0$ (legal, direction preserved):
+$$
+\frac{f\bigl(x+t(y-x)\bigr)-f(x)}{t}\;\le\;f(y)-f(x).
+$$ {#eq-diffquot}
+The left side is a difference quotient. As $t\to 0^+$, the point $x+t(y-x)$ slides back
+toward $x$ along the direction $y-x$, and by the definition of the directional derivative
+(the chain rule applied to $\varphi(t)=f(x+t(y-x))$, whose derivative at $t=0$ is
+$\nabla f(x)^\top(y-x)$), the left side of @eq-diffquot converges to
+$\nabla f(x)^\top(y-x)$. The inequality is preserved in the limit:
+$$
+\nabla f(x)^\top(y-x)\;\le\;f(y)-f(x),
+$$
+which rearranges to @eq-first-order.
+
+**($\Leftarrow$) The tangent-below inequality implies convexity.** Suppose @eq-first-order
+holds for all pairs. Fix $x,y$ and $t\in[0,1]$, and set the averaged point
+$z=(1-t)x+ty$. Apply @eq-first-order *twice*, expanding around $z$ — once toward $x$, once
+toward $y$:
+$$
+f(x)\;\ge\;f(z)+\nabla f(z)^\top(x-z),\qquad
+f(y)\;\ge\;f(z)+\nabla f(z)^\top(y-z).
+$$
+Multiply the first by $(1-t)\ge 0$ and the second by $t\ge 0$ (nonnegative weights preserve
+the inequalities) and add:
+$$
+(1-t)f(x)+tf(y)\;\ge\;f(z)+\nabla f(z)^\top\bigl[(1-t)(x-z)+t(y-z)\bigr].
+$$
+Now compute the bracket. Since $z=(1-t)x+ty$,
+$$
+(1-t)(x-z)+t(y-z)=(1-t)x+ty-\bigl[(1-t)+t\bigr]z=z-z=0.
+$$
+The gradient term vanishes, leaving $(1-t)f(x)+tf(y)\ge f(z)=f((1-t)x+ty)$, which is
+exactly @eq-jensen2. So $f$ is convex.
+
+The strict statements track the strict inequalities at each step: if @eq-first-order is
+strict for $x\neq y$, the two expansions are strict, so the combination is strict, giving
+strict @eq-jensen2; conversely strict @eq-jensen2 forces @eq-diffquot strict for $t$ bounded
+away from $0$, which passes to strict @eq-first-order. $\qquad\blacksquare$
+:::
+
+That bracket-vanishing trick — averaging two tangent-below inequalities so the linear part
+cancels at the convex combination — is the workhorse identity of convex analysis. It is
+worth holding onto: it reappears in the descent-lemma proofs of [OPTM-07] and in duality.
+
+```{python}
+#| label: fig-first-order
+#| fig-cap: "The first-order condition @eq-first-order on $f(x)=0.3x^2 - 0.5x + 1$. Three tangent lines (green) drawn at different points each lie entirely *below* the graph, touching at one point. For a convex function this holds at *every* point: each tangent is a global underestimate. The flat tangent at the stationary point (where $f'=0$) is therefore a horizontal floor under the whole graph — that is the local-is-global theorem in one picture."
+def f(x): return 0.3*x**2 - 0.5*x + 1
+def fp(x): return 0.6*x - 0.5
+xs = np.linspace(-2.5, 3.5, 300)
+fig, ax = plt.subplots()
+ax.plot(xs, f(xs), color=CURVE, label="$f$", zorder=3)
+xstar = 0.5/0.6
+for x0, lab in [(-1.5, None), (xstar, "tangent at min ($f'=0$)"), (2.6, None)]:
+    ax.plot(xs, f(x0) + fp(x0)*(xs - x0), color=TAN, lw=1.4, alpha=0.9,
+            label=lab)
+    ax.plot([x0], [f(x0)], color=TAN, marker="o", ms=5, zorder=4)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("Every tangent lies below a convex graph")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## The second-order condition: the Hessian is positive-semidefinite {#sec-second-order}
+
+Finally, assume $f$ is *twice* differentiable, so its Hessian $\nabla^2 f(x)$ exists
+everywhere. The most computable characterization of convexity is a statement about that
+matrix.
+
+::: {#thm-second-order}
+**Theorem (second-order characterization).** Let $f$ be twice continuously differentiable on
+an open convex domain. Then
+$$
+f \text{ is convex}\quad\Longleftrightarrow\quad \nabla^2 f(x)\succeq 0
+\ \text{ for all } x\in\operatorname{dom} f,
+$$ {#eq-second-order}
+i.e. the Hessian is positive-semidefinite everywhere: $v^\top\nabla^2 f(x)\,v\ge 0$ for all
+$x$ and all directions $v$. If $\nabla^2 f(x)\succ 0$ everywhere (positive-definite), then
+$f$ is *strictly* convex. (The converse of that last clause is **false** — see the warning
+below.)
+:::
+
+In one variable this is simply $f''(x)\ge 0$ everywhere — the slope never decreases,
+matching Picture 3. The multivariable statement reads $v^\top\nabla^2 f(x)v\ge 0$: the
+curvature is nonnegative *in every direction* $v$.
+
+::: {.proof}
+The bridge is the same trick as before — reduce to one variable by walking along a line —
+plus the second-order Taylor expansion from [OPTM-02] / the Calc-1 floor.
+
+**($\Leftarrow$) PSD Hessian implies convex.** We show the first-order condition
+@eq-first-order, which by @thm-first-order is equivalent to convexity. Fix $x,y$ and define
+the one-variable slice
+$$
+\varphi(t)=f\bigl(x+t(y-x)\bigr),\qquad t\in[0,1].
+$$
+By the chain rule, $\varphi'(t)=\nabla f(x+t(y-x))^\top(y-x)$, and differentiating again,
+$\varphi''(t)=(y-x)^\top\nabla^2 f(x+t(y-x))\,(y-x)$. This is a quadratic form
+$v^\top\nabla^2 f(\cdot)\,v$ with $v=y-x$, so the hypothesis $\nabla^2 f\succeq 0$ gives
+$\varphi''(t)\ge 0$ for all $t\in[0,1]$. Now apply the **fundamental theorem of calculus to
+$\varphi'$** (Calc-1, exact): since $\varphi'$ is non-decreasing (its derivative
+$\varphi''\ge 0$),
+$$
+\varphi(1)-\varphi(0)=\int_0^1\varphi'(t)\,dt\;\ge\;\int_0^1\varphi'(0)\,dt=\varphi'(0),
+$$
+where the inequality uses $\varphi'(t)\ge\varphi'(0)$ for $t\ge 0$ (a non-decreasing
+function never drops below its starting value) integrated over $[0,1]$. Translate back:
+$\varphi(1)=f(y)$, $\varphi(0)=f(x)$, $\varphi'(0)=\nabla f(x)^\top(y-x)$, so
+$$
+f(y)-f(x)\;\ge\;\nabla f(x)^\top(y-x),
+$$
+which is @eq-first-order. Hence $f$ is convex. If $\nabla^2 f\succ 0$ then $\varphi''>0$,
+$\varphi'$ is *strictly* increasing, the integral inequality is strict for $y\neq x$, and we
+get strict convexity.
+
+**($\Rightarrow$) Convex implies PSD Hessian.** We prove the contrapositive: if the Hessian
+fails to be PSD somewhere, $f$ is not convex. Suppose at some point $x_0$ there is a
+direction $v$ with $v^\top\nabla^2 f(x_0)\,v<0$. By continuity of the second derivatives
+(we assumed $f\in C^2$), the quadratic form stays negative in a neighborhood: there is a
+small $\delta>0$ with $v^\top\nabla^2 f(x_0+sv)\,v<0$ for all $|s|<\delta$. Define
+$\psi(s)=f(x_0+sv)$; then $\psi''(s)=v^\top\nabla^2 f(x_0+sv)v<0$ on $(-\delta,\delta)$, so
+$\psi$ is a *strictly concave* function of $s$ there. A strictly concave function violates
+the chord inequality — its chord dips *below* the graph — so taking two points
+$s_1,s_2\in(-\delta,\delta)$ and the midpoint, $f$ restricted to that segment fails
+@eq-jensen2. A function convex on its whole domain must be convex on every segment inside
+it, so $f$ is not convex. Contrapositive done. $\qquad\blacksquare$
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Positive-definite Hessian $\Rightarrow$ strictly convex, but strictly convex
+$\not\Rightarrow$ positive-definite Hessian.** The implication only runs one way. The
+clean counterexample is $f(x)=x^4$ in one variable: it is *strictly* convex (its chords lie
+strictly above), yet $f''(x)=12x^2$ vanishes at $x=0$, so the Hessian is only PSD, not
+positive-definite, there. The slope is strictly increasing overall, but its rate of increase
+momentarily flattens to zero at the origin. Lesson: to *certify* strict convexity from the
+Hessian, $\nabla^2 f\succ 0$ everywhere is *sufficient*; its failure at isolated points does
+**not** refute strict convexity. When an interviewer asks "is $x^4$ strictly convex?", the
+answer is yes, and the reason you can't read it off $f''(0)=0$ is exactly this gap.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"You're handed an objective $f$. How do you actually check whether it's convex?"* In order
+of practical preference:
+
+1. **Build it from known-convex pieces** using the calculus of @sec-calculus (sums,
+   nonnegative scalings, max, affine composition). This is how convexity is verified in
+   practice 95% of the time — you almost never compute a Hessian.
+2. **If it's a clean smooth function, check $\nabla^2 f\succeq 0$** via @thm-second-order —
+   compute the Hessian and argue it's PSD (often because it's a sum of squares like
+   $X^\top X$, or a diagonal of nonnegative entries).
+3. **For a non-smooth function** (e.g. $\|x\|_1$), fall back to the chord definition
+   @eq-jensen2 directly, or to the construction rules — the Hessian doesn't exist, so
+   @thm-second-order is unavailable (this is exactly what motivates subgradients,
+   [OPTM-05]).
+
+The mistake to avoid: reaching for the Hessian first. It's the *least* convenient of the
+three definitions and is undefined precisely for the kinky objectives (lasso!) that matter
+most.
+:::
+
+# The payoff: local minima are global {#sec-local-global}
+
+This is the theorem the rest of the series leans on. Everything above was built to make its
+proof a single move.
+
+::: {#thm-local-global}
+**Theorem (local minima are global; stationary points are minimizers).** Let $f$ be convex
+on a convex domain.
+
+(a) Every **local minimizer** of $f$ is a **global minimizer**.
+
+(b) If $f$ is differentiable and $\nabla f(x^\star)=0$, then $x^\star$ is a **global
+minimizer**.
+
+(c) If $f$ is **strictly** convex, the global minimizer is **unique** (there is at most
+one).
+:::
+
+::: {.proof}
+**(b) first — it is two lines.** Suppose $\nabla f(x^\star)=0$. Apply the first-order
+condition @eq-first-order with $x=x^\star$: for *every* $y$ in the domain,
+$$
+f(y)\;\ge\;f(x^\star)+\underbrace{\nabla f(x^\star)^\top}_{=\,0}(y-x^\star)=f(x^\star).
+$$
+So $f(y)\ge f(x^\star)$ for all $y$: $x^\star$ minimizes $f$ globally. That is the entire
+proof. Geometrically (recall @fig-first-order): at a stationary point the tangent is *flat*,
+and the first-order condition makes that flat tangent a floor beneath the whole graph, so
+nothing can be lower.
+
+**(a) — local forces global, even without differentiability.** Let $x^\star$ be a *local*
+minimizer: there is a radius $r>0$ with $f(x^\star)\le f(z)$ for all $z$ within distance $r$.
+Suppose, for contradiction, some point $y$ in the domain has $f(y)<f(x^\star)$. Walk from
+$x^\star$ toward $y$ a tiny amount: for small $t\in(0,1]$, the point
+$z_t=(1-t)x^\star+ty$ lies within distance $r$ of $x^\star$ once $t$ is small enough (it is
+$t\|y-x^\star\|$ away). Apply the chord inequality @eq-jensen2:
+$$
+f(z_t)\;\le\;(1-t)f(x^\star)+tf(y)
+= f(x^\star)+t\bigl(f(y)-f(x^\star)\bigr)
+< f(x^\star),
+$$
+where the final strict inequality uses $f(y)-f(x^\star)<0$ and $t>0$. But $z_t$ is within
+the radius $r$, so local minimality demands $f(z_t)\ge f(x^\star)$ — a flat contradiction.
+Hence no such $y$ exists, and $x^\star$ is global. (This direction needed only @eq-jensen2,
+so it holds for non-differentiable convex functions too — important for [OPTM-05].)
+
+**(c) — strict convexity forces uniqueness.** Suppose $x^\star\neq y^\star$ were two global
+minimizers, so $f(x^\star)=f(y^\star)=m$, the minimum value. Take their midpoint
+$z=\tfrac12 x^\star+\tfrac12 y^\star$. Strict convexity (the $<$ in @eq-jensen2, valid since
+$x^\star\neq y^\star$ and $t=\tfrac12\in(0,1)$) gives
+$$
+f(z)\;<\;\tfrac12 f(x^\star)+\tfrac12 f(y^\star)=\tfrac12 m+\tfrac12 m=m.
+$$
+So $f(z)<m$, a value *below* the supposed minimum — impossible, since $m$ is the minimum.
+Therefore at most one global minimizer exists. $\qquad\blacksquare$
+:::
+
+Pause on how much this buys. Part (b) says: for a convex objective, the *only* thing you
+ever have to do is find a stationary point — solve $\nabla f=0$, or descend until the
+gradient is (near) zero — and you are *done*, with a global certificate, for free. There is
+no "but is this the deepest valley?" follow-up question, because @thm-local-global *is* the
+answer. This is precisely why [OPTM-02]'s normal-equations OLS solution is trustworthy
+without further argument (its objective $\|y-X\beta\|^2$ is convex, @sec-recognizing), and
+why every convergence theorem in [OPTM-07] can speak of *the* minimizer.
+
+::: {.callout-warning title="Pitfall"}
+**Convexity guarantees that a stationary point is global — it does not guarantee a
+stationary point exists.** $f(x)=e^x$ is convex on all of $\mathbb{R}$, with $f'(x)=e^x>0$
+everywhere, so $\nabla f$ is *never* zero: the function decreases forever toward its
+infimum $0$ but never attains it. Convexity gives you "if you find a flat spot it's the
+global min"; *existence* of a minimizer is a separate question, settled by the
+closed-and-bounded / coercivity arguments of [OPTM-00]. Convexity + a minimizer existing is
+the combination you want; convexity alone is not enough.
+:::
+
+```{python}
+#| label: fig-local-global
+#| fig-cap: "Why convexity matters, in one comparison. **Left:** a convex objective has a single basin; the stationary point (green) is the global minimum, and gradient descent started *anywhere* (arrows) flows to it. **Right:** a non-convex objective has several basins; descent from different starts (arrows) lands in *different* local minima, only one of which is global (green). The flat-spot test that is a global certificate on the left is worthless on the right. This is the dividing line of the field."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+xs = np.linspace(-4, 4, 400)
+
+# convex
+def fc(x): return 0.25*x**2 + 1
+axL.plot(xs, fc(xs), color=CURVE)
+axL.plot([0], [fc(0)], color=TAN, marker="o", ms=9, zorder=5, label="global min")
+for x0 in (-3.2, 2.7):
+    axL.annotate("", xy=(x0*0.5, fc(x0*0.5)), xytext=(x0, fc(x0)),
+                 arrowprops=dict(arrowstyle="->", color=CHORD, lw=1.6))
+axL.set_title("Convex: one basin, local = global"); axL.set_xlabel("$x$")
+axL.legend(loc="upper center", fontsize=9)
+
+# non-convex
+def fn(x): return 0.12*x**4 - 0.9*x**2 + 0.4*x + 3
+axR.plot(xs, fn(xs), color=CURVE)
+# global min near right well
+xg = xs[np.argmin(fn(xs))]
+axR.plot([xg], [fn(xg)], color=TAN, marker="o", ms=9, zorder=5, label="global min")
+# a local (left) min
+from numpy import gradient
+# find left local min by scanning
+left = xs[xs < -0.5]
+xl = left[np.argmin(fn(left))]
+axR.plot([xl], [fn(xl)], color=GREY, marker="o", ms=8, zorder=5, label="other local min")
+for x0, target in ((-3.4, xl), (3.4, xg)):
+    axR.annotate("", xy=(0.5*(x0+target), fn(0.5*(x0+target))), xytext=(x0, fn(x0)),
+                 arrowprops=dict(arrowstyle="->", color=CHORD, lw=1.6))
+axR.set_title("Non-convex: many basins, local $\\neq$ global"); axR.set_xlabel("$x$")
+axR.legend(loc="upper center", fontsize=9)
+plt.tight_layout()
+```
+
+# Strict and strong convexity: from "the answer" to "found fast" {#sec-strong}
+
+Plain convexity gives a global minimum but says nothing about whether it is *unique* or how
+*hard* it is to reach. Two refinements fill those gaps, and they matter enormously
+downstream.
+
+**Strict convexity** (already defined: $<$ in @eq-jensen2 for $x\neq y$) gives *uniqueness*
+of the minimizer, by @thm-local-global(c). But it is still compatible with an arbitrarily
+*flat* bottom — $f(x)=x^4$ is strictly convex yet nearly flat near $0$ — and a flat bottom
+is slow to find, because the gradient there is tiny and carries little information about
+where the minimum is. The fix is a *quantitative* lower bound on curvature.
+
+::: {#def-strong}
+**Definition (strong convexity).** $f$ is **$\mu$-strongly convex** for some $\mu>0$ if
+$f(x)-\tfrac{\mu}{2}\|x\|^2$ is convex. Equivalently — and this is the form to remember —
+$f$ sits above a *moving quadratic* of curvature $\mu$: for differentiable $f$,
+$$
+f(y)\;\ge\;f(x)+\nabla f(x)^\top(y-x)+\frac{\mu}{2}\|y-x\|^2
+\qquad\text{for all } x,y.
+$$ {#eq-strong}
+For twice-differentiable $f$ this is $\nabla^2 f(x)\succeq\mu I$: every eigenvalue of the
+Hessian is at least $\mu>0$, so curvature is bounded *away from zero* in every direction.
+:::
+
+Compare @eq-strong to the first-order condition @eq-first-order. Plain convexity says the
+graph lies above the *flat* tangent. Strong convexity says it lies above the tangent *plus a
+genuine upward parabola* $\tfrac{\mu}{2}\|y-x\|^2$ — the graph doesn't just stay above the
+tangent, it pulls away from it quadratically. That parabolic cushion is what makes the
+bottom *not* flat, and it is exactly the quantity that controls speed.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does strong convexity make gradient descent fast?"* Two reasons, both visible in
+@eq-strong, and [OPTM-07] turns them into a rate. (1) **A unique, well-located minimum:**
+the quadratic cushion forces a single sharply-defined bottom, and it ties the gradient's
+*size* to the *distance* from the optimum — a small gradient now provably means you are
+close, so the algorithm can't waste iterations crawling across a flat plateau. (2) **The
+condition number $\kappa=L/\mu$:** pairing strong convexity (curvature $\ge\mu$) with
+$L$-smoothness from [OPTM-07] (curvature $\le L$) traps $f$ between two parabolas, and the
+*ratio* $\kappa=L/\mu$ governs the convergence rate $O(\rho^k)$ with $\rho\approx
+1-1/\kappa$. Well-conditioned ($\kappa\approx 1$, nearly round bowl) means fast; ill-conditioned
+($\kappa$ huge, a long thin valley) means slow zig-zagging. Strong convexity is the
+hypothesis that upgrades [OPTM-07]'s sublinear $O(1/k)$ to *linear* convergence — say that
+and you've answered the question."
+:::
+
+```{python}
+#| label: fig-strong
+#| fig-cap: "Convex vs. strongly convex. Both functions are convex (above their flat tangent at the minimum, dashed green). The strongly convex one (solid blue) is trapped *above* a parabola of curvature $\\mu$ (dotted) — its bottom is sharply curved, so the gradient grows quickly as you leave the minimum and an optimizer is pulled back hard. The merely-convex one (solid grey, $f=x^4$) flattens out near the bottom: the gradient there is tiny, and descent crawls. Strong convexity is the 'no flat bottom' guarantee."
+xs = np.linspace(-2, 2, 400)
+mu = 1.0
+def strong(x): return 0.5*mu*x**2 + 0.4   # exactly mu-strongly convex
+def flat(x):   return x**4 + 0.4          # convex, strictly, but flat at 0
+fig, ax = plt.subplots()
+ax.plot(xs, strong(xs), color=CURVE, label=r"strongly convex ($\nabla^2 f\succeq\mu I$)")
+ax.plot(xs, flat(xs), color=GREY, label=r"convex but flat-bottomed ($x^4$)")
+ax.plot(xs, 0.5*mu*xs**2 + 0.4, color=TAN, ls=":", lw=1.4,
+        label=r"cushion parabola $\frac{\mu}{2}\|x\|^2$")
+ax.axhline(0.4, color=TAN, ls="--", lw=1.2, alpha=0.7)
+ax.set_ylim(0.2, 3)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("Strong convexity = a quadratic cushion under the graph")
+ax.legend(loc="upper center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+There is a clean hierarchy worth memorizing, each strictly stronger than the last:
+$$
+\text{strongly convex}\ \Rightarrow\ \text{strictly convex}\ \Rightarrow\ \text{convex}.
+$$
+The first implication: @eq-strong with $\mu>0$ gives strict $>$ in @eq-first-order whenever
+$y\neq x$ (the cushion $\tfrac{\mu}{2}\|y-x\|^2$ is strictly positive), hence strict
+convexity. The second is by definition ($<$ implies $\le$). Neither reverses: $x^4$ is
+strictly but not strongly convex (no positive $\mu$ works at the flat origin); a straight
+line $f(x)=cx$ is convex but not strictly so (its chords lie *on* the graph, equality).
+
+# The convexity calculus: building convex objectives {#sec-calculus}
+
+In practice you never want to verify @eq-jensen2 or compute a Hessian for a complicated loss.
+Instead you build the objective from a vocabulary of known-convex atoms using operations
+that *preserve* convexity. This subsection is the toolkit; the next applies it to the
+objectives that run the rest of the series. We prove each rule from the definitions —
+nothing here is asserted.
+
+::: {#thm-calculus}
+**Theorem (operations preserving convexity).** Let $f,g$ be convex on a common convex
+domain.
+
+1. **Nonnegative scaling.** For $\alpha\ge 0$, $\alpha f$ is convex.
+2. **Sum.** $f+g$ is convex. Hence any nonnegative combination $\sum_i\alpha_i f_i$ of
+   convex functions ($\alpha_i\ge 0$) is convex.
+3. **Pointwise maximum.** $h(x)=\max\{f(x),g(x)\}$ is convex (and likewise the supremum of
+   any family of convex functions).
+4. **Affine precomposition.** If $f$ is convex and $A$ is a matrix, $b$ a vector, then
+   $x\mapsto f(Ax+b)$ is convex.
+:::
+
+::: {.proof}
+Each is a direct application of the chord definition @eq-jensen2 at a fixed
+$x,y,t\in[0,1]$; write $z=(1-t)x+ty$.
+
+**1. Nonnegative scaling.** $(\alpha f)(z)=\alpha f(z)\le\alpha[(1-t)f(x)+tf(y)]
+=(1-t)(\alpha f)(x)+t(\alpha f)(y)$. The middle step multiplies @eq-jensen2 for $f$ by
+$\alpha\ge 0$, which preserves the inequality. (If $\alpha<0$ the direction would flip,
+turning convex into concave — which is why only *nonnegative* scaling is allowed.)
+
+**2. Sum.** Add the chord inequalities for $f$ and $g$ at the same $x,y,t$:
+$$
+f(z)+g(z)\le(1-t)f(x)+tf(y)+(1-t)g(x)+tg(y)
+=(1-t)(f+g)(x)+t(f+g)(y).
+$$
+Adding two true inequalities of the same direction gives a true inequality, so $f+g$ is
+convex. Combining with rule 1 gives the nonnegative-combination statement.
+
+**3. Pointwise maximum.** Let $h=\max\{f,g\}$. Then $f(z)\le h(z)$ and $g(z)\le h(z)$ are
+*not* what we want; we want a bound *on* $h(z)$. Use that $h(x)\ge f(x)$ and $h(x)\ge g(x)$
+(the max dominates each). Then
+$$
+f(z)\le(1-t)f(x)+tf(y)\le(1-t)h(x)+th(y),
+$$
+using convexity of $f$ then dominance; identically $g(z)\le(1-t)h(x)+th(y)$. Since
+$h(z)=\max\{f(z),g(z)\}$ and *both* $f(z)$ and $g(z)$ are bounded by the same right side,
+their max is too: $h(z)\le(1-t)h(x)+th(y)$. So $h$ is convex. The same argument with a sup
+over a family works verbatim. (Note the asymmetry: the *minimum* of two convex functions is
+generally **not** convex — picture two bowls; their lower envelope has a dent between them.)
+
+**4. Affine precomposition.** Let $\tilde f(x)=f(Ax+b)$. Compute the input at the convex
+combination: $A z+b=A[(1-t)x+ty]+b$. Because $A$ is linear and
+$(1-t)+t=1$, this distributes to $(1-t)(Ax+b)+t(Ay+b)$ — an affine map sends a convex
+combination of inputs to the convex combination of outputs. Set $u=Ax+b$, $w=Ay+b$; then
+$Az+b=(1-t)u+tw$, and
+$$
+\tilde f(z)=f\bigl((1-t)u+tw\bigr)\le(1-t)f(u)+tf(w)=(1-t)\tilde f(x)+t\tilde f(y),
+$$
+the middle step being convexity of $f$ applied at $u,w$. So $\tilde f$ is convex.
+$\qquad\blacksquare$
+:::
+
+A handful of **atoms** complete the toolkit; each is convex by an elementary check we state
+once. Any affine function $a^\top x+b$ is convex (its chords lie *on* the graph: equality in
+@eq-jensen2 — it is the boundary case, simultaneously convex and concave). Any norm $\|x\|$
+is convex by the triangle inequality (proved in @sec-recognizing for $\|\cdot\|_1$).
+$x\mapsto x^2$, $e^x$, $-\log x$ (on $x>0$), and $x\log x$ are convex by $f''\ge 0$. With the
+four rules above, these atoms generate essentially every convex loss in machine learning.
+
+# Recognizing the objectives that run the series {#sec-recognizing}
+
+We now cash the toolkit out on the three objectives the rest of Core Sample minimizes. Each
+proof is short *because* of @thm-calculus — that is the point of building the toolkit.
+
+**The least-squares objective $\|y-X\beta\|^2$ is convex** (the OLS/ridge objective,
+[OPTM-02], REGR track). Write it as a composition. The map $\beta\mapsto X\beta-y$ is affine
+(matrix $X$, shift $-y$). The map $u\mapsto\|u\|^2=\sum_j u_j^2$ is convex, since it is a
+nonnegative sum (rule 2) of the convex atoms $u_j\mapsto u_j^2$. By affine precomposition
+(rule 4), $\beta\mapsto\|X\beta-y\|^2$ is convex. We can even see it is convex *directly*:
+its Hessian is $\nabla^2_\beta\|X\beta-y\|^2=2X^\top X$, and for any $v$,
+$v^\top(2X^\top X)v=2\|Xv\|^2\ge 0$, so $\nabla^2\succeq 0$ — @thm-second-order again. (It is
+*strongly* convex iff $X$ has full column rank, making $X^\top X\succ 0$; that is exactly the
+condition under which the OLS solution is unique, the multivariate cousin of $S_{xx}>0$ from
+[REGR-01].)
+
+**The logistic-regression loss is convex** (the classification workhorse, REGR/CLAS tracks).
+For a single labeled point with features $x_i$, label $y_i\in\{0,1\}$, and the linear score
+$z_i=\beta^\top x_i$, the negative log-likelihood contribution is
+$\ell_i(\beta)=\log\!\bigl(1+e^{z_i}\bigr)-y_i z_i$. The term $-y_i z_i$ is affine in
+$\beta$, hence convex. The term $\log(1+e^{z})$ as a function of the scalar $z$ has second
+derivative
+$$
+\frac{d^2}{dz^2}\log(1+e^{z})=\frac{e^{z}}{(1+e^{z})^2}=\sigma(z)\bigl(1-\sigma(z)\bigr)>0,
+$$
+where $\sigma$ is the logistic sigmoid; being positive, $z\mapsto\log(1+e^z)$ is convex
+($f''>0$, @thm-second-order). Composing with the affine $\beta\mapsto z_i=\beta^\top x_i$
+(rule 4) keeps it convex, adding the affine $-y_iz_i$ (rule 2) keeps it convex, and summing
+over all data points (rule 2 again) makes the total loss convex. So logistic regression has
+*no spurious local minima* — the reason it is fit reliably by the Newton/gradient methods of
+[OPTM-06], [OPTM-09] despite having no closed form.
+
+**The $\ell_1$ penalty $\|\beta\|_1=\sum_j|\beta_j|$ is convex** (the lasso penalty,
+[OPTM-05], [OPTM-10], REGR-15). Each $|\beta_j|$ is convex: for the scalar absolute value,
+the chord inequality is the triangle inequality, $|(1-t)a+tb|\le(1-t)|a|+t|b|$, which holds
+because $|{\cdot}|$ is a norm. (We can also see it as $\max\{\beta_j,-\beta_j\}$, convex by
+rule 3 as the max of two affine functions.) Summing over $j$ (rule 2) makes $\|\beta\|_1$
+convex. *But it is not differentiable* — there is a kink at every $\beta_j=0$, where
+@thm-second-order has no Hessian to offer. The whole lasso objective
+$\tfrac12\|y-X\beta\|^2+\lambda\|\beta\|_1$ is therefore convex (sum of two convex pieces,
+rule 2) but non-smooth, which is *precisely* the situation [OPTM-05] builds subgradients to
+handle: it extends "$\nabla f=0$ at the minimum" to "$0\in\partial f$" so that
+@thm-local-global keeps working across the kink.
+
+```{python}
+#| label: fig-recognizing
+#| fig-cap: "Three convex objectives the series minimizes, each built from the calculus of @thm-calculus. **Left:** the logistic per-point loss $\\log(1+e^{z}) - yz$ (here $y=1$) — smooth and convex, with a single global minimum. **Middle:** the absolute-value penalty $|\\beta|$ — convex but with a kink at $0$ (no Hessian there). **Right:** the 1-D lasso objective $\\tfrac12(\\beta-a)^2+\\lambda|\\beta|$ — a smooth convex bowl plus the kinked penalty stays convex, with a single global minimum that can sit *exactly at the kink* $\\beta=0$ (sparsity). This kink is what motivates subgradients in [OPTM-05]."
+fig, (a1, a2, a3) = plt.subplots(1, 3, figsize=(9.2, 3.5))
+
+z = np.linspace(-4, 5, 300)
+a1.plot(z, np.log1p(np.exp(z)) - 1.0*z, color=CURVE)
+a1.set_title(r"logistic loss ($y=1$)", fontsize=10); a1.set_xlabel("$z=\\beta^\\top x$")
+
+b = np.linspace(-2.5, 2.5, 300)
+a2.plot(b, np.abs(b), color=CURVE)
+a2.plot([0], [0], color=CHORD, marker="o", ms=6)
+a2.set_title(r"$|\beta|$: convex, with a kink", fontsize=10); a2.set_xlabel(r"$\beta$")
+
+a_val, lam = 0.6, 1.0
+obj = 0.5*(b - a_val)**2 + lam*np.abs(b)
+a3.plot(b, obj, color=CURVE)
+bstar = b[np.argmin(obj)]
+a3.plot([bstar], [obj.min()], color=TAN, marker="o", ms=7, zorder=5)
+a3.set_title(r"lasso $\frac{1}{2}(\beta-a)^2+\lambda|\beta|$", fontsize=10); a3.set_xlabel(r"$\beta$")
+plt.tight_layout()
+```
+
+# The honest boundary: where convexity evaporates {#sec-boundary}
+
+A monograph that only showed convexity winning would be a highlight reel. The defining
+feature of the modern ML landscape is that its most important objectives are **not** convex,
+and the entire guarantee of @thm-local-global silently switches off. This section is the
+edge of applicability, and it is the one a practitioner must internalize.
+
+**Neural networks.** The training loss of any network with at least one hidden layer is
+non-convex in its weights, for a structural reason worth understanding: the loss has *exact
+symmetries* — permute two hidden units (and their incoming/outgoing weights) and the
+function the network computes is unchanged, so the loss is identical. Two distinct weight
+vectors with the same loss value means, by the strict-convexity uniqueness argument run in
+reverse, the loss *cannot* be strictly convex; and in fact it has exponentially many
+distinct global minima (one per permutation) plus genuine local minima and vast saddle
+regions. @thm-local-global gives nothing here: a point with zero gradient could be a global
+min, a poor local min, or (most often, in high dimensions) a saddle. What rescues deep
+learning is not convexity but a mix of over-parameterization, good initialization, and the
+empirical observation that *most* local minima found by SGD are good enough — a far cry from
+a global certificate. (This is why [OPTM-11], [OPTM-12] talk about *escaping saddles* and
+*decreasing the loss*, never about *finding the global optimum*.)
+
+**Mixture models and $k$-means.** The Gaussian-mixture log-likelihood and the $k$-means
+objective are non-convex (again partly from label-permutation symmetry, partly from the
+genuine multimodality of "which points belong to which cluster"). EM and Lloyd's algorithm
+are *descent* methods that converge to a *local* optimum that depends on initialization — the
+standard practical defense is many random restarts, keeping the best. The clustering tracks
+([UNSP-05]) own this honestly.
+
+**The honest contrast.** @fig-boundary puts a convex loss landscape beside a non-convex one
+in two dimensions, so the difference is geometric and undeniable: one bowl versus a rugged
+terrain of basins.
+
+```{python}
+#| label: fig-boundary
+#| fig-cap: "Convex vs. non-convex landscapes in 2-D, as contour plots with descent paths from several starts (white). **Left:** a convex bowl — *every* start flows to the *same* global minimum (green), so where you initialize is irrelevant and the found point carries a global certificate. **Right:** a non-convex landscape (a sum of Gaussian wells) — different starts converge to *different* local minima (only the deepest, green, is global), so the answer depends on initialization and no local check certifies global optimality. The right panel is the habitat of neural nets, mixtures, and $k$-means; convexity is exactly the property the left panel has and the right one lacks."
+def descent(F, gradF, x0, eta=0.06, steps=60):
+    path = [np.array(x0, float)]
+    for _ in range(steps):
+        g = gradF(path[-1])
+        path.append(path[-1] - eta * g)
+    return np.array(path)
+
+gx = np.linspace(-3, 3, 200)
+gy = np.linspace(-3, 3, 200)
+GX, GY = np.meshgrid(gx, gy)
+
+# convex bowl
+def Fc(P): x, y = P; return 0.5*x**2 + 0.9*y**2
+def gFc(P): x, y = P; return np.array([x, 1.8*y])
+Zc = 0.5*GX**2 + 0.9*GY**2
+
+# non-convex: negative sum of gaussian bumps -> several wells
+centers = [(-1.6, -1.2, 1.0), (1.5, 1.4, 1.3), (1.7, -1.5, 0.8), (-1.4, 1.6, 0.9)]
+def Fn(P):
+    x, y = P; s = 0.04*(x**2 + y**2)
+    for cx, cy, w in centers:
+        s -= w*np.exp(-1.2*((x-cx)**2 + (y-cy)**2))
+    return s
+def gFn(P):
+    x, y = P
+    gx_ = 0.08*x; gy_ = 0.08*y
+    for cx, cy, w in centers:
+        e = np.exp(-1.2*((x-cx)**2 + (y-cy)**2))
+        gx_ += w*2.4*(x-cx)*e
+        gy_ += w*2.4*(y-cy)*e
+    return np.array([gx_, gy_])
+Zn = 0.04*(GX**2 + GY**2)
+for cx, cy, w in centers:
+    Zn = Zn - w*np.exp(-1.2*((GX-cx)**2 + (GY-cy)**2))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.2))
+axL.contour(GX, GY, Zc, levels=18, cmap="viridis", linewidths=0.7)
+for x0 in [(-2.6, 2.2), (2.4, -2.3), (2.6, 2.4), (-2.5, -2.2)]:
+    p = descent(Fc, gFc, x0)
+    axL.plot(p[:, 0], p[:, 1], color="white", lw=1.3)
+    axL.plot([x0[0]], [x0[1]], "o", color="white", ms=4)
+axL.plot([0], [0], "o", color=TAN, ms=10, zorder=5)
+axL.set_title("Convex: all starts $\\to$ one global min"); axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+
+axR.contour(GX, GY, Zn, levels=18, cmap="viridis", linewidths=0.7)
+for x0 in [(-2.6, 2.2), (2.4, -2.3), (2.6, 2.4), (-2.5, -2.2)]:
+    p = descent(Fn, gFn, x0, eta=0.05, steps=80)
+    axR.plot(p[:, 0], p[:, 1], color="white", lw=1.3)
+    axR.plot([x0[0]], [x0[1]], "o", color="white", ms=4)
+# global min among centers
+deepest = min(centers, key=lambda c: Fn((c[0], c[1])))
+axR.plot([deepest[0]], [deepest[1]], "o", color=TAN, ms=10, zorder=5)
+axR.set_title("Non-convex: starts $\\to$ different local mins"); axR.set_xlabel("$x$"); axR.set_ylabel("$y$")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"If the objective is non-convex, is the optimization worthless?"* No — but you must downgrade
+every claim. You lose the *global* certificate of @thm-local-global; you keep the ability to
+find a *stationary* point and, with a good descent method, a *local* minimum. The honest
+practitioner moves are: **(1)** check whether the problem is *secretly* convex (or can be
+*reformulated* convexly — relaxations, convex surrogates like the hinge/logistic loss
+replacing the non-convex 0–1 loss); **(2)** if genuinely non-convex, use *multiple random
+restarts* and keep the best (the standard EM / $k$-means defense); **(3)** exploit
+structure that makes local minima benign (over-parameterization in deep nets); and **(4)**
+report results as "a good solution," never "the optimal solution." The single most valuable
+sentence you can say in an interview: *"First I'd check if it's convex, because that decides
+whether I'm hunting for the answer or just for a good-enough answer."*
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Convexity of the *loss* is not convexity of the *problem* if you've reparameterized.** The
+squared loss $\|y-X\beta\|^2$ is convex in $\beta$. But fit the *same* data with a model
+$\hat y=\sigma(\beta_2\,\sigma(\beta_1 x))$ (a tiny neural net) and the loss is convex in
+neither $\beta_1$ nor the pair — the convexity lived in the *linear* parameterization, not
+in the data or the loss family. The lesson: convexity is a property of *objective $f$ as a
+function of the decision variable*, and it can be created or destroyed purely by how you
+choose to parameterize. Always ask "convex in *what*?"
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-03 *Convex Sets*]**, which defined "no dents" for regions, and
+**[OPTM-02 *Minimizing in Many Variables*]**, which found stationary points but could not
+certify them as global. This article supplied the certificate: convexity makes a stationary
+point a global minimum (@thm-local-global). The convexity spine continues, and the rest of
+the track consumes this result:
+
+- **[OPTM-05 *Subgradients*]** — the immediate next step. We saw the lasso objective is
+  convex but non-smooth (a kink at $\beta=0$), so $\nabla f=0$ cannot be written there.
+  Subgradients extend the first-order condition @eq-first-order and the optimality
+  condition @thm-local-global(b) to "$0\in\partial f(x)$," recovering the global certificate
+  across kinks — and derive the soft-thresholding update the lasso runs on.
+- **[OPTM-07 *Step Size and Convergence*]** — pairs the **strong convexity** of @sec-strong
+  (curvature $\ge\mu$) with $L$-smoothness (curvature $\le L$) to prove gradient descent
+  converges, at a rate set by the condition number $\kappa=L/\mu$. Convexity is the
+  hypothesis under which "descent" becomes "convergence to *the* optimum."
+- **[OPTM-13]–[OPTM-15] (constrained optimization)** — when the feasible set (convex, from
+  [OPTM-03]) and the objective (convex, from here) are both convex, the KKT conditions are
+  *sufficient*, not just necessary, and strong duality holds. Convex problems are the
+  well-behaved island of constrained optimization.
+- **Across the series** — every claim that fitting OLS, ridge, lasso, logistic regression,
+  or an SVM "finds the right parameters" cashes out @thm-local-global on a convex objective
+  certified by the calculus of @sec-calculus. The non-convex tracks (deep models, mixtures,
+  $k$-means in [UNSP-05]) inherit the *honest downgrade* of @sec-boundary.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The canonical reference.** R. Tyrrell Rockafellar, *Convex Analysis* (1970) — the source
+  text for everything here and in [OPTM-05], [OPTM-15]; dense but definitive. For a modern,
+  optimization-flavored treatment, Boyd & Vandenberghe, *Convex Optimization* (2004),
+  freely available, whose Chapter 3 is the convex-functions material of this article and
+  whose Chapter 4 is where the modeling toolkit of @sec-calculus is used to recognize convex
+  problems in the wild.
+- **The inequality at the root.** J. L. W. V. Jensen, "Sur les fonctions convexes et les
+  inégalités entre les valeurs moyennes" (1906) — the original chord-above inequality, and
+  the reason the two-point form @eq-jensen2 carries his name.
+- **Open threads this article deliberately deferred.** *What is the right notion of "gradient"
+  at a kink?* — the subgradient and subdifferential, [OPTM-05]. *How does convexity translate
+  into a convergence rate?* — $L$-smoothness, the descent lemma, and the role of $\kappa$,
+  [OPTM-07]. *Is there a dual convex problem hiding behind every convex problem?* — yes,
+  Fenchel/Lagrange duality, [OPTM-15]. *How do practitioners cope when the objective is
+  honestly non-convex?* — saddle-point escape and the empirical landscape of deep learning,
+  [OPTM-11], [OPTM-12].

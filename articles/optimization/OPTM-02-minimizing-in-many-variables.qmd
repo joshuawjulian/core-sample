@@ -1,0 +1,1286 @@
+---
+title: "Minimizing in Many Variables: Setting the Gradient to Zero"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # the objective / surfaces
+TANGENT = "#c1121f"    # the optimum / gradients
+ACCENT  = "#0a7d4d"    # highlights / stationary points
+GREY    = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the third article of the Optimization
+> track and the hinge of its on-ramp. It assumes [OPTM-00 *What Is an Optimization
+> Problem?*] for the vocabulary — **decision variable**, **objective**, **feasible
+> set**, **local** vs. **global** minimum — and [OPTM-01 *One-Dimensional
+> Minimization*] for the template we are about to generalize: at an interior minimum
+> the derivative is zero ($f'(x)=0$), and the second derivative sorts the flat spots.
+> Here the single variable becomes a *vector*, the derivative becomes the **gradient**
+> $\nabla f$, and the second-derivative test becomes the **Hessian test** — with a new
+> failure mode, the **saddle point**, that has no one-dimensional shadow.
+>
+> **Heavy cross-track dependence.** This article *uses* but does **not** re-derive the
+> multivariable-calculus objects it runs on — the **gradient** $\nabla f$,
+> **directional derivatives**, the **Hessian** $H$, **quadratic forms** $x^\top A x$,
+> and **positive-/negative-(semi)definiteness**. These belong to the *Geometry of
+> Data / Applied Linear Algebra* track and are flagged at the exact point each is
+> first needed. We assume you can *compute* a gradient and a Hessian; we teach what to
+> *do* with them. It sets up the **convexity spine** ([OPTM-03]–[OPTM-05], which says
+> *when* a stationary point is the global minimum) and the **descent spine**
+> ([OPTM-06] onward, which says *how* to reach one without a closed form).
+
+## Abstract {.unnumbered}
+
+We are handed a function $f$ of several variables — a vector input $\mathbf{x}\in\mathbb{R}^n$
+— and asked for the input that makes it smallest. This article generalizes [OPTM-01]'s
+"set the derivative to zero" to many dimensions, with every step on the page. The
+**first-order condition** becomes **stationarity**, $\nabla f(\mathbf{x}^\star)=\mathbf{0}$:
+the gradient is the direction of steepest *ascent*, so at a minimum it must vanish, or
+else there is still a downhill direction to walk. We derive this from the
+directional-derivative picture rather than assert it. The **second-order test** becomes
+the **Hessian test**: the matrix of second partials must be **positive-definite** for a
+local minimum, **negative-definite** for a maximum, and when it is **indefinite** we meet
+the genuinely new object — the **saddle point**, a stationary point that is a minimum
+along one direction and a maximum along another. We picture all three on $x^2+y^2$,
+$-x^2-y^2$, and $x^2-y^2$, explain why saddles dominate high-dimensional machine-learning
+landscapes (a forward look to [OPTM-11]), and carry the machinery through to its headline
+payoff: deriving the **OLS normal equations** $X^\top X\hat{\boldsymbol\beta}=X^\top
+\mathbf{y}$ as nothing more than $\nabla\|\mathbf{y}-X\boldsymbol\beta\|^2=\mathbf{0}$ —
+the exact move the Regression track links here for.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+At an interior minimum of a smooth function of many variables, **the gradient is the
+zero vector**: $\nabla f(\mathbf{x}^\star)=\mathbf{0}$. This is the multivariate
+"flat tangent." It is *necessary* — the gradient points in the direction of steepest
+ascent, so $-\nabla f$ points steepest downhill, and a nonzero gradient is a guaranteed
+direction of decrease. It is **not sufficient**: the same condition marks maxima and
+**saddle points**. The **Hessian** $H$ — the matrix of second partial derivatives —
+disambiguates, exactly as $f''$ did in one dimension: $H$ **positive-definite** (curving
+up in *every* direction) confirms a minimum, **negative-definite** a maximum, and
+**indefinite** (up in some directions, down in others) a **saddle**. Know all three
+clauses and you know precisely when "set the gradient to zero" is the whole story and
+when it is a trap — and the saddle is a trap with no one-dimensional warning.
+:::
+
+Everything below orbits that box. The equation $\nabla f=\mathbf{0}$ will look like a
+list of "set each partial derivative to zero" rules, but by the end you should see it as
+*forced*: it is the precise statement that **no direction is downhill**. The new clause
+— the saddle — is not a footnote. In the high-dimensional landscapes of modern machine
+learning, the overwhelming majority of stationary points are saddles, and recognizing
+them is why the descent algorithms in the rest of the track are built the way they are.
+
+# Why we are here: the problem that forces the question {#sec-why}
+
+Keep one question in view for the whole article: **what does it mean for a function of
+many variables to be "at the bottom," and how does calculus detect it?** Every step
+below answers a piece of that.
+
+## The setting, inherited from OPTM-01 {#sec-setting}
+
+[OPTM-01] solved the one-variable problem: find $x^\star=\arg\min_x f(x)$ by setting
+$f'(x)=0$ and checking $f''$. But almost nothing we actually want to optimize has a
+single knob. A regression line has an intercept *and* a slope — two variables, the case
+[REGR-01] worked. A regression with $p$ predictors has $p+1$ coefficients. A neural
+network has millions of parameters. The objective is a single number (a cost, a negative
+log-likelihood, a loss), but it depends on a whole *vector* of inputs:
+
+$$
+f : \mathbb{R}^n \to \mathbb{R}, \qquad
+\mathbf{x} = (x_1, x_2, \dots, x_n)^\top \;\mapsto\; f(\mathbf{x}),
+$$ {#eq-fn}
+
+and we want
+
+$$
+\mathbf{x}^\star = \operatorname*{arg\,min}_{\mathbf{x}\in C} f(\mathbf{x}),
+$$ {#eq-argmin}
+
+the *location* of the smallest output over the feasible set $C$ (here usually all of
+$\mathbb{R}^n$). The question of whether a minimizer *exists* was OPTM-00's job; the
+question of *when a stationary point is the global one* belongs to the convexity spine
+([OPTM-03]–[OPTM-04]). This article answers the question in between: **how does calculus
+locate a candidate minimizer when the input is a vector, and how do we test it?**
+
+This matters because it is the literal engine of model fitting. Every method in the rest
+of the series that has a *closed form* — ordinary least squares, ridge regression,
+linear discriminant analysis, the Gaussian MLE — gets that closed form by exactly the
+move of this article: write the objective, take the gradient, set it to zero, solve the
+resulting equations. And every method *without* a closed form (logistic regression,
+neural nets) is fit by an algorithm whose entire job is to drive $\nabla f$ toward
+$\mathbf{0}$. So $\nabla f=\mathbf{0}$ is not one technique among many. It is the
+target that the whole field is organized around hitting.
+
+## What is genuinely new in many dimensions {#sec-whats-new}
+
+You might reasonably ask: *if this is "just" the 1-D test done $n$ times, why a whole
+article?* Three things are genuinely new, and each is a place practitioners get burned.
+
+1. **Direction matters now.** In one dimension there are only two ways to move — left and
+   right. In $\mathbb{R}^n$ there are infinitely many directions, and "downhill" must
+   hold in *all* of them at once. This is what forces the gradient, a single object that
+   packages the slope in every direction.
+2. **A new kind of stationary point: the saddle.** With two or more variables a function
+   can curve *up* along one axis and *down* along another at the same flat spot — a
+   mountain pass. There is no such thing in one dimension. Saddles satisfy
+   $\nabla f=\mathbf{0}$ but are neither minima nor maxima, and in high dimensions they
+   vastly outnumber both.
+3. **The second-derivative test becomes a matrix question.** "Is the curvature positive?"
+   becomes "is the *Hessian matrix* positive-definite?" — a linear-algebra property,
+   answered by eigenvalues, that quietly imports the entire machinery of quadratic forms.
+
+::: {.callout-tip title="You might be asked"}
+*"Why can't I just minimize one variable at a time — fix all but $x_1$, minimize over
+$x_1$, then move to $x_2$, and so on?"* You *can*, and it is a real algorithm —
+**coordinate descent**, owned by [OPTM-10] — but it is not the same as $\nabla f=\mathbf{0}$,
+and it can crawl or stall on objectives with coupling between the variables (the contours
+are tilted ellipses, not axis-aligned). The condition $\nabla f=\mathbf{0}$ asks for *all*
+partial derivatives to vanish *simultaneously*, at one point; coordinate descent reaches
+that point only in the limit, one axis at a time. The interviewer is checking whether you
+see that "flat in every direction at once" (the gradient condition) is a stronger,
+cleaner statement than "I optimized each coordinate in turn."
+:::
+
+# Intuition before symbols: the landscape {#sec-intuition}
+
+Picture the graph of $f$ as a *landscape* over the plane (take $n=2$ so we can see it):
+above each input point $(x_1, x_2)$ the surface has height $f(x_1, x_2)$. Minimizing $f$
+is finding the lowest point of this terrain. Standing somewhere on it, you can now walk in
+**any** compass direction, not just east–west.
+
+The 1-D logic carries over almost verbatim, with one upgrade. In one dimension, *a nonzero
+slope was a downhill arrow*. Here, **the gradient is that arrow** — a single vector that
+points in the steepest *uphill* direction, whose length is how steep. If the gradient is
+nonzero, then walking *against* it (the direction $-\nabla f$) takes you strictly downhill,
+so you were not at the bottom. The only way no direction is downhill is if the arrow has
+**zero length**: $\nabla f=\mathbf{0}$. That is the whole first-order story, stated before
+any algebra. @fig-landscape draws the terrain and the downhill arrows.
+
+```{python}
+#| label: fig-landscape
+#| fig-cap: "The optimization landscape for $f(x,y)=x^2+y^2$. **Left:** the surface, a single bowl, with its minimum at the origin (green). **Right:** the contour map with the negative-gradient field $-\\nabla f$ drawn as arrows — at every point the arrow points straight downhill toward the minimum, and its length is the steepness. Where the arrows shrink to nothing (the center) is exactly where $\\nabla f=\\mathbf{0}$: the bottom of the bowl. A nonzero gradient is always a downhill arrow."
+f = lambda X, Y: X**2 + Y**2
+xs = np.linspace(-2.2, 2.2, 60)
+X, Y = np.meshgrid(xs, xs)
+Z = f(X, Y)
+
+fig = plt.figure(figsize=(9.0, 3.9))
+axL = fig.add_subplot(1, 2, 1, projection="3d")
+axL.plot_surface(X, Y, Z, cmap="viridis", alpha=0.85, linewidth=0, antialiased=True)
+axL.scatter([0], [0], [0], color=ACCENT, s=60, depthshade=False)
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$"); axL.set_zlabel("$f$")
+axL.set_title("$f(x,y)=x^2+y^2$: one bowl")
+axL.view_init(elev=30, azim=-120)
+
+axR = fig.add_subplot(1, 2, 2)
+xs2 = np.linspace(-2.2, 2.2, 18)
+Xq, Yq = np.meshgrid(xs2, xs2)
+# negative gradient of x^2+y^2 is (-2x, -2y)
+U, V = -2*Xq, -2*Yq
+axR.contour(X, Y, Z, levels=12, colors=GREY, linewidths=0.7, alpha=0.7)
+axR.quiver(Xq, Yq, U, V, color=TANGENT, alpha=0.8, width=0.005, scale=60)
+axR.scatter([0], [0], color=ACCENT, s=80, zorder=5)
+axR.set_xlabel("$x$"); axR.set_ylabel("$y$")
+axR.set_title(r"$-\nabla f$ points downhill")
+axR.set_aspect("equal")
+plt.tight_layout()
+```
+
+Three warnings are already visible and we will pay all three off. First, *flat is not the
+same as lowest*: the top of a hill ($-x^2-y^2$) is flat too. Second — and new — a flat
+spot can be a **saddle**, downhill in some directions and uphill in others, like a
+mountain pass; the gradient vanishes there too. Third, the argument that "$-\nabla f$ is
+downhill" needs every direction to be available — at the boundary of a constrained set one
+direction is forbidden, and a gradient can persist at the true minimum (the multivariate
+echo of OPTM-01's boundary case, taken up by Lagrange multipliers in [OPTM-13]).
+
+# The objects we are importing {#sec-objects}
+
+This article *uses* the gradient and the Hessian; the Geometry of Data track *builds*
+them. To keep the derivations self-contained at the level we need — without re-deriving
+multivariable calculus from scratch — we restate the three imported objects precisely,
+the way [OPTM-01] restated the definition of the derivative. If these are rusty, this
+section is your refresher; if they are fresh, skim it for our notation.
+
+## The partial derivative {#sec-partial}
+
+The **partial derivative** of $f(\mathbf{x})$ with respect to $x_i$ is computed by the
+rule from [REGR-01] and [OPTM-01]: **treat every other variable as a constant, then
+differentiate normally with the Calc-1 rules.** The symbol is $\partial$, not $d$, purely
+to signal "other variables are being held still." Formally it is the one-dimensional
+derivative taken along the $i$-th axis:
+
+$$
+\frac{\partial f}{\partial x_i}(\mathbf{x})
+= \lim_{h\to 0}\frac{f(\mathbf{x}+h\,\mathbf{e}_i)-f(\mathbf{x})}{h},
+$$ {#eq-partial}
+
+where $\mathbf{e}_i$ is the unit vector with a $1$ in slot $i$ and zeros elsewhere — so
+$\mathbf{x}+h\,\mathbf{e}_i$ nudges only the $i$-th coordinate. Read it as a rate: *how
+fast $f$ changes as you push the $i$-th input, holding the rest fixed.*
+
+## The gradient {#sec-gradient}
+
+::: {#def-gradient}
+**Definition (gradient).** The **gradient** of $f$ at $\mathbf{x}$ is the vector that
+stacks all $n$ partial derivatives:
+
+$$
+\nabla f(\mathbf{x})
+= \begin{pmatrix}
+\partial f/\partial x_1 \\ \partial f/\partial x_2 \\ \vdots \\ \partial f/\partial x_n
+\end{pmatrix}.
+$$
+:::
+
+The gradient is the multivariate replacement for the single number $f'(x)$. It is itself a
+*vector in $\mathbb{R}^n$* — one slope per input direction, bundled together. Two facts
+about it are the engine of this whole article, and we will **derive both** in @sec-first-order
+rather than assert them: (i) it points in the direction of steepest *ascent*, and (ii) it
+is the gradient's vanishing, $\nabla f=\mathbf{0}$, that signals a flat spot.
+
+## The Hessian {#sec-hessian-obj}
+
+::: {#def-hessian}
+**Definition (Hessian).** The **Hessian** of $f$ at $\mathbf{x}$ is the $n\times n$ matrix
+of all second partial derivatives:
+
+$$
+H(\mathbf{x}) = \nabla^2 f(\mathbf{x})
+= \begin{pmatrix}
+\dfrac{\partial^2 f}{\partial x_1^2} & \dfrac{\partial^2 f}{\partial x_1\partial x_2} & \cdots & \dfrac{\partial^2 f}{\partial x_1\partial x_n} \\[8pt]
+\dfrac{\partial^2 f}{\partial x_2\partial x_1} & \dfrac{\partial^2 f}{\partial x_2^2} & \cdots & \dfrac{\partial^2 f}{\partial x_2\partial x_n} \\
+\vdots & \vdots & \ddots & \vdots \\[2pt]
+\dfrac{\partial^2 f}{\partial x_n\partial x_1} & \dfrac{\partial^2 f}{\partial x_n\partial x_2} & \cdots & \dfrac{\partial^2 f}{\partial x_n^2}
+\end{pmatrix}.
+$$
+:::
+
+The $(i,j)$ entry is $\partial^2 f/\partial x_i \partial x_j$ — differentiate first by
+$x_j$, then by $x_i$. The Hessian is the multivariate replacement for the single number
+$f''(x)$. For the smooth functions we optimize, the mixed partials are equal,
+$\partial^2 f/\partial x_i\partial x_j = \partial^2 f/\partial x_j\partial x_i$ (this is
+**Clairaut's / Schwarz's theorem**, a standard result of the Geometry track), so $H$ is a
+**symmetric** matrix — a fact we will lean on, because symmetric matrices have real
+eigenvalues and that is what makes the Hessian test work.
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+This article imports four objects from the **Geometry of Data / Applied Linear Algebra**
+track and does not re-derive them: the **gradient** $\nabla f$ (@def-gradient), the
+**Hessian** $H$ (@def-hessian), **quadratic forms** $\mathbf{v}^\top A\mathbf{v}$
+(@sec-second-order), and **positive-/negative-(semi)definiteness** with their
+eigenvalue characterization (@sec-classify). We restated each at the level we use it so
+the logic runs end to end. The complete development — why the gradient is perpendicular to
+level sets, the spectral theorem for symmetric matrices, the geometry of quadratic forms —
+lives in that track. Everything *we do with* these objects is derived in full here.
+:::
+
+# The first-order condition, derived {#sec-first-order}
+
+We now turn the downhill-arrow picture into mathematics, deriving $\nabla f=\mathbf{0}$
+from the directional-derivative idea — nothing assumed above what @sec-objects restated.
+
+## The directional derivative: slope along any direction {#sec-directional}
+
+A partial derivative measures the slope along an *axis*. But at a minimum we need *no*
+direction to be downhill, not just the axis directions. So we need the slope along an
+**arbitrary** direction. Fix a unit vector $\mathbf{u}$ (length $\|\mathbf{u}\|=1$,
+pointing wherever you like). The **directional derivative** of $f$ at $\mathbf{x}$ in the
+direction $\mathbf{u}$ is the rate of change of $f$ as you step along $\mathbf{u}$:
+
+$$
+D_{\mathbf{u}} f(\mathbf{x})
+= \lim_{h\to 0}\frac{f(\mathbf{x}+h\,\mathbf{u})-f(\mathbf{x})}{h}.
+$$ {#eq-dirderiv}
+
+This is literally a *one-dimensional* derivative: define the single-variable function
+$g(h)=f(\mathbf{x}+h\,\mathbf{u})$, which slices the landscape along the line through
+$\mathbf{x}$ in direction $\mathbf{u}$, and then $D_{\mathbf{u}} f(\mathbf{x})=g'(0)$. So
+everything [OPTM-01] proved about $g'$ applies slice by slice.
+
+Now the key identity, which connects the directional derivative to the gradient. Apply the
+**multivariable chain rule** (a Geometry-track result we use, not rebuild) to
+$g(h)=f(x_1+hu_1,\dots,x_n+hu_n)$. Each input coordinate $x_i+hu_i$ has derivative $u_i$
+with respect to $h$, so the chain rule sums one term per coordinate:
+
+$$
+g'(h) = \sum_{i=1}^{n}\frac{\partial f}{\partial x_i}(\mathbf{x}+h\,\mathbf{u})\cdot u_i .
+$$
+
+Evaluate at $h=0$ and recognize the right-hand side as a dot product of the gradient
+vector with the direction vector:
+
+$$
+D_{\mathbf{u}} f(\mathbf{x}) = g'(0)
+= \sum_{i=1}^{n}\frac{\partial f}{\partial x_i}(\mathbf{x})\, u_i
+= \nabla f(\mathbf{x})^\top \mathbf{u}.
+$$ {#eq-dir-as-dot}
+
+Read @eq-dir-as-dot slowly: **the slope of the landscape in direction $\mathbf{u}$ is the
+dot product of the gradient with $\mathbf{u}$.** The gradient alone, dotted against any
+direction you choose, hands you the slope that way. This single formula carries the entire
+first-order theory.
+
+## Why the gradient is the steepest-ascent direction {#sec-steepest}
+
+The dot product has a geometric form we now use (the **law of cosines / dot-product angle
+formula**, from the Geometry track): for vectors $\mathbf{a},\mathbf{b}$ with angle
+$\theta$ between them, $\mathbf{a}^\top\mathbf{b}=\|\mathbf{a}\|\,\|\mathbf{b}\|\cos\theta$.
+Apply it to @eq-dir-as-dot with $\mathbf{u}$ a *unit* vector ($\|\mathbf{u}\|=1$):
+
+$$
+D_{\mathbf{u}} f(\mathbf{x})
+= \nabla f(\mathbf{x})^\top\mathbf{u}
+= \|\nabla f(\mathbf{x})\|\,\underbrace{\|\mathbf{u}\|}_{=1}\cos\theta
+= \|\nabla f(\mathbf{x})\|\cos\theta,
+$$ {#eq-steepest}
+
+where $\theta$ is the angle between the gradient and the direction $\mathbf{u}$ you walk.
+The only thing that varies as you spin $\mathbf{u}$ around is $\cos\theta$, which ranges
+over $[-1,1]$. So the slope $D_{\mathbf{u}}f$ is:
+
+- **largest** ($=+\|\nabla f\|$) when $\cos\theta=1$, i.e. $\theta=0$: walking *along* the
+  gradient. The gradient is the **steepest-ascent** direction.
+- **most negative** ($=-\|\nabla f\|$) when $\cos\theta=-1$, i.e. $\theta=180^\circ$:
+  walking *against* the gradient. So $-\nabla f$ is the **steepest-descent** direction —
+  the fact the entire descent spine ([OPTM-06] onward) is built on.
+- **zero** when $\cos\theta=0$, i.e. $\theta=90^\circ$: walking *perpendicular* to the
+  gradient keeps $f$ momentarily unchanged. That is why the gradient is perpendicular to
+  the level sets (contour lines).
+
+We have now *derived* the two facts promised in @sec-gradient: the gradient points
+steepest uphill, and $-\nabla f$ steepest downhill. @fig-steepest visualizes that the dot
+product is maximized along the gradient.
+
+```{python}
+#| label: fig-steepest
+#| fig-cap: "Why $-\\nabla f$ is the downhill direction. At a point on the landscape of $f(x,y)=x^2+y^2$, the directional slope $D_{\\mathbf{u}}f=\\|\\nabla f\\|\\cos\\theta$ traces a cosine as the walking direction $\\mathbf{u}$ rotates through $360^\\circ$ (left). It is largest along the gradient ($\\theta=0$), most negative against it ($\\theta=180^\\circ$), and exactly zero perpendicular to it ($\\theta=90^\\circ$). Right: the same point with the gradient (red) and its perpendicular contour line — the contour is precisely the zero-slope direction."
+pt = np.array([1.2, 0.8])
+grad = 2*pt                       # gradient of x^2+y^2 is (2x, 2y)
+gnorm = np.linalg.norm(grad)
+thetas = np.linspace(0, 2*np.pi, 400)
+slopes = gnorm * np.cos(thetas)   # D_u f along direction at angle theta from grad
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.7))
+axL.plot(np.degrees(thetas), slopes, color=CURVE)
+axL.axhline(0, color=GREY, lw=1.0)
+axL.scatter([0], [gnorm], color=TANGENT, s=55, zorder=5)
+axL.scatter([180], [-gnorm], color=ACCENT, s=55, zorder=5)
+axL.annotate("steepest ASCENT\n($\\nabla f$)", (0, gnorm), (40, gnorm*0.55),
+             fontsize=8.5, color=TANGENT)
+axL.annotate("steepest DESCENT\n($-\\nabla f$)", (180, -gnorm), (95, -gnorm*0.55),
+             fontsize=8.5, color=ACCENT)
+axL.set_xlabel(r"angle $\theta$ from gradient (deg)")
+axL.set_ylabel(r"directional slope $D_{\mathbf{u}}f$")
+axL.set_title(r"$D_{\mathbf{u}}f=\|\nabla f\|\cos\theta$")
+
+xs = np.linspace(-2.2, 2.2, 60)
+Xg, Yg = np.meshgrid(xs, xs)
+axR.contour(Xg, Yg, Xg**2 + Yg**2, levels=12, colors=GREY, linewidths=0.7, alpha=0.7)
+axR.quiver([pt[0]], [pt[1]], [grad[0]], [grad[1]], color=TANGENT,
+           angles="xy", scale_units="xy", scale=3, width=0.012)
+# perpendicular (tangent to contour) direction
+perp = np.array([-grad[1], grad[0]]) / gnorm
+axR.plot([pt[0]-0.8*perp[0], pt[0]+0.8*perp[0]],
+         [pt[1]-0.8*perp[1], pt[1]+0.8*perp[1]], color=ACCENT, lw=2.0)
+axR.scatter([pt[0]], [pt[1]], color=CURVE, s=50, zorder=5)
+axR.set_xlabel("$x$"); axR.set_ylabel("$y$")
+axR.set_title(r"$\nabla f \perp$ contour")
+axR.set_aspect("equal")
+plt.tight_layout()
+```
+
+## The stationarity condition {#sec-stationarity}
+
+Now we prove the headline. We use the same contradiction structure as [OPTM-01]'s
+@thm-fermat, upgraded from "left/right step" to "step along any direction."
+
+::: {#thm-stationarity}
+**Theorem (first-order necessary condition).** Let $f:\mathbb{R}^n\to\mathbb{R}$ be
+differentiable at a point $\mathbf{x}^\star$ that is **interior** to the feasible set $C$
+(some open ball around $\mathbf{x}^\star$ lies inside $C$). If $\mathbf{x}^\star$ is a
+**local minimum** of $f$ on $C$, then
+
+$$
+\nabla f(\mathbf{x}^\star) = \mathbf{0}.
+$$
+:::
+
+::: {.proof}
+We argue by contradiction. Suppose $\nabla f(\mathbf{x}^\star)\neq\mathbf{0}$; we exhibit a
+nearby feasible point with a strictly smaller value, contradicting "local minimum."
+
+Because the gradient is nonzero, we may choose the **steepest-descent direction**
+
+$$
+\mathbf{u} = -\frac{\nabla f(\mathbf{x}^\star)}{\|\nabla f(\mathbf{x}^\star)\|},
+$$
+
+a unit vector (we divided by its own length). By @eq-dir-as-dot the slope along
+$\mathbf{u}$ is
+
+$$
+D_{\mathbf{u}} f(\mathbf{x}^\star)
+= \nabla f(\mathbf{x}^\star)^\top\mathbf{u}
+= \nabla f(\mathbf{x}^\star)^\top\!\left(-\frac{\nabla f(\mathbf{x}^\star)}{\|\nabla f(\mathbf{x}^\star)\|}\right)
+= -\frac{\nabla f(\mathbf{x}^\star)^\top\nabla f(\mathbf{x}^\star)}{\|\nabla f(\mathbf{x}^\star)\|}
+= -\frac{\|\nabla f(\mathbf{x}^\star)\|^2}{\|\nabla f(\mathbf{x}^\star)\|}
+= -\|\nabla f(\mathbf{x}^\star)\| < 0,
+$$
+
+where we used the defining fact that
+$\mathbf{a}^\top\mathbf{a}=\|\mathbf{a}\|^2$ (a vector dotted with itself is its squared
+length). The slope along $\mathbf{u}$ is *strictly negative*.
+
+Now restrict $f$ to the line through $\mathbf{x}^\star$ in direction $\mathbf{u}$: let
+$g(h)=f(\mathbf{x}^\star+h\,\mathbf{u})$, a single-variable function with $g'(0)=
+D_{\mathbf{u}} f(\mathbf{x}^\star)<0$. This is exactly the one-dimensional situation of
+[OPTM-01]'s @thm-fermat: a negative derivative at $h=0$ means, by the definition of the
+derivative @eq-dirderiv, that the difference quotient
+$\bigl(g(h)-g(0)\bigr)/h$ is negative for all small enough $h>0$, and with a positive
+denominator the numerator must be negative — so $g(h)<g(0)$ for some small $h>0$. Spelling
+that out:
+
+$$
+g(h) = f(\mathbf{x}^\star + h\,\mathbf{u}) < f(\mathbf{x}^\star) = g(0).
+$$
+
+Because $\mathbf{x}^\star$ is **interior** to $C$, for small enough $h$ the point
+$\mathbf{x}^\star+h\,\mathbf{u}$ still lies inside $C$ and is allowed. We have produced a
+feasible neighbor with a strictly smaller value, so $\mathbf{x}^\star$ is **not** a local
+minimum — contradiction. The only escape is $\nabla f(\mathbf{x}^\star)=\mathbf{0}$.
+$\qquad\blacksquare$
+:::
+
+That proof is the rigorous version of the downhill-arrow picture: **a nonzero gradient is
+a guaranteed direction of decrease (namely $-\nabla f$), and a guaranteed downhill
+direction is incompatible with being at the bottom.** Notice the proof never used that
+$\mathbf{x}^\star$ was a *minimum* specifically — the same argument at a *maximum* walks
+*uphill* along $+\nabla f$ to find a higher point. So $\nabla f=\mathbf{0}$ catches **all**
+interior extrema and, as we will see, saddles too. That is precisely why it cannot, by
+itself, tell them apart.
+
+::: {.callout-important title="The word that does the work: *stationary*"}
+A point where $\nabla f(\mathbf{x})=\mathbf{0}$ is called a **stationary point** (or
+**critical point**), exactly as in one dimension. @thm-stationarity says **every interior
+local extremum is a stationary point** — it casts the net. It does **not** say the reverse:
+a stationary point may be a minimum, a maximum, or a *saddle*. Sorting the catch is the job
+of the Hessian test (@sec-second-order). This necessary-but-not-sufficient pattern is the
+backbone of the whole Optimization track — $f'=0$ in [OPTM-01], $\nabla f=\mathbf{0}$ here,
+the KKT conditions in [OPTM-14] — every one is a "stationarity net" followed by a
+second-order or convexity check.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"$\nabla f=\mathbf{0}$ is one vector equation. How many scalar equations is that, and what
+do you do with them?"* It is **$n$ scalar equations** — one per component, $\partial
+f/\partial x_i=0$ for $i=1,\dots,n$ — in the $n$ unknowns $x_1,\dots,x_n$. So setting the
+gradient to zero gives you a square system to solve. When $f$ is a quadratic (the
+least-squares case), each $\partial f/\partial x_i$ is *linear* in the unknowns, so
+$\nabla f=\mathbf{0}$ is a **linear system** $A\mathbf{x}=\mathbf{b}$ you solve by linear
+algebra — this is literally how the normal equations arise in @sec-ols. When $f$ is not
+quadratic (logistic loss, say), the system is nonlinear, usually has no closed form, and
+you solve it iteratively — gradient descent ([OPTM-06]) or Newton's method ([OPTM-09]).
+The interviewer wants to hear "$n$ equations, $n$ unknowns; linear if $f$ is quadratic,
+else iterate."
+:::
+
+# Sorting the catch: the Hessian test {#sec-second-order}
+
+Solving $\nabla f=\mathbf{0}$ hands us a list of stationary points. Each is a minimum, a
+maximum, or a saddle. We need a *local* test to classify each one — the multivariate
+analogue of "$f''>0$ means minimum."
+
+## What curvature means with a vector input {#sec-curvature}
+
+In one dimension, $f''(x^\star)>0$ said the curve bends upward — the slope is increasing as
+you pass through, tracing a valley. In many dimensions there is a *different curvature in
+every direction*, and a minimum requires the surface to bend **upward in all of them at
+once**. The Hessian is exactly the object that packages all those curvatures, and the tool
+that reads "upward in every direction" off the Hessian is the **second-order Taylor
+expansion**.
+
+Near a stationary point $\mathbf{x}^\star$ (where $\nabla f=\mathbf{0}$), the second-order
+Taylor expansion of $f$ — a Geometry-track result we use here, the multivariate
+generalization of the Calc-1 expansion $f(x^\star+h)\approx f(x^\star)+\tfrac12
+f''(x^\star)h^2$ — is
+
+$$
+f(\mathbf{x}^\star + \mathbf{v})
+\;\approx\; f(\mathbf{x}^\star)
+\;+\; \underbrace{\nabla f(\mathbf{x}^\star)^\top \mathbf{v}}_{=\,0\ \text{(stationary)}}
+\;+\; \tfrac12\,\mathbf{v}^\top H(\mathbf{x}^\star)\,\mathbf{v}
+\;=\; f(\mathbf{x}^\star) + \tfrac12\,\mathbf{v}^\top H \mathbf{v},
+$$ {#eq-taylor2}
+
+where $\mathbf{v}$ is a small displacement away from $\mathbf{x}^\star$. The linear term
+*vanishes* because we are at a stationary point — that is the whole reason the Hessian, not
+the gradient, governs what happens next. So whether $\mathbf{x}^\star$ is a minimum hinges
+entirely on the sign of the **quadratic form**
+
+$$
+Q(\mathbf{v}) = \mathbf{v}^\top H \mathbf{v}.
+$$ {#eq-qform}
+
+If $Q(\mathbf{v})>0$ for *every* nonzero displacement $\mathbf{v}$, then by @eq-taylor2 the
+value $f(\mathbf{x}^\star+\mathbf{v})>f(\mathbf{x}^\star)$ in *every* direction — the
+definition of a strict local minimum. If $Q(\mathbf{v})<0$ in every direction, it is a
+maximum. If $Q$ is positive in some directions and negative in others, the point goes up
+some ways and down others: a **saddle**. The names for these three cases are exactly the
+**definiteness** of the matrix $H$.
+
+## Definiteness: the multivariate sign of $f''$ {#sec-classify}
+
+::: {#def-definiteness}
+**Definition (definiteness of a symmetric matrix).** Let $H$ be a symmetric $n\times n$
+matrix and $Q(\mathbf{v})=\mathbf{v}^\top H\mathbf{v}$ its quadratic form. Then $H$ is:
+
+- **positive-definite** if $Q(\mathbf{v})>0$ for every $\mathbf{v}\neq\mathbf{0}$;
+- **negative-definite** if $Q(\mathbf{v})<0$ for every $\mathbf{v}\neq\mathbf{0}$;
+- **indefinite** if $Q(\mathbf{v})>0$ for some $\mathbf{v}$ and $Q(\mathbf{v})<0$ for
+  another;
+- **positive-semidefinite** if $Q(\mathbf{v})\ge 0$ for all $\mathbf{v}$ (allowing
+  equality), and **negative-semidefinite** symmetrically.
+:::
+
+These are *the* objects the Geometry track owns; we import them and the single fact that
+makes them checkable in practice. A symmetric matrix has **real eigenvalues**
+$\lambda_1,\dots,\lambda_n$ (the **spectral theorem**), and the sign of the quadratic form
+is read directly off them:
+
+$$
+H \text{ positive-definite} \iff \text{all } \lambda_i>0,
+\qquad
+H \text{ negative-definite} \iff \text{all } \lambda_i<0,
+\qquad
+H \text{ indefinite} \iff \text{eigenvalues of both signs.}
+$$ {#eq-eig}
+
+Why this is true is the Geometry track's job, but the one-line intuition is worth carrying:
+the eigenvectors are the axes along which the quadratic form is "pure," and along the
+eigenvector for $\lambda_i$ the form equals $\lambda_i\|\mathbf{v}\|^2$ — so the eigenvalue
+*is* the curvature along that axis. All curvatures positive $\Rightarrow$ a bowl; mixed
+signs $\Rightarrow$ a saddle. We will use @eq-eig as our computational test throughout.
+
+::: {.callout-note title="A cheaper test for $2\times 2$ Hessians"}
+For the $2\times2$ case — which covers every two-parameter model and all our hand examples
+— you need not find eigenvalues. With $H=\begin{psmallmatrix} a & b \\ b & c\end{psmallmatrix}$,
+the **determinant** is $\det H = ac-b^2$ and the **trace** is $a+c$. Then: $\det H>0$ and
+$a>0$ $\Rightarrow$ positive-definite (minimum); $\det H>0$ and $a<0$ $\Rightarrow$
+negative-definite (maximum); $\det H<0$ $\Rightarrow$ indefinite (saddle). This is precisely
+the two-variable second-derivative test from multivariable calculus, and it is the *same*
+determinant condition $S_{xx}>0$ that [REGR-01] used to confirm the OLS bowl. (It works
+because for a $2\times2$ symmetric matrix $\det H=\lambda_1\lambda_2$ and
+$\operatorname{tr}H=\lambda_1+\lambda_2$, so the sign pattern of the eigenvalues is pinned
+down by the determinant and one diagonal entry.)
+:::
+
+## The test, stated {#sec-hessian-test}
+
+::: {#thm-hessian}
+**Theorem (Hessian / second-order test).** Let $f$ be twice continuously differentiable
+near a stationary point $\mathbf{x}^\star$ (so $\nabla f(\mathbf{x}^\star)=\mathbf{0}$),
+with Hessian $H=H(\mathbf{x}^\star)$. Then:
+
+1. if $H$ is **positive-definite**, $\mathbf{x}^\star$ is a **strict local minimum**;
+2. if $H$ is **negative-definite**, $\mathbf{x}^\star$ is a **strict local maximum**;
+3. if $H$ is **indefinite**, $\mathbf{x}^\star$ is a **saddle point** — neither;
+4. if $H$ is only **semidefinite** (some eigenvalue is exactly $0$), the test is
+   **inconclusive** — the multivariate echo of the $f''=0$ case in [OPTM-01].
+:::
+
+::: {.proof}
+We prove (1); (2) is the same argument applied to $-f$ (whose Hessian is $-H$, flipping all
+signs), (3) we establish by direct construction below, and (4) we settle with explicit
+counterexamples in @sec-semidefinite.
+
+Assume $H$ is positive-definite. Take any nonzero displacement $\mathbf{v}$. By the
+second-order Taylor expansion @eq-taylor2 with the linear term gone,
+
+$$
+f(\mathbf{x}^\star + t\mathbf{v}) - f(\mathbf{x}^\star)
+= \tfrac12 (t\mathbf{v})^\top H (t\mathbf{v}) + r(t)
+= \tfrac12 t^2\,\mathbf{v}^\top H\mathbf{v} + r(t),
+$$
+
+where we scaled the step by $t>0$ and pulled the scalars out of the quadratic form
+($(t\mathbf{v})^\top H(t\mathbf{v}) = t^2\,\mathbf{v}^\top H\mathbf{v}$), and $r(t)$ is the
+Taylor remainder, which shrinks faster than $t^2$ (formally $r(t)/t^2\to 0$ as $t\to 0$, the
+defining property of the second-order remainder). Because $H$ is positive-definite,
+$\mathbf{v}^\top H\mathbf{v}>0$ — call it $c>0$. Then
+
+$$
+f(\mathbf{x}^\star + t\mathbf{v}) - f(\mathbf{x}^\star)
+= \tfrac12 c\,t^2 + r(t)
+= t^2\left(\tfrac12 c + \frac{r(t)}{t^2}\right).
+$$
+
+As $t\to 0$ the bracket tends to $\tfrac12 c>0$, so for all sufficiently small $t>0$ the
+bracket is positive, and $t^2>0$, making the whole right side positive:
+$f(\mathbf{x}^\star+t\mathbf{v})>f(\mathbf{x}^\star)$. This holds for *every* direction
+$\mathbf{v}$, so $f$ strictly increases in every direction away from $\mathbf{x}^\star$ —
+exactly a strict local minimum.
+
+For **(3)**, indefiniteness gives a direction $\mathbf{v}_+$ with
+$\mathbf{v}_+^\top H\mathbf{v}_+>0$ and a direction $\mathbf{v}_-$ with
+$\mathbf{v}_-^\top H\mathbf{v}_-<0$. Repeating the argument above along $\mathbf{v}_+$ shows
+$f$ *increases* that way, and along $\mathbf{v}_-$ shows $f$ *decreases* — so
+$\mathbf{x}^\star$ is below some neighbors and above others. It is neither a minimum nor a
+maximum: a saddle. $\qquad\blacksquare$
+:::
+
+The proof says in slow motion what the curvature picture shows: positive-definite means the
+bowl opens upward in every direction, so you sit at the bottom; indefinite means at least
+one direction tips downward, and a single downhill direction is enough to disqualify a
+minimum — even though the gradient is zero.
+
+# The three faces of a stationary point {#sec-three-faces}
+
+The cleanest way to internalize @thm-hessian is to watch all three cases on the simplest
+functions that exhibit them — the multivariate analogue of [OPTM-01]'s $x^2$, $-x^2$, $x^3$
+trio. Each is a pure quadratic, so its Hessian is *constant* and the classification is
+exact, not just local.
+
+## The bowl: $f=x^2+y^2$ (positive-definite, a minimum) {#sec-bowl}
+
+Take $f(x,y)=x^2+y^2$. The gradient and Hessian:
+
+$$
+\nabla f = \begin{pmatrix} 2x \\ 2y \end{pmatrix},
+\qquad
+H = \begin{pmatrix} 2 & 0 \\ 0 & 2 \end{pmatrix}.
+$$
+
+Stationary point: $\nabla f=\mathbf{0}$ forces $2x=0$ and $2y=0$, so $(0,0)$ is the only
+one. The Hessian is diagonal with entries $2,2$ — both eigenvalues are $2>0$, so $H$ is
+**positive-definite**, and $(0,0)$ is a strict local minimum (in fact global: the form
+$x^2+y^2\ge0$ with equality only at the origin). The quadratic form
+$Q(\mathbf{v})=2v_1^2+2v_2^2>0$ for every nonzero $\mathbf{v}$ — up in *every* direction.
+
+## The dome: $f=-x^2-y^2$ (negative-definite, a maximum) {#sec-dome}
+
+Flip the signs: $f(x,y)=-x^2-y^2$. Now
+$\nabla f=(-2x,-2y)^\top$, again zero only at $(0,0)$, and
+$H=\begin{psmallmatrix}-2&0\\0&-2\end{psmallmatrix}$, eigenvalues $-2,-2$, both negative —
+**negative-definite**. The origin is a strict local (and global) maximum: $Q(\mathbf{v})=
+-2v_1^2-2v_2^2<0$ in every direction, down everywhere.
+
+## The saddle: $f=x^2-y^2$ (indefinite, neither) {#sec-saddle}
+
+Now the genuinely new case, impossible in one dimension. Take $f(x,y)=x^2-y^2$:
+
+$$
+\nabla f = \begin{pmatrix} 2x \\ -2y \end{pmatrix},
+\qquad
+H = \begin{pmatrix} 2 & 0 \\ 0 & -2 \end{pmatrix}.
+$$
+
+The gradient vanishes only at $(0,0)$ — it *is* a stationary point, $\nabla f=\mathbf{0}$
+holds. But the Hessian has eigenvalues $2$ and $-2$, **opposite signs**: $H$ is
+**indefinite**. The quadratic form $Q(\mathbf{v})=2v_1^2-2v_2^2$ is *positive* along the
+$x$-axis ($\mathbf{v}=(1,0)$: $Q=2$) and *negative* along the $y$-axis
+($\mathbf{v}=(0,1)$: $Q=-2$). Walk east–west from the origin and you climb; walk
+north–south and you descend. The origin is a **mountain pass** — a saddle. A 1-D search
+along the $x$-axis would swear it found a minimum; a search along the $y$-axis would swear
+it found a maximum. Both are fooled, because the truth requires looking in *every*
+direction at once. @fig-three-faces draws all three.
+
+```{python}
+#| label: fig-three-faces
+#| fig-cap: "The three faces of a stationary point, each with $\\nabla f=\\mathbf{0}$ at the origin. **Left:** $x^2+y^2$ — Hessian positive-definite (eigenvalues $2,2$), a bowl, the origin is a minimum. **Middle:** $-x^2-y^2$ — negative-definite (eigenvalues $-2,-2$), a dome, a maximum. **Right:** $x^2-y^2$ — indefinite (eigenvalues $2,-2$), a saddle: up along $x$, down along $y$. The gradient is zero at all three centers; only the Hessian tells them apart, and only the saddle has no one-dimensional analogue."
+xs = np.linspace(-1.6, 1.6, 60)
+Xg, Yg = np.meshgrid(xs, xs)
+surfaces = [
+    (Xg**2 + Yg**2,   "$x^2+y^2$:  min",     "pos-def $(2,2)$"),
+    (-Xg**2 - Yg**2,  "$-x^2-y^2$:  max",    "neg-def $(-2,-2)$"),
+    (Xg**2 - Yg**2,   "$x^2-y^2$:  saddle",  "indef $(2,-2)$"),
+]
+fig = plt.figure(figsize=(9.4, 3.4))
+for k, (Z, ttl, sub) in enumerate(surfaces):
+    ax = fig.add_subplot(1, 3, k+1, projection="3d")
+    ax.plot_surface(Xg, Yg, Z, cmap="viridis", alpha=0.9, linewidth=0, antialiased=True)
+    ax.scatter([0], [0], [0], color=TANGENT, s=45, depthshade=False)
+    ax.set_title(ttl, fontsize=10.5)
+    ax.set_xlabel(sub, fontsize=8)
+    ax.set_xticks([]); ax.set_yticks([]); ax.set_zticks([])
+    ax.view_init(elev=26, azim=-130)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What is a saddle point, and why is it the headache of high-dimensional optimization?"*
+A **saddle point** is a stationary point ($\nabla f=\mathbf{0}$) whose Hessian is
+**indefinite** — the function curves up along some directions and down along others, like
+a horse's saddle or a mountain pass. The reason it dominates high-dimensional problems is a
+counting argument worth being able to give: at a stationary point of a "generic" function
+in $\mathbb{R}^n$, the Hessian has $n$ eigenvalues, each roughly equally likely positive or
+negative. For the point to be a *minimum*, **all $n$ must be positive** — an event that
+gets exponentially rare as $n$ grows ($\sim 2^{-n}$ if signs were independent coin flips).
+So in a deep network with millions of parameters, almost every stationary point is a saddle,
+not a minimum. This is *good* news for training: gradient descent does not get permanently
+stuck at a saddle the way it would at a bad local minimum — it can slide off along a
+descent direction — but it *slows down* near one, which is exactly what momentum ([OPTM-08])
+and stochastic noise ([OPTM-11]) help escape. An interviewer raising this is checking
+whether you know that in high dimensions the enemy is saddles, not local minima.
+:::
+
+# Worked example 1 — a two-variable cost, by hand {#sec-ex-quadratic}
+
+We start where everything is exact and checkable: a smooth cost in two variables. A
+logistics planner sets two dials — a staffing level $x$ and an inventory level $y$ (both in
+standardized units) — and the daily operating cost is well modeled by
+
+$$
+f(x,y) = x^2 + xy + y^2 - 4x - 5y + 10.
+$$ {#eq-ex1}
+
+The cross term $xy$ is the point: staffing and inventory *interact* (more staff makes
+inventory cheaper to manage, and vice versa), so this is not two independent 1-D problems —
+the variables are coupled, and we must set the whole gradient to zero at once.
+
+**Step 1 — the gradient.** Differentiate $f$ with respect to each variable, treating the
+other as constant (@sec-partial). For $\partial f/\partial x$: the $x^2$ gives $2x$, the
+$xy$ gives $y$ (treating $y$ as constant, $\frac{\partial}{\partial x}(xy)=y$), the $y^2$
+gives $0$, the $-4x$ gives $-4$, the $-5y$ and $10$ give $0$:
+
+$$
+\frac{\partial f}{\partial x} = 2x + y - 4,
+\qquad
+\frac{\partial f}{\partial y} = x + 2y - 5,
+$$
+
+the second by the mirror calculation. So
+
+$$
+\nabla f(x,y) = \begin{pmatrix} 2x + y - 4 \\ x + 2y - 5 \end{pmatrix}.
+$$
+
+**Step 2 — set it to zero and solve.** Stationarity @thm-stationarity demands both
+components vanish, a $2\times2$ **linear system**:
+
+$$
+\begin{aligned}
+2x + y &= 4, \\
+x + 2y &= 5.
+\end{aligned}
+$$
+
+Solve by elimination. Multiply the first by $2$: $4x+2y=8$. Subtract the second
+($x+2y=5$): $(4x+2y)-(x+2y)=8-5$, i.e. $3x=3$, so $x=1$. Back-substitute into the first:
+$2(1)+y=4\Rightarrow y=2$. The unique stationary point is $(x^\star,y^\star)=(1,2)$.
+
+**Step 3 — the Hessian test.** Differentiate the gradient components again:
+
+$$
+\frac{\partial^2 f}{\partial x^2}=2,\quad
+\frac{\partial^2 f}{\partial y^2}=2,\quad
+\frac{\partial^2 f}{\partial x\partial y}=1
+\quad\Longrightarrow\quad
+H=\begin{pmatrix} 2 & 1 \\ 1 & 2 \end{pmatrix}.
+$$
+
+Use the $2\times2$ shortcut: $\det H = (2)(2)-(1)^2 = 3>0$ and the top-left entry $a=2>0$,
+so $H$ is **positive-definite** — a strict local minimum. (Cross-check with eigenvalues:
+they are $2\pm1=\{3,1\}$, both positive, agreeing with @eq-eig.) Since $H$ is constant and
+positive-definite *everywhere*, the bowl never bends back down, so $(1,2)$ is the **global**
+minimum. The minimum cost is $f(1,2)=1+2+4-4-10+10=3$. @fig-ex1 confirms the hand
+arithmetic.
+
+```{python}
+#| label: fig-ex1
+#| fig-cap: "Worked example 1. The coupled cost $f(x,y)=x^2+xy+y^2-4x-5y+10$ as a contour map, with the negative-gradient field. Setting $\\nabla f=\\mathbf{0}$ solves a $2\\times 2$ linear system to the unique stationary point $(1,2)$ (green), confirmed a minimum by the positive-definite Hessian ($\\det H=3>0$). The downhill arrows all flow into it; the tilted elliptical contours are the visual signature of the coupling term $xy$."
+f = lambda X, Y: X**2 + X*Y + Y**2 - 4*X - 5*Y + 10
+xs = np.linspace(-1, 4, 80)
+ys = np.linspace(-1, 5, 80)
+X, Y = np.meshgrid(xs, ys)
+Z = f(X, Y)
+
+fig, ax = plt.subplots()
+cs = ax.contour(X, Y, Z, levels=18, colors=GREY, linewidths=0.7, alpha=0.7)
+xq = np.linspace(-0.5, 3.5, 14); yq = np.linspace(-0.5, 4.5, 14)
+Xq, Yq = np.meshgrid(xq, yq)
+U, V = -(2*Xq + Yq - 4), -(Xq + 2*Yq - 5)   # -gradient
+ax.quiver(Xq, Yq, U, V, color=TANGENT, alpha=0.7, width=0.004, scale=70)
+ax.scatter([1], [2], color=ACCENT, s=90, zorder=6, edgecolor="white",
+           label=r"min $(1,2)$, $f=3$")
+ax.set_xlabel("staffing $x$"); ax.set_ylabel("inventory $y$")
+ax.set_title("Coupled cost: $\\nabla f=\\mathbf{0}$ at one point")
+ax.legend(loc="upper left", framealpha=0.9)
+ax.set_aspect("equal")
+plt.tight_layout()
+print(f"gradient at (1,2) = ({2*1+2-4}, {1+2*2-5})  (should be (0,0))")
+print(f"Hessian det = {2*2 - 1*1}  (>0), top-left = 2 (>0)  => positive-definite => minimum")
+print(f"minimum value f(1,2) = {f(1.0,2.0):.1f}")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"For a general quadratic $f(\mathbf{x})=\tfrac12\mathbf{x}^\top A\mathbf{x} -
+\mathbf{b}^\top\mathbf{x} + c$ with $A$ symmetric, where is the minimum?"* Take the
+gradient — for a quadratic it is $\nabla f = A\mathbf{x}-\mathbf{b}$ (the multivariate
+analogue of $\frac{d}{dx}(\tfrac12 ax^2-bx)=ax-b$) — and set it to zero:
+$A\mathbf{x}^\star=\mathbf{b}$, so $\mathbf{x}^\star=A^{-1}\mathbf{b}$ when $A$ is
+invertible. The Hessian is exactly $A$, so it is a minimum **iff $A$ is positive-definite**,
+a maximum iff negative-definite, a saddle if indefinite, and if $A$ is singular there may
+be no unique solution at all. This is the master template: *every* smooth function looks
+like this quadratic up close (its second-order Taylor model), which is precisely what
+Newton's method ([OPTM-09]) exploits — it minimizes this local quadratic at every step.
+And the OLS normal equations of @sec-ols are this template with $A=X^\top X$ and
+$\mathbf{b}=X^\top\mathbf{y}$.
+:::
+
+# Worked example 2 — the headline: deriving the OLS normal equations {#sec-ols}
+
+This is the example the Regression track ([REGR-01], [REGR-05]) links here for, and the
+reason this article is load-bearing. [REGR-01] derived the one-predictor least-squares line
+by minimizing over *two* scalars, the intercept and slope, with two partial derivatives. We
+now do the general case — $p$ predictors at once — in one clean stroke, because the gradient
+handles all $p+1$ coefficients simultaneously. The payoff is the **normal equations** in
+their matrix form, the equation every linear-model solver in the series is built on.
+
+## The setup {#sec-ols-setup}
+
+We have $n$ data points, each with $p$ predictor values and one outcome. Stack them into a
+**design matrix** $X$ (size $n\times p$, one row per data point, one column per predictor —
+including a column of ones for the intercept) and an **outcome vector** $\mathbf{y}$
+(length $n$). A candidate coefficient vector $\boldsymbol\beta\in\mathbb{R}^p$ predicts
+$X\boldsymbol\beta$, and the **residual vector** is $\mathbf{y}-X\boldsymbol\beta$. The
+least-squares objective is the **sum of squared residuals**, written compactly as a squared
+Euclidean norm:
+
+$$
+f(\boldsymbol\beta) = \|\mathbf{y}-X\boldsymbol\beta\|^2
+= (\mathbf{y}-X\boldsymbol\beta)^\top(\mathbf{y}-X\boldsymbol\beta),
+$$ {#eq-ols-obj}
+
+using the defining fact $\|\mathbf{a}\|^2=\mathbf{a}^\top\mathbf{a}$ (a vector's squared
+length is its dot product with itself). Our task is exactly the article's theme:
+$\arg\min_{\boldsymbol\beta} f(\boldsymbol\beta)$, found by $\nabla f=\mathbf{0}$. The
+unknown is now the *vector* $\boldsymbol\beta$.
+
+## Expanding the objective {#sec-ols-expand}
+
+Multiply out the product @eq-ols-obj using the rule $(\mathbf{a}-\mathbf{b})^\top
+(\mathbf{a}-\mathbf{b}) = \mathbf{a}^\top\mathbf{a} - \mathbf{a}^\top\mathbf{b} -
+\mathbf{b}^\top\mathbf{a} + \mathbf{b}^\top\mathbf{b}$, with
+$\mathbf{a}=\mathbf{y}$ and $\mathbf{b}=X\boldsymbol\beta$:
+
+$$
+f(\boldsymbol\beta)
+= \mathbf{y}^\top\mathbf{y}
+- \mathbf{y}^\top X\boldsymbol\beta
+- (X\boldsymbol\beta)^\top\mathbf{y}
++ (X\boldsymbol\beta)^\top(X\boldsymbol\beta).
+$$
+
+Two simplifications. First, the middle two terms are equal: $(X\boldsymbol\beta)^\top
+\mathbf{y} = \boldsymbol\beta^\top X^\top\mathbf{y}$ is a $1\times1$ quantity (a scalar),
+and a scalar equals its own transpose, so $\boldsymbol\beta^\top X^\top\mathbf{y} =
+(\boldsymbol\beta^\top X^\top\mathbf{y})^\top = \mathbf{y}^\top X\boldsymbol\beta$. Hence
+the two cross terms combine into $-2\,\mathbf{y}^\top X\boldsymbol\beta$. Second, the last
+term uses $(X\boldsymbol\beta)^\top = \boldsymbol\beta^\top X^\top$, giving
+$\boldsymbol\beta^\top X^\top X\boldsymbol\beta$. So
+
+$$
+f(\boldsymbol\beta)
+= \mathbf{y}^\top\mathbf{y}
+- 2\,\mathbf{y}^\top X\boldsymbol\beta
++ \boldsymbol\beta^\top (X^\top X)\,\boldsymbol\beta.
+$$ {#eq-ols-expanded}
+
+This is *exactly* the general quadratic of the previous callout, with $A=2X^\top X$,
+$\mathbf{b}=2X^\top\mathbf{y}$, and $c=\mathbf{y}^\top\mathbf{y}$. Reading it confirms our
+template: a constant term, a linear term in $\boldsymbol\beta$, and a quadratic term with
+matrix $X^\top X$.
+
+## Taking the gradient {#sec-ols-grad}
+
+We differentiate @eq-ols-expanded term by term with respect to the vector $\boldsymbol\beta$.
+We need two **matrix-calculus identities**, both of which are the vector versions of facts
+you know from Calc 1, and we state each with its 1-D shadow so nothing is opaque:
+
+- **Linear term.** For a constant vector $\mathbf{a}$,
+  $\nabla_{\boldsymbol\beta}\bigl(\mathbf{a}^\top\boldsymbol\beta\bigr)=\mathbf{a}$. (Shadow:
+  $\frac{d}{d\beta}(a\beta)=a$. The function $\mathbf{a}^\top\boldsymbol\beta=\sum_j
+  a_j\beta_j$ has $\partial/\partial\beta_k = a_k$, which stacked is $\mathbf{a}$.) Here the
+  linear term is $-2\,\mathbf{y}^\top X\boldsymbol\beta = -2(X^\top\mathbf{y})^\top
+  \boldsymbol\beta$, so its gradient is $-2X^\top\mathbf{y}$.
+- **Quadratic term.** For a *symmetric* matrix $M$,
+  $\nabla_{\boldsymbol\beta}\bigl(\boldsymbol\beta^\top M\boldsymbol\beta\bigr)=2M
+  \boldsymbol\beta$. (Shadow: $\frac{d}{d\beta}(m\beta^2)=2m\beta$.) The matrix
+  $M=X^\top X$ is symmetric — $(X^\top X)^\top = X^\top (X^\top)^\top = X^\top X$ — so the
+  identity applies and the quadratic term's gradient is $2X^\top X\boldsymbol\beta$.
+
+We *derive* the quadratic identity once, so it is not a black box. Write
+$\boldsymbol\beta^\top M\boldsymbol\beta=\sum_i\sum_j M_{ij}\beta_i\beta_j$ and
+differentiate with respect to $\beta_k$. The terms that involve $\beta_k$ are those with
+$i=k$ or $j=k$. Using the product rule, the $k$-th partial collects $\sum_j M_{kj}\beta_j$
+(from $i=k$) plus $\sum_i M_{ik}\beta_i$ (from $j=k$); since $M$ is symmetric
+($M_{ik}=M_{ki}$) these two sums are equal, giving $2\sum_j M_{kj}\beta_j = 2(M
+\boldsymbol\beta)_k$. Stacking over $k$ yields $\nabla = 2M\boldsymbol\beta$, as claimed.
+
+The constant term $\mathbf{y}^\top\mathbf{y}$ has no $\boldsymbol\beta$, so its gradient is
+$\mathbf{0}$. Assembling the three pieces:
+
+$$
+\nabla f(\boldsymbol\beta)
+= \mathbf{0} \;-\; 2X^\top\mathbf{y} \;+\; 2X^\top X\boldsymbol\beta
+= 2\bigl(X^\top X\boldsymbol\beta - X^\top\mathbf{y}\bigr).
+$$ {#eq-ols-gradient}
+
+## Setting it to zero: the normal equations {#sec-ols-normal}
+
+Stationarity @thm-stationarity sets @eq-ols-gradient to the zero vector. The constant $2$
+divides out (it cannot move where a zero is):
+
+$$
+X^\top X\,\hat{\boldsymbol\beta} - X^\top\mathbf{y} = \mathbf{0}
+\quad\Longrightarrow\quad
+\boxed{\;X^\top X\,\hat{\boldsymbol\beta} = X^\top\mathbf{y}.\;}
+$$ {#eq-normal}
+
+These are the **normal equations** — the single matrix equation that generalizes the two
+scalar normal equations of [REGR-01]. When $X^\top X$ is invertible (the columns of $X$ are
+linearly independent — the multivariate version of "the predictors are not redundant"), the
+solution is
+
+$$
+\hat{\boldsymbol\beta} = (X^\top X)^{-1} X^\top \mathbf{y}.
+$$ {#eq-ols-solution}
+
+We can now state the result formally.
+
+::: {#thm-ols}
+**Theorem (OLS coefficients).** If $X^\top X$ is positive-definite (equivalently, the
+columns of the $n\times p$ design matrix $X$ are linearly independent, which requires
+$n\ge p$), then $f(\boldsymbol\beta)=\|\mathbf{y}-X\boldsymbol\beta\|^2$ has the unique
+minimizer $\hat{\boldsymbol\beta}=(X^\top X)^{-1}X^\top\mathbf{y}$, characterized by the
+normal equations $X^\top X\hat{\boldsymbol\beta}=X^\top\mathbf{y}$.
+:::
+
+::: {.proof}
+Existence and the formula are the derivation @sec-ols-setup–@sec-ols-normal: $\nabla
+f=\mathbf{0}$ (@eq-ols-gradient set to zero) gives the normal equations @eq-normal, whose
+solution is @eq-ols-solution. That this stationary point is a *minimum* — not a maximum or
+saddle — follows from the Hessian test @thm-hessian: differentiating @eq-ols-gradient again
+gives the constant Hessian $H = 2X^\top X$. The matrix $X^\top X$ is positive-definite by
+hypothesis, so $H$ is too (all eigenvalues positive by @eq-eig), confirming a strict
+minimum; and since $H$ is positive-definite *everywhere*, it is the global minimum.
+Uniqueness follows because $X^\top X$ positive-definite is invertible, so @eq-normal has
+exactly one solution. $\qquad\blacksquare$
+:::
+
+Notice that $X^\top X$ playing the role of "the curvature" is the multivariate echo of
+[REGR-01]'s $S_{xx}>0$ condition: there, the single number $S_{xx}$ had to be positive for a
+unique line; here, the *matrix* $X^\top X$ must be positive-definite for a unique fit. The
+degenerate boundary is the same idea generalized — if a predictor is a copy (or linear
+combination) of others, $X^\top X$ is singular, the inverse @eq-ols-solution does not exist,
+and there is no unique best fit. That is **multicollinearity**, the multivariate face of
+[REGR-01]'s "no spread in $x$" failure, treated fully in [REGR-07]. @fig-ols runs the
+derivation on real data and verifies $\nabla f=\mathbf{0}$ numerically.
+
+```{python}
+#| label: fig-ols
+#| fig-cap: "The headline example on real data. We fit a two-predictor least-squares model (so $\\boldsymbol\\beta\\in\\mathbb{R}^3$ with an intercept) by solving the normal equations $X^\\top X\\hat{\\boldsymbol\\beta}=X^\\top\\mathbf{y}$, i.e. $\\nabla\\|\\mathbf{y}-X\\boldsymbol\\beta\\|^2=\\mathbf{0}$. **Left:** observed vs. fitted outcomes hug the 45-degree line, the model fits. **Right:** the residuals against fitted values scatter flat around zero — and their gradient-defining property holds, $X^\\top(\\mathbf{y}-X\\hat{\\boldsymbol\\beta})=\\mathbf{0}$, printed below to machine precision. The closed form is exactly the stationary point of this article."
+rng = np.random.default_rng(2024)
+n = 80
+x1 = rng.uniform(0, 10, n)           # e.g. advertising spend
+x2 = rng.uniform(0, 5, n)            # e.g. store footfall (thousands)
+# true relationship with real noise
+y = 3.0 + 1.4*x1 - 0.8*x2 + rng.normal(0, 2.0, n)
+
+X = np.column_stack([np.ones(n), x1, x2])   # design matrix with intercept column
+# solve the normal equations (use solve, not explicit inverse, for stability)
+beta_hat = np.linalg.solve(X.T @ X, X.T @ y)
+fitted = X @ beta_hat
+resid = y - fitted
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.7))
+lim = [min(y.min(), fitted.min()), max(y.max(), fitted.max())]
+axL.plot(lim, lim, color=GREY, ls="--", lw=1.2)
+axL.scatter(fitted, y, color=CURVE, s=28, alpha=0.85)
+axL.set_xlabel("fitted $\\hat y$"); axL.set_ylabel("observed $y$")
+axL.set_title("Observed vs. fitted")
+
+axR.axhline(0, color=GREY, lw=1.2)
+axR.scatter(fitted, resid, color=CURVE, s=28, alpha=0.85)
+axR.set_xlabel("fitted $\\hat y$"); axR.set_ylabel("residual")
+axR.set_title("Residuals (flat = good)")
+plt.tight_layout()
+
+grad = 2*(X.T @ X @ beta_hat - X.T @ y)
+print(f"beta_hat (intercept, x1, x2) = {np.round(beta_hat, 3)}")
+print(f"gradient at beta_hat         = {np.round(grad, 8)}   (== 0, stationarity)")
+print(f"X^T (y - X beta) [normal eqns] = {np.round(X.T @ resid, 8)}   (== 0)")
+print(f"X^T X positive-definite? eigenvalues = {np.round(np.linalg.eigvalsh(X.T @ X), 2)}  (all > 0)")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why are they called the 'normal' equations, and what is the geometry?"* "Normal" means
+**perpendicular**, not "ordinary." The normal equations @eq-normal rearrange to
+$X^\top(\mathbf{y}-X\hat{\boldsymbol\beta})=\mathbf{0}$ — the residual vector
+$\mathbf{y}-X\hat{\boldsymbol\beta}$ is **orthogonal to every column of $X$** (each row of
+the equation is one column of $X$ dotted with the residual, set to zero). Geometrically,
+$\hat{\boldsymbol\beta}$ projects $\mathbf{y}$ onto the subspace spanned by the predictors,
+and the residual is what is left over — perpendicular to that subspace, the shortest
+possible leftover. That projection view is owned by [REGR-04 *Regression as Projection*],
+which derives the *same* $\hat{\boldsymbol\beta}$ from geometry instead of calculus. Here
+the takeaway is that "set the gradient to zero" and "make the residual perpendicular to the
+predictors" are the identical statement — the gradient @eq-ols-gradient *is*
+$-2X^\top(\text{residual})$, so it vanishes exactly when the residual is orthogonal to the
+columns.
+:::
+
+# Failure modes and the honest boundary {#sec-failure}
+
+We have met the new failure mode (the saddle); collect all the ways "$\nabla f=\mathbf{0}$"
+can mislead, because knowing the failure surface separates "can take a gradient" from "knows
+when to trust one." Each mirrors a 1-D failure from [OPTM-01], with a multivariate twist.
+
+## Stationary but not a minimum: the saddle, in the wild {#sec-saddle-wild}
+
+The pure saddle $x^2-y^2$ was a teaching example; saddles also lurk inside realistic
+objectives. Consider $f(x,y) = x^4 - 2x^2 + y^2$ — a "double-well in $x$, single-well in
+$y$" shape that appears in physics and in loss surfaces. Its gradient is
+
+$$
+\nabla f = \begin{pmatrix} 4x^3 - 4x \\ 2y \end{pmatrix},
+$$
+
+which vanishes when $y=0$ and $4x(x^2-1)=0$, i.e. at $(0,0)$, $(1,0)$, and $(-1,0)$ —
+**three** stationary points. The Hessian is $H=\begin{psmallmatrix}12x^2-4 & 0\\0 & 2
+\end{psmallmatrix}$. At $(\pm1,0)$: $H=\begin{psmallmatrix}8&0\\0&2\end{psmallmatrix}$,
+positive-definite — two genuine minima. At $(0,0)$: $H=\begin{psmallmatrix}-4&0\\0&2
+\end{psmallmatrix}$, eigenvalues $-4$ and $2$, **indefinite** — a saddle. Reporting $(0,0)$
+as "the minimum" because the gradient vanishes there is exactly the error the Hessian test
+exists to catch. @fig-saddle-wild shows it.
+
+```{python}
+#| label: fig-saddle-wild
+#| fig-cap: "A saddle hiding among real minima. The objective $f(x,y)=x^4-2x^2+y^2$ has three stationary points (all with $\\nabla f=\\mathbf{0}$): two true minima at $(\\pm1,0)$ where the Hessian is positive-definite (green), and a **saddle** at the origin where it is indefinite (red X) — down along $x$ toward either well, up along $y$. Solving $\\nabla f=\\mathbf{0}$ alone cannot tell these apart; the Hessian eigenvalues do."
+f = lambda X, Y: X**4 - 2*X**2 + Y**2
+xs = np.linspace(-1.7, 1.7, 90); ys = np.linspace(-1.4, 1.4, 90)
+X, Y = np.meshgrid(xs, ys)
+Z = f(X, Y)
+
+fig, ax = plt.subplots()
+ax.contour(X, Y, Z, levels=np.linspace(-1.0, 3.0, 22), colors=GREY, linewidths=0.7, alpha=0.7)
+ax.scatter([1, -1], [0, 0], color=ACCENT, s=90, zorder=6, edgecolor="white",
+           label=r"minima $(\pm1,0)$: pos-def")
+ax.scatter([0], [0], color=TANGENT, marker="X", s=120, zorder=6,
+           label=r"saddle $(0,0)$: indefinite")
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title(r"Three stationary points, one is a saddle")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+ax.set_aspect("equal")
+plt.tight_layout()
+for px, py in [(0,0), (1,0), (-1,0)]:
+    H = np.array([[12*px**2 - 4, 0],[0, 2.0]])
+    eig = np.linalg.eigvalsh(H)
+    kind = "minimum" if (eig>0).all() else ("maximum" if (eig<0).all() else "SADDLE")
+    print(f"({px:+d},{py}): Hessian eigenvalues {eig}  ->  {kind}")
+```
+
+## The inconclusive case: a semidefinite Hessian {#sec-semidefinite}
+
+When the Hessian has a zero eigenvalue it is only **semidefinite**, and @thm-hessian goes
+silent — the exact multivariate echo of $f''=0$ in [OPTM-01]. The quadratic term is flat
+along the zero-eigenvalue direction, so the *cubic and higher* terms decide, and the test
+cannot see them. The cleanest witnesses, paralleling [OPTM-01]'s $x^4$/$-x^4$/$x^3$ trio,
+share the Hessian $H=\begin{psmallmatrix}2&0\\0&0\end{psmallmatrix}$ (positive-semidefinite,
+eigenvalues $2$ and $0$) at the origin yet have three different truths:
+
+- $f=x^2+y^4$: a **minimum** (flat-but-rising along $y$, like $y^4$);
+- $f=x^2-y^4$: a **saddle** (falls along $y$, like $-y^4$);
+- $f=x^2+y^3$: **neither** (the $y^3$ term is an inflection along $y$).
+
+All three have the *same* gradient $\nabla f=(2x,\,*)^\top$ vanishing at the origin and the
+*same* semidefinite Hessian, so the Hessian test returns "inconclusive" for every one. The
+honest resolution mirrors OPTM-01's higher-order test: examine $f$ along the flat direction
+directly. @fig-semidefinite shows the three slices.
+
+```{python}
+#| label: fig-semidefinite
+#| fig-cap: "The inconclusive case. All three objectives have the same positive-semidefinite Hessian at the origin (eigenvalues $2$ and $0$), so the Hessian test is silent on every one. Sliced along the flat $y$-direction ($x=0$): $x^2+y^4$ rises (a minimum), $x^2-y^4$ falls (a saddle), and $x^2+y^3$ does neither (inflection). A zero eigenvalue is the test going silent, not a verdict -- the multivariate echo of OPTM-01's $f''=0$ case."
+ys = np.linspace(-1.2, 1.2, 400)
+fig, ax = plt.subplots()
+ax.plot(ys, ys**4,  color=ACCENT,  label=r"$y^4$ slice of $x^2+y^4$ (min)")
+ax.plot(ys, -ys**4, color=TANGENT, label=r"$-y^4$ slice of $x^2-y^4$ (saddle)")
+ax.plot(ys, ys**3,  color=CURVE,   label=r"$y^3$ slice of $x^2+y^3$ (neither)")
+ax.scatter([0,0,0],[0,0,0], color="black", s=30, zorder=5)
+ax.axhline(0, color=GREY, lw=0.8)
+ax.set_xlabel("$y$ (the flat Hessian direction, at $x=0$)"); ax.set_ylabel("$f(0,y)$")
+ax.set_title("Same semidefinite Hessian, three different truths")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+ax.set_ylim(-1.3, 1.6)
+plt.tight_layout()
+```
+
+## Many valleys: local versus global {#sec-local-global}
+
+@sec-saddle-wild already showed an objective with *two* minima. The gradient test — and the
+Hessian test — are **local**: they certify that a point has no downhill direction nearby,
+but cannot tell whether a *deeper* basin exists elsewhere. In $f=x^4-2x^2+y^2$ the two wells
+$(\pm1,0)$ happen to be tied, but perturb the function and one becomes strictly lower; a
+local search started in the wrong basin converges to the wrong valley with full confidence.
+Ruling this out is exactly what **convexity** buys — for a convex function every stationary
+point *is* the global minimum — and it is why [OPTM-04] is the dividing line of the field.
+In the non-convex landscapes of deep learning, this gap is unavoidable and we settle for a
+*good* local minimum.
+
+## Non-differentiable points {#sec-nondiff}
+
+@thm-stationarity assumed differentiability, just as [OPTM-01] did. A function with a
+**kink** — like $f(\boldsymbol\beta)=\|\mathbf{y}-X\boldsymbol\beta\|^2 +
+\lambda\|\boldsymbol\beta\|_1$, the **lasso** objective, whose $\ell_1$ penalty has corners
+wherever a coefficient hits zero — has no gradient at those corners, so $\nabla
+f=\mathbf{0}$ cannot even be stated there. The repair is the **subgradient** (the set of all
+slopes that fit under the graph at a kink), owned by [OPTM-05], and it is precisely what
+makes the lasso solvable. Here we simply flag the boundary: smooth $\Rightarrow$ use the
+gradient test; kinked $\Rightarrow$ you need subgradients.
+
+## Constrained minima: the gradient need not vanish {#sec-constrained}
+
+Finally, the multivariate echo of OPTM-01's boundary case. @thm-stationarity required an
+**interior** point. If the minimizer sits on the boundary of a constraint set — say
+$\boldsymbol\beta$ is forced to satisfy $g(\boldsymbol\beta)=0$ or $\|\boldsymbol\beta\|\le
+t$ (the constrained form of ridge/lasso) — the gradient at the optimum can be *nonzero*,
+pointing out of the feasible region while the constraint holds you in. "Set the gradient to
+zero" is then the wrong condition entirely. The correct generalization is that $\nabla f$
+must be *balanced by* the constraint gradients — the **Lagrange multiplier** condition
+([OPTM-13]) and, for inequalities, the **KKT conditions** ([OPTM-14]). When you next see a
+multiplier, remember it is measuring exactly the nonzero gradient that the wall is pushing
+back against.
+
+::: {.callout-warning title="Pitfall"}
+**A zero gradient is necessary, never sufficient, and only for interior, smooth, single-basin
+problems.** Four ways a naive "$\nabla f=\mathbf{0}$, done" goes wrong, each with its fix:
+**(1)** the point is a **saddle** or maximum, not a minimum — *check the Hessian's
+definiteness*; **(2)** the Hessian is **semidefinite** — *look along the flat direction*;
+**(3)** there are **multiple basins** and you found a non-global one — *convexity* ([OPTM-04])
+or multi-start; **(4)** the minimum is on a **constraint boundary** or at a **kink** — *KKT*
+([OPTM-14]) or *subgradients* ([OPTM-05]). The single biggest of these in modern ML is the
+saddle: in high dimensions it is overwhelmingly the most common stationary point, and it has
+no one-dimensional warning sign.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When is 'set the gradient to zero and solve' the right tool, and when is it the wrong
+one?"* The honest summary you should be able to recite:
+
+- **Use it** when (a) the objective is **smooth** (differentiable everywhere), (b) you are
+  optimizing over an **open/unconstrained** region so the optimum is interior, and (c) the
+  resulting system $\nabla f=\mathbf{0}$ is **solvable** — ideally *linear*, which happens
+  exactly when $f$ is quadratic (least squares, ridge, Gaussian MLE). In that regime it gives
+  an exact closed-form answer and the Hessian certifies it.
+- **Do not use it** when the objective is **non-smooth** (lasso, hinge loss — use
+  subgradients/proximal methods, [OPTM-05], [OPTM-16]), when there are **constraints** (use
+  Lagrange/KKT, [OPTM-13]–[OPTM-14]), when $\nabla f=\mathbf{0}$ has **no closed form**
+  (logistic regression, neural nets — *iterate* with gradient descent or Newton, [OPTM-06],
+  [OPTM-09]), or when the landscape is **non-convex with many basins** (you get a local
+  guarantee only).
+- **And the deepest caveat:** even a perfectly solved $\nabla f=\mathbf{0}$ with a
+  positive-definite Hessian certifies only a **local** minimum unless you also know the
+  function is **convex** ([OPTM-04]).
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You would rarely form
+$(X^\top X)^{-1}$ explicitly. For the closed-form quadratic cases (least squares, ridge), a
+numerical stack solves the normal equations with a stable factorization —
+`numpy.linalg.lstsq(X, y)` or `scipy.linalg.lstsq`, which use a **QR** or **SVD**
+decomposition rather than forming and inverting $X^\top X$ (squaring the data into $X^\top X$
+loses numerical precision, especially when predictors are nearly collinear). For
+*non-quadratic* objectives where $\nabla f=\mathbf{0}$ has no closed form,
+`scipy.optimize.minimize` runs an iterative method — by default **BFGS** (a quasi-Newton
+method, [OPTM-09]), which builds a Hessian approximation from gradients — and you supply a
+function returning $f$ and, ideally, $\nabla f$; if you only give $f$, it estimates the
+gradient by finite differences (slower and noisier). The practitioner's habit worth
+internalizing: **check whether $\nabla f=\mathbf{0}$ is linear first** (it is for every
+quadratic loss in this series) and solve it directly; reach for an iterative optimizer only
+when the system is nonlinear, and feed it the analytic gradient whenever you can. And after
+*any* optimizer returns, the diagnostic of this article still applies — inspect the gradient
+norm (is it really near zero?) and, when it matters, the Hessian's eigenvalues (is it
+actually a minimum?).
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-01 *One-Dimensional Minimization*]**, which solved the
+single-variable problem with $f'(x)=0$ and the second-derivative test. This article
+generalized both: the derivative became the **gradient** $\nabla f$, the condition $f'=0$
+became **stationarity** $\nabla f=\mathbf{0}$ (derived from the directional-derivative
+picture), and the second-derivative test became the **Hessian test** — with the genuinely
+new **saddle point** that one dimension cannot show. We cashed it out on the OLS normal
+equations, the move the Regression track links here for. The track now forks into two
+parallel spines, both starting from this article:
+
+- **The convexity spine, [OPTM-03]–[OPTM-05]**, answers the question this article kept
+  deferring: *when is a stationary point the **global** minimum?* [OPTM-04 *Convex
+  Functions*] proves that for a convex function, every stationary point is global — turning
+  "we found a valley" into "we found *the* valley" — and ties convexity to the Hessian being
+  positive-semidefinite *everywhere*. [OPTM-05 *Subgradients*] repairs the non-differentiable
+  case (@sec-nondiff).
+- **The descent spine, [OPTM-06] onward**, answers the other deferred question: *what do you
+  do when $\nabla f=\mathbf{0}$ has no closed form?* [OPTM-06 *Gradient Descent*] turns
+  $-\nabla f$ — the steepest-descent direction we *derived* in @sec-steepest — into the
+  iterative algorithm that trains nearly every model in the series. [OPTM-09 *Newton's
+  Method*] uses the **Hessian** of this article to take curvature-aware steps.
+- **[OPTM-11 *Stochastic Gradient Descent*]** is where the **saddle points** of
+  @sec-three-faces become a central practical concern: in high-dimensional ML they are
+  everywhere, and the noise in SGD is part of how training escapes them.
+- **[OPTM-13 *Lagrange Multipliers*]** and **[OPTM-14 *KKT*]** handle the **constrained** case
+  of @sec-constrained, where the gradient at the optimum is nonzero and balanced by the
+  constraints.
+
+Downstream, **[REGR-05 *Multiple Regression*]** consumes the normal equations @eq-normal
+directly, and **[REGR-04 *Regression as Projection*]** re-derives the same
+$\hat{\boldsymbol\beta}$ as a geometric projection — the orthogonality we read off the
+gradient in @sec-ols.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The classical statements.** The first-order condition $\nabla f=\mathbf{0}$ and the
+  second-order (Hessian/definiteness) test are standard multivariable-calculus material; any
+  rigorous text develops them with the second-order Taylor theorem we used in @eq-taylor2 —
+  e.g. Marsden & Tromba, *Vector Calculus*, or the optimization-flavored treatment in
+  Nocedal & Wright, *Numerical Optimization*, ch. 2, which states the necessary and
+  sufficient conditions exactly as @thm-stationarity and @thm-hessian.
+- **Quadratic forms and definiteness** — the linear-algebra engine behind the Hessian test —
+  are owned by the Geometry of Data track; the spectral theorem (symmetric matrices have real
+  eigenvalues and orthogonal eigenvectors) is the result that makes @eq-eig's
+  eigenvalue criterion legitimate. Strang's *Introduction to Linear Algebra* and
+  Horn & Johnson's *Matrix Analysis* develop it.
+- **Saddle points in high-dimensional optimization.** The claim that saddles, not local
+  minima, dominate non-convex ML landscapes is made precise in Dauphin et al., *"Identifying
+  and attacking the saddle point problem in high-dimensional non-convex optimization"* (2014),
+  and connects to random-matrix theory — the counting argument of @sec-three-faces made
+  rigorous.
+- **Open threads this article deliberately deferred.** *When is a stationary point the
+  global minimum?* — convexity, [OPTM-04]. *What if $\nabla f=\mathbf{0}$ has no closed
+  form?* — gradient descent and Newton, [OPTM-06], [OPTM-09]. *What if the objective has
+  kinks?* — subgradients, [OPTM-05]. *What if the minimum is constrained?* — Lagrange and
+  KKT, [OPTM-13]–[OPTM-14]. Each is the harder or more general descendant of a failure mode
+  we made explicit in @sec-failure.

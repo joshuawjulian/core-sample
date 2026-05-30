@@ -10,11 +10,9 @@ on:
       - 'tracks/**'
   workflow_dispatch:
 
-# Allow the workflow to publish the "latest" release with the PDFs attached.
 permissions:
   contents: write
 
-# Don't pile up overlapping renders; newest push wins.
 concurrency:
   group: render-${{ github.ref }}
   cancel-in-progress: true
@@ -23,8 +21,8 @@ jobs:
   render:
     runs-on: ubuntu-latest
     env:
-      # Puts the repo root on PYTHONPATH so sitecustomize.py auto-loads in the
-      # Jupyter kernel and makes matplotlib mathtext tolerant of full LaTeX labels.
+      # Repo root on PYTHONPATH so sitecustomize.py loads in the Jupyter kernel and makes
+      # matplotlib mathtext tolerant of full LaTeX labels.
       PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Check out repository
@@ -43,18 +41,26 @@ jobs:
       - name: Install Python dependencies (for figure generation)
         run: |
           pip install -r requirements.txt
-          # Make sure Quarto's jupyter engine can find a python3 kernel.
           python -m ipykernel install --user --name python3 --display-name "Python 3"
-          jupyter kernelspec list
 
-      # --- Primary deliverable: the bound book PDF. Must succeed. ---
-      - name: Render the bound book (single PDF)
-        run: quarto render
+      # --- Per-track books: one bound PDF per track (Probability Foundations.pdf, ...) ---
+      - name: Render per-track books
+        run: |
+          python3 tools/make_track_books.py
+          mkdir -p out/tracks
+          for d in build/books/*/; do
+            slug=$(basename "$d")
+            echo "::group::track book: $slug"
+            quarto render "$d" || echo "WARN: track book $slug failed to render"
+            echo "::endgroup::"
+            pdf=$(find "$d/_out" -name '*.pdf' 2>/dev/null | head -1)
+            if [ -n "$pdf" ]; then cp "$pdf" "out/tracks/$slug.pdf"; fi
+          done
+          echo "Track books produced:"; ls -la out/tracks || true
 
-      # --- Secondary: one standalone PDF per article. Best-effort. ---
-      # Rendered in a temp dir copy of articles/ so the root book _quarto.yml
-      # does not capture single-file renders; articles/_metadata.yml travels
-      # with the copy and supplies the standalone PDF format.
+      # --- Per-article standalone PDFs (grab one article). Best-effort. ---
+      # Rendered in a temp copy of articles/ so each is a standalone document
+      # (articles/_metadata.yml supplies the PDF format).
       - name: Render standalone article PDFs
         continue-on-error: true
         run: |
@@ -62,21 +68,12 @@ jobs:
           SRC="$RUNNER_TEMP/standalone"
           mkdir -p "$SRC"
           cp -r articles/. "$SRC/"
-          mkdir -p article-pdfs
-          find "$SRC" -name '*.qmd' -print0 | while IFS= read -r -d '' f; do
-            echo "::group::Rendering $f"
-            quarto render "$f" --to pdf || echo "WARN: failed to render $f"
-            echo "::endgroup::"
-          done
-          find "$SRC" -name '*.pdf' -exec cp {} article-pdfs/ \;
-          echo "Standalone PDFs produced:"; ls -la article-pdfs || true
-
-      - name: Assemble outputs
-        run: |
           mkdir -p out/articles
-          cp _book/*.pdf out/ 2>/dev/null || true
-          cp article-pdfs/*.pdf out/articles/ 2>/dev/null || true
-          echo "Final PDF set:"; find out -name '*.pdf' | sort
+          find "$SRC" -name '*.qmd' -print0 | while IFS= read -r -d '' f; do
+            quarto render "$f" --to pdf >/dev/null 2>&1 || echo "WARN: $f"
+          done
+          find "$SRC" -name '*.pdf' -exec cp {} out/articles/ \;
+          echo "Article PDFs produced:"; ls out/articles | wc -l
 
       - name: Upload PDFs as build artifact
         if: always()
@@ -86,10 +83,6 @@ jobs:
           path: out/
           if-no-files-found: warn
 
-      # Stable, easy-to-grab download: refresh a "latest" prerelease on each
-      # push to main with all PDFs attached. Won't fail the build if the repo
-      # restricts Actions write permissions (fix: Settings -> Actions ->
-      # General -> Workflow permissions -> Read and write).
       - name: Publish "latest" release
         if: github.ref == 'refs/heads/main'
         continue-on-error: true
@@ -97,11 +90,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           files=$(find out -name '*.pdf')
-          if [ -z "$files" ]; then
-            echo "No PDFs to publish."; exit 0
-          fi
+          if [ -z "$files" ]; then echo "No PDFs to publish."; exit 0; fi
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           gh release create latest $files \
             --title "Latest PDFs" \
             --prerelease \
-            --notes "Auto-built from ${{ github.sha }}. Bound book + per-article PDFs."
+            --notes "Auto-built from ${{ github.sha }}. Per-track books + per-article PDFs."

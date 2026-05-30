@@ -1,0 +1,1316 @@
+---
+title: "Step Size and Convergence: Why and How Fast Gradient Descent Works"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the series.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # the objective / iterate path
+STEP    = "#c1121f"    # the step / divergence
+ACCENT  = "#0a7d4d"    # the optimum / safe choices
+GREY    = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the second article of the **descent spine**
+> of the Optimization track, and it is the article that turns gradient descent from a
+> plausible idea into a *guarantee*. It assumes [OPTM-06 *Gradient Descent*] for the
+> update rule itself — $\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\nabla f(\mathbf{x}_k)$, the
+> negative gradient as the locally steepest-descent direction, and the qualitative
+> picture that a step size $\eta$ too small crawls while one too large diverges. It
+> assumes [OPTM-04 *Convex Functions*] for **convexity**, the **first-order (tangent-below)
+> inequality**, and **strong convexity**, all of which the rate proofs lean on. From the
+> *Geometry of Data / Applied Linear Algebra* track it borrows the **eigenvalues** of a
+> symmetric matrix and the **condition number** $\kappa$ — *used*, not re-derived.
+>
+> Its single job is to answer three questions [OPTM-06] left open: **does** gradient
+> descent reach the minimum, **how fast**, and **how do we pick $\eta$** to be sure. It
+> sets up [OPTM-08 *Momentum*] (which attacks the $\kappa$-dependence this article
+> exposes), [OPTM-09 *Newton's Method*] (which removes it), and [OPTM-11 *SGD*] (whose
+> noisier rate is the stochastic shadow of the rates derived here).
+
+## Abstract {.unnumbered}
+
+[OPTM-06] gave us a rule — step opposite the gradient — and a warning: too large a step
+and the iterates blow up. This article supplies the missing theory, every step on the
+page. The central structural assumption is **$L$-smoothness**: the gradient does not change
+faster than some rate $L$, equivalently the function is trapped *underneath* a quadratic of
+curvature $L$. From it we derive the **descent lemma**, the single inequality that makes
+the whole subject work, and read off that any step size $\eta\le 1/L$ forces the objective
+to *strictly decrease every iteration*. We then prove the two headline convergence rates:
+for a convex, smooth objective the suboptimality falls like $O(1/k)$ — a *sublinear* crawl
+— while adding **strong convexity** upgrades this to **linear** convergence, the error
+shrinking by a constant factor $\rho<1$ every step. The factor is governed by a single
+number, the **condition number** $\kappa=L/\mu$: well-conditioned problems ($\kappa\approx
+1$) converge almost instantly, ill-conditioned ones ($\kappa$ huge) zig-zag down a narrow
+valley for thousands of steps. Because $L$ is rarely known, we close the loop with
+**backtracking line search**, which finds a working step size from function values alone,
+and we mark the honest boundaries: non-convex objectives, where only stationarity is
+promised, and the pathological curvature that motivates the momentum and second-order
+methods to come.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Gradient descent is guaranteed to work when the objective is **$L$-smooth** — its gradient
+is Lipschitz with constant $L$, which is the same as saying $f$ sits under a quadratic
+bowl of curvature $L$ at every point. That single bound yields the **descent lemma**:
+taking a step of size $\eta\le 1/L$ *cannot increase* $f$, and in fact decreases it by at
+least $\tfrac{\eta}{2}\|\nabla f\|^2$. Convergence *speed* is then a story about two more
+constants. With only convexity, suboptimality decays like $O(1/k)$ — slow. With **strong
+convexity** (curvature bounded *below* by $\mu>0$), it decays **geometrically**: the error
+is multiplied by $\rho=1-\mu/L<1$ each step. The lever that controls everything is the
+**condition number** $\kappa=L/\mu$, the ratio of the steepest to the shallowest curvature.
+$\kappa\approx 1$ is a round bowl and descent is nearly instant; $\kappa\gg 1$ is a long
+narrow ravine and descent zig-zags painfully. When you cannot compute $L$, **line search**
+finds a safe $\eta$ from function values alone.
+:::
+
+Everything below orbits that box. The chain of ideas is short and rigid: *$L$-smoothness*
+$\Rightarrow$ *descent lemma* $\Rightarrow$ *guaranteed decrease* $\Rightarrow$
+*convergence*, with the *rate* set by whether we also have convexity ($O(1/k)$) or strong
+convexity (linear, governed by $\kappa$). Hold that skeleton; every derivation is a link
+in it.
+
+# Why we are here: a rule that works "in practice" is not a guarantee {#sec-why}
+
+Keep one question in view for the whole article: **what must be true about $f$ for
+gradient descent to provably reach the minimum, and what sets the speed?** Every
+inequality below answers a piece of that.
+
+## What OPTM-06 left unfinished {#sec-unfinished}
+
+[OPTM-06] built the update from a first-order Taylor argument. Near the current point
+$\mathbf{x}_k$, the objective looks linear:
+
+$$
+f(\mathbf{x}_k + \mathbf{d}) \approx f(\mathbf{x}_k) + \nabla f(\mathbf{x}_k)^\top \mathbf{d},
+$$ {#eq-taylor1}
+
+and the direction $\mathbf{d}$ of unit length that makes the right-hand side smallest is
+$\mathbf{d}\propto -\nabla f(\mathbf{x}_k)$ — straight downhill. So we step
+
+$$
+\mathbf{x}_{k+1} = \mathbf{x}_k - \eta\,\nabla f(\mathbf{x}_k),
+$$ {#eq-gd}
+
+with a **step size** (learning rate) $\eta>0$. This is exactly where [OPTM-06] stopped,
+and it is not enough, for a reason hiding in the word *approximately* in @eq-taylor1. The
+linear approximation is only trustworthy *near* $\mathbf{x}_k$. The gradient tells us a
+direction; it says nothing about *how far* that direction stays downhill. Step a tiny
+amount and you make tiny progress. Step too far and you can overshoot the valley floor and
+land somewhere **higher** than you started — and then the next step, taken from a worse
+point, overshoots again, and the iterates spiral outward to infinity. [OPTM-06] showed
+this divergence in a figure but could not say *where the cliff is*. That missing number —
+the largest safe step — is what this article computes, and the property of $f$ that pins
+it down is smoothness.
+
+::: {.callout-tip title="You might be asked"}
+*"Gradient descent worked when I tried it. Why do I need convergence theory at all?"*
+Three reasons an interviewer wants to hear. **(1) It tells you the safe step size in
+advance** — $\eta\le 1/L$ — instead of tuning by trial and error and hoping. **(2) It
+tells you how long to wait**: the difference between "this needs 50 iterations" and "this
+needs 50,000" is the condition number, and you can often *read it off the problem* before
+running anything. **(3) It tells you when descent is the wrong tool**: if $\kappa$ is
+enormous, plain GD is a bad choice and you should reach for momentum, preconditioning, or
+Newton's method. Theory here is not decoration — it is how a practitioner sizes a job and
+picks an algorithm.
+:::
+
+## The shape of the answer {#sec-shape}
+
+The whole article is captured by one picture: a quadratic bowl, the gradient-descent
+iterates marching down its inside, and how the bowl's *shape* — round versus stretched —
+decides whether they march or zig-zag. @fig-roadmap previews it on two bowls with the same
+step rule.
+
+```{python}
+#| label: fig-roadmap
+#| fig-cap: "The whole story on one slide. Gradient descent on two quadratic bowls, same starting point, each run with its own optimal constant step size. **Left:** a well-conditioned (nearly round) bowl, $\\kappa=1.5$ — the iterates walk almost straight to the bottom. **Right:** an ill-conditioned (stretched) bowl, $\\kappa=20$ — the steepest direction dominates, so the path zig-zags across the narrow valley and creeps along its floor. Same algorithm; the *condition number* $\\kappa$ alone decides the difference. The rest of the article makes this precise."
+def gd_quadratic(a, b, x0, eta, n_steps):
+    """GD on f(x,y) = (a/2) x^2 + (b/2) y^2; gradient = (a x, b y)."""
+    xs = [np.array(x0, dtype=float)]
+    for _ in range(n_steps):
+        x = xs[-1]
+        g = np.array([a * x[0], b * x[1]])
+        xs.append(x - eta * g)
+    return np.array(xs)
+
+def draw_bowl(ax, a, b, path, title):
+    gx = np.linspace(-2.4, 2.4, 200)
+    gy = np.linspace(-2.4, 2.4, 200)
+    GX, GY = np.meshgrid(gx, gy)
+    Z = 0.5 * a * GX**2 + 0.5 * b * GY**2
+    ax.contour(GX, GY, Z, levels=14, colors=GREY, linewidths=0.7, alpha=0.7)
+    ax.plot(path[:, 0], path[:, 1], "-o", color=STEP, ms=3.5, lw=1.4)
+    ax.scatter([0], [0], color=ACCENT, s=80, zorder=5, edgecolor="white",
+               label="minimum")
+    ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+    ax.set_title(title)
+    ax.set_aspect("equal")
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.2))
+# Left: a=1, b=1.5  -> kappa = 1.5.  eta = 2/(L+mu).
+aL, bL = 1.0, 1.5
+etaL = 2.0 / (bL + aL)
+draw_bowl(axL, aL, bL, gd_quadratic(aL, bL, [-2.0, 2.1], etaL, 12),
+          r"Well-conditioned: $\kappa=1.5$")
+# Right: a=1, b=20 -> kappa = 20.
+aR, bR = 1.0, 20.0
+etaR = 2.0 / (bR + aR)
+draw_bowl(axR, aR, bR, gd_quadratic(aR, bR, [-2.0, 2.1], etaR, 40),
+          r"Ill-conditioned: $\kappa=20$")
+axL.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Intuition before symbols: trapping $f$ under a quadratic {#sec-intuition}
+
+Before any algebra, here is the one idea that makes the entire subject possible.
+
+We cannot say anything about a function we know nothing about. If $f$ could turn on a dime
+— bend sharply just past where we are standing — then no step size would be safe, because
+even a tiny step might land in territory we could not predict from the gradient. So we need
+a promise about how *wildly* $f$ is allowed to curve. The promise is **smoothness**:
+*the gradient does not change too fast.* Equivalently, the curvature of $f$ is bounded
+above by some number $L$.
+
+Why does a *ceiling* on curvature help? Because it lets us **trap the true function
+underneath a simple one we can minimize exactly**. If $f$ curves no more sharply than a
+parabola of curvature $L$, then at any point $\mathbf{x}_k$ we can draw the parabola
+
+$$
+m(\mathbf{x}) = f(\mathbf{x}_k) + \nabla f(\mathbf{x}_k)^\top(\mathbf{x}-\mathbf{x}_k)
+              + \frac{L}{2}\|\mathbf{x}-\mathbf{x}_k\|^2,
+$$
+
+which matches $f$'s value and slope at $\mathbf{x}_k$ and then bends upward at the maximum
+rate $f$ is allowed. Because $f$ never bends *more* than that, $f$ stays at or below this
+parabola everywhere. Now the move that runs the whole article: **instead of minimizing the
+unknown $f$, minimize the parabola we can see.** The bottom of $m$ is a step in the
+negative-gradient direction — that *is* gradient descent — and because $f\le m$, driving
+$m$ down drives $f$ down with it. @fig-quadratic-trap shows the trap in one dimension.
+
+```{python}
+#| label: fig-quadratic-trap
+#| fig-cap: "Smoothness as a trap. The true objective $f$ (navy) is $L$-smooth, so at the point $x_k$ it lies *entirely below* the upper parabola $m(x)=f(x_k)+f'(x_k)(x-x_k)+\\tfrac{L}{2}(x-x_k)^2$ (red), which matches $f$'s height and slope at $x_k$ but bends at the steepest rate $f$ is permitted. Minimizing the visible parabola lands at $x_{k+1}=x_k-\\tfrac{1}{L}f'(x_k)$ (the gradient-descent step with $\\eta=1/L$). Because $f\\le m$, the guaranteed drop in $m$ is a guaranteed drop in $f$ — this is the descent lemma, drawn."
+def f(x):
+    return 0.35 * x**2 + 0.6 * np.sin(1.5 * x) + 0.2 * x
+def fp(x):
+    return 0.70 * x + 0.9 * np.cos(1.5 * x) + 0.2
+
+L = 1.7  # a valid upper bound on curvature of f here
+xk = -2.3
+xs = np.linspace(-4.0, 2.0, 400)
+
+m = f(xk) + fp(xk) * (xs - xk) + 0.5 * L * (xs - xk) ** 2
+xk1 = xk - (1.0 / L) * fp(xk)   # minimizer of m
+
+fig, ax = plt.subplots(figsize=(6.6, 4.3))
+ax.plot(xs, f(xs), color=CURVE, label=r"$f(x)$  ($L$-smooth)")
+ax.plot(xs, m, color=STEP, lw=1.8, label=r"upper parabola $m(x)$")
+ax.scatter([xk], [f(xk)], color=CURVE, s=55, zorder=5)
+ax.annotate(r"$x_k$", (xk, f(xk)), textcoords="offset points",
+            xytext=(-6, 10), fontsize=11)
+ax.scatter([xk1], [f(xk1)], color=ACCENT, s=70, zorder=6, edgecolor="white")
+ax.annotate(r"$x_{k+1}=x_k-\frac{1}{L}f'(x_k)$", (xk1, f(xk1)),
+            textcoords="offset points", xytext=(8, -18), fontsize=10)
+ax.scatter([xk1], [m.min()], color=STEP, s=45, zorder=6)
+ax.plot([xk1, xk1], [f(xk1), m.min()], color=GREY, ls=":", lw=1.2)
+ax.set_xlabel("$x$"); ax.set_ylabel("value")
+ax.set_title("Minimizing the parabola you can see")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+ax.set_ylim(-2.0, 6.0)
+plt.tight_layout()
+```
+
+That is the entire engine. Smoothness gives an upper parabola; gradient descent minimizes
+it; the guaranteed drop in the parabola is a guaranteed drop in $f$. Now we make each word
+exact.
+
+# Formal development I: smoothness and the descent lemma {#sec-smoothness}
+
+## Defining $L$-smoothness {#sec-Lsmooth}
+
+We need to state "the gradient does not change too fast" precisely. The cleanest statement
+uses the **Lipschitz** condition — a bound on how much the output of a function can change
+relative to its input.
+
+::: {#def-Lsmooth}
+**Definition ($L$-smoothness).** A differentiable function $f:\mathbb{R}^n\to\mathbb{R}$ is
+**$L$-smooth** (equivalently, has an **$L$-Lipschitz gradient**) if there is a constant
+$L>0$ such that for all $\mathbf{x},\mathbf{y}$,
+
+$$
+\|\nabla f(\mathbf{x}) - \nabla f(\mathbf{y})\| \;\le\; L\,\|\mathbf{x}-\mathbf{y}\|.
+$$ {#eq-Lsmooth}
+:::
+
+Read @eq-Lsmooth literally: move the input by a distance $\|\mathbf{x}-\mathbf{y}\|$, and
+the gradient is forbidden from moving by more than $L$ times that distance. The gradient
+*can* change — $f$ is allowed to curve — but at a bounded rate. $L$ is the speed limit on
+the gradient.
+
+Two readings make this concrete. In **one dimension**, @eq-Lsmooth says
+$|f'(x)-f'(y)|\le L|x-y|$, which is exactly $|f''|\le L$ wherever $f''$ exists (it is the
+mean-value theorem applied to $f'$): **the second derivative is bounded by $L$.** In
+**many dimensions**, the analogue is that the **Hessian** $H=\nabla^2 f$ has all its
+eigenvalues at most $L$, i.e. the largest curvature in any direction is $L$. (Eigenvalues
+and the fact that they *are* the curvatures of a quadratic form are owned by the Geometry
+track; we use that fact here.) So:
+
+$$
+\text{$L$-smooth} \quad\Longleftrightarrow\quad
+\text{curvature of $f$ never exceeds $L$ in any direction.}
+$$
+
+::: {.callout-tip title="You might be asked"}
+*"Is $f(x)=x^2$ smooth? Is $f(x)=|x|$? Is $f(x)=x^4$ on all of $\mathbb{R}$?"* Tests of
+whether you actually understand the definition. **$x^2$:** $f''=2$ everywhere, so it is
+$L$-smooth with $L=2$. **$|x|$:** not even differentiable at $0$, so it is *not* smooth in
+this sense — its gradient (the sign) jumps from $-1$ to $+1$ instantly, an infinite rate of
+change; this is precisely the kink that needs *subgradients* ([OPTM-05]) instead. **$x^4$:**
+differentiable, but $f''=12x^2$ is *unbounded* as $|x|\to\infty$, so it is **not** $L$-smooth
+on all of $\mathbb{R}$ — no finite speed limit works globally. It *is* $L$-smooth on any
+bounded interval. The lesson: smoothness is a global Lipschitz bound on the gradient, and
+many perfectly nice functions only have it locally.
+:::
+
+## The geometric meaning: trapped under a quadratic {#sec-quadratic-bound}
+
+The Lipschitz bound @eq-Lsmooth on the gradient is hard to use directly. We convert it
+into the *quadratic upper bound* the intuition section promised — the workhorse inequality
+of the whole article.
+
+::: {#lem-descent}
+**Lemma (the descent lemma / quadratic upper bound).** If $f$ is $L$-smooth, then for all
+$\mathbf{x},\mathbf{y}$,
+
+$$
+f(\mathbf{y}) \;\le\; f(\mathbf{x}) + \nabla f(\mathbf{x})^\top(\mathbf{y}-\mathbf{x})
+              + \frac{L}{2}\|\mathbf{y}-\mathbf{x}\|^2.
+$$ {#eq-descent}
+:::
+
+In words: $f$ lies below the parabola that touches it at $\mathbf{x}$ with the right slope
+and curvature $L$. This is @fig-quadratic-trap stated as an inequality. We prove it from
+@eq-Lsmooth using nothing above the Calc-1 floor — the fundamental theorem of calculus and
+the Cauchy–Schwarz inequality (which we state where it is used).
+
+::: {.proof}
+Fix $\mathbf{x}$ and $\mathbf{y}$. Walk along the straight segment from $\mathbf{x}$ to
+$\mathbf{y}$, parametrized by $t\in[0,1]$ as $\mathbf{x}+t(\mathbf{y}-\mathbf{x})$, and
+watch how $f$ changes. Define the single-variable function
+
+$$
+g(t) = f\bigl(\mathbf{x} + t(\mathbf{y}-\mathbf{x})\bigr),
+$$
+
+so $g(0)=f(\mathbf{x})$ and $g(1)=f(\mathbf{y})$. By the chain rule (the multivariable
+chain rule: differentiate the outer $f$ to get its gradient, dot with the derivative of
+the inner argument, which is the constant vector $\mathbf{y}-\mathbf{x}$),
+
+$$
+g'(t) = \nabla f\bigl(\mathbf{x}+t(\mathbf{y}-\mathbf{x})\bigr)^\top (\mathbf{y}-\mathbf{x}).
+$$
+
+The fundamental theorem of calculus recovers $f(\mathbf{y})-f(\mathbf{x})$ as the integral
+of this derivative:
+
+$$
+f(\mathbf{y}) - f(\mathbf{x}) = g(1) - g(0) = \int_0^1 g'(t)\,dt
+= \int_0^1 \nabla f\bigl(\mathbf{x}+t(\mathbf{y}-\mathbf{x})\bigr)^\top(\mathbf{y}-\mathbf{x})\,dt.
+$$
+
+Now subtract the linear term $\nabla f(\mathbf{x})^\top(\mathbf{y}-\mathbf{x})$ from both
+sides. On the right, write that term as the same integral with the gradient frozen at
+$\mathbf{x}$ — legal because $\int_0^1 \nabla f(\mathbf{x})^\top(\mathbf{y}-\mathbf{x})\,dt
+= \nabla f(\mathbf{x})^\top(\mathbf{y}-\mathbf{x})$, the integrand being constant in $t$:
+
+$$
+f(\mathbf{y}) - f(\mathbf{x}) - \nabla f(\mathbf{x})^\top(\mathbf{y}-\mathbf{x})
+= \int_0^1 \Bigl[\nabla f\bigl(\mathbf{x}+t(\mathbf{y}-\mathbf{x})\bigr) - \nabla f(\mathbf{x})\Bigr]^\top
+   (\mathbf{y}-\mathbf{x})\,dt.
+$$
+
+We bound the right side. First, a quantity is at most its own absolute value, so the
+integral is at most $\int_0^1 \bigl|[\,\cdots]^\top(\mathbf{y}-\mathbf{x})\bigr|\,dt$. Next,
+the **Cauchy–Schwarz inequality** says that for any vectors $\mathbf{a},\mathbf{b}$,
+$|\mathbf{a}^\top\mathbf{b}|\le\|\mathbf{a}\|\,\|\mathbf{b}\|$ (the dot product never exceeds
+the product of lengths). Apply it with
+$\mathbf{a}=\nabla f(\mathbf{x}+t(\mathbf{y}-\mathbf{x}))-\nabla f(\mathbf{x})$ and
+$\mathbf{b}=\mathbf{y}-\mathbf{x}$:
+
+$$
+\le \int_0^1 \bigl\|\nabla f\bigl(\mathbf{x}+t(\mathbf{y}-\mathbf{x})\bigr) - \nabla f(\mathbf{x})\bigr\|
+   \cdot \|\mathbf{y}-\mathbf{x}\|\,dt.
+$$
+
+Now use $L$-smoothness @eq-Lsmooth on the gradient difference. The two points compared are
+$\mathbf{x}+t(\mathbf{y}-\mathbf{x})$ and $\mathbf{x}$, whose separation is
+$\|t(\mathbf{y}-\mathbf{x})\|=t\|\mathbf{y}-\mathbf{x}\|$. So the gradient difference has
+norm at most $L\,t\,\|\mathbf{y}-\mathbf{x}\|$:
+
+$$
+\le \int_0^1 L\,t\,\|\mathbf{y}-\mathbf{x}\| \cdot \|\mathbf{y}-\mathbf{x}\|\,dt
+= L\,\|\mathbf{y}-\mathbf{x}\|^2 \int_0^1 t\,dt
+= L\,\|\mathbf{y}-\mathbf{x}\|^2 \cdot \tfrac12
+= \frac{L}{2}\|\mathbf{y}-\mathbf{x}\|^2.
+$$
+
+The constant $\int_0^1 t\,dt=\tfrac12$ is the only arithmetic here. Putting it together,
+
+$$
+f(\mathbf{y}) - f(\mathbf{x}) - \nabla f(\mathbf{x})^\top(\mathbf{y}-\mathbf{x})
+\le \frac{L}{2}\|\mathbf{y}-\mathbf{x}\|^2,
+$$
+
+which rearranges to @eq-descent. $\qquad\blacksquare$
+:::
+
+The descent lemma is the most important inequality in this article. Everything that
+follows is a consequence of plugging the gradient-descent step into it.
+
+## The guaranteed decrease: why $\eta\le 1/L$ is safe {#sec-guaranteed}
+
+We can now answer [OPTM-06]'s open question — where is the cliff? — exactly. Take one
+gradient-descent step. Set $\mathbf{x}=\mathbf{x}_k$ and
+$\mathbf{y}=\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\nabla f(\mathbf{x}_k)$ in @eq-descent. The
+step itself is $\mathbf{y}-\mathbf{x}=-\eta\nabla f(\mathbf{x}_k)$, so let us abbreviate
+$\mathbf{g}_k=\nabla f(\mathbf{x}_k)$ and substitute:
+
+$$
+f(\mathbf{x}_{k+1}) \le f(\mathbf{x}_k)
+   + \mathbf{g}_k^\top(-\eta\,\mathbf{g}_k)
+   + \frac{L}{2}\|-\eta\,\mathbf{g}_k\|^2.
+$$
+
+Evaluate the two new terms. The middle one is $-\eta\,\mathbf{g}_k^\top\mathbf{g}_k
+= -\eta\|\mathbf{g}_k\|^2$. The last uses $\|-\eta\mathbf{g}_k\|^2
+=\eta^2\|\mathbf{g}_k\|^2$ (scaling a vector by $-\eta$ scales its squared length by
+$\eta^2$). So
+
+$$
+f(\mathbf{x}_{k+1}) \le f(\mathbf{x}_k) - \eta\|\mathbf{g}_k\|^2 + \frac{L\eta^2}{2}\|\mathbf{g}_k\|^2
+= f(\mathbf{x}_k) - \eta\Bigl(1 - \frac{L\eta}{2}\Bigr)\|\mathbf{g}_k\|^2.
+$$ {#eq-onestep}
+
+Read @eq-onestep, the **one-step decrease**. The change in objective is
+$-\eta(1-\tfrac{L\eta}{2})\|\mathbf{g}_k\|^2$. Since $\|\mathbf{g}_k\|^2\ge 0$ and
+$\eta>0$, the objective **decreases** precisely when the bracket
+$\bigl(1-\tfrac{L\eta}{2}\bigr)$ is positive, i.e. when
+
+$$
+1 - \frac{L\eta}{2} > 0 \quad\Longleftrightarrow\quad \eta < \frac{2}{L}.
+$$
+
+So **any step size below $2/L$ guarantees the objective goes down** every iteration (as
+long as $\mathbf{g}_k\ne\mathbf{0}$). This is the cliff edge [OPTM-06] could only point at:
+the divergence it showed happens because a step $\eta\ge 2/L$ makes the bracket
+non-positive, so the guaranteed-decrease promise evaporates and the iterates can climb.
+
+Which $\eta$ in the safe range is *best*? Maximize the guaranteed drop, i.e. maximize
+$h(\eta)=\eta(1-\tfrac{L\eta}{2})=\eta-\tfrac{L}{2}\eta^2$. This is a downward parabola in
+$\eta$; set $h'(\eta)=1-L\eta=0$ to get $\eta=1/L$. Plug back: the bracket becomes
+$1-\tfrac{L}{2L}=\tfrac12$, so the guaranteed drop at $\eta=1/L$ is
+
+$$
+f(\mathbf{x}_{k+1}) \le f(\mathbf{x}_k) - \frac{1}{2L}\|\mathbf{g}_k\|^2.
+$$ {#eq-sufficient}
+
+::: {.callout-important title="The step-size rule, stated"}
+For an $L$-smooth objective, the constant step size $\boxed{\eta = 1/L}$ is the choice that
+maximizes the guaranteed per-step decrease, and any $\eta<2/L$ is safe. With $\eta=1/L$,
+every step lowers the objective by at least $\tfrac{1}{2L}\|\nabla f(\mathbf{x}_k)\|^2$.
+This is the *sufficient-decrease* inequality @eq-sufficient that every convergence rate
+below is built on.
+:::
+
+@fig-eta-sweep confirms @eq-onestep numerically: it sweeps $\eta$ on a quadratic and shows
+the iterate behavior switching exactly at the predicted thresholds $1/L$ (fastest) and
+$2/L$ (divergence).
+
+```{python}
+#| label: fig-eta-sweep
+#| fig-cap: "The step-size thresholds, confirmed. Gradient descent on the 1-D quadratic $f(x)=\\tfrac{L}{2}x^2$ (here $L=4$, minimum at $0$), started at $x_0=1$, run for each step size. The curve shows $|x_k|$ after 30 steps versus $\\eta$. Below $\\eta=1/L=0.25$ convergence is monotone but slow; *at* $\\eta=1/L$ it is instant (one step lands exactly at $0$, the parabola's true bottom); between $1/L$ and $2/L=0.5$ it overshoots but still converges; at $\\eta=2/L$ it cycles forever ($\\pm1$); above $2/L$ it diverges. The dashed lines mark the two thresholds the descent lemma predicts."
+L = 4.0
+x0 = 1.0
+etas = np.linspace(0.01, 0.62, 400)
+finals = []
+for eta in etas:
+    x = x0
+    for _ in range(30):
+        x = x - eta * (L * x)   # grad of (L/2)x^2 is L x
+    finals.append(abs(x))
+finals = np.array(finals)
+finals = np.clip(finals, 1e-12, 1e6)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+ax.semilogy(etas, finals, color=CURVE)
+ax.axvline(1.0 / L, color=ACCENT, ls="--", lw=1.5, label=r"$\eta=1/L$ (optimal)")
+ax.axvline(2.0 / L, color=STEP, ls="--", lw=1.5, label=r"$\eta=2/L$ (cycle/diverge)")
+ax.set_xlabel(r"step size $\eta$")
+ax.set_ylabel(r"$|x_{30}|$  (distance to minimum, log scale)")
+ax.set_title("Where the cliff is: convergence vs. step size")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"You said $\eta=1/L$ is optimal, but your figure shows $\eta=1/L$ converges in one step on
+a quadratic — is that a fluke?"* It is exact for the quadratic $\tfrac{L}{2}x^2$ because
+*there* the descent-lemma parabola @eq-descent holds with equality (the function *is* the
+upper parabola), so minimizing the model minimizes $f$ exactly. For a general $L$-smooth
+$f$, the parabola only *bounds* $f$, so one step lands at the bottom of the *bound*, not of
+$f$, and we need many steps. $\eta=1/L$ is "optimal" in the sense of the largest
+*guaranteed* drop @eq-sufficient, not literal one-step convergence. The next interview
+push: *"so should I always use $1/L$?"* — no, because (a) you rarely know $L$, which is why
+we need line search (@sec-linesearch), and (b) when curvature varies by direction, a single
+$\eta$ tied to the worst direction is wasteful — the ill-conditioning story of
+@sec-conditioning.
+:::
+
+# Formal development II: convergence rates {#sec-rates}
+
+We have shown the objective decreases. Decreasing is not the same as *reaching the
+minimum* — a sequence can decrease forever and stall above the bottom. To prove descent
+actually arrives, and to measure its speed, we need more than smoothness: we need to know
+the bowl has *no false bottoms*, which is exactly **convexity** ([OPTM-04]). We treat two
+cases, in increasing order of how much we assume and how fast we go.
+
+## What "rate" means {#sec-rate-defn}
+
+Let $f^\star=\min f$ be the optimal value and $\mathbf{x}^\star$ a minimizer. The
+**suboptimality** after $k$ steps is $f(\mathbf{x}_k)-f^\star\ge 0$. A *convergence rate*
+is a bound on how fast this drives to zero.
+
+- **Sublinear**, e.g. $f(\mathbf{x}_k)-f^\star\le C/k$: the error falls, but each new
+  digit of accuracy costs *exponentially more* iterations. To go from $10^{-2}$ to
+  $10^{-3}$ takes $10\times$ as many steps. This is the convex-only rate.
+- **Linear** (a.k.a. *geometric* — the names are unfortunate but standard), e.g.
+  $f(\mathbf{x}_k)-f^\star\le C\rho^k$ with $0<\rho<1$: the error is multiplied by a fixed
+  factor $\rho$ each step, so the number of correct digits grows *linearly* in $k$. This is
+  the strongly-convex rate, and it is dramatically faster.
+
+Hold the contrast: *sublinear adds accuracy by brute force; linear earns a fixed fraction
+of the remaining gap every single step.*
+
+## The convex, smooth case: the $O(1/k)$ rate {#sec-convex-rate}
+
+::: {#thm-convex-rate}
+**Theorem (sublinear rate, convex + smooth).** Let $f$ be convex and $L$-smooth with a
+minimizer $\mathbf{x}^\star$. Run gradient descent @eq-gd with constant step
+$\eta=1/L$. Then after $k$ steps,
+
+$$
+f(\mathbf{x}_k) - f^\star \;\le\; \frac{L\,\|\mathbf{x}_0-\mathbf{x}^\star\|^2}{2k}.
+$$ {#eq-convex-rate}
+:::
+
+So suboptimality is $O(1/k)$: to guarantee error $\le\varepsilon$ you need
+$k\ge L\|\mathbf{x}_0-\mathbf{x}^\star\|^2/(2\varepsilon)$ iterations — inversely
+proportional to the accuracy you demand. We prove it with two ingredients only: the
+sufficient-decrease inequality @eq-sufficient (from smoothness) and the **first-order
+convexity inequality** from [OPTM-04],
+
+$$
+f(\mathbf{x}^\star) \ge f(\mathbf{x}_k) + \nabla f(\mathbf{x}_k)^\top(\mathbf{x}^\star-\mathbf{x}_k),
+$$ {#eq-fo-convex}
+
+which says a convex function lies *above* each of its tangent planes — the tangent at
+$\mathbf{x}_k$ underestimates the value at $\mathbf{x}^\star$.
+
+::: {.proof}
+**Step 1 — turn convexity into a bound on the gradient's "usefulness".** Rearranging
+@eq-fo-convex (move $f(\mathbf{x}_k)$ left, flip the inequality):
+
+$$
+f(\mathbf{x}_k) - f^\star \le \nabla f(\mathbf{x}_k)^\top(\mathbf{x}_k - \mathbf{x}^\star)
+= \mathbf{g}_k^\top(\mathbf{x}_k-\mathbf{x}^\star).
+$$ {#eq-gap-bound}
+
+The current suboptimality is controlled by how aligned the gradient is with the direction
+back to the optimum.
+
+**Step 2 — track the distance to the optimum.** Look at how the squared distance
+$\|\mathbf{x}_k-\mathbf{x}^\star\|^2$ changes in one step. Using
+$\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\mathbf{g}_k$ and expanding the square with
+$\|\mathbf{a}-\mathbf{b}\|^2=\|\mathbf{a}\|^2-2\mathbf{a}^\top\mathbf{b}+\|\mathbf{b}\|^2$:
+
+$$
+\|\mathbf{x}_{k+1}-\mathbf{x}^\star\|^2
+= \|\mathbf{x}_k - \eta\mathbf{g}_k - \mathbf{x}^\star\|^2
+= \|\mathbf{x}_k-\mathbf{x}^\star\|^2
+  - 2\eta\,\mathbf{g}_k^\top(\mathbf{x}_k-\mathbf{x}^\star)
+  + \eta^2\|\mathbf{g}_k\|^2.
+$$
+
+Solve for the cross term $\mathbf{g}_k^\top(\mathbf{x}_k-\mathbf{x}^\star)$, which is the
+quantity that bounds the gap in @eq-gap-bound:
+
+$$
+\mathbf{g}_k^\top(\mathbf{x}_k-\mathbf{x}^\star)
+= \frac{1}{2\eta}\Bigl(\|\mathbf{x}_k-\mathbf{x}^\star\|^2 - \|\mathbf{x}_{k+1}-\mathbf{x}^\star\|^2\Bigr)
+  + \frac{\eta}{2}\|\mathbf{g}_k\|^2.
+$$ {#eq-cross}
+
+**Step 3 — combine.** Substitute @eq-cross into @eq-gap-bound, and use $\eta=1/L$:
+
+$$
+f(\mathbf{x}_k) - f^\star
+\le \frac{1}{2\eta}\Bigl(\|\mathbf{x}_k-\mathbf{x}^\star\|^2 - \|\mathbf{x}_{k+1}-\mathbf{x}^\star\|^2\Bigr)
+  + \frac{\eta}{2}\|\mathbf{g}_k\|^2.
+$$
+
+The last term $\tfrac{\eta}{2}\|\mathbf{g}_k\|^2$ is awkward — but the sufficient-decrease
+inequality @eq-sufficient with $\eta=1/L$ says exactly
+$\tfrac{1}{2L}\|\mathbf{g}_k\|^2 \le f(\mathbf{x}_k)-f(\mathbf{x}_{k+1})$, and
+$\tfrac{\eta}{2}=\tfrac{1}{2L}$. Replace it:
+
+$$
+f(\mathbf{x}_k) - f^\star
+\le \frac{L}{2}\Bigl(\|\mathbf{x}_k-\mathbf{x}^\star\|^2 - \|\mathbf{x}_{k+1}-\mathbf{x}^\star\|^2\Bigr)
+  + \bigl(f(\mathbf{x}_k) - f(\mathbf{x}_{k+1})\bigr).
+$$
+
+Move the $f(\mathbf{x}_k)$ terms together. On the left we have $f(\mathbf{x}_k)-f^\star$;
+adding $f(\mathbf{x}_{k+1})-f(\mathbf{x}_k)$ to both sides gives, on the left,
+$f(\mathbf{x}_{k+1})-f^\star$:
+
+$$
+f(\mathbf{x}_{k+1}) - f^\star
+\le \frac{L}{2}\Bigl(\|\mathbf{x}_k-\mathbf{x}^\star\|^2 - \|\mathbf{x}_{k+1}-\mathbf{x}^\star\|^2\Bigr).
+$$ {#eq-telescope-term}
+
+**Step 4 — telescope.** Sum @eq-telescope-term from iteration $0$ to $k-1$. The
+right-hand side is a **telescoping sum**: each $-\|\mathbf{x}_{j+1}-\mathbf{x}^\star\|^2$
+cancels the $+\|\mathbf{x}_{j+1}-\mathbf{x}^\star\|^2$ of the next term, leaving only the
+first and last:
+
+$$
+\sum_{j=0}^{k-1}\bigl(f(\mathbf{x}_{j+1}) - f^\star\bigr)
+\le \frac{L}{2}\Bigl(\|\mathbf{x}_0-\mathbf{x}^\star\|^2 - \|\mathbf{x}_k-\mathbf{x}^\star\|^2\Bigr)
+\le \frac{L}{2}\|\mathbf{x}_0-\mathbf{x}^\star\|^2,
+$$
+
+where the last step drops the subtracted (non-negative) term to keep the bound clean.
+
+**Step 5 — use that the objective is decreasing.** We proved in @sec-guaranteed that
+$f(\mathbf{x}_{j+1})\le f(\mathbf{x}_j)$, so the sequence of suboptimalities
+$f(\mathbf{x}_{j+1})-f^\star$ is non-increasing in $j$. The smallest term in the sum is the
+last, $f(\mathbf{x}_k)-f^\star$, so replacing every one of the $k$ terms by this smallest
+one only *lowers* the left side:
+
+$$
+k\bigl(f(\mathbf{x}_k)-f^\star\bigr)
+\le \sum_{j=0}^{k-1}\bigl(f(\mathbf{x}_{j+1})-f^\star\bigr)
+\le \frac{L}{2}\|\mathbf{x}_0-\mathbf{x}^\star\|^2.
+$$
+
+Divide by $k$ to obtain @eq-convex-rate. $\qquad\blacksquare$
+:::
+
+This is an honest and complete derivation of the canonical rate. Notice what it does *not*
+require: it never assumes the minimizer is unique, never assumes curvature is bounded
+below. Convexity alone buys $O(1/k)$ — and no faster, in general. The numerator
+$\|\mathbf{x}_0-\mathbf{x}^\star\|^2$ is intuitive: start farther away, wait longer.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is plain gradient descent on a convex problem considered 'slow'?"* Because $O(1/k)$
+means accuracy $\varepsilon$ costs $\sim 1/\varepsilon$ iterations: each extra decimal
+place costs ten times more work. Nesterov's accelerated gradient ([OPTM-08]) improves the
+*same* convex-smooth setting to $O(1/k^2)$ — accuracy $\varepsilon$ in $\sim 1/\sqrt
+\varepsilon$ steps — and this is provably optimal for first-order methods. The interviewer
+is probing whether you know that the $O(1/k)$ rate is a property of *plain* GD, not a law of
+nature, and that the fix (momentum) costs nothing but bookkeeping.
+:::
+
+## The strongly-convex case: linear convergence {#sec-strong-rate}
+
+Convexity says the bowl has no false bottoms. **Strong convexity** ([OPTM-04]) says more:
+the bowl curves up at least at some minimum rate $\mu>0$ everywhere — it is trapped *above*
+a parabola of curvature $\mu$, the mirror image of the descent lemma's trap from above.
+
+::: {#def-strong}
+**Definition ($\mu$-strong convexity).** $f$ is **$\mu$-strongly convex** if for all
+$\mathbf{x},\mathbf{y}$,
+
+$$
+f(\mathbf{y}) \ge f(\mathbf{x}) + \nabla f(\mathbf{x})^\top(\mathbf{y}-\mathbf{x})
+              + \frac{\mu}{2}\|\mathbf{y}-\mathbf{x}\|^2,
+$$ {#eq-strong}
+
+with $\mu>0$. Equivalently, the Hessian has all eigenvalues at least $\mu$: curvature is at
+least $\mu$ in every direction.
+:::
+
+Together, $L$-smoothness and $\mu$-strong convexity sandwich $f$ between two parabolas of
+curvature $\mu$ and $L$ at every point — the cleanest possible setting, and the one where
+gradient descent shines. The single derived consequence we need is the **Polyak–Łojasiewicz
+(PL) inequality**, which converts strong convexity into a lower bound on the gradient's
+size relative to the suboptimality.
+
+::: {#lem-pl}
+**Lemma (PL inequality from strong convexity).** If $f$ is $\mu$-strongly convex with
+minimum value $f^\star$, then at every point $\mathbf{x}$,
+
+$$
+\frac12\|\nabla f(\mathbf{x})\|^2 \;\ge\; \mu\bigl(f(\mathbf{x}) - f^\star\bigr).
+$$ {#eq-pl}
+:::
+
+::: {.proof}
+Fix $\mathbf{x}$ and treat the strong-convexity inequality @eq-strong as a function of
+$\mathbf{y}$: the right-hand side is a quadratic in $\mathbf{y}$ that lies *below* $f$. Take
+the *smallest* value the right-hand side can have over all $\mathbf{y}$ — since
+$f(\mathbf{y})$ is at least this quadratic for every $\mathbf{y}$, in particular
+$f^\star=\min_{\mathbf{y}}f(\mathbf{y})$ is at least the *minimum of the quadratic*:
+
+$$
+f^\star = \min_{\mathbf{y}} f(\mathbf{y})
+\;\ge\; \min_{\mathbf{y}}\Bigl[ f(\mathbf{x}) + \nabla f(\mathbf{x})^\top(\mathbf{y}-\mathbf{x})
+       + \frac{\mu}{2}\|\mathbf{y}-\mathbf{x}\|^2 \Bigr].
+$$
+
+Minimize the bracket over $\mathbf{y}$ explicitly. Let $\mathbf{v}=\mathbf{y}-\mathbf{x}$;
+the bracket is $f(\mathbf{x})+\nabla f(\mathbf{x})^\top\mathbf{v}+\tfrac{\mu}{2}\|\mathbf{v}\|^2$,
+a quadratic in $\mathbf{v}$. Its gradient with respect to $\mathbf{v}$ is
+$\nabla f(\mathbf{x})+\mu\mathbf{v}$; setting it to zero gives the minimizer
+$\mathbf{v}^\star=-\tfrac{1}{\mu}\nabla f(\mathbf{x})$. Substitute back:
+
+$$
+f(\mathbf{x}) + \nabla f(\mathbf{x})^\top\!\Bigl(-\tfrac{1}{\mu}\nabla f(\mathbf{x})\Bigr)
+   + \frac{\mu}{2}\Bigl\|-\tfrac{1}{\mu}\nabla f(\mathbf{x})\Bigr\|^2
+= f(\mathbf{x}) - \frac{1}{\mu}\|\nabla f(\mathbf{x})\|^2 + \frac{\mu}{2}\cdot\frac{1}{\mu^2}\|\nabla f(\mathbf{x})\|^2.
+$$
+
+The last two terms combine: $-\tfrac{1}{\mu}\|\nabla f\|^2 + \tfrac{1}{2\mu}\|\nabla f\|^2
+= -\tfrac{1}{2\mu}\|\nabla f\|^2$. So the minimized bracket equals
+$f(\mathbf{x})-\tfrac{1}{2\mu}\|\nabla f(\mathbf{x})\|^2$, and our inequality reads
+
+$$
+f^\star \ge f(\mathbf{x}) - \frac{1}{2\mu}\|\nabla f(\mathbf{x})\|^2.
+$$
+
+Rearrange — move $f(\mathbf{x})$ left and the gradient term right — to get
+$\tfrac{1}{2\mu}\|\nabla f(\mathbf{x})\|^2 \ge f(\mathbf{x})-f^\star$, then multiply by
+$\mu$ to land on @eq-pl. $\qquad\blacksquare$
+:::
+
+The PL inequality says: **wherever the function is far above its minimum, the gradient is
+correspondingly large.** Descent never stalls early, because a large gap forces a large
+gradient, which forces a large step. Now the rate falls out in three lines.
+
+::: {#thm-strong-rate}
+**Theorem (linear rate, strongly convex + smooth).** Let $f$ be $\mu$-strongly convex and
+$L$-smooth. Run gradient descent with $\eta=1/L$. Then
+
+$$
+f(\mathbf{x}_{k}) - f^\star \;\le\; \Bigl(1 - \frac{\mu}{L}\Bigr)^{k}\bigl(f(\mathbf{x}_0) - f^\star\bigr).
+$$ {#eq-strong-rate}
+:::
+
+::: {.proof}
+Start from the sufficient-decrease inequality @eq-sufficient (valid here, since $f$ is
+$L$-smooth):
+
+$$
+f(\mathbf{x}_{k+1}) \le f(\mathbf{x}_k) - \frac{1}{2L}\|\nabla f(\mathbf{x}_k)\|^2.
+$$
+
+The PL inequality @eq-pl gives a *lower* bound on the gradient term:
+$\tfrac12\|\nabla f(\mathbf{x}_k)\|^2 \ge \mu(f(\mathbf{x}_k)-f^\star)$, hence
+$\tfrac{1}{2L}\|\nabla f(\mathbf{x}_k)\|^2 \ge \tfrac{\mu}{L}(f(\mathbf{x}_k)-f^\star)$.
+Subtracting a *larger* quantity makes a *smaller* result, so
+
+$$
+f(\mathbf{x}_{k+1}) \le f(\mathbf{x}_k) - \frac{\mu}{L}\bigl(f(\mathbf{x}_k)-f^\star\bigr).
+$$
+
+Subtract $f^\star$ from both sides and factor the right:
+
+$$
+f(\mathbf{x}_{k+1}) - f^\star \le \bigl(f(\mathbf{x}_k)-f^\star\bigr) - \frac{\mu}{L}\bigl(f(\mathbf{x}_k)-f^\star\bigr)
+= \Bigl(1-\frac{\mu}{L}\Bigr)\bigl(f(\mathbf{x}_k)-f^\star\bigr).
+$$
+
+So each step multiplies the suboptimality by the same factor $\rho=1-\mu/L$. Applying this
+$k$ times — a geometric sequence — gives @eq-strong-rate. (Note $0<\mu\le L$ always, since
+the curvature is between $\mu$ and $L$, so $\rho=1-\mu/L\in[0,1)$ and the powers shrink.)
+$\qquad\blacksquare$
+:::
+
+Compare the two theorems and feel the gap. Convex-only: $f(\mathbf{x}_k)-f^\star\le
+C/k$ — to halve the error, *double* the iterations forever. Strongly convex:
+$f(\mathbf{x}_k)-f^\star\le C\rho^k$ — to halve the error, take a *fixed* number of extra
+steps (about $0.69/\!\ln(1/\rho)$ of them), no matter how accurate you already are. The
+entire jump came from one extra assumption: curvature bounded *below*.
+
+# Formal development III: the condition number governs everything {#sec-conditioning}
+
+The linear rate @eq-strong-rate hides its punchline inside the factor $\rho=1-\mu/L$.
+Define the **condition number**
+
+$$
+\kappa = \frac{L}{\mu} \;\ge\; 1,
+$$ {#eq-kappa}
+
+the ratio of the largest to the smallest curvature. Then $\rho=1-1/\kappa$, and the number
+of iterations to reach accuracy $\varepsilon$ scales like $\kappa$. To see this, ask how
+many steps $k$ drive $\rho^k$ below a target $\delta$: take logs, $k\ln\rho\le\ln\delta$,
+so (since $\ln\rho<0$)
+
+$$
+k \ge \frac{\ln(1/\delta)}{\ln\bigl(1/(1-1/\kappa)\bigr)} \approx \kappa\,\ln(1/\delta),
+$$
+
+using $\ln(1/(1-1/\kappa))\approx 1/\kappa$ for large $\kappa$ (the Calc-1 fact
+$\ln(1+u)\approx u$ for small $u$, here $u=1/\kappa$). **Iterations scale linearly with the
+condition number.** A problem with $\kappa=10$ needs $\sim 10\times$ the steps of a
+perfectly round bowl; $\kappa=10^4$ needs $\sim 10^4\times$.
+
+## Why $\kappa$ is the steepness-to-shallowness ratio of the bowl {#sec-kappa-geom}
+
+For a quadratic objective $f(\mathbf{x})=\tfrac12\mathbf{x}^\top A\mathbf{x}$ with $A$
+symmetric positive-definite, the curvature in a direction is an eigenvalue of $A$. The
+largest curvature is $L=\lambda_{\max}(A)$ and the smallest is $\mu=\lambda_{\min}(A)$, so
+
+$$
+\kappa = \frac{\lambda_{\max}(A)}{\lambda_{\min}(A)},
+$$
+
+which is exactly the **condition number of the matrix $A$** from linear algebra (the
+Geometry track owns this object). A round bowl has all eigenvalues equal, $\kappa=1$; a
+bowl stretched into a long ravine has one tiny eigenvalue (the gentle slope along the
+valley) and one large one (the steep walls), so $\kappa$ is huge. This is the precise
+content of @fig-roadmap's two panels, and it is the *same* condition number that governs
+the numerical instability of the normal equations in regression — the ill-conditioning of
+[REGR-07] is this $\kappa$ wearing a different hat.
+
+## Why large $\kappa$ makes descent zig-zag {#sec-zigzag}
+
+The geometric story: the gradient points *perpendicular to the contour lines*, not toward
+the minimum. In a round bowl the perpendicular *is* toward the center, so descent walks
+straight in. In a stretched bowl, the gradient is dominated by the steep direction and
+barely registers the gentle one — so each step shoots across the narrow valley (overcorrecting
+the steep direction) and makes almost no progress *along* it (the direction that actually
+reaches the minimum). The result is the characteristic zig-zag, with the step size pinned
+small by the steep walls ($\eta\le 1/L$, set by the *largest* curvature) while the journey
+length is set by the gentle floor. @fig-zigzag isolates this on a single ill-conditioned
+bowl and shows convergence collapsing as $\kappa$ grows.
+
+```{python}
+#| label: fig-zigzag
+#| fig-cap: "How the condition number throttles gradient descent. **Left:** the iterate path on an ill-conditioned quadratic ($\\kappa=30$) with the step-size-optimal constant $\\eta$; the path is forced into a slow zig-zag down the narrow valley because $\\eta$ is capped by the steep walls while progress must be made along the gentle floor. **Right:** measured suboptimality $f(x_k)-f^\\star$ (log scale) versus iteration for three condition numbers. All three are straight lines (linear convergence), but the slope flattens as $\\kappa$ grows — the predicted $\\rho=1-1/\\kappa$ getting closer to $1$."
+def gd_quad_diag(curv, x0, eta, n):
+    """f(x) = sum_i 0.5*curv_i*x_i^2 ; returns iterate array and f-values."""
+    curv = np.asarray(curv, float)
+    xs = [np.asarray(x0, float)]
+    for _ in range(n):
+        x = xs[-1]
+        xs.append(x - eta * (curv * x))
+    xs = np.array(xs)
+    fvals = 0.5 * (xs**2 * curv).sum(axis=1)
+    return xs, fvals
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.0))
+
+# Left: path on kappa=30 bowl in 2D.
+mu, kap = 1.0, 30.0
+Lc = mu * kap
+etap = 2.0 / (Lc + mu)
+path, _ = gd_quad_diag([Lc, mu], [-0.4, 2.3], etap, 60)
+gx = np.linspace(-0.8, 0.8, 200); gy = np.linspace(-2.6, 2.6, 200)
+GX, GY = np.meshgrid(gx, gy)
+Z = 0.5 * Lc * GX**2 + 0.5 * mu * GY**2
+axL.contour(GX, GY, Z, levels=18, colors=GREY, linewidths=0.6, alpha=0.7)
+axL.plot(path[:, 0], path[:, 1], "-o", color=STEP, ms=2.6, lw=1.0)
+axL.scatter([0], [0], color=ACCENT, s=70, zorder=5, edgecolor="white")
+axL.set_title(r"Zig-zag path, $\kappa=30$")
+axL.set_xlabel("$x_1$ (steep)"); axL.set_ylabel("$x_2$ (gentle)")
+
+# Right: convergence curves for several kappa.
+for kap, color in [(3.0, ACCENT), (30.0, CURVE), (300.0, STEP)]:
+    mu = 1.0; Lc = mu * kap
+    eta = 1.0 / Lc
+    _, fvals = gd_quad_diag([Lc, mu], [1.0, 1.0], eta, 400)
+    fvals = np.clip(fvals, 1e-16, None)
+    axR.semilogy(fvals, color=color, label=fr"$\kappa={int(kap)}$")
+axR.set_xlabel("iteration $k$")
+axR.set_ylabel(r"$f(x_k)-f^\star$  (log scale)")
+axR.set_title("Linear rate, slope set by $\\kappa$")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"My loss decreases for a while then crawls. What's happening and what do I do?"* The
+classic interview diagnosis. The crawl is **ill-conditioning** — a large $\kappa$ valley,
+where descent has cleaned up the steep directions and is now inching along the flat one at
+rate $1-1/\kappa$. Three honest fixes, in order of cheapness: **(1) feature scaling /
+normalization** — standardizing inputs often shrinks $\kappa$ dramatically by making the
+bowl rounder (it changes $A$'s eigenvalue spread); **(2) momentum / Nesterov** ([OPTM-08]),
+which improves the dependence from $\kappa$ to $\sqrt{\kappa}$; **(3) a second-order method**
+— Newton ([OPTM-09]) effectively rescales the problem by the Hessian, making it
+$\kappa$-*independent* at the cost of forming and inverting $H$. Naming all three, and
+*why* each helps, is what separates a memorized answer from understanding.
+:::
+
+# Choosing the step size in practice: line search {#sec-linesearch}
+
+Every result so far assumed we *know* $L$. In practice we almost never do — $L$ depends on
+the data and the model, and computing it can be as hard as the optimization itself. The
+practical resolution is to **choose $\eta$ adaptively from function values**, never needing
+$L$ at all. This is **line search**.
+
+## Exact line search {#sec-exact-ls}
+
+The greedy ideal: from $\mathbf{x}_k$, walk in the direction $-\mathbf{g}_k$ as far as the
+objective keeps dropping, i.e. solve the one-dimensional problem
+
+$$
+\eta_k = \arg\min_{\eta\ge 0}\; \phi(\eta), \qquad \phi(\eta)=f(\mathbf{x}_k - \eta\mathbf{g}_k).
+$$ {#eq-exact-ls}
+
+This is precisely the 1-D minimization of [OPTM-01] applied along the ray — every
+gradient-descent step contains a little 1-D problem inside it, as foreshadowed there. For a
+quadratic it has a closed form; in general it is solved approximately and is usually *not
+worth* the cost, because finding $\eta_k$ exactly buys little over finding a $\eta_k$ that
+is merely good enough. That observation motivates the workhorse.
+
+## Backtracking (Armijo) line search {#sec-backtrack}
+
+We do not need the *best* $\eta$; we need one that makes *sufficient* progress — progress
+in line with what the gradient promised. The descent-lemma calculation suggested the right
+yardstick. The **Armijo / sufficient-decrease condition** demands that a step of size
+$\eta$ achieve at least a fraction $c\in(0,1)$ of the decrease the linear model predicts:
+
+$$
+f(\mathbf{x}_k - \eta\mathbf{g}_k) \;\le\; f(\mathbf{x}_k) - c\,\eta\,\|\mathbf{g}_k\|^2.
+$$ {#eq-armijo}
+
+(The predicted first-order decrease for step $\eta$ is $\eta\|\mathbf{g}_k\|^2$; we accept
+the step if it delivers at least the fraction $c$ of that.) **Backtracking** starts with an
+optimistic $\eta$ and shrinks it geometrically until @eq-armijo holds:
+
+> Pick $\eta\leftarrow\eta_{\text{init}}$, a shrink factor $\beta\in(0,1)$ (say $0.5$), and
+> $c$ (say $10^{-4}$). **While** @eq-armijo fails, set $\eta\leftarrow\beta\eta$. Accept the
+> first $\eta$ that satisfies it, and take the step.
+
+This needs only the ability to *evaluate $f$* — no $L$, no second derivatives. And it
+provably terminates: the descent lemma guarantees that once $\eta\le 1/L$, @eq-armijo holds
+(for any $c\le\tfrac12$), so backtracking cannot shrink below roughly $\beta/L$. It
+automatically discovers a safe, near-optimal step. @fig-linesearch shows it in action and
+its effect on the trajectory.
+
+```{python}
+#| label: fig-linesearch
+#| fig-cap: "Backtracking line search, made visible. **Left:** the 1-D slice $\\phi(\\eta)=f(x_k-\\eta g_k)$ along the descent direction (navy), the Armijo sufficient-decrease line (red), and the candidate step sizes backtracking tries (shrinking by $\\beta=0.5$ from an optimistic start) — it accepts the first that lands on or below the red line. **Right:** gradient descent with backtracking on an ill-conditioned bowl, which finds a safe step every iteration *without being told $L$*, converging cleanly where a guessed constant $\\eta$ might diverge or crawl."
+# Left panel: one line-search slice on a 1-D quadratic-ish objective.
+def fobj(x):  # 1-D illustrative objective
+    return 0.5 * 6.0 * x**2
+def gobj(x):
+    return 6.0 * x
+
+xk = 1.0
+gk = gobj(xk)
+phi = lambda eta: fobj(xk - eta * gk)
+etas = np.linspace(0, 0.45, 300)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.0))
+axL.plot(etas, phi(etas), color=CURVE, label=r"$\phi(\eta)=f(x_k-\eta g_k)$")
+c = 0.3  # larger c just for a visible line in the figure
+axL.plot(etas, fobj(xk) - c * etas * gk**2, color=STEP, lw=1.6,
+         label="Armijo line")
+beta = 0.5
+eta_try = 0.42
+tries = []
+while phi(eta_try) > fobj(xk) - c * eta_try * gk**2:
+    tries.append(eta_try)
+    eta_try *= beta
+tries.append(eta_try)  # the accepted one
+for j, e in enumerate(tries):
+    accepted = (j == len(tries) - 1)
+    axL.scatter([e], [phi(e)], s=55, zorder=5,
+                color=ACCENT if accepted else GREY,
+                edgecolor="white" if accepted else "none")
+axL.annotate("accepted", (tries[-1], phi(tries[-1])),
+             textcoords="offset points", xytext=(8, 12), fontsize=9, color=ACCENT)
+axL.set_xlabel(r"step size $\eta$"); axL.set_ylabel(r"$\phi(\eta)$")
+axL.set_title("Backtracking shrinks until Armijo holds")
+axL.legend(fontsize=9, framealpha=0.9, loc="upper center")
+
+# Right panel: GD + backtracking on a 2-D ill-conditioned bowl.
+A = np.array([12.0, 1.0])  # curvatures
+def F(x): return 0.5 * (A * x**2).sum()
+def G(x): return A * x
+
+def backtrack(x, g, beta=0.5, c=1e-4, eta0=1.0):
+    eta = eta0
+    gn2 = g @ g
+    while F(x - eta * g) > F(x) - c * eta * gn2:
+        eta *= beta
+    return eta
+
+x = np.array([-0.8, 2.4])
+path = [x.copy()]
+for _ in range(40):
+    g = G(x)
+    eta = backtrack(x, g)
+    x = x - eta * g
+    path.append(x.copy())
+path = np.array(path)
+gx = np.linspace(-1.0, 1.0, 200); gy = np.linspace(-2.7, 2.7, 200)
+GX, GY = np.meshgrid(gx, gy)
+Z = 0.5 * A[0] * GX**2 + 0.5 * A[1] * GY**2
+axR.contour(GX, GY, Z, levels=16, colors=GREY, linewidths=0.6, alpha=0.7)
+axR.plot(path[:, 0], path[:, 1], "-o", color=STEP, ms=3, lw=1.2)
+axR.scatter([0], [0], color=ACCENT, s=70, zorder=5, edgecolor="white")
+axR.set_title(r"GD + backtracking (no $L$ needed)")
+axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"If line search is so robust, why does everyone training neural nets just use a fixed (or
+scheduled) learning rate?"* Because line search needs **extra function evaluations per
+step**, and in deep learning a function evaluation is a full forward pass over a minibatch —
+expensive — while the objective is **stochastic** (each minibatch gives a noisy $f$), so the
+Armijo test on one batch is unreliable. In the deterministic, full-batch, medium-scale world
+(classical convex problems, L-BFGS, logistic regression) line search is standard and
+excellent. In the stochastic, massive world ([OPTM-11], [OPTM-12]) it is usually replaced by
+a *schedule* or an *adaptive* method. Knowing *which regime you are in* is the real answer.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The guarantees above are sharp, which means their *assumptions* are exactly where they
+break. An honest practitioner reads the theorems backward: each hypothesis is a way the
+method can fail.
+
+## Non-convex objectives: only stationarity is promised {#sec-nonconvex}
+
+Drop convexity and keep only $L$-smoothness — the setting of essentially every neural
+network. The descent lemma still holds (it never used convexity), so the objective still
+decreases and we can still prove something: telescoping @eq-sufficient gives
+
+$$
+\min_{0\le j<k}\|\nabla f(\mathbf{x}_j)\|^2 \;\le\; \frac{2L\bigl(f(\mathbf{x}_0)-f^\star\bigr)}{k},
+$$
+
+so the *gradients* drive to zero at an $O(1/k)$ rate — but that only certifies arrival at a
+**stationary point** ($\nabla f=\mathbf{0}$), which in a non-convex landscape might be a
+local minimum, a poor local minimum, or a **saddle** (the trap from [OPTM-02]). Gradient
+descent gives *no guarantee* of reaching the global minimum here. @fig-nonconvex shows
+descent halting at whichever basin it started in.
+
+```{python}
+#| label: fig-nonconvex
+#| fig-cap: "The edge of applicability: convexity gone. A non-convex 1-D objective with two local minima of different depth. Gradient descent (same step size) is run from three starting points; each rolls into the *nearest* basin and stops, two of them at the shallower, suboptimal local minimum. Smoothness still guarantees the iterates settle at a stationary point — it cannot guarantee that point is the global one. This is why, for non-convex problems, GD's promise weakens from 'finds the minimum' to merely 'finds a stationary point'."
+def fnc(x):
+    return 0.1 * x**4 - 0.4 * x**3 - 0.3 * x**2 + 1.2 * x + 3.0
+def gnc(x):
+    return 0.4 * x**3 - 1.2 * x**2 - 0.6 * x + 1.2
+
+xs = np.linspace(-3.2, 4.6, 400)
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ax.plot(xs, fnc(xs), color=CURVE, label="non-convex $f$")
+starts = [-3.0, 0.5, 4.2]
+colors = [STEP, ACCENT, GREY]
+for x0, col in zip(starts, colors):
+    x = x0
+    pts = [x]
+    for _ in range(60):
+        x = x - 0.06 * gnc(x)
+        pts.append(x)
+    pts = np.array(pts)
+    ax.plot(pts, fnc(pts), "o-", color=col, ms=2.5, lw=0.8, alpha=0.8)
+    ax.scatter([x0], [fnc(x0)], color=col, s=55, zorder=5, edgecolor="white")
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("GD finds a stationary point, not the global minimum")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Wrong step size: the divergence cliff {#sec-divergence}
+
+If $\eta\ge 2/L$ the descent lemma's bracket goes non-positive and the objective can
+*increase*; for a quadratic with $\eta>2/L$ the iterates grow geometrically without bound.
+This is the single most common reason a training run produces `NaN`: the loss explodes
+within a few iterations. The fix is exactly the theory — shrink $\eta$ below $2/L$, or use
+backtracking, which can never overshoot the cliff. @fig-divergence shows the boundary.
+
+```{python}
+#| label: fig-divergence
+#| fig-cap: "Stepping off the cliff. Gradient descent on $f(x)=\\tfrac{L}{2}x^2$ ($L=4$, so $2/L=0.5$) from $x_0=1$, for four step sizes. $\\eta=0.2$ ($<1/L$) crawls down monotonically; $\\eta=1/L=0.25$ lands at the bottom in one step; $\\eta=0.45$ ($\\in(1/L,2/L)$) overshoots and oscillates inward; $\\eta=0.55$ ($>2/L$) oscillates *outward* and diverges. The threshold at $2/L$ is exactly the descent lemma's prediction."
+L = 4.0
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+for eta, col, ls in [(0.20, ACCENT, "-"), (0.25, CURVE, "-"),
+                     (0.45, GREY, "--"), (0.55, STEP, "--")]:
+    x = 1.0
+    traj = [x]
+    for _ in range(14):
+        x = x - eta * (L * x)
+        traj.append(x)
+    ax.plot(traj, ls, color=col, marker="o", ms=3.5,
+            label=fr"$\eta={eta}$")
+ax.axhline(0, color="black", lw=0.8)
+ax.set_xlabel("iteration $k$"); ax.set_ylabel(r"$x_k$")
+ax.set_title(r"Convergence vs. divergence across the $2/L$ threshold")
+ax.set_ylim(-3.0, 3.0)
+ax.legend(fontsize=9, framealpha=0.9, ncol=2)
+plt.tight_layout()
+```
+
+## Non-smooth objectives: smoothness was load-bearing {#sec-nonsmooth}
+
+Every result rested on $L$-smoothness. If $f$ has a kink — like the $\ell_1$ penalty
+$\lambda\|\boldsymbol\beta\|_1$ in the lasso, or a ReLU — the gradient jumps and no finite
+$L$ exists. Plain gradient descent has no gradient *at* the kink and chatters around it
+instead of settling. This is not a tuning problem; it is a *structural* one, and the remedy
+is to replace the gradient with a **subgradient** ([OPTM-05]) or, better, to handle the
+non-smooth part with a **proximal** step ([OPTM-16]). The honest boundary: this article's
+theory is the theory of *smooth* descent; the non-smooth world needs the companion machinery
+of the convexity spine.
+
+::: {.callout-warning title="Pitfall"}
+**Do not read $\eta=1/L$ as a universal recipe.** Three traps. **(1)** $L$ is the *global*
+worst-case curvature; if curvature varies a lot, $1/L$ is conservative everywhere except the
+steepest spot — line search or per-coordinate adaptivity ([OPTM-12]) does better. **(2)**
+The rate constant is $\kappa$, not $L$ alone — a tiny $L$ does not save you if $\mu$ is even
+tinier. **(3)** All of it assumes the *exact* gradient. In SGD ([OPTM-11]) the gradient is a
+noisy estimate, the descent lemma no longer forces a decrease each step, and you must use a
+*decaying* step size to converge at all — a different theory with a different (slower) rate.
+The clean $\eta\le 1/L$ story is the deterministic, smooth, convex ideal; know which of those
+three words your problem violates.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the theory on two honest problems and confirm the predicted rates against
+measured ones.
+
+## Example 1 — least squares: a quadratic where we know $L$, $\mu$, and $\kappa$ exactly {#sec-ls-example}
+
+Least squares is the cleanest test bed, because its objective is exactly quadratic, so the
+smoothness and strong-convexity constants are the largest and smallest eigenvalues of a
+matrix we can compute. Minimize
+
+$$
+f(\boldsymbol\beta) = \tfrac12\|X\boldsymbol\beta - \mathbf{y}\|^2,
+\qquad \nabla f(\boldsymbol\beta) = X^\top(X\boldsymbol\beta - \mathbf{y}),
+\qquad \nabla^2 f = X^\top X.
+$$
+
+The Hessian is the constant matrix $A=X^\top X$, so $L=\lambda_{\max}(A)$,
+$\mu=\lambda_{\min}(A)$, and $\kappa=L/\mu$ — all computable in advance. We build a
+moderately ill-conditioned design, predict the convergence rate $\rho=1-\mu/L$ from the
+eigenvalues alone, and overlay the prediction on the measured suboptimality.
+
+```{python}
+#| label: fig-ls-rate
+#| fig-cap: "Theory meets measurement on least squares. We build a design matrix whose $X^\\top X$ has condition number $\\kappa\\approx 40$, compute $L=\\lambda_{\\max}$ and $\\mu=\\lambda_{\\min}$, and run gradient descent with $\\eta=1/L$. The measured suboptimality $f(\\beta_k)-f^\\star$ (navy) tracks the *predicted* linear-rate envelope $(1-\\mu/L)^k(f(\\beta_0)-f^\\star)$ (dashed red) closely — the bound is honest, and for a quadratic the actual rate is governed by exactly the eigenvalues the theory names."
+rng = np.random.default_rng(0)
+n, p = 200, 8
+# Construct features with a deliberately spread eigen-spectrum.
+Q, _ = np.linalg.qr(rng.standard_normal((p, p)))
+scales = np.linspace(1.0, 6.3, p)          # spread the singular values
+X = rng.standard_normal((n, p)) @ (Q * scales)
+beta_true = rng.standard_normal(p)
+y = X @ beta_true + 0.3 * rng.standard_normal(n)
+
+A = X.T @ X
+evals = np.linalg.eigvalsh(A)
+L = evals.max(); mu = evals.min()
+kappa = L / mu
+
+beta_star = np.linalg.solve(A, X.T @ y)
+def fval(b): return 0.5 * np.sum((X @ b - y) ** 2)
+f_star = fval(beta_star)
+
+eta = 1.0 / L
+b = np.zeros(p)
+gap = [fval(b) - f_star]
+for _ in range(400):
+    g = X.T @ (X @ b - y)
+    b = b - eta * g
+    gap.append(fval(b) - f_star)
+gap = np.clip(np.array(gap), 1e-16, None)
+
+ks = np.arange(len(gap))
+pred = gap[0] * (1 - mu / L) ** ks
+
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ax.semilogy(ks, gap, color=CURVE, label="measured $f(\\beta_k)-f^\\star$")
+ax.semilogy(ks, pred, color=STEP, ls="--",
+            label=r"predicted $(1-\mu/L)^k$ envelope")
+ax.set_xlabel("iteration $k$"); ax.set_ylabel("suboptimality (log scale)")
+ax.set_title(fr"Least squares, $\kappa\approx{kappa:.0f}$: theory vs. measurement")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"L (lambda_max of X'X) = {L:.3f}")
+print(f"mu (lambda_min)       = {mu:.3f}")
+print(f"condition number kappa = {kappa:.2f}")
+print(f"predicted rho = 1 - mu/L = {1 - mu/L:.4f}")
+```
+
+The printout makes the theory concrete: $L$ and $\mu$ are the spectral extremes of
+$X^\top X$, $\kappa$ is their ratio, and the predicted factor $\rho=1-\mu/L$ is read off
+*before any iteration runs*. The measured curve sits under the predicted envelope, exactly
+as @thm-strong-rate guarantees. This is the precise sense in which the *data's* geometry —
+the spread of $X^\top X$'s eigenvalues — sets the optimizer's speed.
+
+## Example 2 — logistic regression: smooth and strongly convex, but $L$ is not free {#sec-logistic-example}
+
+Logistic regression is the honest middle ground: its loss is smooth and (with a ridge
+penalty) strongly convex, but unlike least squares it is *not* quadratic, so the curvature
+*varies* with $\boldsymbol\beta$ and there is no single matrix to read $L$ off. This is
+exactly where line search earns its keep. The regularized negative log-likelihood is
+
+$$
+f(\boldsymbol\beta) = \sum_{i=1}^n \Bigl[\log\bigl(1+e^{\mathbf{x}_i^\top\boldsymbol\beta}\bigr)
+   - y_i\,\mathbf{x}_i^\top\boldsymbol\beta\Bigr] + \frac{\lambda}{2}\|\boldsymbol\beta\|^2,
+$$
+
+with gradient $\nabla f = X^\top(\boldsymbol\sigma - \mathbf{y}) + \lambda\boldsymbol\beta$,
+where $\sigma_i = 1/(1+e^{-\mathbf{x}_i^\top\boldsymbol\beta})$ is the predicted
+probability. (The $\lambda$-term makes $f$ strongly convex with $\mu\ge\lambda$, guaranteeing
+the linear rate; the logistic curvature is bounded, giving a finite $L$.) We compare a
+constant step against backtracking line search.
+
+```{python}
+#| label: fig-logistic-rate
+#| fig-cap: "Logistic regression: a non-quadratic but smooth, strongly-convex objective. Because curvature varies with $\\beta$, a single 'right' constant step is hard to guess. **Backtracking line search** (green) needs no $L$ and converges fast and monotonically; a hand-picked constant step that is slightly too large (red) overshoots early and is unstable, while a safe-but-small constant (grey) crawls. This is the practical case where line search is the honest default — and the linear rate from strong convexity still holds, visible as the eventual straight-line descent on the log scale."
+rng = np.random.default_rng(3)
+n, p = 400, 6
+Xl = rng.standard_normal((n, p))
+beta_t = rng.standard_normal(p)
+probs = 1.0 / (1.0 + np.exp(-(Xl @ beta_t)))
+yl = (rng.random(n) < probs).astype(float)
+lam = 1.0
+
+def floss(b):
+    z = Xl @ b
+    return np.sum(np.logaddexp(0, z) - yl * z) + 0.5 * lam * b @ b
+def gloss(b):
+    s = 1.0 / (1.0 + np.exp(-(Xl @ b)))
+    return Xl.T @ (s - yl) + lam * b
+
+# A high-accuracy reference optimum via many backtracking steps.
+def run(step_mode, eta_const=None, n_iter=60):
+    b = np.zeros(p)
+    hist = [floss(b)]
+    for _ in range(n_iter):
+        g = gloss(b)
+        if step_mode == "const":
+            eta = eta_const
+        else:  # backtracking
+            eta = 1.0
+            gn2 = g @ g
+            while floss(b - eta * g) > floss(b) - 1e-4 * eta * gn2:
+                eta *= 0.5
+        b = b - eta * g
+        hist.append(floss(b))
+    return b, np.array(hist)
+
+b_ref, _ = run("backtrack", n_iter=300)
+f_star = floss(b_ref)
+
+_, h_bt = run("backtrack")
+_, h_big = run("const", eta_const=0.012)
+_, h_small = run("const", eta_const=0.002)
+
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+for h, col, lab in [(h_bt, ACCENT, "backtracking line search"),
+                    (h_big, STEP, r"constant $\eta=0.012$ (too large)"),
+                    (h_small, GREY, r"constant $\eta=0.002$ (too small)")]:
+    gap = np.clip(h - f_star, 1e-12, None)
+    ax.semilogy(gap, color=col, label=lab)
+ax.set_xlabel("iteration $k$"); ax.set_ylabel(r"$f(\beta_k)-f^\star$ (log scale)")
+ax.set_title("Logistic regression: line search vs. guessed constant steps")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The figure tells the practitioner's story. With curvature that varies across the landscape,
+guessing a constant $\eta$ is a gamble — too large overshoots, too small crawls — while
+backtracking *adapts* the step to the local curvature and converges cleanly, never needing
+the global $L$. And because the ridge term makes the problem strongly convex, the descent is
+ultimately **linear** (a straight line on the log scale), exactly the regime
+@thm-strong-rate describes. Logistic regression is also the doorway to second-order methods:
+its Hessian is cheap enough that Newton's method (the IRLS algorithm) is often preferred —
+the subject of [OPTM-09].
+
+::: {.callout-tip title="You might be asked"}
+*"For logistic regression you can compute the Hessian — so why ever use gradient descent
+instead of Newton?"* Because Newton costs $O(p^3)$ per step to form and invert the
+$p\times p$ Hessian (or $O(np^2)$ to build it). For small $p$ that is nothing and Newton's
+*quadratic* convergence wins easily ([OPTM-09]). For large $p$ — thousands of features,
+millions in a neural net — forming $H$ is impossible and gradient descent (or a quasi-Newton
+approximation, or SGD) is the only option. The crossover is a genuine engineering judgment:
+*how big is $p$, and how ill-conditioned is the problem?* That trade-off is the whole reason
+the descent spine and the second-order spine both exist.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-06 *Gradient Descent*]**, which gave the update rule and the
+*qualitative* warning about step size. This article supplied the missing guarantees:
+**$L$-smoothness** $\Rightarrow$ the **descent lemma** $\Rightarrow$ a safe step $\eta\le
+1/L$ $\Rightarrow$ convergence, at rate $O(1/k)$ for convex problems and **linearly** —
+governed by the **condition number** $\kappa=L/\mu$ — for strongly convex ones, with
+**line search** removing the need to know $L$. From here the descent spine attacks the two
+weaknesses this article exposed:
+
+- **[OPTM-08 *Momentum and Accelerated Gradient*]** — the $\kappa$-dependence is the enemy;
+  momentum improves it from $\kappa$ to $\sqrt\kappa$ and lifts the convex rate from $O(1/k)$
+  to the optimal $O(1/k^2)$, by adding memory of past steps to damp the zig-zag of
+  @sec-zigzag.
+- **[OPTM-09 *Newton's Method*]** — uses the *Hessian* to rescale the problem, making
+  convergence **$\kappa$-independent** (quadratic near the optimum), at the cost of forming
+  and inverting $H$; the IRLS algorithm that fits logistic/GLM models lives here.
+- **[OPTM-11 *Stochastic Gradient Descent*]** — when the gradient is a noisy estimate, the
+  descent lemma no longer forces a per-step decrease; SGD trades the clean rates here for a
+  noisier $O(1/k)$ / $O(1/\sqrt k)$ rate and needs a *decaying* step size to converge.
+
+It also feeds backward into the modeling tracks: the ill-conditioning $\kappa$ here is the
+same number that destabilizes the normal equations in **[REGR-07]**, and the convergence
+theory is what licenses "fit by gradient descent" everywhere the rest of the series says it.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The canonical modern reference.** Yurii Nesterov, *Lectures on Convex Optimization*
+  (2nd ed., 2018) — the source of the descent lemma, the $O(1/k)$ and linear rates, and the
+  $O(1/k^2)$ accelerated rate, with the lower bounds proving these are optimal for
+  first-order methods. Boyd & Vandenberghe, *Convex Optimization* (2004), ch. 9, gives the
+  line-search and descent material at exactly this article's level.
+- **The PL inequality.** Named for Polyak (1963) and Łojasiewicz, the condition @eq-pl we
+  derived from strong convexity is *weaker* than strong convexity yet still yields linear
+  convergence — the route by which linear rates have been proven for some *non-convex*
+  problems (e.g. over-parametrized networks). Karimi, Nutini & Schmidt (2016) is the modern
+  survey.
+- **Open threads this article deliberately deferred.** *Can we beat $O(1/k)$ without second
+  derivatives?* — yes, momentum, [OPTM-08]. *Can we remove the $\kappa$-dependence entirely?*
+  — Newton, [OPTM-09], at a cubic-per-step price. *What happens when the gradient is only an
+  unbiased estimate?* — the stochastic theory, [OPTM-11]. *What if part of the objective is
+  non-smooth (a penalty, a constraint)?* — proximal and projected methods, [OPTM-16], which
+  recover descent-lemma-style guarantees for "smooth + non-smooth" objectives.

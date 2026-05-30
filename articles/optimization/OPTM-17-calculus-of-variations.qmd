@@ -1,0 +1,1179 @@
+---
+title: "Optimizing Over Functions: a Gentle Calculus of Variations"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # the candidate function / minimizer
+PERTURB = "#c1121f"    # the perturbation / competitors
+ACCENT  = "#0a7d4d"    # highlights / the optimum
+GOLD    = "#b8860b"    # secondary highlight
+GREY    = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the **terminal node** of the Optimization
+> track and the one place it steps above its Calculus-I floor — gently, and on purpose.
+> Every earlier article minimized over a *point*: a number $x\in\mathbb{R}$ in
+> [OPTM-01 *One-Dimensional Minimization*], a vector $\mathbf{x}\in\mathbb{R}^n$ from
+> [OPTM-02 *Minimizing in Many Variables*] onward. Here the decision variable is an
+> entire **function** $f$, and the quantity we minimize — a number assigned to each
+> candidate function, like $\int f''(x)^2\,dx$ — is a **functional**. We rebuild the one
+> idea the whole track is founded on, "set the derivative to zero," for this new setting.
+> It assumes only [OPTM-00 *What Is an Optimization Problem?*] (the vocabulary of
+> objective, decision variable, minimizer) and [OPTM-01] (the $f'(x)=0$ template we are
+> generalizing). The one tool above the floor — **integration by parts** — is reviewed
+> inline, from the product rule, exactly as promised.
+>
+> **What it sets up.** This article supplies the *gentle calculus of variations*
+> prerequisite that **Regression R22 (smoothing splines)** links here for: we derive the
+> Euler–Lagrange equation and then bring the full machinery to bear on the
+> smoothing-spline objective $\sum_i (y_i - f(x_i))^2 + \lambda\int f''(x)^2\,dx$,
+> showing *why* its minimizer is a natural cubic spline. It is the last article of the
+> track; from here the road leads out into the modeling tracks that consume it.
+
+## Abstract {.unnumbered}
+
+For sixteen articles "find the best" has meant "find the best point." This article asks
+what changes when the thing we optimize over is not a point but a whole **function** — when
+we want the curve $f$ that minimizes a quantity like the total bending energy
+$\int_a^b f''(x)^2\,dx$, or the path that a light ray takes, or the smoothest curve that
+still tracks a cloud of data. The object that eats a function and returns a number is a
+**functional** $J[f]$, and the central move of the entire piece is to rebuild
+"$\,$set the derivative to zero$\,$" for it. We do this from the Calc-1 floor: perturb a
+candidate $f$ by a small wiggle $\varepsilon\eta$, form the ordinary one-variable function
+$\Phi(\varepsilon) = J[f + \varepsilon\eta]$, and demand $\Phi'(0)=0$ — because if the
+candidate is a minimizer, *no* wiggle can make things better, so the function is flat in
+the $\varepsilon$ direction. Carrying that demand through, with **integration by parts**
+reviewed in full as its single above-floor tool, produces the **Euler–Lagrange equation**:
+a differential equation that the optimal function must satisfy at every point, the exact
+analogue of $\nabla f = \mathbf{0}$. We test it on the shortest-path and minimal-surface
+classics, then turn it on the **smoothing-spline objective** and show — every step on the
+page — that its minimizer is a piecewise-cubic curve, a *natural cubic spline*. The single
+claim defended throughout: **the variational derivative is not new mathematics; it is the
+old derivative test, applied along every direction a function can be nudged.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+To minimize over **points** you set the derivative to zero: at a minimizer, nudging the
+input in any direction cannot decrease the objective. To minimize over **functions** the
+idea is identical, only "a direction to nudge" becomes "a function to add." Let $J[f]$ be
+a **functional** — a rule assigning a number to each function $f$. To test whether $f$ is
+a minimizer, add a small perturbation $\varepsilon\,\eta(x)$ (with $\eta$ vanishing wherever
+$f$ is pinned down) and watch the ordinary function $\Phi(\varepsilon)=J[f+\varepsilon\eta]$.
+If $f$ is optimal, $\Phi$ has a minimum at $\varepsilon=0$, so $\Phi'(0)=0$ for **every**
+admissible $\eta$.
+
+For the workhorse functional $J[f]=\int_a^b L\bigl(x,f(x),f'(x)\bigr)\,dx$, forcing
+$\Phi'(0)=0$ for all $\eta$ — after one integration by parts — collapses to a single
+differential equation the minimizer must obey at every point, the **Euler–Lagrange
+equation**:
+$$
+\frac{\partial L}{\partial f} \;-\; \frac{d}{dx}\!\left(\frac{\partial L}{\partial f'}\right) \;=\; 0 .
+$$
+This is the functional analogue of $\nabla f=\mathbf 0$. Cash it out on the bending-energy
+penalty $\int f''^2$ and the data-fitting term $\sum(y_i-f(x_i))^2$, and the curve that
+falls out is a **natural cubic spline** — the smoother the rest of the series leans on.
+:::
+
+Everything below orbits that box. The Euler–Lagrange equation will look, at first, like a
+strange new law dropped from the sky. By the end you should see it as nothing more than the
+Calc-1 rule "a minimum has zero derivative," spoken in the language of functions — and you
+should be able to derive it cold.
+
+# Why we are here: the problems a vector cannot hold {#sec-why}
+
+Hold one question in view for the whole article: **what does "set the derivative to zero"
+even mean when the unknown is a function, and how little new machinery do we actually need
+to make it work?** Every step below answers a piece of that. If a move feels mysterious,
+come back here.
+
+## Sixteen articles of minimizing over points
+
+Look back at where the track has been. [OPTM-01] minimized $f(x)$ over a single number $x$:
+find where the slope vanishes, $f'(x)=0$. [OPTM-02] generalized it to a vector
+$\mathbf{x}\in\mathbb{R}^n$: find where the gradient vanishes, $\nabla f(\mathbf{x})=\mathbf 0$.
+Everything since — convexity, gradient descent, Newton's method, the constrained theory —
+has been about *the same kind of unknown*: a point in finite-dimensional space, $n$ numbers
+you are free to choose. The decision variable was always a tuple.
+
+But some of the oldest and most natural optimization questions are not about choosing $n$
+numbers. They are about choosing an entire **curve**:
+
+- **The shortest path.** Of all the curves $y=f(x)$ joining two fixed points, which has
+  the least arc length? (The answer is the straight line — but *proving* it is an
+  optimization over functions, not points.)
+- **The shape of a hanging chain.** A flexible cable pinned at both ends hangs in the curve
+  that minimizes its gravitational potential energy. Which curve is that?
+- **The brachistochrone (1696).** Johann Bernoulli's famous challenge: down which curved
+  ramp will a bead slide, under gravity, from one point to a lower one in the *least time*?
+  Not the straight ramp — but which?
+- **The smoothest curve through noisy data.** Of all functions that pass near a data cloud,
+  which is the "smoothest" — bends the least overall — while still tracking the points?
+  This is the one we are really after, because it is the engine of the smoothing spline.
+
+In every case the unknown is a function $f$, and the quantity to minimize is a **single
+number computed from the whole function** — a length, an energy, a time, a roughness. You
+cannot encode "the shape of the cheapest ramp" as a finite list of coordinates; the answer
+lives in an infinite-dimensional space of curves. The derivative test as we know it has
+nothing to grab onto. That gap is the reason this article exists.
+
+## The leap, and why it is smaller than it looks
+
+The historical name for this subject — the **calculus of variations** — is owed to
+Euler and Lagrange in the 1740s–1750s, who built it precisely to systematize Bernoulli's
+brachistochrone and its cousins. The word *variation* is the whole idea: you take a
+candidate curve and *vary* it slightly, watching whether the objective gets better or
+worse.
+
+Here is the reassurance that should carry you through the entire article. **We are not
+going to invent a new kind of calculus.** The trick is to take the infinite-dimensional
+problem — "is this function the best of all functions?" — and *collapse it onto a
+one-dimensional problem* we already solved in [OPTM-01]. We do that by looking at the
+objective along a *single straight line* through function-space: fix a candidate $f$, fix
+one perturbation direction $\eta$, and slide along the family $f + \varepsilon\eta$ as the
+*one real number* $\varepsilon$ varies. Along that line the functional becomes an ordinary
+function of $\varepsilon$, and we test it with the ordinary derivative. Demanding that the
+test pass for *every* direction $\eta$ is what pins the function down.
+
+::: {.callout-tip title="You might be asked"}
+*"How is this different from the gradient test in OPTM-02?"* It is the same test, taken to
+the limit. In $\mathbb{R}^n$, "$\nabla f=\mathbf 0$" is shorthand for "the directional
+derivative is zero in *every* direction $\mathbf{v}$": $\frac{d}{d\varepsilon}f(\mathbf{x}+\varepsilon\mathbf{v})\big|_{0}=0$
+for all $\mathbf{v}$. A function space has *infinitely* many directions to nudge — one for
+each admissible perturbation function $\eta$ — so the variational condition is "the
+directional derivative is zero in every $\eta$-direction." Same logic, infinitely many
+directions. The Euler–Lagrange equation is just the clever repackaging of *all* of those
+conditions into one differential equation. If you can explain that the variation
+$\Phi'(0)$ *is* a directional derivative in function space, you have the conceptual heart.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture the space of all candidate curves joining the same two endpoints. Each curve is a
+single "point" in this enormous space, and the functional $J$ assigns each one a height —
+its length, energy, or roughness. We are looking for the lowest curve, the bottom of a
+landscape whose floor is the set of all functions.
+
+We cannot draw an infinite-dimensional landscape. But we *can* draw a single slice through
+it. Pick a candidate $f$ and one perturbation shape $\eta$ that does not move the endpoints.
+The one-parameter family
+$$
+f_\varepsilon(x) \;=\; f(x) + \varepsilon\,\eta(x)
+$$
+is a straight line through function-space: at $\varepsilon=0$ we sit at $f$; as
+$\varepsilon$ grows we tilt toward $f+\eta$; as it goes negative we tilt the other way.
+@fig-perturbation draws several members of such a family. The functional restricted to this
+line, $\Phi(\varepsilon)=J[f_\varepsilon]$, is now an honest function of one real variable
+$\varepsilon$, and we know exactly what its graph must do if $f$ is the minimizer: it must
+bottom out at $\varepsilon=0$.
+
+```{python}
+#| label: fig-perturbation
+#| fig-cap: "Slicing function-space along one direction. The thick blue curve is a candidate $f$ (here pinned to pass through the two black endpoints). Each thin red curve is a perturbed competitor $f + \\varepsilon\\eta$ for a fixed wiggle $\\eta(x)=\\sin(\\pi (x-a)/(b-a))$ that vanishes at both ends, as $\\varepsilon$ ranges over $[-1,1]$. Sliding $\\varepsilon$ traces a *straight line* through the space of admissible curves. The functional's value along that line is an ordinary function $\\Phi(\\varepsilon)$ — and if $f$ is optimal, $\\Phi$ must bottom out at $\\varepsilon=0$."
+a, b = 0.0, 1.0
+xs = np.linspace(a, b, 200)
+f = 1.0 + 0.6 * np.sin(2 * np.pi * xs) * 0.0 + 0.0 * xs  # base candidate: flat-ish
+f = 1.0 + 0.8 * (xs - a) * (b - xs) * 2.0                 # a gentle arch, pinned at ends
+eta = np.sin(np.pi * (xs - a) / (b - a))                  # vanishes at a and b
+
+fig, ax = plt.subplots()
+for eps in np.linspace(-1.0, 1.0, 7):
+    if abs(eps) < 1e-9:
+        continue
+    ax.plot(xs, f + eps * eta, color=PERTURB, lw=1.1, alpha=0.55)
+ax.plot(xs, f, color=CURVE, lw=2.6, label=r"candidate $f$")
+ax.plot(xs, f + 1.0 * eta, color=PERTURB, lw=1.1, alpha=0.55,
+        label=r"competitors $f+\varepsilon\eta$")
+ax.scatter([a, b], [f[0], f[-1]], color="black", zorder=5, s=55,
+           label="pinned endpoints")
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("One straight line through the space of curves")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+That last sentence is the entire strategy, so let us name it before we formalize it. If
+$f$ is a minimizer of $J$ over all admissible curves, then in particular it beats every
+member of the family $f+\varepsilon\eta$. So $\Phi(\varepsilon)=J[f+\varepsilon\eta]$, a
+function of the single number $\varepsilon$, has a minimum at $\varepsilon=0$, and by the
+[OPTM-01] derivative test, $\Phi'(0)=0$. The catch — and the source of all the content —
+is that this must hold for **every** perturbation shape $\eta$ simultaneously. One $\eta$
+gives one equation; *all* $\eta$ give the Euler–Lagrange equation. @fig-phi-slice shows
+the slice $\Phi$ itself for a concrete functional.
+
+```{python}
+#| label: fig-phi-slice
+#| fig-cap: "The slice $\\Phi(\\varepsilon)=J[f+\\varepsilon\\eta]$ for the bending-energy functional $J[f]=\\int_0^1 f''(x)^2\\,dx$, with $f$ the straight line joining $(0,0)$ to $(1,1)$ (which has $f''\\equiv 0$, so zero energy) and $\\eta(x)=\\sin(\\pi x)$. Because $f$ is the energy minimizer here, $\\Phi$ is an upward parabola bottoming exactly at $\\varepsilon=0$: every nonzero wiggle *adds* bending energy. The tangent at $\\varepsilon=0$ is flat — that flatness, demanded for all $\\eta$, is the Euler–Lagrange condition."
+xs = np.linspace(0, 1, 400)
+fbase = xs.copy()                      # straight line: f'' = 0
+eta = np.sin(np.pi * xs)               # eta'' = -pi^2 sin(pi x)
+eta_pp = -np.pi**2 * np.sin(np.pi * xs)
+eps_grid = np.linspace(-1.2, 1.2, 80)
+Phi = []
+for eps in eps_grid:
+    fpp = 0.0 + eps * eta_pp           # (f + eps eta)'' = eps * eta''  since fbase'' = 0
+    Phi.append(np.trapezoid(fpp**2, xs))
+Phi = np.array(Phi)
+
+fig, ax = plt.subplots()
+ax.plot(eps_grid, Phi, color=CURVE, label=r"$\Phi(\varepsilon)=\int_0^1 (f+\varepsilon\eta)''^2\,dx$")
+ax.axvline(0, color=GREY, lw=1.0, ls=":")
+ax.scatter([0], [Phi[np.argmin(np.abs(eps_grid))]], color=ACCENT, s=70, zorder=5,
+           label=r"minimum at $\varepsilon=0$")
+# flat tangent at 0
+ax.plot(eps_grid, np.full_like(eps_grid, Phi[np.argmin(np.abs(eps_grid))]),
+        color=PERTURB, lw=1.3, ls="--", label=r"flat tangent: $\Phi'(0)=0$")
+ax.set_xlabel(r"$\varepsilon$"); ax.set_ylabel(r"$\Phi(\varepsilon)$")
+ax.set_title("Along any admissible direction, the optimum is a flat-bottomed slice")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+# The formal development {#sec-formal}
+
+## What a functional is {#sec-functional}
+
+::: {#def-functional}
+**Definition (functional).** A **functional** is a rule $J$ that takes a function $f$
+(drawn from some admissible class — say, functions on $[a,b]$ that are smooth enough and
+satisfy fixed endpoint values) and returns a single real number $J[f]\in\mathbb{R}$. We
+write square brackets, $J[f]$, to stress that the *argument is a whole function*, not a
+point.
+:::
+
+The square brackets are a deliberate notational signal, and worth dwelling on, because the
+single hardest adjustment in this article is keeping straight what is variable and what is
+fixed.
+
+::: {.callout-important title="The pivot: the function is the variable now"}
+In ordinary calculus, $f(x)$ is a *number* — the height of $f$ at the point $x$ — and $x$
+is the variable. Here that is demoted. The variable we optimize over is the **entire
+function $f$**, viewed as one object; the symbol $x$ inside is just a dummy index we
+integrate away. When we write $J[f]=\int_a^b f'(x)^2\,dx$, the right side is a *number*
+(the integral is done, $x$ is gone), and that number depends on *which function $f$ we
+chose*. Asking for $\min_f J[f]$ is asking "which curve, of all admissible curves, makes
+this number smallest." Hold that straight and nothing below will surprise you.
+:::
+
+The functionals we care about almost always have a specific shape: they integrate a local
+**Lagrangian** $L$ that depends on the position $x$, the function's value $f(x)$, and its
+slope $f'(x)$ at that point.
+
+::: {#def-integral-functional}
+**Definition (integral functional).** Given a function $L(x,u,v)$ of three ordinary real
+arguments — called the **Lagrangian** — the associated integral functional is
+$$
+J[f] \;=\; \int_a^b L\bigl(x,\,f(x),\,f'(x)\bigr)\,dx .
+$$ {#eq-integral-functional}
+Here $u$ is the slot where $f(x)$ is plugged in and $v$ the slot where $f'(x)$ is plugged
+in. The partial derivatives $\partial L/\partial u$ and $\partial L/\partial v$ — treating
+$x,u,v$ as three independent variables — are written $\partial L/\partial f$ and
+$\partial L/\partial f'$ for short once $f$ is substituted.
+:::
+
+Three concrete instances, each a problem from @sec-why, fix the idea:
+
+- **Arc length** (shortest path). The length of the curve $y=f(x)$ from $x=a$ to $x=b$ is
+  $J[f]=\int_a^b \sqrt{1+f'(x)^2}\,dx$, so $L(x,u,v)=\sqrt{1+v^2}$ — it depends only on the
+  slope $v=f'$.
+- **Bending energy** (smoothness). The total squared curvature (approximately) is
+  $J[f]=\int_a^b f''(x)^2\,dx$, so $L$ depends on the *second* derivative. We will extend
+  the machinery to cover this case in @sec-second-deriv; it is the one the splines need.
+- **Dirichlet energy** (a smoothness proxy used everywhere in physics and graphics)
+  $J[f]=\int_a^b f'(x)^2\,dx$, so $L(x,u,v)=v^2$.
+
+We develop the theory for the first-derivative form @eq-integral-functional first, because
+it is where the algebra is cleanest, then upgrade to second derivatives once the pattern is
+visible.
+
+## The admissible perturbations {#sec-admissible}
+
+We compare $f$ against competitors of the form $f+\varepsilon\eta$. Two requirements pin
+down which $\eta$ are allowed, and both are forced by the problem rather than chosen for
+convenience.
+
+First, the competitors must satisfy the **same boundary conditions** as $f$. In the
+shortest-path problem the curve is pinned at both ends, $f(a)=A$ and $f(b)=B$; a competitor
+that moved an endpoint would be solving a *different* problem. Since $f$ already satisfies
+$f(a)=A,\ f(b)=B$, and we need $f+\varepsilon\eta$ to satisfy them too for every
+$\varepsilon$, the perturbation must vanish at the ends:
+$$
+\eta(a)=0, \qquad \eta(b)=0 .
+$$ {#eq-eta-bc}
+This is exactly why every wiggle in @fig-perturbation pinches to zero at the endpoints. We
+will see in @sec-natural-bc that *relaxing* this — letting the endpoints float free —
+changes the conclusion in an important, spline-relevant way.
+
+Second, $\eta$ must be smooth enough for everything below to make sense — at least
+continuously differentiable, so $f+\varepsilon\eta$ is a legal competitor. We assume that
+throughout; it never causes trouble in our examples.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the perturbation written $\varepsilon\eta$ as a product, rather than just a
+generic small function $h$?"* Splitting "small" ($\varepsilon$, a scalar we will take to
+zero) from "shape" ($\eta$, a fixed direction) is the whole device. It lets us freeze the
+*direction* of the nudge and turn the size into the single real knob $\varepsilon$, so the
+infinite-dimensional optimization becomes the one-variable problem $\min_\varepsilon
+\Phi(\varepsilon)$ that [OPTM-01] already handles. We then recover full generality by
+letting $\eta$ range over *all* admissible directions. It is the exact analogue of writing
+a directional derivative as $\frac{d}{d\varepsilon}f(\mathbf{x}+\varepsilon\mathbf{v})$ in
+$\mathbb{R}^n$ — scalar size times fixed direction.
+:::
+
+## A two-minute refresher: integration by parts {#sec-ibp}
+
+The derivation needs exactly one tool above the Calc-1 floor, and the track promised to
+build it inline rather than assume it. So here it is, from the product rule you do know.
+
+The **product rule** for differentiation says that for two differentiable functions $u(x)$
+and $w(x)$,
+$$
+\frac{d}{dx}\bigl[u(x)\,w(x)\bigr] = u'(x)\,w(x) + u(x)\,w'(x) .
+$$
+Integrate both sides from $a$ to $b$. The left side integrates by the Fundamental Theorem
+of Calculus — the integral of a derivative is the function evaluated at the endpoints:
+$$
+\int_a^b \frac{d}{dx}\bigl[u\,w\bigr]\,dx = \bigl[u(x)\,w(x)\bigr]_a^b = u(b)w(b) - u(a)w(a) .
+$$
+The right side is just the integral of a sum:
+$$
+\int_a^b \bigl[u'w + u\,w'\bigr]\,dx = \int_a^b u'w\,dx + \int_a^b u\,w'\,dx .
+$$
+Setting the two equal and moving one integral to the other side gives the formula we will
+use, **integration by parts**:
+$$
+\boxed{\;\int_a^b u(x)\,w'(x)\,dx \;=\; \bigl[u(x)\,w(x)\bigr]_a^b \;-\; \int_a^b u'(x)\,w(x)\,dx .\;}
+$$ {#eq-ibp}
+
+In words: it lets you move a derivative *off* one factor and *onto* the other, at the cost
+of a boundary term $[uw]_a^b$ and a sign flip. That is its entire purpose below — we will
+have a derivative sitting on the perturbation $\eta'$, which we cannot control, and we will
+shove it over onto something we *can* reason about, the Lagrangian, leaving an $\eta$ (no
+prime) we can then exploit. Nothing deeper than the product rule is hiding in @eq-ibp.
+
+## The fundamental lemma {#sec-fundamental-lemma}
+
+One more small, intuitive fact does a lot of heavy lifting at the end of the derivation. We
+state and prove it now so the main argument runs uninterrupted.
+
+::: {#lem-fundamental}
+**Lemma (fundamental lemma of the calculus of variations).** Suppose $M(x)$ is a
+continuous function on $[a,b]$, and suppose that
+$$
+\int_a^b M(x)\,\eta(x)\,dx = 0
+$$
+for **every** continuous $\eta$ with $\eta(a)=\eta(b)=0$. Then $M(x)=0$ for all $x$ in
+$[a,b]$.
+:::
+
+::: {.proof}
+We argue by contradiction. Suppose $M$ is *not* identically zero — say $M(x_0)\neq 0$ at
+some interior point $x_0$, and without loss of generality $M(x_0)>0$ (if it were negative,
+run the same argument on $-M$). Because $M$ is continuous, it cannot jump: there is a small
+interval $(c,d)\subset(a,b)$ around $x_0$ on which $M(x)$ stays strictly positive, say
+$M(x)\ge m>0$ there.
+
+Now we get to *choose* the perturbation $\eta$, and the lemma's hypothesis must hold for
+our choice. Pick an $\eta$ that is a positive bump living entirely inside $(c,d)$ and zero
+everywhere else — for instance
+$$
+\eta(x) = \begin{cases}(x-c)^2(d-x)^2, & c\le x\le d,\\[2pt] 0, & \text{otherwise.}\end{cases}
+$$
+This $\eta$ is continuous, vanishes at $a$ and $b$ (it is zero outside $(c,d)$), and is
+strictly positive on $(c,d)$ — so it is an admissible perturbation. Then
+$$
+\int_a^b M(x)\,\eta(x)\,dx = \int_c^d \underbrace{M(x)}_{\ge\, m>0}\,\underbrace{\eta(x)}_{>0\ \text{on}\ (c,d)}\,dx > 0 ,
+$$
+because the integrand is strictly positive on an interval of positive length. But the
+hypothesis says this integral is *zero* for every admissible $\eta$, including this one — a
+contradiction. So no such $x_0$ can exist: $M(x)=0$ everywhere. $\qquad\blacksquare$
+:::
+
+The lemma is the rigorous version of an obvious idea: if a fixed function $M$ produces a
+zero average against *every* possible weight $\eta$, the only way it can dodge every weight
+is to be zero itself. We will produce exactly such an $M$ — it will be the Euler–Lagrange
+expression — and the lemma will then force it to vanish pointwise.
+
+## Deriving the Euler–Lagrange equation {#sec-el-derivation}
+
+Now the centerpiece. We minimize the functional @eq-integral-functional,
+$$
+J[f] = \int_a^b L\bigl(x,f(x),f'(x)\bigr)\,dx ,
+$$
+over admissible $f$ with fixed endpoints. Suppose $f$ is a minimizer. Take any admissible
+perturbation $\eta$ (with $\eta(a)=\eta(b)=0$) and form the slice
+$$
+\Phi(\varepsilon) \;=\; J[f+\varepsilon\eta] \;=\; \int_a^b L\bigl(x,\,f(x)+\varepsilon\eta(x),\,f'(x)+\varepsilon\eta'(x)\bigr)\,dx .
+$$ {#eq-Phi}
+The perturbed function is $f+\varepsilon\eta$ and its derivative is $f'+\varepsilon\eta'$
+(the derivative of a sum, with $\varepsilon$ constant). $\Phi$ is now an ordinary function
+of the single real variable $\varepsilon$, and because $f$ minimizes $J$, it minimizes the
+slice too: $\Phi$ has its minimum at $\varepsilon=0$. By the Calc-1 first-order condition
+from [OPTM-01],
+$$
+\Phi'(0) = 0 .
+$$ {#eq-first-order}
+
+**Step 1 — differentiate under the integral sign.** We need $\Phi'(\varepsilon)$. Since
+$\varepsilon$ appears only inside the integrand, we differentiate the integrand with
+respect to $\varepsilon$ (the limits $a,b$ are fixed, so they contribute nothing):
+$$
+\Phi'(\varepsilon) = \int_a^b \frac{\partial}{\partial\varepsilon}\,
+   L\bigl(x,\,f+\varepsilon\eta,\,f'+\varepsilon\eta'\bigr)\,dx .
+$$
+To differentiate the integrand we use the **chain rule for a function of several
+variables**, which is itself just the Calc-1 chain rule applied to each argument and added
+up. The Lagrangian $L(x,u,v)$ depends on $\varepsilon$ through its second slot
+$u=f+\varepsilon\eta$ and its third slot $v=f'+\varepsilon\eta'$ (the first slot $x$ does
+not move with $\varepsilon$). The rate at which $u$ changes with $\varepsilon$ is
+$\partial u/\partial\varepsilon=\eta$, and the rate for $v$ is
+$\partial v/\partial\varepsilon=\eta'$. So
+$$
+\frac{\partial}{\partial\varepsilon}\,L
+= \frac{\partial L}{\partial u}\cdot\frac{\partial u}{\partial\varepsilon}
++ \frac{\partial L}{\partial v}\cdot\frac{\partial v}{\partial\varepsilon}
+= \frac{\partial L}{\partial u}\,\eta + \frac{\partial L}{\partial v}\,\eta' ,
+$$
+where $\partial L/\partial u$ and $\partial L/\partial v$ are evaluated at
+$(x,\,f+\varepsilon\eta,\,f'+\varepsilon\eta')$. Therefore
+$$
+\Phi'(\varepsilon) = \int_a^b \left[\frac{\partial L}{\partial u}\,\eta(x)
+   + \frac{\partial L}{\partial v}\,\eta'(x)\right]dx .
+$$
+
+**Step 2 — evaluate at $\varepsilon=0$.** At $\varepsilon=0$ the perturbed arguments
+collapse back to the candidate itself: $u=f(x)$ and $v=f'(x)$. Writing $L_f$ for
+$\partial L/\partial u$ and $L_{f'}$ for $\partial L/\partial v$, both evaluated at
+$(x,f(x),f'(x))$,
+$$
+\Phi'(0) = \int_a^b \Bigl[ L_f\,\eta(x) + L_{f'}\,\eta'(x)\Bigr]\,dx .
+$$ {#eq-Phi-prime-zero}
+
+**Step 3 — integrate by parts to free $\eta$.** The first term already has a bare $\eta$,
+which is what we want — the fundamental lemma needs $\eta$ unprimed. The second term has
+$\eta'$, the derivative of the perturbation, which we cannot control directly. We move that
+derivative off $\eta$ using integration by parts @eq-ibp, with the matching
+$u \leftrightarrow L_{f'}$ and $w' \leftrightarrow \eta'$ (so $w=\eta$):
+$$
+\int_a^b L_{f'}\,\eta'(x)\,dx
+= \Bigl[\,L_{f'}\,\eta(x)\,\Bigr]_a^b - \int_a^b \frac{d}{dx}\!\left(L_{f'}\right)\eta(x)\,dx .
+$$
+Now use the boundary condition @eq-eta-bc, $\eta(a)=\eta(b)=0$: the boundary term is
+$$
+\Bigl[\,L_{f'}\,\eta\,\Bigr]_a^b = L_{f'}(b)\,\eta(b) - L_{f'}(a)\,\eta(a) = 0 - 0 = 0 .
+$$
+This is *exactly why* we demanded the perturbation vanish at the endpoints — it kills the
+boundary term and leaves a clean integral. The second term of @eq-Phi-prime-zero therefore
+becomes $-\int_a^b \frac{d}{dx}(L_{f'})\,\eta\,dx$, and
+$$
+\Phi'(0) = \int_a^b L_f\,\eta\,dx - \int_a^b \frac{d}{dx}\!\left(L_{f'}\right)\eta\,dx
+= \int_a^b \left[\,L_f - \frac{d}{dx}\!\left(L_{f'}\right)\right]\eta(x)\,dx .
+$$ {#eq-Phi-prime-collected}
+We have pulled out the common factor $\eta$; both terms now carry a *bare* $\eta$.
+
+**Step 4 — invoke the fundamental lemma.** The minimizer condition @eq-first-order says
+$\Phi'(0)=0$, and this must hold for **every** admissible perturbation $\eta$. So the
+quantity in @eq-Phi-prime-collected is an integral of $M(x)\,\eta(x)$ with
+$$
+M(x) = L_f - \frac{d}{dx}\!\left(L_{f'}\right) ,
+$$
+and it vanishes for all admissible $\eta$. By @lem-fundamental, $M(x)$ must be identically
+zero. That is the result.
+
+::: {#thm-euler-lagrange}
+**Theorem (Euler–Lagrange equation).** If $f$ minimizes the functional
+$J[f]=\int_a^b L(x,f,f')\,dx$ over functions with fixed endpoints $f(a)=A,\ f(b)=B$, then
+$f$ satisfies, at every $x\in(a,b)$, the **Euler–Lagrange equation**
+$$
+\boxed{\;\frac{\partial L}{\partial f} \;-\; \frac{d}{dx}\!\left(\frac{\partial L}{\partial f'}\right) \;=\; 0 .\;}
+$$ {#eq-euler-lagrange}
+:::
+
+That single differential equation is the functional analogue of $\nabla f=\mathbf 0$. Where
+"set the gradient to zero" gave $n$ algebraic equations for $n$ unknowns, "set the
+variation to zero" gives one *differential* equation that holds at a continuum of points —
+fitting, since the unknown is a continuum of function values.
+
+::: {.callout-warning title="Pitfall"}
+The two derivatives in @eq-euler-lagrange are completely different operations, and
+conflating them is the classic beginner error. $\partial L/\partial f'$ is a **partial**
+derivative: treat $L(x,u,v)$ as a function of three independent slots and differentiate
+with respect to the *third slot* $v$ alone, holding $x$ and $u$ fixed — pure algebra, no
+calculus on $x$. Then $\frac{d}{dx}(\cdots)$ is a **total** derivative in $x$: now you
+substitute $u=f(x),\ v=f'(x)$ back in and differentiate the whole resulting expression with
+respect to $x$, using the chain rule, so $f$, $f'$, and $f''$ all appear. Do the partial
+first, substitute, then do the total. Reversing them gives nonsense.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Is the Euler–Lagrange equation sufficient for a minimum, or only necessary?"* Only
+**necessary** — exactly like $\nabla f=\mathbf 0$ in [OPTM-02]. A solution of @eq-euler-lagrange
+is a *stationary function*: it could be a minimum, a maximum, or a saddle of the functional.
+To confirm a minimum you need a second-order condition (the variational analogue of a
+positive-definite Hessian — the *second variation* $\Phi''(0)\ge 0$ for all $\eta$), or, far
+more cleanly, **convexity**. If the Lagrangian $L(x,u,v)$ is convex in $(u,v)$ — as
+$\sqrt{1+v^2}$, $v^2$, and the spline's $w^2$ all are — then $J$ is a convex functional, and
+by the same logic as [OPTM-04], any stationary function is the *global* minimizer. Every
+example in this article is of that convex, "stationary $\Rightarrow$ global min" kind, which
+is why we can trust the Euler–Lagrange solution without a separate second-variation check.
+:::
+
+## A first sanity check: the shortest path is a straight line {#sec-shortest-path}
+
+Before any hard example, run the machine on the question whose answer we already know, so we
+can watch it produce the right thing. *Of all curves joining $(a,A)$ to $(b,B)$, which has
+the least length?* The arc-length functional is
+$$
+J[f] = \int_a^b \sqrt{1+f'(x)^2}\,dx, \qquad L(x,u,v) = \sqrt{1+v^2} .
+$$
+Build the Euler–Lagrange equation piece by piece. First the partial derivatives of $L$,
+treating $x,u,v$ as independent slots. $L$ contains no $u$ at all, so
+$$
+\frac{\partial L}{\partial f} = \frac{\partial L}{\partial u} = 0 .
+$$
+For the $v$-slot, differentiate $\sqrt{1+v^2}=(1+v^2)^{1/2}$ with the chain rule
+$\frac{d}{dv}(1+v^2)^{1/2} = \tfrac12(1+v^2)^{-1/2}\cdot 2v$:
+$$
+\frac{\partial L}{\partial f'} = \frac{\partial L}{\partial v} = \frac{v}{\sqrt{1+v^2}}
+\;\Big|_{v=f'} = \frac{f'(x)}{\sqrt{1+f'(x)^2}} .
+$$
+Now assemble @eq-euler-lagrange, $L_f - \frac{d}{dx}(L_{f'}) = 0$. Since $L_f=0$,
+$$
+0 - \frac{d}{dx}\!\left(\frac{f'}{\sqrt{1+f'^2}}\right) = 0
+\quad\Longrightarrow\quad
+\frac{d}{dx}\!\left(\frac{f'}{\sqrt{1+f'^2}}\right) = 0 .
+$$
+A quantity whose $x$-derivative is zero is **constant**:
+$$
+\frac{f'(x)}{\sqrt{1+f'(x)^2}} = C .
+$$
+Solve for $f'$. Square both sides, $\frac{f'^2}{1+f'^2}=C^2$, cross-multiply,
+$f'^2 = C^2(1+f'^2)$, collect, $f'^2(1-C^2)=C^2$, so $f'^2 = \frac{C^2}{1-C^2}$ — a
+constant. Therefore $f'(x)$ is a constant, call it $m$, and integrating once,
+$$
+f(x) = m x + c ,
+$$
+a **straight line**. The constants $m,c$ are fixed by the endpoints $f(a)=A,\ f(b)=B$. The
+machine returns exactly the answer two thousand years of geometry already knew — the
+shortest path between two points is the straight segment — which is precisely the
+confidence we want before turning it on harder problems. @fig-shortest confirms it
+numerically: the straight line beats every perturbed competitor on length.
+
+```{python}
+#| label: fig-shortest
+#| fig-cap: "Euler–Lagrange passes its sanity check. **Left:** the straight line from $(0,0)$ to $(1,1)$ (blue) against perturbed competitors $f+\\varepsilon\\eta$ (red), $\\eta=\\sin(\\pi x)$. **Right:** arc length $J[f+\\varepsilon\\eta]=\\int_0^1\\sqrt{1+(f'+\\varepsilon\\eta')^2}\\,dx$ as a function of $\\varepsilon$, computed by numerical integration. It bottoms out exactly at $\\varepsilon=0$: the straight line is the shortest, as the derivation predicts. Every wiggle, in either direction, lengthens the curve."
+xs = np.linspace(0, 1, 600)
+fbase = xs.copy()                 # straight line, f' = 1
+fprime = np.ones_like(xs)
+eta = np.sin(np.pi * xs)
+etap = np.pi * np.cos(np.pi * xs)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+for eps in np.linspace(-0.6, 0.6, 7):
+    if abs(eps) < 1e-9:
+        continue
+    axL.plot(xs, fbase + eps * eta, color=PERTURB, lw=1.0, alpha=0.55)
+axL.plot(xs, fbase, color=CURVE, lw=2.6, label="straight line $f$")
+axL.scatter([0, 1], [0, 1], color="black", s=55, zorder=5, label="endpoints")
+axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$"); axL.set_title("Line vs. competitors")
+axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+eps_grid = np.linspace(-0.8, 0.8, 121)
+lengths = [np.trapezoid(np.sqrt(1 + (fprime + e * etap)**2), xs) for e in eps_grid]
+axR.plot(eps_grid, lengths, color=CURVE)
+axR.axvline(0, color=GREY, lw=1.0, ls=":")
+imin = int(np.argmin(lengths))
+axR.scatter([eps_grid[imin]], [lengths[imin]], color=ACCENT, s=70, zorder=5,
+            label=r"min at $\varepsilon=0$")
+axR.set_xlabel(r"$\varepsilon$"); axR.set_ylabel(r"arc length $\Phi(\varepsilon)$")
+axR.set_title("The straight line minimizes length")
+axR.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Worked examples {#sec-examples}
+
+We now carry the Euler–Lagrange equation through honest problems, building toward the
+smoothing spline. The first is the textbook physics classic; the second pushes into the
+higher-derivative form the splines actually need; the third is the spline itself.
+
+## Example 1 — the minimal surface of revolution (and its honest edge) {#sec-soap}
+
+Here is a genuinely physical functional with a famous gotcha. Take two parallel circular
+wire rings of radius $r_a$ and $r_b$, on the same axis, a distance apart, and dip them in
+soap. The film between them is a **surface of revolution** of some profile curve $y=f(x)$,
+and surface tension forces it into the shape of *least area*. The area swept by revolving
+$f$ about the $x$-axis is
+$$
+J[f] = \int_a^b 2\pi\, f(x)\,\sqrt{1+f'(x)^2}\,dx ,
+\qquad L(x,u,v) = 2\pi\, u\sqrt{1+v^2} ,
+$$
+dropping the constant $2\pi$ for the optimization (it scales the objective, not the
+minimizer). So take $L=u\sqrt{1+v^2}$. The partials:
+$$
+\frac{\partial L}{\partial f} = \frac{\partial L}{\partial u} = \sqrt{1+v^2}\,\Big|_{v=f'} = \sqrt{1+f'^2},
+$$
+$$
+\frac{\partial L}{\partial f'} = \frac{\partial L}{\partial v} = u\cdot\frac{v}{\sqrt{1+v^2}}\,\Big|_{u=f,\,v=f'} = \frac{f f'}{\sqrt{1+f'^2}} .
+$$
+The full Euler–Lagrange equation $L_f - \frac{d}{dx}(L_{f'})=0$ is a messy second-order
+ODE. Rather than grind it (the algebra is long and obscures the point), we use a shortcut
+available *whenever $L$ has no explicit $x$* — which is true here, since $L=u\sqrt{1+v^2}$
+shows no bare $x$. We derive the shortcut, because the track does not hand-wave.
+
+::: {#lem-beltrami}
+**Lemma (Beltrami identity).** If $L(x,u,v)=L(u,v)$ does not depend explicitly on $x$, then
+along any solution of the Euler–Lagrange equation the quantity
+$$
+H \;=\; f'\,\frac{\partial L}{\partial f'} - L
+$$
+is constant in $x$.
+:::
+
+::: {.proof}
+Differentiate $H$ with respect to $x$ and show it is zero. By the product and chain rules,
+$$
+\frac{dH}{dx} = f''\,L_{f'} + f'\,\frac{d}{dx}(L_{f'}) - \frac{dL}{dx} .
+$$
+Now expand $\frac{dL}{dx}$ by the chain rule. Since $L$ depends on $x$ only through $f$ and
+$f'$ (no explicit $x$),
+$$
+\frac{dL}{dx} = L_f\,f' + L_{f'}\,f'' .
+$$
+Substitute and cancel the matching $L_{f'}f''$ terms:
+$$
+\frac{dH}{dx} = f''L_{f'} + f'\frac{d}{dx}(L_{f'}) - L_f f' - L_{f'}f''
+= f'\left[\frac{d}{dx}(L_{f'}) - L_f\right] .
+$$
+The bracket is exactly the negative of the Euler–Lagrange expression @eq-euler-lagrange,
+which is zero along a solution. So $\frac{dH}{dx}=0$, hence $H$ is constant.
+$\qquad\blacksquare$
+:::
+
+Apply it. With $L=f\sqrt{1+f'^2}$ and $L_{f'}=\frac{ff'}{\sqrt{1+f'^2}}$,
+$$
+H = f'\cdot\frac{ff'}{\sqrt{1+f'^2}} - f\sqrt{1+f'^2}
+= \frac{f f'^2 - f(1+f'^2)}{\sqrt{1+f'^2}}
+= \frac{-f}{\sqrt{1+f'^2}} = \text{const}.
+$$
+Calling the constant $-c$ (so $c>0$), we get $\frac{f}{\sqrt{1+f'^2}} = c$, i.e.
+$f = c\sqrt{1+f'^2}$. Solving for $f'$: square, $f^2 = c^2(1+f'^2)$, so
+$f'^2 = \frac{f^2 - c^2}{c^2}$ and $f' = \frac{1}{c}\sqrt{f^2-c^2}$. This separable ODE
+integrates (a standard substitution $f=c\cosh\theta$) to the **catenary**
+$$
+f(x) = c\,\cosh\!\left(\frac{x-x_0}{c}\right),
+$$
+where $\cosh t = \tfrac12(e^t+e^{-t})$ is the hyperbolic cosine. The least-area soap film is
+a *catenoid* — the surface you get by spinning a hanging-chain curve. So far so clean.
+
+**Now the honest edge.** The constants $c,x_0$ must be chosen to hit both rings,
+$f(a)=r_a,\ f(b)=r_b$. And here the method *fails in a way worth seeing*: when the two rings
+are pulled too far apart relative to their radii, **there is no catenary that meets both
+boundary conditions.** The Euler–Lagrange equation has no admissible solution. Physically,
+the soap film snaps: it can no longer span the gap as a single surface and instead collapses
+to two flat disks, one on each ring (the *Goldschmidt discontinuous solution*) — a shape
+that is not even of the smooth form our functional assumed. @fig-catenoid shows both
+regimes.
+
+```{python}
+#| label: fig-catenoid
+#| fig-cap: "The minimal surface of revolution and the edge where it breaks. We fix two rings of equal radius $r=1$ a distance $2d$ apart and look for a catenary $f(x)=c\\cosh(x/c)$ with $f(\\pm d)=1$. **Left ($d=0.4$, rings close):** a valid catenary exists (blue) — the soap film is a smooth catenoid. **Right ($d=0.9$, rings far):** the boundary equation $1=c\\cosh(d/c)$ has *no solution* — every catenary (grey, various $c$) overshoots or undershoots the ring height at $x=\\pm d$. The Euler–Lagrange method returns nothing; the physical film tears into two flat disks. The variational machinery is honest about its own limit: a stationary curve need not exist."
+def ring_gap_curve(c, d, npts=200):
+    xs = np.linspace(-d, d, npts)
+    return xs, c * np.cosh(xs / c)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+
+# Left: d = 0.4, solve 1 = c cosh(0.4/c) for c
+from scipy.optimize import brentq
+d1 = 0.4
+g = lambda c: c * np.cosh(d1 / c) - 1.0
+# two roots typically; take the larger (stable) one by scanning
+cs = np.linspace(0.05, 5, 2000)
+vals = np.array([g(c) for c in cs])
+roots = []
+for i in range(len(cs) - 1):
+    if vals[i] * vals[i + 1] < 0:
+        roots.append(brentq(g, cs[i], cs[i + 1]))
+c_star = max(roots)
+xs1, ys1 = ring_gap_curve(c_star, d1)
+axL.plot(xs1, ys1, color=CURVE, lw=2.6, label=fr"catenary, $c={c_star:.2f}$")
+axL.scatter([-d1, d1], [1, 1], color="black", s=70, zorder=5, label="rings")
+axL.set_title(f"Rings close ($d={d1}$): film exists")
+axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$")
+axL.set_ylim(0, 1.6); axL.legend(loc="lower center", fontsize=9, framealpha=0.9)
+
+# Right: d = 0.9, no solution; show several catenaries all missing the ring height
+d2 = 0.9
+for c in [0.3, 0.5, 0.8, 1.2, 2.0]:
+    xs2, ys2 = ring_gap_curve(c, d2)
+    axR.plot(xs2, ys2, color=GREY, lw=1.3, alpha=0.8)
+axR.axhline(1.0, color=PERTURB, lw=1.4, ls="--", label="required ring height $=1$")
+axR.scatter([-d2, d2], [1, 1], color="black", s=70, zorder=5, label="rings")
+axR.set_title(f"Rings far ($d={d2}$): no catenary fits")
+axR.set_xlabel("$x$"); axR.set_ylabel("$f(x)$")
+axR.set_ylim(0, 1.8); axR.legend(loc="upper center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+This is the *edge-of-applicability* example the constitution asks for, and it teaches the
+right lesson: the Euler–Lagrange equation is a **necessary condition for a smooth interior
+minimizer that exists**. When the geometry forbids such a minimizer, the equation has
+nothing to say, and the true optimum lives outside the smooth class the calculus of
+variations was set up to search. Existence is a separate question — flagged honestly in
+@sec-boundary as outside our gentle scope.
+
+## Example 2 — functionals of the second derivative {#sec-second-deriv}
+
+The smoothing spline minimizes $\int f''^2$, whose Lagrangian depends on the *second*
+derivative $f''$, not the first. Our theorem @thm-euler-lagrange covered only
+$L(x,f,f')$. We must extend it — and the extension is a clean repeat of the same argument
+with **two** integrations by parts instead of one. We do it in full, because the splines
+ride on the result.
+
+Consider
+$$
+J[f] = \int_a^b L\bigl(x,f,f',f''\bigr)\,dx ,
+$$
+and perturb as before, $f\to f+\varepsilon\eta$, so $f'\to f'+\varepsilon\eta'$ and
+$f''\to f''+\varepsilon\eta''$. The first-order condition $\Phi'(0)=0$ now reads, by the
+same multivariable chain rule as in @sec-el-derivation but with a third slot for $f''$,
+$$
+\Phi'(0) = \int_a^b \Bigl[ L_f\,\eta + L_{f'}\,\eta' + L_{f''}\,\eta''\Bigr]\,dx = 0 ,
+$$ {#eq-second-deriv-variation}
+where $L_{f''}=\partial L/\partial f''$ is the partial in the fourth slot. We free $\eta$
+one derivative at a time. The middle term is handled exactly as before, by one integration
+by parts:
+$$
+\int_a^b L_{f'}\,\eta'\,dx = \bigl[L_{f'}\eta\bigr]_a^b - \int_a^b \frac{d}{dx}(L_{f'})\,\eta\,dx .
+$$
+The last term needs **two** integrations by parts to strip both primes off $\eta''$. First,
+move one derivative ($u=L_{f''},\ w'=\eta''$ so $w=\eta'$):
+$$
+\int_a^b L_{f''}\,\eta''\,dx = \bigl[L_{f''}\eta'\bigr]_a^b - \int_a^b \frac{d}{dx}(L_{f''})\,\eta'\,dx .
+$$
+Now integrate the remaining $\int \frac{d}{dx}(L_{f''})\,\eta'\,dx$ by parts again
+($u=\frac{d}{dx}(L_{f''}),\ w'=\eta'$ so $w=\eta$):
+$$
+\int_a^b \frac{d}{dx}(L_{f''})\,\eta'\,dx
+= \Bigl[\tfrac{d}{dx}(L_{f''})\,\eta\Bigr]_a^b - \int_a^b \frac{d^2}{dx^2}(L_{f''})\,\eta\,dx .
+$$
+Chaining the two, the second-derivative term contributes
+$$
+\int_a^b L_{f''}\,\eta''\,dx
+= \bigl[L_{f''}\eta'\bigr]_a^b - \Bigl[\tfrac{d}{dx}(L_{f''})\,\eta\Bigr]_a^b
++ \int_a^b \frac{d^2}{dx^2}(L_{f''})\,\eta\,dx .
+$$
+Collect everything into @eq-second-deriv-variation. Assuming for now that the boundary
+terms vanish (we pin enough of $f$ and its slope at the ends that $\eta=\eta'=0$ there — we
+revisit this crucial assumption in @sec-natural-bc), all the bracketed $[\cdots]_a^b$ pieces
+drop, and what survives is one integral with a bare $\eta$:
+$$
+\Phi'(0) = \int_a^b \left[ L_f - \frac{d}{dx}(L_{f'}) + \frac{d^2}{dx^2}(L_{f''}) \right]\eta(x)\,dx = 0 .
+$$
+By the fundamental lemma @lem-fundamental, the bracket vanishes pointwise:
+
+::: {#thm-el-second}
+**Theorem (second-order Euler–Lagrange equation).** A minimizer of
+$J[f]=\int_a^b L(x,f,f',f'')\,dx$ satisfies
+$$
+\boxed{\;\frac{\partial L}{\partial f} - \frac{d}{dx}\!\left(\frac{\partial L}{\partial f'}\right) + \frac{d^2}{dx^2}\!\left(\frac{\partial L}{\partial f''}\right) = 0 .\;}
+$$ {#eq-el-second}
+:::
+
+Notice the **alternating-sign pattern**: $+L_f - \frac{d}{dx}L_{f'} + \frac{d^2}{dx^2}L_{f''}$.
+Each extra derivative of $f$ in the Lagrangian costs one more integration by parts, which
+adds one more $\frac{d}{dx}$ and flips the sign. That pattern is the whole content of the
+generalization — the logic never changed, only the bookkeeping got one term longer.
+
+Cash it out for the **bending energy** $J[f]=\int_a^b f''(x)^2\,dx$, i.e.
+$L(x,u,v,w)=w^2$ with $w=f''$. The partials: $L$ has no $u$ and no $v$, so $L_f=0$ and
+$L_{f'}=0$; and $L_{f''}=\partial(w^2)/\partial w = 2w = 2f''$. Plug into @eq-el-second:
+$$
+0 - 0 + \frac{d^2}{dx^2}\bigl(2f''\bigr) = 0 \quad\Longrightarrow\quad 2f^{(4)}(x) = 0 \quad\Longrightarrow\quad f^{(4)}(x)=0 ,
+$$
+where $f^{(4)}$ is the fourth derivative. **A function whose fourth derivative is zero
+everywhere is a cubic polynomial** — integrate $f^{(4)}=0$ four times: $f'''=$ const,
+$f''=$ linear, $f'=$ quadratic, $f=$ cubic. So the curve of least bending energy (with no
+data tying it down, just fixed ends and slopes) is a *cubic polynomial*. Hold onto that —
+it is the seed of the spline.
+
+```{python}
+#| label: fig-bending
+#| fig-cap: "Why minimizing $\\int f''^2$ produces a cubic. We fix $f(0)=0,\\,f(1)=1$ and the end slopes $f'(0)=0,\\,f'(1)=0$, then ask which curve bends least. The Euler–Lagrange equation gives $f^{(4)}=0$, i.e. a cubic; here that cubic is $f(x)=3x^2-2x^3$ (blue). Competitors of the form $f+\\varepsilon\\eta$ with $\\eta=\\sin^2(\\pi x)$ (which preserves all four end conditions) are shown in red; the right panel plots their total bending energy $\\int_0^1(f''+\\varepsilon\\eta'')^2dx$, which bottoms exactly at the cubic ($\\varepsilon=0$)."
+xs = np.linspace(0, 1, 600)
+fcub = 3 * xs**2 - 2 * xs**3        # cubic with f(0)=0,f(1)=1,f'(0)=f'(1)=0
+fcub_pp = 6 - 12 * xs               # second derivative
+eta = np.sin(np.pi * xs)**2         # eta(0)=eta(1)=0, eta'(0)=eta'(1)=0
+# eta'' = 2 pi^2 cos(2 pi x)
+eta_pp = 2 * np.pi**2 * np.cos(2 * np.pi * xs)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+for eps in np.linspace(-0.5, 0.5, 7):
+    if abs(eps) < 1e-9:
+        continue
+    axL.plot(xs, fcub + eps * eta, color=PERTURB, lw=1.0, alpha=0.5)
+axL.plot(xs, fcub, color=CURVE, lw=2.6, label=r"cubic $3x^2-2x^3$")
+axL.scatter([0, 1], [0, 1], color="black", s=55, zorder=5)
+axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$")
+axL.set_title("Least-bending curve is a cubic")
+axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+eps_grid = np.linspace(-0.7, 0.7, 121)
+energy = [np.trapezoid((fcub_pp + e * eta_pp)**2, xs) for e in eps_grid]
+axR.plot(eps_grid, energy, color=CURVE)
+axR.axvline(0, color=GREY, lw=1.0, ls=":")
+im = int(np.argmin(energy))
+axR.scatter([eps_grid[im]], [energy[im]], color=ACCENT, s=70, zorder=5,
+            label=r"min at $\varepsilon=0$")
+axR.set_xlabel(r"$\varepsilon$"); axR.set_ylabel(r"bending energy $\int f''^2$")
+axR.set_title("Any wiggle adds curvature")
+axR.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Example 3 — the smoothing-spline objective {#sec-spline}
+
+This is the example the whole article was built to reach, and the exact result
+**Regression R22** links here for. The setup: we have $n$ data points
+$(x_1,y_1),\dots,(x_n,y_n)$ with $a<x_1<\cdots<x_n<b$, and we want a function $f$ that does
+two things at once — *tracks the data* and *stays smooth*. We trade those off in a single
+objective:
+$$
+J[f] \;=\; \underbrace{\sum_{i=1}^n \bigl(y_i - f(x_i)\bigr)^2}_{\text{data fit}}
+\;+\; \lambda \underbrace{\int_a^b f''(x)^2\,dx}_{\text{roughness penalty}} .
+$$ {#eq-spline-objective}
+The first term is ordinary least squares — it punishes a curve for missing the data, exactly
+the loss of [REGR-01]. The second is the bending energy from @sec-second-deriv — it
+punishes a curve for wiggling. The knob $\lambda\ge 0$ sets the exchange rate. As
+$\lambda\to 0$ the penalty disappears and $f$ is free to interpolate every point (maximally
+wiggly); as $\lambda\to\infty$ the penalty dominates and $f$ is forced toward $f''=0$, a
+straight line (the OLS regression line). For intermediate $\lambda$ we get the family of
+*smoothing splines*. @fig-lambda shows the sweep.
+
+```{python}
+#| label: fig-lambda
+#| fig-cap: "The roughness penalty $\\lambda$ interpolates between two extremes. Synthetic data (grey) from a smooth signal plus noise. As $\\lambda\\to 0$ (red) the smoothing spline chases every point — minimal data error, maximal wiggle. As $\\lambda\\to\\infty$ (gold) the penalty crushes all curvature and the fit becomes the straight least-squares line. The intermediate $\\lambda$ (blue) is the honest smoother: it tracks the trend without chasing noise. This whole family is the set of minimizers of @eq-spline-objective."
+from scipy.interpolate import make_smoothing_spline
+rng = np.random.default_rng(3)
+xd = np.sort(rng.uniform(0, 10, 40))
+ytrue = np.sin(0.8 * xd) + 0.1 * xd
+yd = ytrue + rng.normal(0, 0.35, size=xd.size)
+xg = np.linspace(0, 10, 400)
+
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ax.scatter(xd, yd, color=GREY, s=28, alpha=0.8, label="noisy data", zorder=2)
+# small lambda -> near interpolation; use make_smoothing_spline lam argument
+for lam, col, lab in [(1e-3, PERTURB, r"small $\lambda$ (wiggly)"),
+                      (0.5, CURVE, r"moderate $\lambda$ (smoother)"),
+                      (1e4, GOLD, r"large $\lambda$ (\to line)")]:
+    spl = make_smoothing_spline(xd, yd, lam=lam)
+    ax.plot(xg, spl(xg), color=col, lw=2.2, label=lab)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title(r"Smoothing splines as $\lambda$ varies")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+Now the theorem, and the derivation. We claim the minimizer of @eq-spline-objective is a
+**natural cubic spline** with knots at the data points $x_1,\dots,x_n$ — meaning a function
+that is a *cubic polynomial on each interval* $[x_i,x_{i+1}]$, joined so smoothly that $f$,
+$f'$, and $f''$ are continuous across each knot, and that is *linear* (so $f''=0$) outside
+the data range $[x_1,x_n]$.
+
+The key structural fact comes straight from @sec-second-deriv, and we derive it carefully.
+
+::: {#thm-spline}
+**Theorem (form of the smoothing-spline minimizer).** Among all functions $f$ on $[a,b]$
+with two continuous derivatives, the minimizer of @eq-spline-objective is a natural cubic
+spline with knots at $x_1,\dots,x_n$: a piecewise cubic, $C^2$ across the knots, and linear
+outside $[x_1,x_n]$.
+:::
+
+::: {.proof}
+**Step 1 — between data points, the minimizer satisfies $f^{(4)}=0$.** Pick any open
+interval $(x_i, x_{i+1})$ that contains *no data point*. On that interval the data-fitting
+sum $\sum (y_j-f(x_j))^2$ does not depend on the values of $f$ in the interior of the
+interval at all — none of the $x_j$ live there, so wiggling $f$ strictly between $x_i$ and
+$x_{i+1}$ leaves every $f(x_j)$ untouched and changes only the penalty $\int f''^2$.
+Therefore, *restricted to that interval*, minimizing $J$ is exactly minimizing the pure
+bending energy $\int f''^2$ — the functional of @sec-second-deriv. Its Euler–Lagrange
+equation, derived there, is
+$$
+f^{(4)}(x) = 0 \qquad \text{on each } (x_i, x_{i+1}),
+$$
+so $f$ is a **cubic polynomial on each such interval**. The same argument applies on
+$(a, x_1)$ and $(x_n, b)$, the regions outside the data.
+
+**Step 2 — outside the data range, the cubics are actually linear.** Consider the leftmost
+region $(a,x_1)$, where again $f$ is some cubic. We show its cubic and quadratic parts must
+vanish, i.e. $f''=0$ there, so $f$ is linear. The trick is that the data-fitting term is
+*completely blind* to what $f$ does for $x<x_1$ (no data point sits there), so any curvature
+$f''\neq 0$ on $(a,x_1)$ contributes a strictly positive amount $\lambda\int_a^{x_1}f''^2>0$
+to the penalty while buying *nothing* in data fit. We could lower $J$ by straightening that
+stretch — replacing $f$ on $(a,x_1)$ with the straight line that matches $f(x_1)$ and
+$f'(x_1)$ at the knot (preserving continuity of $f$ and $f'$, and giving $f''=0$ to the
+left). That strictly decreases the penalty and leaves the data term unchanged, so the
+original curved $f$ could not have been the minimizer. Hence the true minimizer has
+$f''=0$ on $(a,x_1)$ — it is **linear** there. The identical argument on $(x_n,b)$ makes it
+linear on the right. These two "naturalness" conditions, $f''=0$ beyond the data, are what
+the word *natural* in *natural cubic spline* names.
+
+**Step 3 — the pieces join with two continuous derivatives.** Why must $f,f',f''$ be
+continuous across each knot $x_i$, rather than the cubics meeting raggedly? Because the
+penalty $\int_a^b f''^2\,dx$ is *finite only if $f''$ is well behaved.* If $f'$ had a corner
+at a knot — a jump in slope — then $f''$ would contain an infinite spike (a derivative of a
+jump), and $\int f''^2$ would be infinite, the worst possible penalty. So any finite-energy
+candidate must have continuous $f'$, i.e. $f\in C^1$. Continuity of $f''$ (i.e. $f\in C^2$)
+across the knots is the natural matching that the Euler–Lagrange solution selects: the
+fourth-order equation $f^{(4)}=0$ on each side, glued through the knot, leaves $f,f',f''$
+continuous while permitting a jump only in the *third* derivative $f'''$ — and that jump is
+exactly what lets the curve "kink its curvature" to pass near each data point. (The size of
+each $f'''$ jump is pinned by setting the variation to zero *at* the knots, including the
+data term; we carry out that bookkeeping conceptually rather than grinding all $n$ junction
+equations, since the *form* — natural cubic spline — is the result Regression needs.)
+
+Putting Steps 1–3 together: the minimizer is cubic between knots, linear outside the data,
+and $C^2$ throughout — precisely a **natural cubic spline**. $\qquad\blacksquare$
+:::
+
+This is the payoff. The calculus of variations does not just *suggest* a smoother; it
+**proves the smoother's functional form**. We did not assume cubics — we assumed only "track
+the data and penalize curvature," and the variational argument *forced* cubic pieces out of
+the penalty's Euler–Lagrange equation $f^{(4)}=0$ and forced the linear tails out of the
+"why pay for curvature you don't need" argument. @fig-spline-cubic makes the piecewise-cubic
+structure visible.
+
+```{python}
+#| label: fig-spline-cubic
+#| fig-cap: "The minimizer of @eq-spline-objective is a *piecewise cubic*. We fit a smoothing spline to a small dataset (black points = knots) and mark the knot locations with vertical lines. On each shaded inter-knot panel the curve is a single cubic polynomial ($f^{(4)}=0$ there); the cubics meet at the knots with matching value, slope, and curvature ($C^2$). Beyond the leftmost and rightmost data points the curve is straight (the *natural* boundary condition $f''=0$), visible as the flat-curvature tails. The bottom panel plots $f''(x)$: piecewise *linear* (since $f$ is piecewise cubic), continuous across knots, and exactly zero in the tails."
+from scipy.interpolate import make_smoothing_spline
+rng = np.random.default_rng(11)
+xk = np.array([0.5, 1.7, 3.0, 4.4, 6.0, 7.5, 9.0])
+yk = np.array([0.4, 1.2, 0.6, 1.9, 1.1, 2.3, 1.6])
+spl = make_smoothing_spline(xk, yk, lam=0.05)
+xg = np.linspace(xk.min(), xk.max(), 600)
+# extend slightly past the data to show the linear tails
+xfull = np.linspace(xk.min() - 0.8, xk.max() + 0.8, 800)
+
+fig, (axT, axB) = plt.subplots(2, 1, figsize=(7.0, 5.4), sharex=True,
+                               gridspec_kw={"height_ratios": [2, 1]})
+# shade alternating inter-knot panels
+for j in range(len(xk) - 1):
+    if j % 2 == 0:
+        axT.axvspan(xk[j], xk[j + 1], color=GREY, alpha=0.08)
+axT.plot(xfull, spl(xfull), color=CURVE, lw=2.4, label="natural cubic spline")
+axT.scatter(xk, yk, color="black", s=55, zorder=5, label="knots = data")
+for xv in xk:
+    axT.axvline(xv, color=GREY, lw=0.8, ls=":")
+axT.set_ylabel("$f(x)$"); axT.set_title("Piecewise cubic, $C^2$, linear tails")
+axT.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+fpp = spl.derivative(2)(xfull)
+axB.axhline(0, color=GREY, lw=1.0)
+axB.plot(xfull, fpp, color=PERTURB, lw=2.0)
+for xv in xk:
+    axB.axvline(xv, color=GREY, lw=0.8, ls=":")
+axB.set_xlabel("$x$"); axB.set_ylabel(r"$f''(x)$")
+axB.set_title(r"$f''$ is piecewise linear, continuous, zero in the tails")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why $\int f''^2$ for roughness — why the second derivative, and why squared?"* Three
+reasons, all worth stating. **(1)** The second derivative measures *curvature* — how fast
+the slope changes — so $\int f''^2$ is literally a total-bending-energy budget; a function
+with $f''\equiv 0$ (a straight line) is the smoothest thing there is and pays zero. **(2)**
+Squaring makes the penalty differentiable and convex (just like squared error in
+[REGR-01]), so the objective @eq-spline-objective is a convex functional with a *unique*
+minimizer, and the Euler–Lagrange stationary curve is the global optimum. **(3)** It is the
+choice that makes the answer a *cubic* spline — the lowest-degree piecewise polynomial
+smooth enough ($C^2$) to look natural to the eye. Penalize $\int f'^2$ instead and
+$f^{(2)}=0$ gives piecewise *linear* fits (a polyline, the "first-order" smoother);
+penalize $\int (f''')^2$ and you climb to quintic splines. Second-derivative-squared is the
+sweet spot, which is why it is the default smoother across statistics.
+:::
+
+## Free boundaries: where the *natural* condition comes from {#sec-natural-bc}
+
+We glossed one thing in @sec-second-deriv: we *assumed* the boundary terms in the
+integration-by-parts vanished because $\eta=\eta'=0$ at the ends. That is right when the
+endpoints are pinned. But in the smoothing-spline problem the curve's behavior at the
+*ends of the data* is **not** prescribed — we never said what $f$ or $f'$ should be at
+$x_1$ or $x_n$; we only asked it to fit and stay smooth. When an endpoint is *free*, the
+perturbation $\eta$ there is **not** forced to zero, and the boundary term cannot simply be
+dropped. Following the consequence is exactly what produces the "natural" condition, so we
+trace it.
+
+Return to the second-derivative variation with its boundary terms kept. The piece from the
+$\int L_{f''}\eta''$ integration by parts left two boundary contributions:
+$$
+\bigl[L_{f''}\,\eta'\bigr]_a^b - \Bigl[\tfrac{d}{dx}(L_{f''})\,\eta\Bigr]_a^b .
+$$
+At a *free* endpoint, $\eta$ and $\eta'$ there are arbitrary (we can wiggle the curve and
+its slope freely at the end). For $\Phi'(0)=0$ to hold for *every* such free $\eta,\eta'$,
+each boundary coefficient must vanish on its own — the same "zero against every direction
+$\Rightarrow$ zero" logic as the fundamental lemma, now applied at a point. The coefficient
+of $\eta'$ at the end is $L_{f''}$, and for the bending energy $L=f''^2$ this is
+$L_{f''}=2f''$. Setting it to zero gives
+$$
+f''(x_1) = 0, \qquad f''(x_n) = 0 .
+$$
+These are the **natural boundary conditions** — and they are not an arbitrary modeling
+choice, they are *forced* by leaving the endpoints free in the variational problem. They
+are precisely the "linear in the tails" ($f''=0$ outside the data) conclusion we reached by
+the energy-saving argument in Step 2 of @thm-spline, now seen from the boundary-term side.
+Two routes, the same condition: the consistency is the sign the derivation is sound.
+
+::: {.callout-warning title="Pitfall"}
+The word *natural* in "natural cubic spline" is a technical term meaning $f''=0$ at the data
+boundary, and it has nothing to do with the colloquial "natural-looking." It is the
+condition that falls out of a *free* (unconstrained) endpoint in the variational problem —
+"natural" as in *imposed by nature of the optimization*, not chosen. If you instead clamp
+the end slopes to specified values you get a *clamped* spline, with different end behavior.
+Confusing the two is a common interview slip; the natural one is the unique minimizer of
+@eq-spline-objective precisely *because* its boundaries are free.
+:::
+
+# Failure modes and the edge of applicability {#sec-boundary}
+
+The calculus of variations is powerful, but this article was deliberately *gentle*, and an
+honest accounting of what we did **not** do is part of knowing when to trust it.
+
+## What the Euler–Lagrange equation does and does not promise {#sec-necessary}
+
+The equation is **necessary, not sufficient** — a point worth re-stressing because it is
+the single most common misuse. A solution of @eq-euler-lagrange is a *stationary function*,
+the functional analogue of a critical point. It might be a minimizer, a maximizer, or a
+saddle of the functional. For the convex functionals in this article (arc length, Dirichlet
+energy, bending energy, the spline objective — all built from convex Lagrangians) stationary
+*does* imply global minimum, by the convexity argument flagged in @sec-el-derivation. But
+hand it a non-convex functional and the equation alone cannot tell a minimum from a saddle;
+you would need the second variation $\Phi''(0)\ge 0$ for all $\eta$, the variational Hessian
+test, which we did not develop.
+
+## Existence is a separate, harder question {#sec-existence}
+
+The soap-film example (@sec-soap) already showed the sharpest edge: the Euler–Lagrange
+equation can have **no admissible solution at all**, and then the true optimum may live
+outside the smooth class — the film tears into flat disks the smooth functional never
+contemplated. Guaranteeing that a minimizer *exists* (and is smooth enough for
+Euler–Lagrange to apply) is the domain of the **direct method** of the calculus of
+variations and of functional analysis — coercivity, lower semicontinuity, Sobolev spaces.
+That machinery is genuinely above this track's floor and outside its mission; we flag it
+honestly rather than pretend the necessary condition settles everything.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the calculus of variations the right tool, and when is it the wrong one?"* The
+honest summary:
+
+- **Use it** when the unknown is genuinely a *function* (a curve, a field, a density) and
+  the objective is a *functional* of that function — an integral of a local Lagrangian.
+  Physics (least action, geodesics, minimal surfaces), optimal control, and the
+  regularized-fitting problems of statistics (smoothing splines, total-variation denoising)
+  all live here. When the Lagrangian is convex, the Euler–Lagrange solution is the global
+  optimum and you can trust it.
+- **Do not reach for it** when the problem is genuinely finite-dimensional — then it is just
+  [OPTM-02]'s $\nabla f=\mathbf 0$, and a vector optimizer is the right tool. Do not use the
+  necessary condition as if it were sufficient on a non-convex functional. And be wary when
+  *existence* is in doubt (badly-posed boundary data, as in the torn soap film) — there the
+  equation can silently return nothing, or a stationary curve that is not the optimum.
+- **What you reach for instead in practice:** for the smoothing spline specifically, you do
+  *not* solve the Euler–Lagrange ODE by hand. The variational argument tells you the answer
+  is a natural cubic spline, which reduces the infinite-dimensional problem to a *finite*
+  linear system in the spline coefficients — solved by exactly the linear-algebra machinery
+  of [OPTM-02] and the regularized least squares of the Regression track. The calculus of
+  variations does the *modeling* (it identifies the function class); the finite solver does
+  the *computing*.
+:::
+
+## The gentleness, named {#sec-gentleness}
+
+To be explicit about the title's promise: this was a *gentle* calculus of variations. We
+covered the first- and second-derivative Euler–Lagrange equations, the Beltrami shortcut,
+natural boundary conditions, and the spline application — enough to fully serve the one
+downstream consumer, Regression's smoothing splines. We did **not** cover: multiple
+independent variables (PDEs from variational principles, e.g. minimal surfaces in full
+generality), constrained variational problems (isoperimetric problems and the
+Euler–Lagrange-with-a-multiplier that mirrors [OPTM-13]), the full second-variation theory,
+or any existence/regularity theory. Those are the rabbit holes of @sec-deeper, and the
+honest boundary of "gentle."
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You never solve the
+Euler–Lagrange ODE for a smoothing spline by hand. The variational result of @thm-spline
+collapses the problem to a finite one: write $f$ in a natural-cubic-spline basis, and
+@eq-spline-objective becomes a *penalized least-squares* problem
+$\min_{\boldsymbol\theta} \|\mathbf y - B\boldsymbol\theta\|^2 + \lambda\,\boldsymbol\theta^\top\Omega\boldsymbol\theta$,
+where $B$ holds the basis functions evaluated at the data and $\Omega$ is the penalty matrix
+whose entries are $\int B_j'' B_k''\,dx$. That has the closed-form ridge-type solution
+$\hat{\boldsymbol\theta}=(B^\top B+\lambda\Omega)^{-1}B^\top\mathbf y$ — the exact normal-equation
+machinery of [OPTM-02], now carrying a roughness penalty. In Python,
+`scipy.interpolate.make_smoothing_spline` (used for the figures above) does precisely this;
+`statsmodels` and `sklearn`'s spline transformers expose the basis. The penalty parameter
+$\lambda$ is typically chosen by cross-validation — the modeling decision Regression R22
+owns. What this article gave you is the *why*: the reason that finite linear system is the
+right thing to solve at all is the variational proof that the minimizer is a natural cubic
+spline.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the constrained-optimization branch — [OPTM-13]–[OPTM-16] — which kept the
+unknown a *vector* but fenced it in. This article changed the *kind* of unknown entirely,
+from a point to a function, and rebuilt "set the derivative to zero" as the Euler–Lagrange
+equation. It is the **terminal node** of the Optimization track: there is no OPTM-18. From
+here the track's job is done — it has supplied every optimization prerequisite the modeling
+tracks requested. Specifically:
+
+- **[REGR-22 *Smoothing Splines*]** links here for exactly the result of @sec-spline: the
+  minimizer of $\sum(y_i-f(x_i))^2 + \lambda\int f''^2$ is a natural cubic spline. Regression
+  owns the *statistics* (degrees of freedom, choosing $\lambda$ by cross-validation, the
+  bias–variance trade-off); this article owns the *variational why*.
+- The **regularized least-squares** view in @sec-implementation ties back to [OPTM-02]
+  (normal equations) and to the ridge machinery the Regression regularization branch builds —
+  the spline penalty is a roughness-flavored ridge.
+- The **necessary-but-not-sufficient** caveat and the **convexity rescue** are the same
+  story as [OPTM-02] (stationarity) and [OPTM-04] (convexity makes stationary global),
+  now lifted to function space.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Euler's *Methodus inveniendi lineas curvas* (1744) and Lagrange's
+  letters to Euler (1755) introducing the $\delta$-variation notation that gave the subject
+  its name. Johann Bernoulli's 1696 brachistochrone challenge is the problem that started it
+  all — and the elegant solution (a cycloid) is a beautiful next Euler–Lagrange exercise.
+- **The spline connection in full.** Grace Wahba, *Spline Models for Observational Data*
+  (1990), is the canonical treatment of the smoothing spline as the solution of a
+  variational problem in a reproducing-kernel Hilbert space — the rigorous home of
+  @thm-spline, with the existence theory this article deliberately set aside.
+- **Open threads we deferred.** *Constrained variational problems* (isoperimetric: the
+  closed curve of fixed perimeter enclosing the most area — a circle — via a Lagrange
+  multiplier on a functional, mirroring [OPTM-13]). *The second variation* and the Legendre
+  and Jacobi conditions, the variational analogue of the positive-definite Hessian test.
+  *The direct method and existence theory* (coercivity, weak lower semicontinuity, Sobolev
+  spaces) — the functional-analysis machinery that decides *whether* a minimizer exists, the
+  honest gap flagged in @sec-existence. *Optimal control and the Pontryagin maximum
+  principle*, the calculus of variations' descendant for systems that evolve in time.

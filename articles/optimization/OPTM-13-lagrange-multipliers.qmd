@@ -1,0 +1,1025 @@
+---
+title: "Optimizing Under Equality Constraints: Lagrange Multipliers"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # objective / level sets of f
+CONSTR  = "#c1121f"    # the constraint curve / surface
+GRADF   = "#0a7d4d"    # gradient of f
+GRADG   = "#b8860b"    # gradient of g
+GREY    = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the first article of the Optimization
+> track's **constrained-optimization** branch. Until now every minimization has been
+> *free*: choose any $\mathbf{x}\in\mathbb{R}^n$ you like and drive the objective down.
+> Here the decision variable is **fenced in** — it must lie on a constraint surface
+> $g(\mathbf{x})=0$ — and the entire derivative test has to be rebuilt to respect that
+> fence. It assumes [OPTM-02 *Minimizing in Many Variables*] for the **gradient**
+> $\nabla f$, the reading of $\nabla f$ as the **direction of steepest ascent**, the
+> **stationarity** condition $\nabla f=\mathbf{0}$ (the *unconstrained* test we are about
+> to amend), and the **Hessian** for second-order checks. From the *Geometry of Data /
+> Applied Linear Algebra* track it borrows one geometric fact, *used* and not re-derived:
+> **the gradient $\nabla g$ is perpendicular to the level set $g=\text{const}$** — we
+> restate and motivate it inline so the argument never leans on an unseen result.
+>
+> **What it sets up.** It is the foundation for [OPTM-14 *Inequality Constraints and the
+> KKT Conditions*] (what changes when the fence is a one-sided $g(\mathbf{x})\le 0$) and
+> [OPTM-15 *Duality*] (the multiplier reread as the variable of a twin problem). The
+> **shadow-price** interpretation derived here is the seed that makes both of those click.
+
+## Abstract {.unnumbered}
+
+We are asked to minimize $f(\mathbf{x})$ not over all of $\mathbb{R}^n$ but only over the
+points that satisfy an equality constraint $g(\mathbf{x})=0$ — a curve, a surface, a
+budget line. The unconstrained test "set $\nabla f=\mathbf{0}$" is now *wrong*: the
+unconstrained minimum almost never sits on the constraint surface, and forcing the
+gradient to vanish ignores the fence entirely. This article rebuilds the optimality
+condition from the geometry up. The single governing fact, derived from a picture before
+any symbol, is that **at a constrained optimum the gradient of the objective is parallel
+to the gradient of the constraint**, $\nabla f = \lambda\,\nabla g$ — because any
+component of $\nabla f$ *along* the surface would be a direction you could still slide to
+improve. The scalar $\lambda$ that buys that parallelism is the **Lagrange multiplier**,
+and we package the whole condition into one scalar function, the **Lagrangian**
+$\mathcal{L}(\mathbf{x},\lambda)=f(\mathbf{x})-\lambda\,g(\mathbf{x})$, whose ordinary
+stationarity $\nabla_{\mathbf{x}}\mathcal{L}=\mathbf{0},\ \partial\mathcal{L}/\partial\lambda=0$
+reproduces both the parallelism *and* the constraint. We extend it to several
+constraints, prove the **multiplier is a shadow price** — $\lambda$ equals the rate at
+which the optimal value improves as the constraint is relaxed — and carry the machinery
+through three honest examples: maximum-entropy distributions, the norm-constrained view
+of ridge regression, and a deliberately broken case at the edge of applicability where
+the gradients refuse to align and the method silently fails.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+To minimize $f(\mathbf{x})$ subject to $g(\mathbf{x})=0$, you cannot just set
+$\nabla f=\mathbf{0}$ — the free minimum is off the surface. Instead, walk *along* the
+constraint surface and stop where you can no longer improve without leaving it. That
+happens exactly when **the gradient of $f$ has no component tangent to the surface** —
+equivalently, when $\nabla f$ is **parallel** to the surface's normal direction
+$\nabla g$:
+$$
+\nabla f(\mathbf{x}^\star) \;=\; \lambda\,\nabla g(\mathbf{x}^\star),
+\qquad g(\mathbf{x}^\star)=0 .
+$$
+The proportionality constant $\lambda$ is the **Lagrange multiplier**. Bundle the two
+conditions into one object, the **Lagrangian**
+$\mathcal{L}(\mathbf{x},\lambda)=f(\mathbf{x})-\lambda\,g(\mathbf{x})$: setting *its*
+gradient to zero in **all** variables — the $\mathbf{x}$'s and $\lambda$ — recovers the
+parallelism (from the $\mathbf{x}$ equations) and the constraint itself (from the
+$\lambda$ equation). The multiplier is not bookkeeping debris: $\lambda$ is a **shadow
+price**, the sensitivity of the optimal value to relaxing the constraint.
+:::
+
+Everything below orbits that box. The Lagrangian will look like a magic trick — fold a
+constraint into the objective with a mystery coefficient, differentiate, and somehow get
+the right answer. By the end you should see it as the *inevitable* bookkeeping of one
+geometric fact: at the optimum no tangent direction goes downhill, and the only way for a
+gradient to have no tangent component is for it to point straight along the normal.
+
+# Why we are here: the fence the earlier articles never had {#sec-why}
+
+Hold one question in view for the whole article: **why does the free derivative test
+break the moment a constraint appears, and what is the smallest repair that fixes it?**
+Every move below answers a piece of that.
+
+## What changed
+
+Through [OPTM-01] and [OPTM-02] the recipe never wavered: to minimize $f$, find where its
+derivative (or gradient) is zero, then check curvature. That recipe rests on a quiet
+assumption — that you are free to step in *any* direction. The condition
+$\nabla f(\mathbf{x}^\star)=\mathbf{0}$ is precisely the statement "no direction is
+downhill," and it is necessary only because *every* direction is available to you. A
+nonzero gradient would hand you a descent direction $-\nabla f$, and you could simply
+take it.
+
+Constrained problems revoke that freedom. Now we want
+$$
+\min_{\mathbf{x}} \; f(\mathbf{x}) \quad\text{subject to}\quad g(\mathbf{x}) = 0,
+$$ {#eq-problem}
+where $g:\mathbb{R}^n\to\mathbb{R}$ carves out a **constraint surface** — the set of
+points satisfying $g(\mathbf{x})=0$. The decision variable is no longer free to roam; it
+is pinned to that surface. (We follow the convention $g(\mathbf{x})=0$; a constraint
+written $g(\mathbf{x})=c$ is rewritten as $\tilde g(\mathbf{x})=g(\mathbf{x})-c=0$, so
+"equals zero" loses no generality.)
+
+These are not exotic. Every one of the following is @eq-problem in disguise:
+
+- **Budget allocation.** Maximize utility (or output) $f(\mathbf{x})$ subject to total
+  spend $\sum_i p_i x_i = B$ — the budget line is the constraint surface.
+- **Maximum likelihood for a multinomial.** Maximize a log-likelihood over probabilities
+  $\mathbf{x}=(x_1,\dots,x_k)$ subject to $\sum_i x_i = 1$ — they must sum to one.
+- **Portfolio variance.** Minimize risk $\mathbf{w}^\top\Sigma\mathbf{w}$ subject to
+  fully-invested weights $\sum_i w_i = 1$.
+- **The norm-constrained view of ridge regression.** Minimize squared error
+  $\|\mathbf{y}-X\boldsymbol\beta\|^2$ subject to a budget on coefficient size
+  $\|\boldsymbol\beta\|^2 = t$ — the constraint that makes the ridge picture geometric
+  (we carry this all the way through in @sec-ridge, the exact tie [REGR-14] links here for).
+
+## Why the free test is now wrong
+
+The naive fix would be: ignore the fence, minimize $f$ freely, and hope the answer lands
+on the surface. It almost never does. @fig-why-free shows the simplest possible instance
+— minimize $f(x,y)=x^2+y^2$ (distance-squared from the origin) on the line $x+y=2$. The
+free minimum is the origin, which is *not* on the line; the constrained minimum is the
+point on the line closest to the origin, and there the gradient $\nabla f$ does **not**
+vanish. The free test would report "no minimum here," which is nonsense — there is a
+perfectly good best point on the line. We need a different stopping rule.
+
+```{python}
+#| label: fig-why-free
+#| fig-cap: "Why setting $\\nabla f=\\mathbf{0}$ is the wrong test under a constraint. We minimize $f(x,y)=x^2+y^2$ (concentric circular level sets, blue) on the line $x+y=2$ (red). The free minimum is the origin (open marker), which is off the line. The constrained minimum (filled green) is where a level circle is *tangent* to the line — the smallest circle that still touches it. At that point $\\nabla f$ is nonzero; it points straight away from the line. The free first-order test never fires here."
+fig, ax = plt.subplots(figsize=(5.6, 5.0))
+# level sets of f
+gx = np.linspace(-1.0, 3.0, 400)
+gy = np.linspace(-1.0, 3.0, 400)
+GX, GY = np.meshgrid(gx, gy)
+F = GX**2 + GY**2
+levels = [0.5, 1.0, 2.0, 4.0, 6.0]
+ax.contour(GX, GY, F, levels=levels, colors=CURVE, linewidths=1.0, alpha=0.7)
+# constraint line x + y = 2
+xs = np.linspace(-1.0, 3.0, 100)
+ax.plot(xs, 2 - xs, color=CONSTR, lw=2.2, label="constraint $x+y=2$")
+# constrained optimum: closest point on line to origin = (1,1)
+ax.scatter([1], [1], color=GRADF, s=110, zorder=5, edgecolor="white",
+           linewidth=1.4, label="constrained min $(1,1)$")
+ax.scatter([0], [0], facecolor="white", edgecolor=CURVE, s=90, zorder=5,
+           linewidth=1.8, label="free min $(0,0)$ — off the line")
+# gradient of f at (1,1) = (2,2), points away from line
+ax.annotate("", xy=(1 + 0.5, 1 + 0.5), xytext=(1, 1),
+            arrowprops=dict(arrowstyle="-|>", color=GRADF, lw=2.2))
+ax.text(1.62, 1.55, r"$\nabla f$", color=GRADF, fontsize=12)
+ax.set_xlim(-1, 3); ax.set_ylim(-1, 3)
+ax.set_aspect("equal")
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("The constrained minimum is a tangency")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why can't we just substitute the constraint into the objective and minimize freely?"*
+Sometimes you can, and when you can it is often the cleanest route — solve
+$x+y=2$ for $y=2-x$, plug into $f$, and minimize the resulting one-variable function. The
+multiplier method exists for the cases where substitution is ugly or impossible: when
+the constraint cannot be solved explicitly for one variable (an implicit surface like
+$x^2+y^2+z^2=1$ has no single clean "$z=$"), when there are many constraints tangled
+together, or when you *want* the multiplier itself because it carries economic meaning
+(the shadow price of @sec-shadow). Lagrange's method handles all constraints
+symmetrically and never asks you to pick a variable to eliminate. We will check it
+against substitution in @sec-entropy so you see the two agree.
+:::
+
+## The historical why
+
+Joseph-Louis Lagrange introduced the method in his 1788 *Mécanique analytique*, recasting
+all of mechanics as constrained optimization: a system's motion minimizes an "action"
+subject to physical constraints (a bead must stay on its wire, a pendulum on its arc).
+The multiplier was, from birth, a *force* — the constraint force the wire exerts to keep
+the bead on track, exactly large enough to cancel any tendency to leave. That mechanical
+origin is worth keeping in mind: $\lambda\nabla g$ is the "force" the constraint applies,
+and the optimality condition $\nabla f=\lambda\nabla g$ says the objective's pull is
+perfectly balanced by the constraint's push. The shadow-price reading in @sec-shadow is
+the same idea wearing an economist's hat.
+
+# Intuition before symbols: tangency {#sec-intuition}
+
+We build the entire condition from one picture, no formulas yet. Stand on the constraint
+surface $g(\mathbf{x})=0$ and imagine walking along it, watching the value of $f$. You are
+at a constrained minimum when **no step you can take along the surface lowers $f$**.
+
+Now overlay the **level sets** of $f$ — the curves (or surfaces) where $f$ equals a
+constant, like the contour lines on a topographic map. Walking along the constraint
+surface, you cross these contours; the value of $f$ you read off is the contour you are
+on. You are decreasing $f$ as long as you are crossing into lower contours. You stop
+improving exactly when the constraint surface stops crossing contours and instead
+**grazes** one — when it is **tangent** to a level set of $f$. @fig-why-free showed this:
+the optimum is where the smallest circle still touching the line touches it tangentially.
+
+Here is why tangency *is* the optimality condition, in words before we make it algebra.
+Recall the central fact from [OPTM-02]: the gradient $\nabla f$ points in the direction
+of steepest *ascent* of $f$, and is perpendicular to $f$'s own level sets. Likewise
+$\nabla g$ is perpendicular to the constraint surface $g=0$ (a level set of $g$). At a
+tangency point, the level set of $f$ and the level set of $g$ touch and share the same
+tangent line — so they share the same perpendicular direction. Therefore $\nabla f$ and
+$\nabla g$ point along the *same line*: they are parallel. That single sentence is the
+whole theorem; the rest of the article makes it precise and exploitable.
+
+@fig-tangency-vs-not contrasts a non-optimal point (the gradients are misaligned, and you
+can still slide downhill along the surface) with the optimal point (gradients aligned, no
+tangential improvement left).
+
+```{python}
+#| label: fig-tangency-vs-not
+#| fig-cap: "Tangency is optimality. **Left:** a non-optimal point on the constraint (red). The objective gradient $\\nabla f$ (green) makes an angle with the constraint normal $\\nabla g$ (gold); $\\nabla f$ has a component *along* the surface (dashed), so sliding along the constraint in the opposite tangential direction still lowers $f$. **Right:** the optimal point. $\\nabla f$ and $\\nabla g$ are parallel, $\\nabla f$ has *no* tangential component, and no along-surface step improves $f$ — the stopping rule of @sec-intuition."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.6))
+
+def draw_panel(ax, x0, title):
+    gx = np.linspace(-0.2, 3.2, 300); gy = np.linspace(-0.2, 3.2, 300)
+    GX, GY = np.meshgrid(gx, gy)
+    F = GX**2 + GY**2
+    ax.contour(GX, GY, F, levels=[0.5,1,2,4,6,8], colors=CURVE, linewidths=0.9, alpha=0.6)
+    xs = np.linspace(-0.2, 3.2, 100)
+    ax.plot(xs, 2 - xs, color=CONSTR, lw=2.2)
+    y0 = 2 - x0
+    ax.scatter([x0], [y0], color=CONSTR, s=90, zorder=5, edgecolor="white", linewidth=1.3)
+    # grad f = (2x, 2y), grad g = (1,1)
+    gf = np.array([2*x0, 2*y0]); gf = gf/np.linalg.norm(gf)*0.85
+    gg = np.array([1.0, 1.0]); gg = gg/np.linalg.norm(gg)*0.85
+    ax.annotate("", xy=(x0+gf[0], y0+gf[1]), xytext=(x0, y0),
+                arrowprops=dict(arrowstyle="-|>", color=GRADF, lw=2.2))
+    ax.annotate("", xy=(x0+gg[0], y0+gg[1]), xytext=(x0, y0),
+                arrowprops=dict(arrowstyle="-|>", color=GRADG, lw=2.2))
+    ax.text(x0+gf[0]+0.05, y0+gf[1], r"$\nabla f$", color=GRADF, fontsize=12)
+    ax.text(x0+gg[0]+0.05, y0+gg[1]-0.18, r"$\nabla g$", color=GRADG, fontsize=12)
+    # tangential component of grad f (project onto tangent direction (1,-1)/sqrt2)
+    t = np.array([1.0, -1.0]); t = t/np.linalg.norm(t)
+    gf_full = np.array([2*x0, 2*y0])
+    comp = (gf_full @ t)
+    if abs(comp) > 1e-9:
+        tc = t*comp; tc = tc/np.linalg.norm(gf_full)*0.85
+        ax.annotate("", xy=(x0+tc[0], y0+tc[1]), xytext=(x0, y0),
+                    arrowprops=dict(arrowstyle="-|>", color=GREY, lw=1.6, linestyle="--"))
+        ax.text(x0+tc[0]-0.1, y0+tc[1]-0.25, "tangential\ncomponent", color=GREY, fontsize=8)
+    ax.set_xlim(-0.2, 3.2); ax.set_ylim(-0.2, 3.2); ax.set_aspect("equal")
+    ax.set_xlabel("$x$"); ax.set_ylabel("$y$"); ax.set_title(title)
+
+draw_panel(axL, 0.35, "Not optimal: gradients misaligned")
+draw_panel(axR, 1.00, "Optimal: $\\nabla f \\parallel \\nabla g$")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the multiplier $\lambda$ allowed to be negative — or zero?"* Parallel does not
+mean "same direction." $\nabla f=\lambda\nabla g$ allows $\lambda<0$ (the gradients are
+anti-parallel, pointing opposite ways along the shared normal line) and $\lambda=0$ (the
+constraint is not "binding" in the gradient sense — $\nabla f$ already vanishes there, a
+free stationary point that happens to sit on the surface). The *sign* of $\lambda$ will
+matter enormously once constraints become inequalities in [OPTM-14], where a sign
+condition $\mu\ge0$ separates the active from the inactive. For pure equalities, $\lambda$
+is free to be any real number, and its sign tells you which way relaxing the constraint
+moves the optimum — the shadow-price reading of @sec-shadow.
+:::
+
+# Formal development {#sec-formal}
+
+## The geometric fact we stand on: $\nabla g \perp \{g=0\}$ {#sec-grad-perp}
+
+The whole argument rests on one borrowed fact, so we state it carefully and motivate it
+rather than wave at it. It is owned by the *Geometry of Data* track (level sets and the
+gradient–level-set relationship); we import its statement and give the Calc-1-level reason
+it is true.
+
+::: {#lem-perp}
+**Lemma (the gradient is normal to its level set).** Let $g:\mathbb{R}^n\to\mathbb{R}$ be
+differentiable, and let $\mathbf{x}^\star$ be a point with $g(\mathbf{x}^\star)=0$. If
+$\mathbf{r}(t)$ is any smooth curve lying entirely in the surface $g=0$ and passing
+through $\mathbf{x}^\star$ at $t=0$, then the tangent vector $\mathbf{r}'(0)$ satisfies
+$$
+\nabla g(\mathbf{x}^\star)^\top \mathbf{r}'(0) = 0 .
+$$
+That is, $\nabla g(\mathbf{x}^\star)$ is **perpendicular to every tangent direction of the
+surface** at $\mathbf{x}^\star$ — it is the surface's normal vector.
+:::
+
+::: {.proof}
+The curve stays on the surface, so $g(\mathbf{r}(t))=0$ for **all** $t$ near $0$ — it is
+the constant function $0$. Differentiate both sides with respect to $t$. The left side is
+a composition $t\mapsto g(\mathbf{r}(t))$, so the multivariable chain rule applies. That
+rule — which itself is the one-variable chain rule applied coordinate by coordinate and
+summed — states
+$$
+\frac{d}{dt}\,g(\mathbf{r}(t))
+= \sum_{j=1}^n \frac{\partial g}{\partial x_j}\bigl(\mathbf{r}(t)\bigr)\,r_j'(t)
+= \nabla g(\mathbf{r}(t))^\top \mathbf{r}'(t),
+$$
+because the sum of products $\sum_j (\partial g/\partial x_j)\,r_j'$ is exactly the dot
+product of the gradient vector with the velocity vector. The right side is
+$\tfrac{d}{dt}(0)=0$. Setting them equal and evaluating at $t=0$ (where
+$\mathbf{r}(0)=\mathbf{x}^\star$),
+$$
+\nabla g(\mathbf{x}^\star)^\top \mathbf{r}'(0) = 0 .
+$$
+Since $\mathbf{r}$ was an arbitrary on-surface curve through $\mathbf{x}^\star$, its
+velocity $\mathbf{r}'(0)$ can point along any tangent direction of the surface. The
+gradient is orthogonal to all of them. $\qquad\blacksquare$
+:::
+
+The picture: the tangent directions of the surface form a flat $(n-1)$-dimensional slab
+(the **tangent space**) at $\mathbf{x}^\star$, and $\nabla g$ is the one direction
+sticking straight out of it. @fig-perp draws this for a circle in the plane.
+
+```{python}
+#| label: fig-perp
+#| fig-cap: "The borrowed fact, @lem-perp, made visible. On the circle $g(x,y)=x^2+y^2-1=0$ (red), the gradient $\\nabla g=(2x,2y)$ (gold) points radially outward — exactly perpendicular to the tangent line of the circle (grey) at each point. Walk along the surface and your velocity is tangent; $\\nabla g$ is always the normal. This is the only above-floor fact the chapter imports, and the proof above is its full justification."
+theta = np.linspace(0, 2*np.pi, 200)
+fig, ax = plt.subplots(figsize=(5.2, 5.0))
+ax.plot(np.cos(theta), np.sin(theta), color=CONSTR, lw=2.2, label="$g(x,y)=x^2+y^2-1=0$")
+for th in np.linspace(0, 2*np.pi, 8, endpoint=False):
+    px, py = np.cos(th), np.sin(th)
+    # gradient (radial)
+    ax.annotate("", xy=(px*1.45, py*1.45), xytext=(px, py),
+                arrowprops=dict(arrowstyle="-|>", color=GRADG, lw=1.8))
+    # tangent line segment
+    tx, ty = -np.sin(th), np.cos(th)
+    ax.plot([px-0.32*tx, px+0.32*tx], [py-0.32*ty, py+0.32*ty], color=GREY, lw=1.4)
+ax.text(1.5, 0.05, r"$\nabla g$", color=GRADG, fontsize=12)
+ax.set_xlim(-1.7, 1.9); ax.set_ylim(-1.7, 1.7); ax.set_aspect("equal")
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title(r"$\nabla g \perp$ the surface $g=0$")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.95)
+plt.tight_layout()
+```
+
+## From tangency to the multiplier equation {#sec-derive}
+
+Now turn the picture into the equation. Let $\mathbf{x}^\star$ be a local minimizer of
+@eq-problem and assume $\nabla g(\mathbf{x}^\star)\neq\mathbf{0}$ (this is the
+**constraint qualification** — we return to *why* it is needed in @sec-failure, where it
+fails). We argue in two steps.
+
+**Step 1 — at the optimum, $\nabla f$ has no tangential component.** Take any smooth
+on-surface curve $\mathbf{r}(t)$ with $\mathbf{r}(0)=\mathbf{x}^\star$ and tangent
+$\mathbf{v}=\mathbf{r}'(0)$. The value of $f$ along this curve is the one-variable
+function $\varphi(t)=f(\mathbf{r}(t))$. Because $\mathbf{x}^\star$ is a local minimum of
+$f$ *restricted to the surface*, and the curve lives on the surface, $t=0$ is a local
+minimum of the ordinary one-variable function $\varphi$. By the Calc-1 first-order
+condition, $\varphi'(0)=0$. Compute $\varphi'(0)$ with the same chain rule as in
+@lem-perp:
+$$
+\varphi'(0)
+= \frac{d}{dt}\,f(\mathbf{r}(t))\Big|_{t=0}
+= \nabla f(\mathbf{x}^\star)^\top \mathbf{r}'(0)
+= \nabla f(\mathbf{x}^\star)^\top \mathbf{v}.
+$$
+So $\nabla f(\mathbf{x}^\star)^\top\mathbf{v}=0$ for **every** tangent direction
+$\mathbf{v}$ of the surface. In words: $\nabla f$ is orthogonal to every tangent direction
+— it has zero component along the surface. (This is the precise version of "no
+along-surface step lowers $f$": the directional derivative of $f$ in every tangent
+direction is zero.)
+
+**Step 2 — orthogonal to every tangent direction means parallel to $\nabla g$.** We now
+have two facts at $\mathbf{x}^\star$:
+
+- $\nabla g$ is orthogonal to every tangent direction (@lem-perp), and it is the *only*
+  such direction up to scaling — the tangent space is the $(n-1)$-dimensional set of all
+  vectors orthogonal to the single nonzero vector $\nabla g$, so the set of vectors
+  orthogonal to the *whole* tangent space is the one-dimensional line spanned by
+  $\nabla g$.
+- $\nabla f$ is also orthogonal to every tangent direction (Step 1).
+
+Therefore $\nabla f$ lies in that one-dimensional line: it is a scalar multiple of
+$\nabla g$. Naming the scalar $\lambda$,
+$$
+\boxed{\ \nabla f(\mathbf{x}^\star) = \lambda\,\nabla g(\mathbf{x}^\star).\ }
+$$ {#eq-stationarity}
+That $\nabla g\neq\mathbf{0}$ is exactly what guarantees the orthogonal-complement is
+one-dimensional (a single line, not a larger space) so that $\lambda$ exists and is unique;
+this is where the constraint qualification earns its keep.
+
+We have derived the Core's parallelism from nothing but the chain rule and the first-order
+condition of Calc 1. No "it can be shown."
+
+::: {#thm-lagrange}
+**Theorem (Lagrange's first-order necessary condition).** Let $f,g:\mathbb{R}^n\to\mathbb{R}$
+be continuously differentiable and let $\mathbf{x}^\star$ be a local minimizer (or
+maximizer) of $f$ subject to $g(\mathbf{x})=0$. If
+$\nabla g(\mathbf{x}^\star)\neq\mathbf{0}$, then there exists a scalar $\lambda^\star$ — the
+**Lagrange multiplier** — such that
+$$
+\nabla f(\mathbf{x}^\star) = \lambda^\star\,\nabla g(\mathbf{x}^\star),
+\qquad g(\mathbf{x}^\star)=0 .
+$$
+:::
+
+::: {.proof}
+The first equation is @eq-stationarity, derived in Steps 1–2 above. The second is just the
+hypothesis that $\mathbf{x}^\star$ lies on the constraint surface. $\qquad\blacksquare$
+:::
+
+A word on what this is and is not. Like $\nabla f=\mathbf{0}$ in the unconstrained world,
+@thm-lagrange is **necessary, not sufficient**: it flags every constrained minimum, but
+also every constrained maximum and saddle. Whether a stationary point is a minimum needs a
+second-order check (@sec-second-order) or a convexity argument (@sec-convex). And it
+applies to maximization unchanged — maximizing $f$ is minimizing $-f$, and
+$\nabla(-f)=-\nabla f=\lambda\nabla g$ is the same condition with $\lambda$ negated. So the
+method finds constrained *stationary points* of either flavor; you sort them afterward.
+
+## The Lagrangian: one function that remembers everything {#sec-lagrangian}
+
+@thm-lagrange gives $n+1$ equations (the $n$ components of $\nabla f=\lambda\nabla g$, plus
+$g=0$) in $n+1$ unknowns (the $n$ components of $\mathbf{x}$, plus $\lambda$). Lagrange's
+genius was to repackage all $n+1$ as the *unconstrained* stationarity of a single scalar
+function. Define the **Lagrangian**
+$$
+\mathcal{L}(\mathbf{x},\lambda) \;=\; f(\mathbf{x}) - \lambda\, g(\mathbf{x}),
+$$ {#eq-lagrangian}
+a function of the original variables $\mathbf{x}$ *and* the new variable $\lambda$, which
+we promote to a genuine coordinate. Now set its full gradient — with respect to **all**
+$n+1$ variables — to zero, and watch the two conditions of @thm-lagrange fall out.
+
+**The $\mathbf{x}$-block.** Differentiating @eq-lagrangian with respect to the components
+of $\mathbf{x}$ (treating $\lambda$ as a constant, since it is held fixed in this block):
+$$
+\nabla_{\mathbf{x}}\mathcal{L}
+= \nabla_{\mathbf{x}}\bigl[f(\mathbf{x}) - \lambda g(\mathbf{x})\bigr]
+= \nabla f(\mathbf{x}) - \lambda\,\nabla g(\mathbf{x}).
+$$
+Setting this to $\mathbf{0}$ gives precisely $\nabla f=\lambda\nabla g$ — the parallelism.
+
+**The $\lambda$-block.** Differentiating @eq-lagrangian with respect to $\lambda$
+(treating $\mathbf{x}$ as constant, so $f(\mathbf{x})$ is a constant and contributes
+nothing, while $-\lambda g(\mathbf{x})$ has $\lambda$-derivative $-g(\mathbf{x})$):
+$$
+\frac{\partial \mathcal{L}}{\partial \lambda}
+= -\,g(\mathbf{x}).
+$$
+Setting this to $0$ gives $g(\mathbf{x})=0$ — the constraint itself, recovered for free.
+This is the slick part: the constraint is enforced not by hand but as the
+$\lambda$-stationarity of $\mathcal{L}$. Together:
+$$
+\boxed{\
+\nabla_{\mathbf{x}}\mathcal{L}=\mathbf{0}
+\ \ \text{and}\ \
+\frac{\partial\mathcal{L}}{\partial\lambda}=0
+\quad\Longleftrightarrow\quad
+\nabla f = \lambda\nabla g
+\ \ \text{and}\ \
+g=0.
+\ }
+$$ {#eq-lagrangian-conditions}
+
+::: {.callout-warning title="Pitfall"}
+**The sign and the saddle.** Some texts write $\mathcal{L}=f+\lambda g$; we write
+$f-\lambda g$. Either is fine — they differ only by the sign of $\lambda$, and since
+$\lambda$ is solved for, the *point* $\mathbf{x}^\star$ is identical. But be consistent
+within a problem, and know your convention when you read off the multiplier's sign for the
+shadow-price interpretation (@sec-shadow). The second trap: a solution of
+@eq-lagrangian-conditions is a **stationary point of $\mathcal{L}$**, but it is **not a
+minimum of $\mathcal{L}$** in the ordinary sense. In fact $(\mathbf{x}^\star,\lambda^\star)$
+is typically a **saddle point** of $\mathcal{L}$ — a minimum in $\mathbf{x}$ and a maximum
+in $\lambda$ (this min–max structure is the whole subject of duality, [OPTM-15]). Do
+**not** try to minimize $\mathcal{L}$ jointly over $(\mathbf{x},\lambda)$; you will run
+$\lambda$ off to $\pm\infty$. Solve the stationarity *equations*, do not descend on
+$\mathcal{L}$.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Walk me through solving a Lagrange-multiplier problem on a whiteboard."* The four-step
+ritual, which the worked examples follow verbatim:
+1. **Write the Lagrangian** $\mathcal{L}=f-\lambda g$ (move any constraint to the
+   $g=0$ form first).
+2. **Set $\nabla_{\mathbf{x}}\mathcal{L}=\mathbf{0}$** — one equation per original variable.
+3. **Set $\partial\mathcal{L}/\partial\lambda=0$** — this just re-states the constraint
+   $g=0$.
+4. **Solve the system** of $n+1$ equations for $(\mathbf{x},\lambda)$, then check
+   second-order conditions (or convexity) to confirm min vs. max.
+The most common interview slip is forgetting step 3 (so you have $n$ equations in $n+1$
+unknowns and cannot solve) or trying to minimize $\mathcal{L}$ numerically instead of
+solving the stationarity system.
+:::
+
+## Several equality constraints {#sec-multiple}
+
+Real problems fence the variable with more than one wall. Suppose $m$ equality
+constraints, $g_1(\mathbf{x})=0,\dots,g_m(\mathbf{x})=0$ (with $m<n$, or there is no room
+to move). The feasible surface is now the intersection of $m$ surfaces. The geometry
+generalizes cleanly: a tangent direction of the intersection must stay on *all* $m$
+surfaces at once, so by @lem-perp it must be orthogonal to *every* $\nabla g_k$. The
+optimality argument of @sec-derive then says $\nabla f$ is orthogonal to every such
+tangent direction — and the set of vectors orthogonal to all the tangent directions is now
+the *span* of the normals $\nabla g_1,\dots,\nabla g_m$. Hence $\nabla f$ is a linear
+combination of them:
+$$
+\nabla f(\mathbf{x}^\star) = \sum_{k=1}^m \lambda_k\,\nabla g_k(\mathbf{x}^\star),
+$$ {#eq-multi-stationarity}
+one multiplier $\lambda_k$ per constraint. (The clean version of this argument needs the
+$\nabla g_k$ to be **linearly independent** at $\mathbf{x}^\star$ — the general constraint
+qualification, the multi-constraint cousin of "$\nabla g\neq\mathbf{0}$." If the normals
+were dependent, the span would be too small to be sure $\nabla f$ lands in it.) The
+Lagrangian absorbs all of them:
+$$
+\mathcal{L}(\mathbf{x},\boldsymbol\lambda)
+= f(\mathbf{x}) - \sum_{k=1}^m \lambda_k\, g_k(\mathbf{x}),
+$$
+and $\nabla_{\mathbf{x}}\mathcal{L}=\mathbf{0}$ reproduces @eq-multi-stationarity while the
+$m$ derivatives $\partial\mathcal{L}/\partial\lambda_k=-g_k=0$ reproduce all $m$
+constraints. Nothing new conceptually — just one multiplier per fence.
+
+## Second-order conditions: is it a minimum? {#sec-second-order}
+
+@thm-lagrange is necessary; to *confirm* a minimum we need curvature, and — this is the
+subtlety — only the curvature **along the surface** matters. The relevant object is the
+Hessian of the Lagrangian in $\mathbf{x}$,
+$$
+\nabla^2_{\mathbf{x}}\mathcal{L}
+= \nabla^2 f(\mathbf{x}^\star) - \sum_k \lambda_k\,\nabla^2 g_k(\mathbf{x}^\star),
+$$
+restricted to tangent directions. The bordered/second-order condition says
+$\mathbf{x}^\star$ is a (strict) local constrained minimum if
+$$
+\mathbf{v}^\top \bigl(\nabla^2_{\mathbf{x}}\mathcal{L}\bigr)\,\mathbf{v} > 0
+\quad\text{for every nonzero tangent direction } \mathbf{v}
+\ \ (\text{i.e. } \nabla g_k^\top\mathbf{v}=0 \ \forall k).
+$$
+Why the Lagrangian's Hessian and not $f$'s alone? Because moving along a *curved*
+constraint surface bends your path, and that bending interacts with $f$'s slope; the
+$-\sum\lambda_k\nabla^2 g_k$ term is exactly the correction that accounts for the
+surface's curvature. Why only tangent directions? Because you are forbidden from moving
+off the surface, so curvature in the normal direction is irrelevant — you will never step
+that way. We will not belabor the general bordered-Hessian determinant test here; in the
+convex case (next) a far cleaner sufficient condition holds, and that is the case that
+covers our examples and most of machine learning.
+
+## When stationary $\Rightarrow$ global: the convex case {#sec-convex}
+
+The clean and practically dominant situation: if $f$ is **convex** and each constraint is
+**affine** (linear plus a constant, $g_k(\mathbf{x})=\mathbf{a}_k^\top\mathbf{x}-b_k$),
+then the feasible set is convex (an intersection of hyperplanes, [OPTM-03]) and any point
+satisfying @eq-lagrangian-conditions is a **global** constrained minimum — no second-order
+test needed. The reason is the headline theorem of [OPTM-04]: for a convex objective over
+a convex feasible set, stationarity is sufficient for the global minimum, because the
+tangent-below property of a convex function forbids any other point from being lower. This
+is why constrained convex problems — least squares with linear constraints, maximum
+entropy, ridge, the SVM — are the well-behaved heart of the field, and why every example
+we carry through is convex. The honest boundary (non-convex constraints, where Lagrange
+finds a stationary point that need not be global) waits in @sec-failure.
+
+# Worked examples {#sec-examples}
+
+We run the four-step ritual on three honest problems, the third deliberately at the edge
+where the method strains.
+
+## Example 1 — maximum entropy subject to a fixed mean {#sec-entropy}
+
+The maximum-entropy principle is everywhere in statistics and machine learning: among all
+distributions consistent with what you know, pick the one that assumes the least — the one
+with maximum **entropy** $H(\mathbf{p})=-\sum_i p_i\ln p_i$. Take a die-like variable on
+outcomes $1,\dots,K$ with probabilities $\mathbf{p}=(p_1,\dots,p_K)$. We *know* two things:
+the probabilities sum to one, and the mean outcome equals a target $\mu$. Find the
+maximum-entropy distribution. This is genuinely how one derives that the maximum-entropy
+distribution with a fixed mean is **exponential / Boltzmann** in form — a result that
+underlies softmax, Gibbs distributions, and logistic models.
+
+**Setup.** Maximize $H(\mathbf{p})=-\sum_{i=1}^K p_i\ln p_i$ subject to
+$$
+g_1(\mathbf{p}) = \sum_{i=1}^K p_i - 1 = 0,
+\qquad
+g_2(\mathbf{p}) = \sum_{i=1}^K i\,p_i - \mu = 0 .
+$$
+(Maximizing $H$ is minimizing $-H$; we maximize directly and let $\lambda$ sort the sign.)
+
+**Step 1 — Lagrangian** (two constraints, two multipliers $\lambda,\nu$):
+$$
+\mathcal{L}(\mathbf{p},\lambda,\nu)
+= -\sum_i p_i\ln p_i
+\;-\; \lambda\Bigl(\sum_i p_i - 1\Bigr)
+\;-\; \nu\Bigl(\sum_i i\,p_i - \mu\Bigr).
+$$
+
+**Step 2 — stationarity in each $p_i$.** Differentiate with respect to a single $p_i$.
+Only the $i$-th term of each sum involves $p_i$. The derivative of $-p_i\ln p_i$ is
+$-(\ln p_i + p_i\cdot\tfrac1{p_i}) = -\ln p_i - 1$ (product rule on $p_i$ and $\ln p_i$).
+The derivatives of the constraint sums in $p_i$ are $1$ and $i$ respectively. So
+$$
+\frac{\partial\mathcal{L}}{\partial p_i}
+= -\ln p_i - 1 - \lambda - \nu\, i = 0.
+$$
+Solve for $p_i$ by isolating the logarithm and exponentiating:
+$$
+\ln p_i = -1 - \lambda - \nu\, i
+\quad\Longrightarrow\quad
+p_i = e^{-1-\lambda}\;e^{-\nu i}.
+$$
+Write $Z = e^{1+\lambda}$ so that $p_i = \tfrac{1}{Z}e^{-\nu i}$ — an **exponential family
+in the outcome value $i$**. The multiplier $\lambda$ became the (log) normalizer; the
+multiplier $\nu$ became the rate parameter that tilts the distribution toward the target
+mean. *Maximum entropy with a mean constraint forces an exponential form* — derived, not
+asserted.
+
+**Step 3 — the constraints (the $\lambda,\nu$ equations).** $\partial\mathcal{L}/\partial\lambda=0$
+and $\partial\mathcal{L}/\partial\nu=0$ re-state $\sum_i p_i=1$ and $\sum_i i\,p_i=\mu$. The
+first pins $Z=\sum_i e^{-\nu i}$ (normalization); the second pins $\nu$ so the mean comes
+out to $\mu$.
+
+**Step 4 — solve numerically and confirm.** $-H$ is convex on the probability simplex (a
+sum of convex $p\ln p$ terms) and the constraints are affine, so by @sec-convex the
+stationary point is the global maximum-entropy distribution. We solve for $\nu$ so the mean
+hits $\mu$, then plot.
+
+```{python}
+#| label: fig-maxent
+#| fig-cap: "Maximum-entropy distributions on $\\{1,\\dots,6\\}$ for three target means $\\mu$. Each is the exponential form $p_i \\propto e^{-\\nu i}$ that the Lagrange conditions forced. With $\\mu=3.5$ (the unconstrained mean of a fair die) the rate $\\nu=0$ and the distribution is **uniform** — maximum entropy with no informative constraint. Pulling $\\mu$ below $3.5$ tilts mass toward low outcomes ($\\nu>0$); above $3.5$, toward high outcomes ($\\nu<0$). The multiplier $\\nu$ *is* the tilt."
+from scipy.optimize import brentq
+
+K = 6
+i_vals = np.arange(1, K + 1)
+
+def mean_for_nu(nu):
+    w = np.exp(-nu * i_vals)
+    p = w / w.sum()
+    return (i_vals * p).sum()
+
+def dist_for_mean(mu):
+    # find nu with mean = mu; nu=0 gives mean 3.5
+    nu = brentq(lambda nu: mean_for_nu(nu) - mu, -5, 5)
+    w = np.exp(-nu * i_vals)
+    return w / w.sum(), nu
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+width = 0.26
+for k, (mu, col) in enumerate(zip([2.5, 3.5, 4.5], [GRADF, CURVE, CONSTR])):
+    p, nu = dist_for_mean(mu)
+    H = -(p * np.log(p)).sum()
+    ax.bar(i_vals + (k - 1) * width, p, width=width, color=col, alpha=0.85,
+           label=fr"$\mu={mu}$, $\nu={nu:.2f}$, $H={H:.3f}$")
+ax.set_xlabel("outcome $i$"); ax.set_ylabel("probability $p_i$")
+ax.set_xticks(i_vals)
+ax.set_title("Max-entropy distributions are exponential in the outcome")
+ax.legend(fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+```
+
+This is the **substitution-check** promised earlier: with only the normalization
+constraint (drop the mean), the same Lagrangian gives $p_i=e^{-1-\lambda}$ — *constant in
+$i$* — so $p_i=1/K$, the uniform distribution. Maximum entropy with nothing but
+"probabilities sum to one" is the uniform distribution, which you could also get by direct
+substitution; the multiplier method recovers it and generalizes to the mean-constrained
+case where substitution is far messier.
+
+## Example 2 — ridge regression as a norm-constrained least-squares problem {#sec-ridge}
+
+This is the exact link [REGR-14] requests. Ridge regression is usually written as a
+*penalized* problem, $\min_{\boldsymbol\beta}\|\mathbf{y}-X\boldsymbol\beta\|^2 +
+\alpha\|\boldsymbol\beta\|^2$. But it has a twin **constrained** form that makes its
+geometry transparent: minimize squared error subject to a *budget* on coefficient size,
+$$
+\min_{\boldsymbol\beta}\ \|\mathbf{y}-X\boldsymbol\beta\|^2
+\quad\text{subject to}\quad
+\|\boldsymbol\beta\|^2 = t .
+$$ {#eq-ridge-constrained}
+Lagrange multipliers turn the constrained form into the penalized form and reveal the
+penalty weight $\alpha$ to be *the multiplier itself*.
+
+**Step 1 — Lagrangian** with $g(\boldsymbol\beta)=\|\boldsymbol\beta\|^2 - t$:
+$$
+\mathcal{L}(\boldsymbol\beta,\lambda)
+= \|\mathbf{y}-X\boldsymbol\beta\|^2 - \lambda\bigl(\|\boldsymbol\beta\|^2 - t\bigr).
+$$
+
+**Step 2 — stationarity in $\boldsymbol\beta$.** We need the two gradients. From [OPTM-02]
+(and re-derived there in full), $\nabla_{\boldsymbol\beta}\|\mathbf{y}-X\boldsymbol\beta\|^2
+= -2X^\top(\mathbf{y}-X\boldsymbol\beta)$ and $\nabla_{\boldsymbol\beta}\|\boldsymbol\beta\|^2
+= 2\boldsymbol\beta$. So
+$$
+\nabla_{\boldsymbol\beta}\mathcal{L}
+= -2X^\top(\mathbf{y}-X\boldsymbol\beta) - \lambda\,(2\boldsymbol\beta) = \mathbf{0}.
+$$
+Divide by $2$ and rearrange — set $\alpha=-\lambda$ to land on the standard sign:
+$$
+X^\top X\boldsymbol\beta + \alpha\,\boldsymbol\beta = X^\top\mathbf{y}
+\quad\Longrightarrow\quad
+(X^\top X + \alpha I)\,\boldsymbol\beta = X^\top\mathbf{y}
+\quad\Longrightarrow\quad
+\boxed{\ \hat{\boldsymbol\beta} = (X^\top X + \alpha I)^{-1}X^\top\mathbf{y}.\ }
+$$ {#eq-ridge-soln}
+That is **exactly the ridge estimator.** The Lagrange multiplier $\lambda$ (up to sign)
+*is* the ridge penalty weight $\alpha$. The constrained budget $t$ and the penalty $\alpha$
+are two parameterizations of one knob: a tighter budget (smaller $t$) corresponds to a
+heavier penalty (larger $\alpha$), and @sec-shadow makes that trade-off quantitative.
+
+**Step 3 — the constraint** $\|\boldsymbol\beta\|^2=t$ ties $\alpha$ to $t$: the multiplier
+adjusts until the solution's norm equals the budget. **Step 4:** the objective is convex
+(a sum of squares) and the feasible set $\|\boldsymbol\beta\|^2\le t$ is a convex ball, so
+the stationary point is the global constrained minimum (@sec-convex). @fig-ridge draws the
+tangency that @eq-ridge-soln encodes.
+
+```{python}
+#| label: fig-ridge
+#| fig-cap: "Ridge as a constrained problem, in the $(\\beta_1,\\beta_2)$ plane. Blue ellipses are level sets of the squared-error objective $\\|\\mathbf{y}-X\\boldsymbol\\beta\\|^2$, centered at the unconstrained OLS solution (open marker). The red circle is the coefficient budget $\\|\\boldsymbol\\beta\\|^2=t$. The constrained optimum (green) is where the smallest error-ellipse is **tangent** to the budget circle — exactly the Lagrange condition $\\nabla f \\parallel \\nabla g$, with $\\nabla g$ (gold) pointing radially. Shrinking the budget slides the optimum toward the origin: that is shrinkage."
+# A small, well-conditioned design so the picture is clean.
+rng = np.random.default_rng(3)
+Xd = rng.normal(size=(40, 2))
+Xd[:, 1] += 0.4 * Xd[:, 0]
+beta_true = np.array([1.6, -0.9])
+yd = Xd @ beta_true + rng.normal(0, 0.5, size=40)
+XtX = Xd.T @ Xd
+Xty = Xd.T @ yd
+beta_ols = np.linalg.solve(XtX, Xty)
+
+t = 1.3  # budget radius^2
+alpha = 6.0
+beta_ridge = np.linalg.solve(XtX + alpha * np.eye(2), Xty)
+
+b1 = np.linspace(-1.5, 2.6, 300)
+b2 = np.linspace(-2.4, 1.6, 300)
+B1, B2 = np.meshgrid(b1, b2)
+# SSE(beta) = (beta-beta_ols)^T XtX (beta-beta_ols) + const
+D1 = B1 - beta_ols[0]; D2 = B2 - beta_ols[1]
+SSE = XtX[0,0]*D1**2 + 2*XtX[0,1]*D1*D2 + XtX[1,1]*D2**2
+
+fig, ax = plt.subplots(figsize=(5.8, 5.2))
+ax.contour(B1, B2, SSE, levels=12, colors=CURVE, linewidths=0.8, alpha=0.6)
+th = np.linspace(0, 2*np.pi, 200)
+r = np.sqrt(t)
+ax.plot(r*np.cos(th), r*np.sin(th), color=CONSTR, lw=2.2, label=r"budget $\|\beta\|^2=t$")
+ax.scatter([beta_ols[0]], [beta_ols[1]], facecolor="white", edgecolor=CURVE,
+           s=90, linewidth=1.8, zorder=5, label="OLS (free min)")
+ax.scatter([beta_ridge[0]], [beta_ridge[1]], color=GRADF, s=110, zorder=6,
+           edgecolor="white", linewidth=1.4, label="ridge (constrained min)")
+# grad g at ridge point = 2*beta_ridge (radial)
+gg = beta_ridge / np.linalg.norm(beta_ridge) * 0.7
+ax.annotate("", xy=(beta_ridge[0]+gg[0], beta_ridge[1]+gg[1]),
+            xytext=(beta_ridge[0], beta_ridge[1]),
+            arrowprops=dict(arrowstyle="-|>", color=GRADG, lw=2.0))
+ax.set_xlabel(r"$\beta_1$"); ax.set_ylabel(r"$\beta_2$")
+ax.set_aspect("equal")
+ax.set_title("Ridge: error-ellipse tangent to the budget ball")
+ax.legend(loc="lower left", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Lasso swaps the $\ell_2$ budget for an $\ell_1$ one. Does Lagrange still apply?"* The
+*constraint* picture survives — minimize squared error subject to
+$\|\boldsymbol\beta\|_1\le t$ is the lasso budget — but the equality machinery of *this*
+article does not, for two reasons. First, the binding lasso constraint is an
+**inequality** $\|\boldsymbol\beta\|_1\le t$, which needs the KKT generalization of
+[OPTM-14]. Second, $\|\boldsymbol\beta\|_1$ is **non-differentiable** at the axes
+(its corners), so $\nabla g$ does not exist there — and that is *precisely* why lasso
+produces sparse solutions: the optimum loves to sit on a corner where a coefficient is
+exactly zero. The kinked-constraint case is exactly what subgradients ([OPTM-05]) and the
+KKT conditions ([OPTM-14]) were built for. So this is a clean example of the *edge* of
+equality-Lagrange applicability.
+:::
+
+## Example 3 — the edge of applicability: when the gradients refuse to align {#sec-edge}
+
+Every honest treatment shows where the method fails. @thm-lagrange carried a hypothesis we
+have so far taken for granted: $\nabla g(\mathbf{x}^\star)\neq\mathbf{0}$ (the constraint
+qualification). When it fails, the parallelism equation can have **no solution at the true
+optimum**, and a student who blindly writes the Lagrangian gets a *wrong* or *empty*
+answer. The classic teaching example, due to constraint-qualification folklore:
+$$
+\min\ f(x,y) = x
+\quad\text{subject to}\quad
+g(x,y) = y^2 - x^3 = 0 .
+$$
+The constraint curve is a **cusp** at the origin (the semicubical parabola): $y=\pm
+x^{3/2}$, which comes to a sharp point at $(0,0)$. The true constrained minimum of
+$f=x$ — the smallest $x$ on the curve — is at the cusp, $\mathbf{x}^\star=(0,0)$, since
+$x\ge0$ everywhere on the curve.
+
+Now run the ritual and watch it break. $\nabla f=(1,0)$ everywhere. $\nabla g=(-3x^2,\,2y)$,
+which at the origin is $(-3\cdot0,\,2\cdot0)=(0,0)=\mathbf{0}$. The Lagrange condition
+$\nabla f=\lambda\nabla g$ becomes
+$$
+(1,0) = \lambda\,(0,0) = (0,0),
+$$
+which is **impossible** for any $\lambda$ — the first component demands $1=0$. The method
+reports "no stationary point" at the very location that is the true optimum. The failure is
+not arithmetic; it is geometric: at a cusp the surface has no well-defined tangent
+direction and no well-defined normal, so the entire "$\nabla f$ has no tangential
+component $\Rightarrow$ parallel to the normal" argument of @sec-derive collapses — there
+is no normal to be parallel to.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability: a cusp constraint where Lagrange fails. The curve $y^2=x^3$ (red) has a sharp point at the origin. The true minimizer of $f(x,y)=x$ on the curve is the cusp $(0,0)$ — the leftmost point (green). But $\\nabla g=(-3x^2,2y)$ **vanishes** there (no normal direction exists), so the condition $\\nabla f=\\lambda\\nabla g$ — i.e. $(1,0)=\\lambda(0,0)$ — has no solution. The constraint qualification $\\nabla g\\neq\\mathbf{0}$ is exactly the hypothesis that rules out this pathology."
+xv = np.linspace(0, 1.6, 400)
+yv = xv**1.5
+fig, ax = plt.subplots(figsize=(5.6, 4.6))
+ax.plot(xv, yv, color=CONSTR, lw=2.2)
+ax.plot(xv, -yv, color=CONSTR, lw=2.2, label=r"constraint $y^2=x^3$")
+ax.scatter([0], [0], color=GRADF, s=120, zorder=6, edgecolor="white",
+           linewidth=1.4, label="true min (cusp)")
+# grad f arrow (constant)
+ax.annotate("", xy=(0.35, 0.0), xytext=(0.0, 0.0),
+            arrowprops=dict(arrowstyle="-|>", color=GRADF, lw=2.2))
+ax.text(0.37, 0.05, r"$\nabla f=(1,0)$", color=GRADF, fontsize=11)
+ax.text(0.05, -1.4, r"$\nabla g=(0,0)$ at the cusp:" "\n" r"no normal, no $\lambda$ works",
+        color=GREY, fontsize=9)
+ax.set_xlim(-0.15, 1.6); ax.set_ylim(-2.0, 2.0)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("Constraint qualification fails at a cusp")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.95)
+plt.tight_layout()
+```
+
+**What you reach for instead.** When the constraint qualification fails, the multiplier
+form is the wrong instrument. The honest moves are: (i) recognize the geometry — a
+cusp, a self-intersection, a tangency of constraints — and handle the bad point separately
+(here, just evaluate $f$ at the cusp directly); (ii) reparameterize the curve to remove the
+cusp ($x=s^2, y=s^3$ traces the same curve smoothly, and $f=x=s^2$ is trivially minimized
+at $s=0$); or (iii) use the more general optimality conditions (the Fritz John conditions,
+or KKT with a constraint qualification check in [OPTM-14]) that are built to flag exactly
+this case. The lesson for practice: **always verify $\nabla g\neq\mathbf{0}$ at your
+candidate before trusting a multiplier.** In smooth, well-posed problems — including every
+convex problem with affine constraints, where $\nabla g_k$ are constant nonzero vectors —
+this never bites; it bites on degenerate, non-smooth, or tangent-constraint geometry.
+
+# The multiplier is a shadow price {#sec-shadow}
+
+We promised the interpretation that makes duality click, and it is worth a section of its
+own because it is *the* reason practitioners care about $\lambda$ beyond solving the
+problem. The claim: **$\lambda^\star$ measures how much the optimal value would improve if
+we relaxed the constraint by one unit.** In economics that is a *price* — the value of one
+more unit of a scarce resource — hence "shadow price." Let us derive it, every step.
+
+Generalize the constraint to a movable level, $g(\mathbf{x})=c$, and let $\mathbf{x}^\star(c)$
+be the optimizer and $p^\star(c)=f(\mathbf{x}^\star(c))$ the **optimal value as a function
+of the constraint level** $c$. We compute how $p^\star$ changes with $c$.
+
+By the chain rule, differentiating $p^\star(c)=f(\mathbf{x}^\star(c))$ with respect to $c$:
+$$
+\frac{d p^\star}{dc}
+= \nabla f(\mathbf{x}^\star(c))^\top \frac{d\mathbf{x}^\star}{dc}.
+$$
+At the optimum, the Lagrange condition (now with the constraint $g(\mathbf{x})-c=0$, whose
+gradient in $\mathbf{x}$ is still $\nabla g$) gives $\nabla f=\lambda^\star\nabla g$.
+Substitute:
+$$
+\frac{d p^\star}{dc}
+= \lambda^\star\,\nabla g(\mathbf{x}^\star)^\top \frac{d\mathbf{x}^\star}{dc}.
+$$
+Now use the constraint itself. The optimizer stays feasible as $c$ moves, so
+$g(\mathbf{x}^\star(c))=c$ holds for all $c$. Differentiate *that* identity with respect to
+$c$ — left side by the chain rule, right side is just $1$:
+$$
+\nabla g(\mathbf{x}^\star)^\top \frac{d\mathbf{x}^\star}{dc} = 1 .
+$$
+This is the key cancellation: the awkward $d\mathbf{x}^\star/dc$ term, paired with
+$\nabla g$, collapses to exactly $1$. Substitute back:
+$$
+\boxed{\ \frac{d p^\star}{dc} = \lambda^\star.\ }
+$$ {#eq-shadow}
+The multiplier is the **derivative of the optimal value with respect to the constraint
+level** — the sensitivity, the marginal value, the shadow price. (We have shown this for a
+single constraint; with several, $\partial p^\star/\partial c_k=\lambda_k^\star$ by the
+identical argument, one constraint at a time.)
+
+Read what @eq-shadow buys you:
+
+- **It gives the multiplier a unit and a meaning.** In the budget problem, $\lambda$ is
+  "utility per dollar of budget" — relax the budget by one dollar and the optimal utility
+  rises by about $\lambda$. In ridge (@sec-ridge), it quantifies how much squared error you
+  pay (or save) per unit of coefficient budget — the exact slope of the error-vs-budget
+  trade-off.
+- **Its sign is informative.** A positive $\lambda^\star$ means loosening the constraint
+  *helps* the objective; the constraint is "expensive." Zero means the constraint is not
+  binding at the margin. This sign logic is precisely what hardens into the
+  dual-feasibility condition $\mu\ge0$ for *inequality* constraints in [OPTM-14].
+- **It is the seed of duality.** Reading $\lambda$ as the price of a constraint is the
+  doorway to the dual problem of [OPTM-15], where you *optimize over the prices* and
+  discover the dual is a complete shadow economy of the primal.
+
+@fig-shadow checks @eq-shadow numerically on the simple problem of @fig-why-free: vary the
+constraint level $c$ in $x+y=c$, plot the optimal value, and confirm its slope is the
+multiplier.
+
+```{python}
+#| label: fig-shadow
+#| fig-cap: "The shadow-price identity @eq-shadow, verified. For $\\min x^2+y^2$ subject to $x+y=c$, the constrained optimum is $(c/2,c/2)$ with optimal value $p^\\star(c)=c^2/2$ (blue curve). Its derivative $dp^\\star/dc=c$ (slope of the tangent, dashed) equals the Lagrange multiplier $\\lambda^\\star=c$ solved at each $c$ (gold dots). The multiplier *is* the marginal value of relaxing the constraint, exactly as derived."
+c_vals = np.linspace(0.5, 4.0, 200)
+p_star = c_vals**2 / 2  # optimal value
+# multiplier: grad f = (2x,2y)=(c,c); grad g=(1,1); lambda = c
+lam = c_vals.copy()
+
+fig, ax = plt.subplots(figsize=(6.4, 4.2))
+ax.plot(c_vals, p_star, color=CURVE, lw=2.2, label=r"optimal value $p^\star(c)=c^2/2$")
+# tangent at c0
+c0 = 2.0
+p0 = c0**2/2
+slope = c0
+tt = np.linspace(c0 - 0.9, c0 + 0.9, 50)
+ax.plot(tt, p0 + slope*(tt - c0), color=GREY, ls="--", lw=1.6,
+        label=fr"tangent slope $=\lambda^\star={slope:.0f}$ at $c={c0:.0f}$")
+# sample multiplier dots
+cs = np.array([1.0, 2.0, 3.0])
+ax.scatter(cs, cs**2/2, color=GRADG, s=70, zorder=5,
+           label=r"$\lambda^\star(c)=dp^\star/dc$")
+ax.set_xlabel("constraint level $c$ (in $x+y=c$)")
+ax.set_ylabel(r"optimal value $p^\star$")
+ax.set_title(r"Multiplier $=$ slope of optimal value vs. constraint")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"A constraint has multiplier $\lambda^\star = 0$ at the optimum — what does that tell
+you?"* That the constraint is **not binding at the margin**: relaxing it would not improve
+the objective, because $\nabla f$ already vanishes (a free stationary point happens to lie
+on the surface) or the optimum would not move. For equality constraints this is unusual but
+possible. The reason the question matters is its sequel: for *inequality* constraints
+([OPTM-14]), a zero multiplier is the signature of an **inactive** constraint, and the
+condition "multiplier zero **or** constraint active" is **complementary slackness**, the
+heart of KKT. The shadow-price reading you derived here is what makes that condition
+intuitive rather than a rule to memorize.
+:::
+
+# Failure modes and when to reach for something else {#sec-failure}
+
+Pulling the boundaries together, since judgment is the goal.
+
+::: {.callout-warning title="Pitfall"}
+**Lagrange finds stationary points, not minima — and only if the geometry is clean.** The
+three ways the method misleads, in order of how often they bite:
+
+1. **It does not tell min from max from saddle.** @thm-lagrange is *necessary only*. You
+   must sort the stationary points with a second-order check (@sec-second-order),
+   convexity (@sec-convex), or by simply evaluating $f$ at each candidate. Reporting the
+   first solution of the stationarity system as "the minimum" is the most common error.
+2. **The constraint qualification can fail** (@sec-edge): if $\nabla g=\mathbf{0}$ at the
+   optimum (a cusp, a self-intersection) or the multiple-constraint normals are linearly
+   dependent, the parallelism equation may have no solution at the true optimum, and the
+   method silently misses it. Always check $\nabla g\neq\mathbf{0}$ at your candidate.
+3. **It assumes equality and smoothness.** Inequality constraints
+   ($g(\mathbf{x})\le0$) need KKT ([OPTM-14]); non-differentiable constraints (an $\ell_1$
+   ball, a polytope's corner) need subgradients ([OPTM-05]) or KKT. Equality Lagrange is
+   the *smooth-surface, two-sided-fence* tool; outside that it is the wrong instrument.
+:::
+
+**Where it shines.** Smooth objective, smooth equality constraints with nonvanishing
+gradients, and — ideally — convex objective with affine constraints, where stationarity is
+*global* and the answer is the genuine minimum. That regime covers an enormous amount:
+linearly-constrained least squares, maximum-entropy and exponential-family derivations, the
+$\ell_2$/ridge geometry, equality-constrained quadratic programs, portfolio optimization
+with a budget, and the analytical backbone of physics and economics.
+
+**Where it does not, and the alternative:**
+
+- **Inequalities** ($\le$, $\ge$): use the **KKT conditions** ([OPTM-14]) — the direct
+  generalization, with one new ingredient (a sign condition and complementary slackness).
+- **Non-smooth constraints / penalties** (the $\ell_1$ ball, kinks): **subgradients**
+  ([OPTM-05]) and **proximal/projected methods** ([OPTM-16]).
+- **Large-scale numerical problems** where you cannot solve the stationarity system by
+  hand: feed the Lagrangian to a numerical solver — augmented-Lagrangian / ADMM methods,
+  or interior-point methods — which are built on exactly this stationarity but iterate
+  toward it. The hand-method here is the *theory*; those are the *engines*.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the **on-ramp and the two spines**: [OPTM-02] taught the unconstrained
+test $\nabla f=\mathbf{0}$ and the gradient-as-steepest-ascent reading that this article
+amended for the constrained world. This is the first of the four **constrained-optimization**
+articles, and it establishes the geometric and algebraic core the other three extend:
+
+- **[OPTM-14 *Inequality Constraints and the KKT Conditions*]** — the fence becomes
+  one-sided, $g(\mathbf{x})\le0$. The parallelism survives but gains a **sign condition**
+  ($\mu\ge0$) and **complementary slackness** ($\mu g=0$) — both of which the shadow-price
+  reading (@sec-shadow) makes inevitable rather than arbitrary. This is the optimality
+  backbone the SVM (Classification) links here for.
+- **[OPTM-15 *Duality*]** — the multiplier $\lambda$, re-read as a *price*, is promoted to
+  the decision variable of a twin problem. The min–max saddle structure of the Lagrangian
+  (the Pitfall in @sec-lagrangian) is exactly the primal–dual relationship.
+- **[OPTM-16 *Proximal and Projected Methods*]** — when the constraint set is non-smooth or
+  you must iterate numerically, projection and proximal operators replace the hand-solved
+  stationarity system.
+
+Downstream of the track, the **ridge derivation** (@sec-ridge) is the exact constrained-vs-
+penalized equivalence [REGR-14] links here for, and the **maximum-entropy / exponential-form**
+result (@sec-entropy) underlies the softmax and Gibbs distributions across Classification
+and Unsupervised Learning.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary source.** Lagrange, *Mécanique analytique* (1788) — the method born as the
+  mechanics of constraint forces, where the multiplier *is* a physical force. The modern
+  optimization framing traces through the 20th-century work that became the KKT conditions
+  ([OPTM-14]).
+- **The standard reference.** Boyd & Vandenberghe, *Convex Optimization*, Ch. 5 (duality),
+  whose treatment of the Lagrangian, the shadow-price/sensitivity reading, and the move to
+  KKT is the path [OPTM-14] and [OPTM-15] follow.
+- **Open threads this article deliberately deferred.** *What about one-sided constraints?*
+  — the KKT conditions, [OPTM-14]. *Why does the Lagrangian's saddle structure matter, and
+  can I solve the dual instead of the primal?* — duality, [OPTM-15], where weak/strong
+  duality and Slater's condition close the loop. *What is the rigorous statement and proof
+  of the constraint qualification and the second-order (bordered Hessian) conditions?* —
+  any graduate text on nonlinear programming (Nocedal & Wright, *Numerical Optimization*,
+  Ch. 12); we used the conditions honestly but did not prove the bordered-Hessian test in
+  full, flagging it as the one second-order result we stated and motivated rather than
+  derived end-to-end.

@@ -1,0 +1,1209 @@
+---
+title: "Newton's Method and Second-Order Optimization"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # the objective / true surface
+NEWTON  = "#c1121f"    # the Newton step / quadratic model
+GD      = "#6c757d"    # gradient descent, for contrast
+ACCENT  = "#0a7d4d"    # the optimum / highlights
+GREY    = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the fourth and final article of the
+> Optimization track's **descent spine**, and the one that breaks the dependence on the
+> condition number that haunted the previous three. It assumes [OPTM-02 *Minimizing in
+> Many Variables*] for the **gradient** $\nabla f$, the **Hessian** $\nabla^2 f$, the
+> **Hessian test** (positive-definite $\Rightarrow$ local min), and **quadratic forms**
+> $\mathbf{d}^\top H\mathbf{d}$. It assumes [OPTM-06 *Gradient Descent*] for the iterate
+> picture and the negative-gradient step, and [OPTM-07 *Step Size and Convergence*] for
+> **$L$-smoothness**, the **condition number** $\kappa=L/\mu$, the **linear rate**
+> $\rho=1-1/\kappa$, and **backtracking line search** — the machinery this article will
+> show second-order methods escape. From the *Geometry of Data / Applied Linear Algebra*
+> track it borrows three objects, *used*, not re-derived: **solving a linear system**
+> $H\mathbf{p}=-\mathbf{g}$, the **Cholesky / matrix factorization** that does it in
+> $O(p^3)$, and **positive-definiteness** of a symmetric matrix.
+>
+> **What it sets up.** It is **consumed by** Regression [REGR-17] (logistic regression by
+> **IRLS**) and Statistical Inference [INFR-B2]/[INFR-B4] (computing the MLE and
+> **Fisher scoring**) — both link here for *Newton's method*. The Gauss–Newton and
+> quasi-Newton (BFGS / L-BFGS) material below is the precise tool those articles request.
+
+## Abstract {.unnumbered}
+
+Gradient descent ([OPTM-06]) sees only the slope at the current point, and [OPTM-07]
+showed the price: on an ill-conditioned bowl it zig-zags, and the number of steps to
+converge grows linearly with the condition number $\kappa$. This article takes the next
+honest step — *use the curvature too.* We build a local **quadratic model** of the
+objective from its second-order Taylor expansion, then **jump to that model's exact
+minimizer** instead of inching downhill. That jump is the **Newton step**
+$$
+\mathbf{x}_{k+1} = \mathbf{x}_k - \bigl[\nabla^2 f(\mathbf{x}_k)\bigr]^{-1}\nabla f(\mathbf{x}_k),
+$$
+and we derive it from scratch — first for root-finding in one dimension ($x-f/f'$), then
+for minimization, where the same logic minimizes the quadratic model exactly. We prove its
+two signature properties: **quadratic convergence** near the optimum (the number of correct
+digits roughly *doubles* each step) and **affine invariance** (it does not see the
+conditioning that cripples gradient descent, so $\kappa$ drops out entirely). Then we are
+honest about the cost and the failure modes: forming and factoring the Hessian is $O(p^3)$
+per step, and a Newton step toward a *non*-positive-definite Hessian can climb instead of
+descend — fixed by **damping** (a line search) and **Hessian modification** (trust-region /
+Levenberg–Marquardt). Finally we deliver the two workhorses the rest of the series links
+here for: **Gauss–Newton** and its statistical twin **IRLS / Fisher scoring** (the exact
+algorithm that fits logistic regression and GLMs), and **quasi-Newton** methods (**BFGS**
+and **L-BFGS**) that buy most of Newton's speed from gradients alone, never forming a
+Hessian. Worked examples carry it end to end: a quadratic where Newton lands in one step, a
+logistic-regression fit by IRLS, a Gauss–Newton nonlinear curve fit, and — at the edge of
+applicability — a function where the raw Newton step diverges and damping rescues it.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Gradient descent uses only the **slope**. Newton's method also uses the **curvature**: at
+the current point it fits the *best local quadratic* — the second-order Taylor model — and
+**jumps straight to that quadratic's minimizer**. In one dimension the rule is
+$x_{k+1}=x_k - f'(x_k)/f''(x_k)$; in many variables it is
+$$
+\mathbf{x}_{k+1} = \mathbf{x}_k - H_k^{-1}\mathbf{g}_k,
+\qquad \mathbf{g}_k=\nabla f(\mathbf{x}_k),\;\; H_k=\nabla^2 f(\mathbf{x}_k).
+$$
+Two consequences justify the whole method. **(1) Speed:** near a well-behaved minimum the
+error is *squared* each step (quadratic convergence) — three or four steps to full machine
+precision — and because the step is **affine-invariant**, the condition number $\kappa$ that
+governed gradient descent ([OPTM-07]) *drops out entirely*. **(2) Cost and fragility:** each
+step forms the $p\times p$ Hessian and solves a linear system, $O(p^3)$, and if $H_k$ is not
+positive-definite the "minimizer" of the model can be a *maximizer* — the step heads
+uphill. The fixes — **damping** (line-search the Newton direction), **Hessian
+modification** (trust regions, Levenberg–Marquardt), and **quasi-Newton** approximations
+that never form $H$ at all (BFGS, L-BFGS) — are what make second-order optimization usable
+in practice. Its statistical incarnation, **IRLS / Fisher scoring**, is how logistic
+regression and every GLM are actually fit.
+:::
+
+Everything below orbits that box. The single idea — *replace the function locally by a
+quadratic and minimize that exactly* — is the engine; quadratic convergence, affine
+invariance, the $O(p^3)$ cost, the positive-definiteness trap, Gauss–Newton, and BFGS are
+all consequences of it, derived in turn.
+
+# Why we are here: the slope is not the whole story {#sec-why}
+
+Keep one question in view for the whole article: **gradient descent throws away the
+curvature of the objective — what do we gain by using it, and what does it cost?** Every
+derivation below answers a piece of that.
+
+## What OPTM-07 left us holding {#sec-left-holding}
+
+[OPTM-07] gave gradient descent a guarantee and, in the same breath, a disease. On a
+strongly convex, $L$-smooth objective the iterates converge **linearly**, the error
+multiplied by
+$$
+\rho = 1 - \frac{\mu}{L} = 1 - \frac{1}{\kappa}
+$$
+each step, where $\kappa=L/\mu$ is the **condition number** — the ratio of the steepest to
+the shallowest curvature. When $\kappa\approx 1$ (a round bowl) descent is nearly instant.
+But real objectives are stretched: a ravine with $\kappa=1000$ needs on the order of
+$\kappa\ln(1/\varepsilon)\approx 1000\times$ as many steps as a round bowl for the same
+accuracy. The iterates zig-zag across the narrow valley because the negative gradient points
+mostly *across* the ravine, not *along* it toward the minimum.
+
+Here is the diagnosis [OPTM-07] forced on us, in one sentence: **gradient descent is blind
+to the fact that the ravine is a ravine.** It measures the slope, which is steep across the
+valley and gentle along it, and dutifully steps in the steep direction — exactly the wrong
+one. The slope is a *first-order* object; the shape of the valley — how the slope itself
+*changes* as you move — is a *second-order* object. It lives in the **Hessian**, the matrix
+of second partial derivatives that [OPTM-02] introduced for the Hessian test. Gradient
+descent never looks at it.
+
+So the question writes itself: **if we measured the curvature, could we step in the right
+direction instead of the steep one — straight down the ravine to the bottom?** The answer
+is yes, and the method that does it is three centuries old.
+
+## A 250-year-old idea, repurposed {#sec-history}
+
+Isaac Newton, around 1669, and Joseph Raphson, in 1690, devised a method not for
+*minimizing* but for *solving equations* — finding where a function crosses zero,
+$f(x)=0$. Their trick: replace the curve near your current guess by its **tangent line**,
+and jump to where the tangent hits zero, because a line is trivial to solve. Repeat. The
+tangent is the first-order Taylor model; "jump to where the model is zero" is the whole
+method. It converges astonishingly fast — the number of correct digits roughly doubles each
+step — and it is the root-finder buried inside every `sqrt`, every `log`, every numerical
+library on Earth.
+
+The repurposing for optimization is one observation away. **Minimizing a smooth function $f$
+is the same as finding a root of its derivative $f'$.** A smooth interior minimum sits where
+$f'(x)=0$ ([OPTM-01]); in many variables, where $\nabla f(\mathbf{x})=\mathbf{0}$
+([OPTM-02]). So *apply Newton's root-finder to $f'$* and you get Newton's method for
+optimization. The tangent-to-$f'$ picture turns into a **parabola-to-$f$** picture: we model
+$f$ itself by a parabola and jump to the parabola's vertex. That is the bridge from
+"derivative test" to "second-order optimizer," and we build it in full below.
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what is the difference between gradient descent and Newton's method?"*
+Gradient descent uses a **linear** (first-order) model of the objective and so can only pick
+a *direction*; Newton's method uses a **quadratic** (second-order) model and so picks a
+direction *and* the exact step length to that model's minimizer in one shot. Said
+differently: gradient descent solves "which way is downhill?"; Newton solves "where is the
+bottom of the bowl that best matches the function right here?"
+:::
+
+# Intuition before symbols: fit a parabola, jump to its bottom {#sec-intuition}
+
+Before any algebra, the picture. Stand at a point $x_k$ on a smooth curve $f$. Gradient
+descent feels the slope $f'(x_k)$ and shuffles a fixed fraction of it downhill, with no idea
+how far the bottom is. Newton's method does something bolder: it builds the **unique
+parabola** that matches $f$ at $x_k$ in *height, slope, and curvature* — and a parabola has a
+vertex you can solve for exactly. So Newton **jumps to the vertex.** If the true function
+were that parabola, you would be done in one step. It is not, exactly — so you re-fit a new
+parabola at the new point and jump again. Near a minimum the function looks more and more
+like its matching parabola, which is precisely why the method gets *spectacularly* accurate
+as it closes in.
+
+@fig-parabola draws one Newton step against one gradient step from the same point, so you
+can see the difference between "shuffle along the slope" and "jump to the matching
+parabola's bottom."
+
+```{python}
+#| label: fig-parabola
+#| fig-cap: "One step, two philosophies, same start. The objective (navy) is $f(x)=\\tfrac14 x^4 - x^2 + x + 3$. From $x_k=2.1$, **gradient descent** (grey) takes a small step against the slope $f'(x_k)$ and barely moves. **Newton's method** (red) fits the matching parabola $m(x)=f(x_k)+f'(x_k)(x-x_k)+\\tfrac12 f''(x_k)(x-x_k)^2$ — matching $f$ in value, slope, *and* curvature at $x_k$ — and jumps to that parabola's vertex $x_{k+1}=x_k-f'(x_k)/f''(x_k)$, landing far closer to the true minimum (green). The parabola, not the line, is what lets Newton choose a step length."
+f   = lambda x: 0.25*x**4 - x**2 + x + 3
+fp  = lambda x: x**3 - 2*x + 1
+fpp = lambda x: 3*x**2 - 2
+
+xk = 2.1
+gk, Hk = fp(xk), fpp(xk)
+x_newton = xk - gk/Hk
+eta_gd = 0.06
+x_gd = xk - eta_gd*gk
+
+xs = np.linspace(-2.4, 2.6, 400)
+# matching parabola at xk
+m = lambda x: f(xk) + gk*(x-xk) + 0.5*Hk*(x-xk)**2
+# true minimizer (right well) for reference
+xstar = -2.0
+from numpy.polynomial import polynomial as P  # noqa
+# locate true min numerically among roots of f'
+roots = np.roots([1,0,-2,1])
+roots = np.sort(roots[np.isreal(roots)].real)
+xstar = roots[np.argmin([f(r) for r in roots])]
+
+fig, ax = plt.subplots()
+ax.plot(xs, f(xs), color=CURVE, label=r"objective $f$")
+ax.plot(xs, m(xs), color=NEWTON, ls="--", lw=1.6, label="matching parabola at $x_k$")
+ax.scatter([xk], [f(xk)], color=CURVE, s=55, zorder=5)
+ax.annotate("$x_k$", (xk, f(xk)), textcoords="offset points", xytext=(8, 8))
+ax.scatter([x_newton], [f(x_newton)], color=NEWTON, s=70, zorder=5, label="Newton lands here")
+ax.scatter([x_gd], [f(x_gd)], color=GD, s=70, zorder=5, label="gradient step lands here")
+ax.scatter([xstar], [f(xstar)], color=ACCENT, s=90, marker="*", zorder=6, label="true minimum")
+ax.set_ylim(0, 9)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("Newton fits a parabola and jumps to its vertex")
+ax.legend(loc="upper center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+The figure already whispers the catch we will confront in @sec-failure: a parabola only has
+a *minimum* if it opens **upward**, i.e. if $f''(x_k)>0$. Where the curvature is negative,
+the matching parabola opens downward and its vertex is a *maximum* — jump to it and you climb.
+Hold that thought; it is the central fragility of the method.
+
+# Formal development I: Newton for root-finding {#sec-rootfinding}
+
+We build the optimizer the way history did: first the root-finder, then turn it on $f'$.
+
+## The one-dimensional root iteration {#sec-1d-root}
+
+We want a solution of $f(x)=0$ for a differentiable $f:\mathbb{R}\to\mathbb{R}$. We cannot
+solve it directly, so we **linearize**. The first-order Taylor expansion of $f$ about the
+current guess $x_k$ — the tangent line — is
+
+$$
+f(x) \approx f(x_k) + f'(x_k)\,(x - x_k).
+$$ {#eq-tangent}
+
+This is exact for a line and a good approximation near $x_k$ for anything smooth. The
+tangent is trivial to solve: set its right-hand side to zero and call the solution
+$x_{k+1}$,
+
+$$
+f(x_k) + f'(x_k)\,(x_{k+1} - x_k) = 0.
+$$
+
+Solve for $x_{k+1}$. Subtract $f(x_k)$, then divide by $f'(x_k)$ (assuming $f'(x_k)\neq 0$ —
+a flat tangent never crosses zero, the first failure mode):
+
+$$
+x_{k+1} - x_k = -\frac{f(x_k)}{f'(x_k)}
+\quad\Longrightarrow\quad
+\boxed{\;x_{k+1} = x_k - \frac{f(x_k)}{f'(x_k)}.\;}
+$$ {#eq-newton-root}
+
+That is Newton's root-finding iteration. In words: from your guess, run down the tangent
+line to where it crosses zero, and make that your next guess. @fig-rootfinding shows two
+steps converging on $\sqrt{2}$ — the root of $f(x)=x^2-2$ — the very computation a hardware
+square-root unit performs.
+
+```{python}
+#| label: fig-rootfinding
+#| fig-cap: "Newton's root-finder solving $x^2-2=0$ (so the root is $\\sqrt 2\\approx 1.4142$). From $x_0=2$, each step replaces the curve (navy) by its tangent (red dashed) and jumps to where the tangent crosses zero (red dots on the axis). Two steps already give $1.41421\\ldots$ — the number of correct digits roughly doubles each iteration. This is the same arithmetic inside a hardware square-root."
+f   = lambda x: x**2 - 2
+fp  = lambda x: 2*x
+xs = np.linspace(0.8, 2.2, 300)
+
+fig, ax = plt.subplots()
+ax.axhline(0, color=GREY, lw=1.0)
+ax.plot(xs, f(xs), color=CURVE, label=r"$f(x)=x^2-2$")
+x = 2.0
+cols = [NEWTON, "#7a0c14"]
+for k in range(2):
+    g = fp(x)
+    xn = x - f(x)/g
+    # tangent line through (x, f(x))
+    tx = np.linspace(min(x, xn)-0.15, max(x, xn)+0.15, 50)
+    ax.plot(tx, f(x) + g*(tx - x), color=cols[k], ls="--", lw=1.3)
+    ax.scatter([x], [f(x)], color=CURVE, s=45, zorder=5)
+    ax.scatter([xn], [0], color=cols[k], s=55, zorder=6)
+    ax.annotate(f"$x_{k}$", (x, f(x)), textcoords="offset points", xytext=(6, 6))
+    x = xn
+ax.scatter([np.sqrt(2)], [0], color=ACCENT, s=90, marker="*", zorder=7, label=r"root $\sqrt{2}$")
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("Newton root-finding: jump down the tangent to zero")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+print("Newton iterates for sqrt(2):")
+x = 2.0
+for k in range(5):
+    print(f"  x_{k} = {x:.15f}   error = {x-np.sqrt(2): .2e}")
+    x = x - (x**2-2)/(2*x)
+```
+
+The printed errors make the speed concrete: $0.6 \to 0.09 \to 0.002 \to 10^{-6} \to
+10^{-12}$. Each error is roughly the *square* of the previous one — the hallmark of
+**quadratic convergence**, which we prove in @sec-quadratic.
+
+# Formal development II: Newton for minimization {#sec-minimization}
+
+Now the repurposing. To minimize a smooth $f$, we want $\nabla f=\mathbf{0}$. We will derive
+the step two equivalent ways — by applying the root-finder to the derivative, and by
+minimizing a quadratic model directly — because each illuminates a different half of the
+method.
+
+## Route 1 — apply the root-finder to the derivative {#sec-route1}
+
+A smooth interior minimizer of $f$ is a *root of its derivative*: $f'(x^\star)=0$
+([OPTM-01]). So set $g(x)=f'(x)$ and run the root iteration @eq-newton-root on $g$. The
+derivative of $g$ is $g'(x)=f''(x)$, so substituting $g=f'$ and $g'=f''$ into
+@eq-newton-root gives, in one dimension,
+
+$$
+\boxed{\;x_{k+1} = x_k - \frac{f'(x_k)}{f''(x_k)}.\;}
+$$ {#eq-newton-1d}
+
+Read it against gradient descent's $x_{k+1}=x_k-\eta f'(x_k)$. The *direction* is the same —
+opposite the slope — but the step length is no longer a guessed constant $\eta$. It is
+$1/f''(x_k)$: **the reciprocal of the curvature.** Where the function curves sharply (large
+$f''$), the step is short and cautious; where it is nearly flat (small $f''$), the step is
+long and bold. Newton sizes its own step from the local geometry. That is the whole upgrade,
+and @eq-newton-1d already shows the trap: if $f''(x_k)<0$, the step has the *wrong sign* and
+climbs (@sec-failure).
+
+## Route 2 — minimize the quadratic model directly {#sec-route2}
+
+The second route generalizes cleanly to many variables and is the one we carry forward.
+Instead of linearizing $f'$, we build a **second-order Taylor model of $f$ itself** about
+$\mathbf{x}_k$. For $f:\mathbb{R}^p\to\mathbb{R}$, with gradient $\mathbf{g}_k=\nabla
+f(\mathbf{x}_k)$ (a $p$-vector) and Hessian $H_k=\nabla^2 f(\mathbf{x}_k)$ (the symmetric
+$p\times p$ matrix of second partials, from [OPTM-02]), the model is
+
+$$
+m_k(\mathbf{x}) = f(\mathbf{x}_k)
+  + \mathbf{g}_k^\top(\mathbf{x}-\mathbf{x}_k)
+  + \tfrac{1}{2}\,(\mathbf{x}-\mathbf{x}_k)^\top H_k\,(\mathbf{x}-\mathbf{x}_k).
+$$ {#eq-quad-model}
+
+This is the multivariable Taylor expansion to second order — the unique quadratic that
+matches $f$ in value, gradient, and Hessian at $\mathbf{x}_k$. (The $\tfrac12$ is the same
+$\tfrac12$ that sits in front of $f''(a)(x-a)^2$ in the one-variable Taylor formula you know
+from Calc 1; it survives the jump to many variables because it comes from integrating twice.)
+Let $\mathbf{p}=\mathbf{x}-\mathbf{x}_k$ be the **step** we are choosing. Rewrite the model
+as a function of $\mathbf{p}$:
+
+$$
+m_k(\mathbf{p}) = f(\mathbf{x}_k) + \mathbf{g}_k^\top\mathbf{p}
+  + \tfrac{1}{2}\,\mathbf{p}^\top H_k\,\mathbf{p}.
+$$ {#eq-quad-in-p}
+
+We minimize this over $\mathbf{p}$ exactly — and here is where we *use*, not assume, the
+[OPTM-02] machinery. A quadratic in $\mathbf{p}$ is minimized where its gradient (with
+respect to $\mathbf{p}$) vanishes. We need two vector-calculus derivative facts, both proved
+in [OPTM-02] from the definition of the gradient; we restate them because the reader is rusty:
+
+$$
+\nabla_{\mathbf{p}}\bigl(\mathbf{g}_k^\top\mathbf{p}\bigr) = \mathbf{g}_k,
+\qquad
+\nabla_{\mathbf{p}}\bigl(\tfrac12\,\mathbf{p}^\top H_k\,\mathbf{p}\bigr) = H_k\,\mathbf{p}
+\quad(\text{since } H_k \text{ is symmetric}).
+$$ {#eq-vec-derivs}
+
+The first is the gradient of a linear form: differentiating $\sum_j (g_k)_j p_j$ with respect
+to $p_i$ leaves $(g_k)_i$, so stacking gives $\mathbf{g}_k$. The second is the gradient of a
+quadratic form: differentiating $\tfrac12\sum_{i,j} p_i (H_k)_{ij} p_j$ with respect to $p_i$
+gives $\tfrac12\bigl(\sum_j (H_k)_{ij}p_j + \sum_j (H_k)_{ji}p_j\bigr) = \sum_j (H_k)_{ij}p_j$
+when $H_k$ is symmetric ($(H_k)_{ij}=(H_k)_{ji}$, true for any twice-differentiable $f$ by
+the equality of mixed partials), i.e. row $i$ of $H_k\mathbf{p}$. Setting the model's
+gradient to zero,
+
+$$
+\nabla_{\mathbf{p}}\, m_k(\mathbf{p}) = \mathbf{g}_k + H_k\,\mathbf{p} = \mathbf{0}.
+$$ {#eq-model-stationary}
+
+Solve for the step. Move $\mathbf{g}_k$ over and multiply by the inverse Hessian:
+
+$$
+H_k\,\mathbf{p} = -\mathbf{g}_k
+\quad\Longrightarrow\quad
+\mathbf{p}^{\text{N}}_k = -H_k^{-1}\mathbf{g}_k.
+$$ {#eq-newton-step}
+
+The vector $\mathbf{p}^{\text{N}}_k=-H_k^{-1}\mathbf{g}_k$ is the **Newton step** (or Newton
+direction). Adding it to $\mathbf{x}_k$ gives the multivariate Newton iteration:
+
+$$
+\boxed{\;\mathbf{x}_{k+1} = \mathbf{x}_k - H_k^{-1}\,\mathbf{g}_k
+   = \mathbf{x}_k - \bigl[\nabla^2 f(\mathbf{x}_k)\bigr]^{-1}\nabla f(\mathbf{x}_k).\;}
+$$ {#eq-newton-multi}
+
+Set $p=1$ and this collapses to @eq-newton-1d: $H_k$ is the single number $f''(x_k)$, its
+inverse is $1/f''(x_k)$, and the step is $-f'(x_k)/f''(x_k)$. The two routes agree, as they
+must, since "root of $f'$" and "vertex of the quadratic model of $f$" are the same point.
+
+::: {.callout-warning title="Pitfall"}
+**You never *compute the inverse* $H_k^{-1}$; you *solve the linear system* $H_k\mathbf{p}
+=-\mathbf{g}_k$.** Writing $H^{-1}\mathbf{g}$ on paper is fine, but forming the matrix
+$H^{-1}$ explicitly and multiplying is slower *and* numerically worse than solving the
+system directly (e.g. by a Cholesky factorization when $H$ is positive-definite). In code
+the line is `p = np.linalg.solve(H, -g)`, never `p = -np.linalg.inv(H) @ g`. This is the
+single most common implementation mistake in a Newton method, and an interviewer will probe
+it.
+:::
+
+## Reading the step: Newton rescales space {#sec-rescale}
+
+Why is $-H^{-1}\mathbf{g}$ a *better* direction than $-\mathbf{g}$? Because $H^{-1}$ undoes
+the stretching of the bowl. Gradient descent steps along $-\mathbf{g}$, which on a stretched
+bowl points mostly across the ravine. Multiplying by $H^{-1}$ *divides out the curvature*:
+directions of large curvature (the steep walls) are shrunk, directions of small curvature
+(the gentle valley floor) are stretched, and what comes out points down the valley toward
+the bottom. In the eigenbasis of $H$, with eigenvalues $\lambda_1,\dots,\lambda_p$
+(the curvatures along the principal axes), the gradient component along axis $j$ is divided
+by $\lambda_j$ — so the badly-scaled and well-scaled directions are equalized. The next
+section makes this exact: it is *why* the condition number disappears.
+
+# Formal development III: why Newton is fast — quadratic convergence and affine invariance {#sec-fast}
+
+Two theorems justify the method. The first explains the eye-popping speed; the second
+explains why $\kappa$ vanishes.
+
+## Quadratic convergence {#sec-quadratic}
+
+::: {#thm-quadratic}
+**Theorem (local quadratic convergence).** Let $f$ be twice continuously differentiable with
+a minimizer $\mathbf{x}^\star$ at which the Hessian $H^\star=\nabla^2 f(\mathbf{x}^\star)$ is
+positive-definite (so $H^\star$ is invertible), and suppose the Hessian is **Lipschitz** near
+$\mathbf{x}^\star$: $\|\nabla^2 f(\mathbf{x})-\nabla^2 f(\mathbf{y})\|\le M\|\mathbf{x}
+-\mathbf{y}\|$ for some constant $M$. Then for $\mathbf{x}_k$ close enough to
+$\mathbf{x}^\star$, the Newton iterate @eq-newton-multi satisfies
+$$
+\|\mathbf{x}_{k+1}-\mathbf{x}^\star\| \;\le\; C\,\|\mathbf{x}_k-\mathbf{x}^\star\|^2
+$$
+for a constant $C$. The error is squared each step: convergence is **quadratic**.
+:::
+
+::: {.proof}
+Write the error $\mathbf{e}_k=\mathbf{x}_k-\mathbf{x}^\star$. We track how
+$\mathbf{e}_{k+1}$ depends on $\mathbf{e}_k$. Start from the iteration and subtract
+$\mathbf{x}^\star$ from both sides:
+
+$$
+\mathbf{e}_{k+1} = \mathbf{x}_{k+1}-\mathbf{x}^\star
+= \mathbf{x}_k - H_k^{-1}\mathbf{g}_k - \mathbf{x}^\star
+= \mathbf{e}_k - H_k^{-1}\mathbf{g}_k.
+$$
+
+Now factor out $H_k^{-1}$ (it is invertible near $\mathbf{x}^\star$, since $H^\star$ is and
+the Hessian varies continuously), writing $\mathbf{e}_k = H_k^{-1}H_k\mathbf{e}_k$:
+
+$$
+\mathbf{e}_{k+1} = H_k^{-1}\bigl(H_k\,\mathbf{e}_k - \mathbf{g}_k\bigr).
+$$ {#eq-err-recur}
+
+Everything now rides on the quantity in parentheses, $H_k\mathbf{e}_k-\mathbf{g}_k$. We
+evaluate it using the **fundamental theorem of calculus for the gradient** — the multivariate
+version of "the change in a function is the integral of its derivative," a Calc-1 idea lifted
+to vectors. Because $\nabla f(\mathbf{x}^\star)=\mathbf{0}$, the gradient at $\mathbf{x}_k$
+is the *accumulated change in the gradient* from $\mathbf{x}^\star$ to $\mathbf{x}_k$, and
+the rate of change of the gradient is the Hessian:
+
+$$
+\mathbf{g}_k = \nabla f(\mathbf{x}_k) - \underbrace{\nabla f(\mathbf{x}^\star)}_{=\,\mathbf{0}}
+= \int_0^1 \nabla^2 f\bigl(\mathbf{x}^\star + t\,\mathbf{e}_k\bigr)\,\mathbf{e}_k\,dt.
+$$ {#eq-ftc-grad}
+
+(The integrand is the Hessian at a point sliding from $\mathbf{x}^\star$ to $\mathbf{x}_k$,
+times the direction $\mathbf{e}_k$; integrating it from $0$ to $1$ accumulates the total
+change in $\nabla f$ along that segment. This is exactly $\int_a^b g'(t)\,dt = g(b)-g(a)$,
+applied component-wise to $\nabla f$.) Since $\mathbf{e}_k$ does not depend on $t$, we may
+also write the *constant* term $H_k\mathbf{e}_k = \int_0^1 H_k\,\mathbf{e}_k\,dt$. Subtract:
+
+$$
+H_k\,\mathbf{e}_k - \mathbf{g}_k
+= \int_0^1 \Bigl[H_k - \nabla^2 f(\mathbf{x}^\star + t\,\mathbf{e}_k)\Bigr]\,\mathbf{e}_k\,dt.
+$$ {#eq-diff-integral}
+
+Now bound the norm. Take norms in @eq-err-recur and @eq-diff-integral, using
+$\|A\mathbf{v}\|\le\|A\|\,\|\mathbf{v}\|$ and that the norm of an integral is at most the
+integral of the norm:
+
+$$
+\|\mathbf{e}_{k+1}\| \le \|H_k^{-1}\|\int_0^1
+   \bigl\|H_k - \nabla^2 f(\mathbf{x}^\star+t\mathbf{e}_k)\bigr\|\;\|\mathbf{e}_k\|\,dt.
+$$
+
+Apply the Lipschitz bound to the matrix difference. The two Hessians are evaluated at
+$\mathbf{x}_k$ (recall $H_k=\nabla^2 f(\mathbf{x}_k)$) and at $\mathbf{x}^\star+t\mathbf{e}_k$,
+which are a distance $\|\mathbf{x}_k - (\mathbf{x}^\star+t\mathbf{e}_k)\| =
+\|(1-t)\mathbf{e}_k\| = (1-t)\|\mathbf{e}_k\|$ apart. So
+
+$$
+\bigl\|H_k - \nabla^2 f(\mathbf{x}^\star+t\mathbf{e}_k)\bigr\| \le M(1-t)\|\mathbf{e}_k\|.
+$$
+
+Substitute and pull the $\mathbf{e}_k$ factors out of the integral (they do not depend on
+$t$ except through the $(1-t)$ we just produced):
+
+$$
+\|\mathbf{e}_{k+1}\| \le \|H_k^{-1}\|\,M\,\|\mathbf{e}_k\|^2 \int_0^1 (1-t)\,dt
+= \|H_k^{-1}\|\,M\,\|\mathbf{e}_k\|^2 \cdot \tfrac12.
+$$
+
+The integral $\int_0^1(1-t)\,dt = \tfrac12$ is elementary Calc 1. Finally, near
+$\mathbf{x}^\star$ the inverse Hessian norm $\|H_k^{-1}\|$ is bounded by a constant (it
+approaches $\|(H^\star)^{-1}\|$ by continuity), so collecting constants into
+$C=\tfrac{M}{2}\sup\|H_k^{-1}\|$,
+
+$$
+\|\mathbf{e}_{k+1}\| \le C\,\|\mathbf{e}_k\|^2,
+$$
+
+which is exactly the claim. $\qquad\blacksquare$
+:::
+
+The inequality $\|\mathbf{e}_{k+1}\|\le C\|\mathbf{e}_k\|^2$ is the engine of Newton's
+reputation. Once $C\|\mathbf{e}_k\|<1$, the error not only shrinks but the *number of correct
+digits doubles* each step: an error of $10^{-2}$ becomes $\sim 10^{-4}$, then $\sim 10^{-8}$,
+then $\sim 10^{-16}$ — machine precision in three steps. Contrast the *linear* rate of
+gradient descent, $\|\mathbf{e}_{k+1}\|\le\rho\|\mathbf{e}_k\|$, which gains a *fixed* number
+of digits per step. @fig-rates shows the two on the same plot.
+
+```{python}
+#| label: fig-rates
+#| fig-cap: "Linear versus quadratic convergence, on a log scale, minimizing $f(x,y)=\\tfrac12(x^2 + 25 y^2)$ — an ill-conditioned bowl with $\\kappa=25$. Gradient descent (grey) descends in a straight line on the log plot, gaining a fixed number of digits per step at a rate set by $\\kappa$. Newton's method (red) needs *one* step: the objective is exactly quadratic, so its quadratic model is exact and the vertex is the true minimum. On a non-quadratic objective Newton would curve downward ever more steeply — the error squaring each step — but here it is immediate."
+A = np.array([[1.0, 0.0],[0.0, 25.0]])   # Hessian, kappa = 25
+grad = lambda x: A @ x
+xstar = np.zeros(2)
+
+x0 = np.array([5.0, 1.0])
+# Gradient descent with optimal constant step eta = 2/(L+mu)
+L, mu = 25.0, 1.0
+eta = 2.0/(L+mu)
+x = x0.copy(); gd_err = [np.linalg.norm(x-xstar)]
+for _ in range(60):
+    x = x - eta*grad(x)
+    gd_err.append(np.linalg.norm(x-xstar))
+
+# Newton: x - H^{-1} g ; H = A constant
+x = x0.copy(); nt_err = [np.linalg.norm(x-xstar)]
+for _ in range(5):
+    g = grad(x)
+    p = np.linalg.solve(A, -g)
+    x = x + p
+    nt_err.append(np.linalg.norm(x-xstar))
+
+fig, ax = plt.subplots()
+ax.semilogy(range(len(gd_err)), np.maximum(gd_err, 1e-18), color=GD,
+            marker="o", ms=3, label=r"gradient descent ($\kappa=25$)")
+ax.semilogy(range(len(nt_err)), np.maximum(nt_err, 1e-18), color=NEWTON,
+            marker="s", ms=5, label="Newton's method")
+ax.set_xlabel("iteration $k$"); ax.set_ylabel(r"error $\|x_k - x^\star\|$")
+ax.set_title("Linear (GD) vs. quadratic (Newton) convergence")
+ax.legend(loc="upper right", framealpha=0.9)
+ax.set_ylim(1e-17, 10)
+plt.tight_layout()
+```
+
+## Affine invariance: where the condition number goes {#sec-affine}
+
+The deeper reason Newton ignores conditioning is **affine invariance**. The claim: Newton's
+iterates are unchanged (up to the coordinate map) if you rescale or rotate the variables by
+any invertible linear transformation. Gradient descent has no such property — rescaling the
+axes changes its entire trajectory, which is precisely why a stretched bowl ($\kappa$ large)
+defeats it.
+
+::: {#thm-affine}
+**Theorem (affine invariance of Newton's method).** Let $A$ be an invertible $p\times p$
+matrix and consider the change of variables $\mathbf{x}=A\mathbf{y}$, with
+$\tilde f(\mathbf{y})=f(A\mathbf{y})$. If $\{\mathbf{x}_k\}$ are the Newton iterates of $f$
+and $\{\mathbf{y}_k\}$ the Newton iterates of $\tilde f$ started at the corresponding point
+$\mathbf{y}_0 = A^{-1}\mathbf{x}_0$, then $\mathbf{x}_k = A\mathbf{y}_k$ for all $k$.
+:::
+
+::: {.proof}
+We need the gradient and Hessian of $\tilde f$ in terms of those of $f$ — the multivariable
+chain rule, which we apply explicitly. With $\mathbf{x}=A\mathbf{y}$, the chain rule gives the
+gradient (treating $\nabla$ as a column vector, the $A^\top$ comes from differentiating
+$A\mathbf{y}$ with respect to $\mathbf{y}$):
+
+$$
+\nabla_{\mathbf{y}}\tilde f(\mathbf{y}) = A^\top \nabla f(A\mathbf{y}).
+$$
+
+Differentiating once more — the Hessian transforms with an $A$ on each side:
+
+$$
+\nabla^2_{\mathbf{y}}\tilde f(\mathbf{y}) = A^\top \nabla^2 f(A\mathbf{y})\,A.
+$$
+
+Now compute the Newton step for $\tilde f$ at $\mathbf{y}_k$, abbreviating
+$\mathbf{g}=\nabla f(A\mathbf{y}_k)$ and $H=\nabla^2 f(A\mathbf{y}_k)$ (the gradient and
+Hessian of the *original* $f$ at the corresponding point $\mathbf{x}_k=A\mathbf{y}_k$):
+
+$$
+\mathbf{y}_{k+1} = \mathbf{y}_k - \bigl[\nabla^2_{\mathbf{y}}\tilde f\bigr]^{-1}
+   \nabla_{\mathbf{y}}\tilde f
+= \mathbf{y}_k - \bigl(A^\top H A\bigr)^{-1} A^\top \mathbf{g}.
+$$
+
+Use the inverse-of-a-product rule $(A^\top H A)^{-1} = A^{-1}H^{-1}(A^\top)^{-1}$ (valid since
+all three factors are invertible). The trailing $(A^\top)^{-1}A^\top$ cancels:
+
+$$
+\mathbf{y}_{k+1} = \mathbf{y}_k - A^{-1}H^{-1}(A^\top)^{-1}A^\top \mathbf{g}
+= \mathbf{y}_k - A^{-1}H^{-1}\mathbf{g}.
+$$
+
+Multiply both sides by $A$ on the left, and use the inductive hypothesis
+$A\mathbf{y}_k=\mathbf{x}_k$:
+
+$$
+A\mathbf{y}_{k+1} = A\mathbf{y}_k - H^{-1}\mathbf{g}
+= \mathbf{x}_k - H^{-1}\mathbf{g} = \mathbf{x}_{k+1},
+$$
+
+the last equality being exactly the Newton iteration for $f$ (@eq-newton-multi). So
+$A\mathbf{y}_{k+1}=\mathbf{x}_{k+1}$, completing the induction. $\qquad\blacksquare$
+:::
+
+This is the payoff. Stretching the bowl is precisely an affine change of variables, and
+Newton's trajectory is invariant under it — so the condition number $\kappa$, which is a
+*property of the scaling*, **cannot appear in Newton's convergence**. Where gradient descent's
+iteration count scales like $\kappa$, Newton's does not depend on $\kappa$ at all. The
+quadratic-convergence constant $C$ depends on the Hessian's *Lipschitz* constant $M$ (how
+fast the curvature changes), not on its conditioning. This is the single most important
+structural advantage of second-order methods, and it is why a well-implemented Newton method
+crushes gradient descent on hard, stretched problems.
+
+::: {.callout-tip title="You might be asked"}
+*"Gradient descent's speed depends on the condition number; why doesn't Newton's?"* Because
+Newton is **affine-invariant** (@thm-affine): a linear rescaling of the variables leaves its
+iterates unchanged up to that rescaling. The condition number is exactly a measure of how
+badly the variables are scaled relative to each other — it is an artifact of the coordinate
+system. Gradient descent steps along $-\nabla f$, a direction that *is* coordinate-dependent,
+so it sees the scaling. Newton steps along $-H^{-1}\nabla f$, which automatically rescales by
+the inverse curvature, undoing the conditioning. In one line: **Newton optimizes in the
+"natural" coordinates of the problem, gradient descent in whatever coordinates you happened to
+write it in.**
+:::
+
+# Formal development IV: the costs and the failure modes {#sec-failure}
+
+Newton's two gifts come with two bills. This is the section that separates "knows the
+formula" from "knows when not to use it."
+
+## The cost: forming and factoring the Hessian {#sec-cost}
+
+Each Newton step does three things gradient descent does not: it forms the $p\times p$
+Hessian (up to $p(p+1)/2$ distinct second partials), and it solves the linear system
+$H_k\mathbf{p}=-\mathbf{g}_k$. Solving a dense $p\times p$ system costs $O(p^3)$ arithmetic
+operations (e.g. a Cholesky factorization, $\tfrac13 p^3$ flops). Storing the Hessian costs
+$O(p^2)$ memory. Compare gradient descent: $O(p)$ work and $O(p)$ memory per step.
+
+For $p$ in the dozens or low thousands this is a bargain — Newton's tiny iteration count
+swamps the per-step cost. But for a deep network with $p=10^9$ parameters, an $O(p^3)$ solve
+and an $O(p^2)$ matrix are both flatly impossible: $p^2 = 10^{18}$ numbers will not fit in any
+memory. **This is the headline reason Newton's method is not used to train large neural
+networks** — and the reason quasi-Newton methods (@sec-quasinewton) and first-order methods
+(gradient descent, SGD, Adam — [OPTM-06], [OPTM-11], [OPTM-12]) dominate that regime. The
+honest rule of thumb: Newton and its quasi-Newton cousins own the small-to-medium-scale,
+smooth, accuracy-hungry world ($p$ up to $\sim 10^4$); first-order methods own the
+large-scale, noisy, deep-learning world.
+
+## The fragility: a non-positive-definite Hessian {#sec-fragility}
+
+Recall the parabola picture (@sec-intuition): the matching parabola has a *minimum* only if
+it opens upward. In many variables, "opens upward in every direction" is exactly
+**$H_k$ positive-definite** — $\mathbf{d}^\top H_k\mathbf{d}>0$ for all $\mathbf{d}\neq\mathbf{0}$
+(the Hessian test of [OPTM-02]). When $H_k$ is *not* positive-definite, two things break:
+
+1. **The step can be uphill.** If $H_k$ has a negative eigenvalue, the quadratic model
+   @eq-quad-in-p has a *saddle* or a *maximum*, not a minimum, and "jump to the model's
+   stationary point" can *increase* $f$. The clean test: the Newton step is a descent
+   direction iff $\mathbf{g}_k^\top\mathbf{p}^{\text{N}}_k<0$. Substitute
+   $\mathbf{p}^{\text{N}}_k=-H_k^{-1}\mathbf{g}_k$:
+   $$
+   \mathbf{g}_k^\top \mathbf{p}^{\text{N}}_k = -\mathbf{g}_k^\top H_k^{-1}\mathbf{g}_k,
+   $$
+   which is negative — a genuine descent direction — *exactly when* $H_k^{-1}$ (equivalently
+   $H_k$) is positive-definite. If $H_k$ has a negative eigenvalue, this can be positive and
+   Newton points uphill.
+2. **The step can blow up.** If $H_k$ is *singular* (a zero eigenvalue — a flat direction),
+   $H_k^{-1}$ does not exist and the step is infinite. Near-singular $H_k$ gives an enormous,
+   unreliable step. This is the multivariate echo of @eq-newton-1d dividing by $f''(x_k)\approx
+   0$.
+
+@fig-divergence shows the raw Newton iteration *diverging* on a function whose curvature goes
+the wrong way, and the damped version (next subsection) converging on the same function.
+
+```{python}
+#| label: fig-divergence
+#| fig-cap: "Raw Newton can diverge. Minimizing $f(x)=\\log(1+e^{-3x}) + 0.05x^2$ — convex, with a unique minimum near $x\\approx 1.1$ — from $x_0=2.5$ where the curvature $f''$ is tiny. **Grey:** the *undamped* Newton step $x-f'/f''$ overshoots wildly (the near-flat region gives a huge step) and oscillates away. **Red:** the *damped* Newton step $x-tf'/f''$ with a backtracking line search on $t$ stays a descent method and converges. Damping is what makes Newton safe far from the optimum."
+import numpy as np
+def f(x):   return np.log1p(np.exp(-3*x)) + 0.05*x**2
+def fp(x):
+    s = 1/(1+np.exp(3*x))      # sigmoid(-3x), stable
+    return -3*s + 0.1*x
+def fpp(x):
+    s = 1/(1+np.exp(3*x))
+    return 9*s*(1-s) + 0.1
+
+xs = np.linspace(-1, 3, 300)
+
+# Undamped Newton
+x = 2.5; raw = [x]
+for _ in range(8):
+    x = x - fp(x)/fpp(x)
+    raw.append(x)
+    if abs(x) > 50: break
+
+# Damped Newton with backtracking on t
+x = 2.5; damped = [x]
+for _ in range(12):
+    step = -fp(x)/fpp(x)
+    t = 1.0
+    while f(x + t*step) > f(x) + 1e-4*t*fp(x)*step and t > 1e-6:
+        t *= 0.5
+    x = x + t*step
+    damped.append(x)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.plot(xs, f(xs), color=CURVE)
+ry = [f(v) if abs(v) < 50 else np.nan for v in raw]
+axL.plot(raw[:6], ry[:6], color=GD, marker="o", ms=4, lw=1.2)
+axL.set_title("Undamped Newton overshoots")
+axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$"); axL.set_xlim(-1, 3)
+axL.set_ylim(0, 3)
+
+axR.plot(xs, f(xs), color=CURVE)
+axR.plot(damped, [f(v) for v in damped], color=NEWTON, marker="s", ms=4, lw=1.2)
+axR.set_title("Damped Newton converges")
+axR.set_xlabel("$x$"); axR.set_xlim(-1, 3); axR.set_ylim(0, 3)
+plt.tight_layout()
+print(f"undamped iterates (first 6): {[round(v,2) for v in raw[:6]]}")
+print(f"damped   iterates (last 4):  {[round(v,4) for v in damped[-4:]]}")
+```
+
+## The fixes: damping and Hessian modification {#sec-fixes}
+
+Two standard repairs make Newton globally usable, not just locally:
+
+**Damping (line search).** Do not commit to the full step. Take the Newton *direction*
+$\mathbf{p}^{\text{N}}_k=-H_k^{-1}\mathbf{g}_k$ but scale it by a step length $t_k\in(0,1]$
+chosen by the same **backtracking line search** of [OPTM-07]: start at $t=1$ (the full Newton
+step) and halve until the Armijo sufficient-decrease condition holds,
+$$
+f(\mathbf{x}_k + t\,\mathbf{p}^{\text{N}}_k) \le f(\mathbf{x}_k)
+   + c\,t\,\mathbf{g}_k^\top\mathbf{p}^{\text{N}}_k, \qquad c\in(0,\tfrac12).
+$$
+Far from the optimum this shortens overlong steps and guarantees descent; *near* the optimum
+the full step $t=1$ is always accepted, so quadratic convergence is preserved. This two-phase
+behavior — globally safe, locally quadratic — is the **damped (guarded) Newton method**, the
+version you actually run.
+
+**Hessian modification.** When $H_k$ is not positive-definite, the direction itself is
+suspect, so *fix the matrix* before solving. Replace $H_k$ with $H_k+\tau I$ for a $\tau\ge 0$
+just large enough to make it positive-definite (every eigenvalue is shifted up by $\tau$, so
+$\tau>-\lambda_{\min}(H_k)$ suffices). This is **Levenberg–Marquardt damping**, and it
+interpolates between the two methods: $\tau=0$ is pure Newton, and as $\tau\to\infty$ the
+step $-(H_k+\tau I)^{-1}\mathbf{g}_k\approx -\tfrac1\tau\mathbf{g}_k$ becomes a *tiny gradient
+step.* The closely-related **trust-region** view chooses the step by minimizing the quadratic
+model *subject to staying within a radius* where the model is trusted, which automatically
+controls both the bad-curvature and the too-large-step pathologies. We do not derive the
+trust-region subproblem here — it is a constrained optimization, the subject of the
+constrained branch ([OPTM-13]–[OPTM-14]); we flag it as the principled cousin of damping.
+
+::: {.callout-tip title="You might be asked"}
+*"What can go wrong with Newton's method, and how do you guard against each failure?"* Three
+things, and a fix for each. **(1) The Hessian is not positive-definite** far from the optimum,
+so the step may go uphill — guard with **Hessian modification** ($H+\tau I$, Levenberg–
+Marquardt, or a trust region). **(2) The full step overshoots** — guard with **damping**, a
+backtracking line search on the step length. **(3) The Hessian is too big or too expensive**
+($O(p^2)$ memory, $O(p^3)$ per solve) — guard by *not forming it*: use a **quasi-Newton**
+approximation (BFGS / L-BFGS) or **Gauss–Newton** when the objective is a sum of squares. A
+strong answer names the failure *and* the matching remedy.
+:::
+
+# Gauss–Newton and IRLS: the algorithm the rest of the series links here for {#sec-gaussnewton}
+
+Two enormous classes of problems — **nonlinear least squares** and **maximum likelihood for
+GLMs** — have so much structure that we can get a Newton-quality step *without ever computing
+the true Hessian*. This is the precise tool Regression's logistic/GLM articles and
+Inference's MLE articles request, so we derive it carefully.
+
+## Gauss–Newton for nonlinear least squares {#sec-gn}
+
+Suppose the objective is a **sum of squared residuals**,
+$$
+f(\boldsymbol\theta) = \tfrac12\sum_{i=1}^n r_i(\boldsymbol\theta)^2
+= \tfrac12\,\mathbf{r}(\boldsymbol\theta)^\top\mathbf{r}(\boldsymbol\theta),
+$$ {#eq-nls}
+where $r_i(\boldsymbol\theta) = y_i - \hat y_i(\boldsymbol\theta)$ is the $i$-th residual and
+the model $\hat y_i$ may depend *nonlinearly* on the parameters $\boldsymbol\theta\in\mathbb{R}^p$
+(if it were linear, this would be ordinary least squares with a closed form — [REGR-01]).
+Stack the residuals into the vector $\mathbf{r}\in\mathbb{R}^n$ and let
+$J\in\mathbb{R}^{n\times p}$ be its **Jacobian**, $J_{ij}=\partial r_i/\partial\theta_j$.
+
+Compute the exact gradient and Hessian by differentiating @eq-nls. The gradient (product
+rule, $\nabla\tfrac12\|\mathbf{r}\|^2 = J^\top\mathbf{r}$):
+$$
+\nabla f = \sum_{i=1}^n r_i\,\nabla r_i = J^\top\mathbf{r}.
+$$
+Differentiating once more for the Hessian, the product rule gives **two** terms:
+$$
+\nabla^2 f = \underbrace{J^\top J}_{\text{first-order}}
+  \;+\; \underbrace{\sum_{i=1}^n r_i\,\nabla^2 r_i}_{\text{second-order, curvature of the model}}.
+$$ {#eq-nls-hessian}
+
+The first term $J^\top J$ uses only first derivatives (the Jacobian); the second term needs
+the second derivatives $\nabla^2 r_i$ of every residual — expensive, and exactly what we want
+to avoid. **The Gauss–Newton approximation drops the second term**, replacing the Hessian by
+$J^\top J$:
+$$
+\boxed{\;\boldsymbol\theta_{k+1} = \boldsymbol\theta_k - (J_k^\top J_k)^{-1} J_k^\top\mathbf{r}_k.\;}
+$$ {#eq-gn-step}
+
+When is dropping $\sum r_i\nabla^2 r_i$ justified? Read the term: it is the residuals $r_i$
+*weighting* the model's curvature. Two cases make it negligible. **(i) Small residuals:** near
+a good fit the $r_i$ are tiny, so the dropped term is tiny and Gauss–Newton $\approx$ Newton —
+it inherits near-quadratic convergence. **(ii) Nearly linear model:** if each $r_i$ is almost
+linear in $\boldsymbol\theta$, then $\nabla^2 r_i\approx 0$ and the term vanishes regardless of
+residual size. When residuals are large *and* the model is sharply curved, Gauss–Newton
+degrades — that is its honest boundary, and **Levenberg–Marquardt** (replace $J^\top J$ by
+$J^\top J + \tau I$, @sec-fixes) is the standard repair, which is why LM is *the* workhorse of
+nonlinear curve fitting.
+
+Notice the bonus: $J^\top J$ is **always positive-semidefinite** ($\mathbf{d}^\top J^\top
+J\mathbf{d}=\|J\mathbf{d}\|^2\ge 0$), so the positive-definiteness fragility of @sec-fragility
+mostly evaporates — Gauss–Newton steps are descent directions whenever $J$ has full column
+rank. And the step @eq-gn-step is exactly the normal-equations solution of a *linear* least-
+squares problem, $\min_{\mathbf{p}}\|J_k\mathbf{p}+\mathbf{r}_k\|^2$ — so each Gauss–Newton
+iteration is "solve a linear regression on the current Jacobian," the structure that makes it
+both fast and numerically clean.
+
+```{python}
+#| label: fig-gaussnewton
+#| fig-cap: "Gauss–Newton fitting a nonlinear model $\\hat y = a\\,e^{bx}$ to noisy exponential-decay data ($n=40$) — a genuine nonlinear least-squares problem with no closed form. **Left:** the converged fit (red) through the data (navy). **Right:** the objective $\\tfrac12\\|\\mathbf r\\|^2$ versus iteration on a log scale; Gauss–Newton reaches the minimum in a handful of steps, far faster than the gradient-descent baseline (grey)."
+rng = np.random.default_rng(3)
+x = np.linspace(0, 4, 40)
+a_true, b_true = 5.0, -0.8
+y = a_true*np.exp(b_true*x) + rng.normal(0, 0.15, size=x.size)
+
+def resid(theta):
+    a, b = theta
+    return (a*np.exp(b*x)) - y          # r_i = yhat - y_i
+def jac(theta):
+    a, b = theta
+    e = np.exp(b*x)
+    return np.column_stack([e, a*x*e])  # d r / d a , d r / d b
+def obj(theta):
+    return 0.5*np.sum(resid(theta)**2)
+
+theta = np.array([1.0, -0.1])           # poor start
+gn_hist = [obj(theta)]
+for _ in range(12):
+    r = resid(theta); J = jac(theta)
+    p = np.linalg.solve(J.T@J, -J.T@r)  # Gauss-Newton step
+    # light damping for safety far from optimum
+    t = 1.0
+    while obj(theta + t*p) > gn_hist[-1] and t > 1e-4:
+        t *= 0.5
+    theta = theta + t*p
+    gn_hist.append(obj(theta))
+
+# Gradient-descent baseline
+th = np.array([1.0, -0.1]); gd_hist = [obj(th)]
+eta = 2e-3
+for _ in range(400):
+    r = resid(th); J = jac(th)
+    th = th - eta*(J.T@r)
+    gd_hist.append(obj(th))
+
+xs = np.linspace(0, 4, 200)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.scatter(x, y, color=CURVE, s=28, label="data")
+axL.plot(xs, theta[0]*np.exp(theta[1]*xs), color=NEWTON,
+         label=fr"fit $a={theta[0]:.2f},\ b={theta[1]:.2f}$")
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$"); axL.set_title("Nonlinear least-squares fit")
+axL.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
+axR.semilogy(range(len(gn_hist)), gn_hist, color=NEWTON, marker="s", ms=4,
+             label="Gauss-Newton")
+axR.semilogy(range(len(gd_hist)), gd_hist, color=GD, lw=1.4, label="gradient descent")
+axR.set_xlabel("iteration"); axR.set_ylabel(r"objective $\frac{1}{2}\,\|r\|^2$")
+axR.set_title("Convergence: GN vs. GD")
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"Gauss-Newton converged in ~{len(gn_hist)-1} steps to a={theta[0]:.3f}, b={theta[1]:.3f}")
+print(f"(true a={a_true}, b={b_true})")
+```
+
+## IRLS / Fisher scoring: Newton on a log-likelihood {#sec-irls}
+
+The same idea, applied to *maximum likelihood*, produces the algorithm that fits logistic
+regression and every generalized linear model. Statistical Inference owns *what* the MLE is
+([INFR-B2]); we own *how to compute it*. The MLE maximizes the log-likelihood
+$\ell(\boldsymbol\beta)$, equivalently minimizes $-\ell$, so it solves the **score equation**
+$\nabla\ell(\boldsymbol\beta)=\mathbf{0}$ — a root-finding problem, Newton's home turf. The
+Newton update for *maximizing* $\ell$ (note the sign: maximizing flips the step direction)
+is
+$$
+\boldsymbol\beta_{k+1} = \boldsymbol\beta_k - \bigl[\nabla^2\ell(\boldsymbol\beta_k)\bigr]^{-1}
+   \nabla\ell(\boldsymbol\beta_k).
+$$
+**Fisher scoring** makes one substitution: replace the (random, observation-dependent)
+Hessian $\nabla^2\ell$ by its expectation, the negative **Fisher information**
+$-\mathcal{I}(\boldsymbol\beta)=\mathbb{E}[\nabla^2\ell]$. This is the exact analogue of the
+Gauss–Newton move — swap the true second derivative for a cheaper, guaranteed-definite
+surrogate:
+$$
+\boldsymbol\beta_{k+1} = \boldsymbol\beta_k + \mathcal{I}(\boldsymbol\beta_k)^{-1}
+   \nabla\ell(\boldsymbol\beta_k).
+$$
+For a GLM this update algebraically *rearranges* into a **weighted least-squares** problem: at
+each step you solve $\min_{\boldsymbol\beta}\sum_i w_i(z_i - \mathbf{x}_i^\top\boldsymbol\beta)^2$
+for a "working response" $z_i$ and weights $w_i$ that are recomputed each iteration — hence the
+name **Iteratively Reweighted Least Squares (IRLS)**. The detailed GLM derivation (the working
+response, the weights, the link function) belongs to the model — it is owned by Regression
+[REGR-17] and Inference [INFR-B4], which import the *Newton/Fisher-scoring engine* from here.
+The logistic example below shows the engine running.
+
+```{python}
+#| label: fig-irls
+#| fig-cap: "Logistic regression fit by Newton's method (IRLS). The data are $n=120$ points with a binary outcome whose probability rises with $x$; the model is $P(y=1\\mid x)=\\sigma(\\beta_0+\\beta_1 x)$. **Left:** the fitted probability curve (red) through the 0/1 data (navy), with the decision boundary $\\hat P=0.5$ marked. **Right:** the negative log-likelihood versus Newton iteration — it reaches the minimum in 5–6 steps, the quadratic convergence of @thm-quadratic on a real statistical objective."
+rng = np.random.default_rng(11)
+n = 120
+x = rng.uniform(-3, 3, n)
+p_true = 1/(1+np.exp(-(0.7 + 1.4*x)))
+y = (rng.uniform(size=n) < p_true).astype(float)
+X = np.column_stack([np.ones(n), x])     # design matrix, intercept + slope
+
+def sigmoid(z): return 1/(1+np.exp(-z))
+def negll(beta):
+    z = X @ beta
+    # stable log(1+e^z) form
+    return np.sum(np.logaddexp(0, z) - y*z)
+
+beta = np.zeros(2)
+hist = [negll(beta)]
+for _ in range(8):
+    z = X @ beta
+    p = sigmoid(z)
+    grad = X.T @ (p - y)                 # gradient of negative log-lik
+    W = p*(1-p)                          # IRLS weights
+    H = X.T @ (W[:,None]*X)              # Hessian = X^T W X (Fisher info)
+    step = np.linalg.solve(H, -grad)     # Newton/IRLS step
+    beta = beta + step
+    hist.append(negll(beta))
+
+xs = np.linspace(-3, 3, 200)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.scatter(x, y, color=CURVE, s=22, alpha=0.7, label="data (0/1)")
+axL.plot(xs, sigmoid(beta[0] + beta[1]*xs), color=NEWTON,
+         label=fr"$\hat P(y=1\mid x)$")
+x_db = -beta[0]/beta[1]
+axL.axvline(x_db, color=ACCENT, ls="--", lw=1.4, label=r"boundary $\hat P=0.5$")
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$ / probability")
+axL.set_title("Logistic fit by IRLS")
+axL.legend(loc="center left", fontsize=8.5, framealpha=0.9)
+
+axR.semilogy(range(len(hist)), np.array(hist) - min(hist) + 1e-12,
+             color=NEWTON, marker="s", ms=5)
+axR.set_xlabel("Newton iteration"); axR.set_ylabel("neg-log-lik $-\\ell$ above minimum")
+axR.set_title("Quadratic convergence of IRLS")
+plt.tight_layout()
+print(f"IRLS converged to beta = [{beta[0]:.3f}, {beta[1]:.3f}]  (true [0.7, 1.4])")
+print(f"iterations to converge: {len(hist)-1}")
+```
+
+The Hessian here is $H=X^\top W X$ with weights $w_i=\hat p_i(1-\hat p_i)$ — *exactly* the
+positive-definite "reweighted" normal-equations matrix that names IRLS. Five or six Newton
+steps fit the model to machine precision, which is why every serious GLM solver is built on
+this engine, not on gradient descent.
+
+# Quasi-Newton: most of the speed, none of the Hessian {#sec-quasinewton}
+
+Newton's bill is the Hessian. **Quasi-Newton methods** pay a fraction of it: they never form
+$\nabla^2 f$, instead *building an approximation* $B_k\approx\nabla^2 f$ (or directly
+$H_k\approx[\nabla^2 f]^{-1}$) from the gradients they already compute, updating it each step.
+This is the most-used optimization strategy in classical (non-deep) machine learning and
+scientific computing, so we develop its logic.
+
+## The secant idea {#sec-secant}
+
+In one dimension, you can approximate the second derivative from two *first* derivatives — a
+**finite difference** of the slope:
+$$
+f''(x_k) \approx \frac{f'(x_k) - f'(x_{k-1})}{x_k - x_{k-1}}.
+$$
+This is the **secant method**: use the slope's rate of change *measured from consecutive
+gradients* in place of the true second derivative. The multivariable generalization defines the
+two vectors a step produces,
+$$
+\mathbf{s}_k = \mathbf{x}_{k+1}-\mathbf{x}_k \quad(\text{the step taken}),
+\qquad
+\mathbf{y}_k = \mathbf{g}_{k+1}-\mathbf{g}_k \quad(\text{how the gradient changed}),
+$$
+and demands that the *new* Hessian approximation reproduce this observed change — the
+**secant equation**:
+$$
+B_{k+1}\,\mathbf{s}_k = \mathbf{y}_k.
+$$ {#eq-secant}
+
+Read it against the rearranged FTC fact $\mathbf{y}_k = \int_0^1\nabla^2 f(\cdots)\mathbf{s}_k\,dt
+\approx \nabla^2 f\,\mathbf{s}_k$ from @eq-ftc-grad: the true Hessian *does* map the step
+$\mathbf{s}_k$ approximately to the gradient change $\mathbf{y}_k$, so @eq-secant asks
+$B_{k+1}$ to match the true Hessian's action along the one direction we just probed. One
+equation cannot pin down a whole $p\times p$ matrix, so quasi-Newton methods add two further
+requirements — that $B_{k+1}$ stay **symmetric**, and that it change as little as possible from
+$B_k$ (a minimal update) — and the choice of "as little as possible" is what distinguishes the
+methods.
+
+## BFGS and L-BFGS {#sec-bfgs}
+
+The **BFGS** update (Broyden–Fletcher–Goldfarb–Shanno, 1970) is the famous choice. It updates
+the *inverse* Hessian approximation $H_k\approx[\nabla^2 f]^{-1}$ directly — so each step is a
+cheap matrix–vector product $\mathbf{p}_k=-H_k\mathbf{g}_k$ with no linear solve at all — by the
+rank-two formula
+$$
+H_{k+1} = \Bigl(I - \rho_k\mathbf{s}_k\mathbf{y}_k^\top\Bigr) H_k
+          \Bigl(I - \rho_k\mathbf{y}_k\mathbf{s}_k^\top\Bigr) + \rho_k\mathbf{s}_k\mathbf{s}_k^\top,
+\qquad \rho_k = \frac{1}{\mathbf{y}_k^\top\mathbf{s}_k}.
+$$ {#eq-bfgs}
+
+We do not re-derive the formula's coefficients from the minimal-change variational problem (it
+is a constrained matrix optimization that would balloon this article past its scope); we *do*
+flag exactly what it accomplishes and why it works, since that is what an interviewer and a user
+need:
+
+- It satisfies the secant equation @eq-secant by construction (multiply @eq-bfgs by
+  $\mathbf{y}_k$ and the terms collapse to $\mathbf{s}_k$).
+- It is a **rank-two** update — only two outer products are added — so applying it costs
+  $O(p^2)$, not the $O(p^3)$ of a fresh Hessian solve.
+- Crucially, if $\mathbf{y}_k^\top\mathbf{s}_k>0$ (the **curvature condition**, guaranteed by a
+  line search satisfying the Wolfe conditions), the update **preserves positive-definiteness**:
+  $H_{k+1}$ stays a valid, descent-producing approximation. This sidesteps the fragility of
+  @sec-fragility entirely — BFGS directions are *always* descent directions.
+
+BFGS achieves **superlinear** convergence — faster than gradient descent's linear rate, not
+quite Newton's quadratic, but without ever touching a second derivative. Its cost is $O(p^2)$
+per step and $O(p^2)$ memory for the dense $H_k$.
+
+For large $p$ even $O(p^2)$ memory is too much, and **L-BFGS** ("limited-memory BFGS") is the
+fix that made quasi-Newton the default for large smooth problems. Instead of storing the full
+$H_k$, it stores only the last $m$ pairs $(\mathbf{s}_j,\mathbf{y}_j)$ (typically $m=5$–$20$)
+and *reconstructs the action* $H_k\mathbf{g}_k$ on the fly by a clever two-loop recursion over
+those pairs. Memory drops to $O(mp)$ — linear in $p$ — and each step is $O(mp)$. This is why
+L-BFGS, not Newton, is what `scipy.optimize.minimize(method="L-BFGS-B")` runs by default, and
+what fits a logistic regression with millions of features.
+
+```{python}
+#| label: fig-quasinewton
+#| fig-cap: "Where the methods land on the speed/cost trade-off, minimizing the Rosenbrock function $f(x,y)=(1-x)^2+100(y-x^2)^2$ — the classic curved-valley benchmark, ill-conditioned and non-quadratic. The negative log of the objective (higher = more accurate) is plotted against iteration. **Newton** (red) is fastest per step but pays $O(p^3)$ and needs the Hessian. **BFGS** (green) is nearly as fast using gradients only. **Gradient descent** (grey) crawls along the curved valley floor. This is the practical ranking: Newton > quasi-Newton > first-order in *iterations*, with the cost order reversed."
+def rosen(v):
+    x, y = v
+    return (1-x)**2 + 100*(y-x**2)**2
+def rosen_g(v):
+    x, y = v
+    return np.array([-2*(1-x) - 400*x*(y-x**2), 200*(y-x**2)])
+def rosen_H(v):
+    x, y = v
+    return np.array([[2 - 400*(y-3*x**2), -400*x],
+                     [-400*x, 200.0]])
+
+x0 = np.array([-1.2, 1.0])
+
+def linesearch(v, p, g):
+    t = 1.0
+    while rosen(v + t*p) > rosen(v) + 1e-4*t*g@p and t > 1e-10:
+        t *= 0.5
+    return t
+
+# Newton (damped + Hessian modification)
+v = x0.copy(); nh = [rosen(v)]
+for _ in range(25):
+    g = rosen_g(v); H = rosen_H(v)
+    # modify if not PD
+    w = np.linalg.eigvalsh(H)
+    if w.min() <= 1e-6: H = H + (1e-6 - w.min())*np.eye(2)
+    p = np.linalg.solve(H, -g)
+    v = v + linesearch(v, p, g)*p
+    nh.append(rosen(v))
+
+# BFGS
+v = x0.copy(); B = np.eye(2); bh = [rosen(v)]; g = rosen_g(v)
+for _ in range(60):
+    p = -B @ g
+    t = linesearch(v, p, g)
+    s = t*p; v_new = v + s; g_new = rosen_g(v_new)
+    yv = g_new - g
+    sy = yv @ s
+    if sy > 1e-10:
+        rho = 1.0/sy
+        I2 = np.eye(2)
+        B = (I2 - rho*np.outer(s, yv)) @ B @ (I2 - rho*np.outer(yv, s)) + rho*np.outer(s, s)
+    v, g = v_new, g_new
+    bh.append(rosen(v))
+
+# Gradient descent
+v = x0.copy(); gh = [rosen(v)]
+for _ in range(60):
+    g = rosen_g(v)
+    p = -g
+    v = v + linesearch(v, p, g)*p
+    gh.append(rosen(v))
+
+fig, ax = plt.subplots()
+ax.plot(range(len(nh)), -np.log10(np.maximum(nh,1e-16)), color=NEWTON, marker="s", ms=4, label="Newton")
+ax.plot(range(len(bh)), -np.log10(np.maximum(bh,1e-16)), color=ACCENT, marker="o", ms=3, label="BFGS")
+ax.plot(range(len(gh)), -np.log10(np.maximum(gh,1e-16)), color=GD, lw=1.5, label="gradient descent")
+ax.set_xlabel("iteration"); ax.set_ylabel(r"accuracy: $-\log_{10} f$")
+ax.set_title("Newton vs. BFGS vs. GD on Rosenbrock")
+ax.legend(loc="lower right", framealpha=0.9)
+ax.set_xlim(0, 60)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"When would you use BFGS or L-BFGS instead of plain Newton, and instead of gradient
+descent?"* Use a quasi-Newton method when you want most of Newton's speed but (a) the Hessian
+is **expensive or unavailable** in closed form, or (b) forming/factoring it is too costly.
+**BFGS** when $p$ is small enough to store a dense $p\times p$ matrix; **L-BFGS** when $p$ is
+large (it stores only $O(mp)$). Use *plain Newton* when the Hessian is cheap and you want the
+last drop of quadratic speed (e.g. logistic regression / GLMs, where the Hessian is the clean
+$X^\top W X$). Use *gradient descent / SGD* when even $O(p^2)$ is impossible (deep nets,
+$p=10^9$) or the objective is noisy/stochastic — quasi-Newton's curvature estimate is unreliable
+under minibatch noise, which is why L-BFGS is rare in deep learning and SGD/Adam dominate.
+:::
+
+# Where Newton is the wrong tool {#sec-wrong-tool}
+
+Pulling the failure threads together into a single applicability verdict, since the goal is
+practitioner judgment:
+
+- **Huge $p$ (deep learning).** $O(p^2)$ memory and $O(p^3)$ solves are impossible at
+  $p=10^6$–$10^9$. Reach for SGD / Adam ([OPTM-11], [OPTM-12]); at most L-BFGS for the smaller,
+  smooth, full-batch problems.
+- **Stochastic / minibatch objectives.** A Hessian (or quasi-Newton curvature pair) estimated
+  from a single noisy minibatch is unreliable; the second-order signal drowns in noise.
+  First-order stochastic methods are the standard.
+- **Non-smooth objectives.** Newton needs a Hessian; a kink ($\|\boldsymbol\beta\|_1$, a ReLU,
+  a hinge loss) has none at the kink. Reach for subgradient, **proximal**, or **coordinate**
+  methods ([OPTM-05], [OPTM-10], [OPTM-16]) — the lasso is solved by coordinate descent, not
+  Newton.
+- **Far from the optimum, badly behaved curvature.** Raw Newton can diverge; it must be
+  **damped** and **modified** (@sec-fixes) to be globally safe. An undamped Newton method is a
+  bug, not a method.
+- **The sweet spot — where Newton wins decisively.** Smooth, $p$ small-to-medium (up to
+  $\sim 10^4$), accuracy-hungry, deterministic objectives: nonlinear least squares
+  (Gauss–Newton / Levenberg–Marquardt), GLM and logistic-regression MLEs (IRLS / Fisher
+  scoring), and any problem where you need many correct digits in a handful of steps. Here its
+  affine invariance and quadratic convergence are unmatched.
+
+::: {.callout-warning title="Pitfall"}
+**Newton's spectacular convergence is *local*.** @thm-quadratic promises quadratic convergence
+only *once you are close enough* to a positive-definite minimum. Started far away, the raw
+iteration can overshoot, oscillate, or diverge (@fig-divergence), and on a non-convex objective
+it is *attracted to saddle points and maxima* just as readily as to minima — because all three
+are roots of $\nabla f$, and Newton hunts roots of the gradient indiscriminately. Never deploy
+an unguarded Newton step; the damped, Hessian-modified version (or a trust region) is the only
+version that is safe in the wild.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the descent spine — [OPTM-06 *Gradient Descent*] (the first-order step) and
+[OPTM-07 *Step Size and Convergence*] (its rate, governed by the condition number $\kappa$, and
+the line search we reused here for damping). This article closed the spine by adding the
+**curvature**: Newton's method models the objective by a quadratic and jumps to its vertex,
+buying **quadratic convergence** and **affine invariance** (no $\kappa$) at the price of forming
+and factoring the Hessian.
+
+- **Backward in the spine.** [OPTM-08 *Momentum and Accelerated Gradient Descent*] is the
+  *first-order* answer to the same ill-conditioning Newton kills with curvature — momentum
+  improves GD's $\kappa$-dependence without any Hessian, the cheaper middle ground.
+- **Onward to scale.** [OPTM-11 *Stochastic Gradient Descent*] and [OPTM-12 *Adaptive
+  Optimizers (Adam)*] are where the descent spine goes when $p$ and $n$ are too large for any
+  second-order method — the regime where Newton is the *wrong* tool.
+- **Constrained cousins.** The trust-region fix (@sec-fixes) is a constrained quadratic
+  subproblem; the machinery is [OPTM-13 *Lagrange Multipliers*] and [OPTM-14 *KKT*].
+- **What this article supplies to other tracks.** Regression [REGR-17] (logistic regression)
+  and the GLM articles import the **IRLS / Fisher-scoring** engine (@sec-irls); Statistical
+  Inference [INFR-B2]/[INFR-B4] import **Newton's method** for the MLE with no closed form. Both
+  link here rather than re-deriving the second-order step.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The standard reference.** Nocedal & Wright, *Numerical Optimization* (2nd ed., 2006) —
+  Chapters 3 (line search), 6 (quasi-Newton/BFGS), 7 (L-BFGS), and 10 (nonlinear least squares /
+  Gauss–Newton). The authoritative derivations of the BFGS update and the L-BFGS two-loop
+  recursion we flagged but did not expand here.
+- **The convex-optimization viewpoint.** Boyd & Vandenberghe, *Convex Optimization* (2004),
+  §9.5 — the cleanest treatment of Newton's method as the affine-invariant descent method, with
+  the self-concordance analysis that makes the convergence *global* (not just local) for an
+  important class of functions.
+- **Open threads this article deferred.** *Why exactly the BFGS coefficients?* — the
+  minimal-change variational derivation (Nocedal & Wright §6.1). *How does the L-BFGS two-loop
+  recursion reconstruct $H_k\mathbf{g}_k$ from stored pairs?* — same source, §7.2. *Self-
+  concordant functions*, where damped Newton has a fully global complexity bound independent of
+  unknown constants — Boyd & Vandenberghe §9.6, the theoretical foundation of interior-point
+  methods for the constrained branch ([OPTM-13]–[OPTM-16]).

@@ -1,0 +1,1034 @@
+---
+title: "One-Dimensional Minimization: the Derivative Test"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE  = "#2b3a67"    # the objective f
+TANGENT = "#c1121f"   # tangent lines / the optimum
+ACCENT = "#0a7d4d"    # highlights / stationary points
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the second article of the Optimization
+> track and the place where the machinery actually starts. It assumes only
+> [OPTM-00 *What Is an Optimization Problem?*], which fixed the vocabulary — the
+> **decision variable** $x$, the **objective** $f$, the **feasible set**, and the
+> statement $\min_{x} f(x)$ — and drew the difference between a *global* and a *local*
+> minimum. Here we answer the very first concrete question that vocabulary raises:
+> for a function of a *single* variable, exactly how does calculus find a minimum, and
+> when does that calculus quietly lie to us? Everything we do uses nothing above the
+> **Calculus-I floor** (limits, the derivative, the chain rule, the
+> second-derivative test) — we lean on it, we do not rebuild it. It sets up
+> [OPTM-02 *Minimizing in Many Variables*], which is this exact logic with the single
+> derivative replaced by the gradient.
+
+## Abstract {.unnumbered}
+
+We are handed a function $f$ of one real variable and asked for the input that makes it
+smallest. This article derives the answer that every later optimizer is a generalization
+of. The **first-order condition** $f'(x)=0$ falls out of one observation: if the slope
+is not zero, you can still step downhill, so you were not at the bottom. The
+**second-derivative test** $f''(x)>0$ then sorts the flat spots into minima, maxima, and
+the genuinely ambiguous $f''=0$ case (which we resolve honestly, with $x^4$ as the
+witness). We carry the method through three real objectives — a quadratic cost, a
+Poisson negative log-likelihood, and a constrained inventory cost whose true minimum
+sits at a *boundary where the derivative is not zero* — the honest case where the
+derivative test alone gives the wrong answer. Finally, when $f'(x)=0$ cannot be solved in
+closed form, we introduce **bisection** and **golden-section search**: the first
+*iterative* descent in the series, and the seed of the whole gradient-descent story to
+come.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+At an interior minimum of a smooth one-variable function, the tangent line is **flat**:
+$f'(x^\star)=0$. This is *necessary* — a nonzero slope always points downhill in some
+direction, so you can do better. It is **not sufficient**: a flat tangent also marks
+maxima and inflection points. The **second derivative** disambiguates — $f''(x^\star)>0$
+(curving upward) confirms a minimum. And the entire test can still **miss the answer**
+when the minimum lives at a *boundary* of the feasible set, where the slope need not
+vanish. Know all three clauses, and you know exactly when "set the derivative to zero"
+is the whole story and when it is a trap.
+:::
+
+Everything below orbits that box. The single equation $f'(x)=0$ will look like a rule you
+were handed in Calc 1, but by the end you should see it as *forced*: it is the precise
+mathematical statement of "there is no downhill direction left." The three failure clauses
+— sufficiency, the $f''=0$ tie, and boundary minima — are not footnotes; they are where
+practitioners get burned, and they are the reason the rest of the Optimization track
+exists.
+
+# Why we are here: the problem that forces the question {#sec-why}
+
+Keep one question in view for the whole article: **what does it actually mean to be "at
+the bottom," and how would calculus ever know?** Every step answers a piece of that.
+
+## The setting, inherited from OPTM-00
+
+[OPTM-00] set up the object. We have a real-valued **objective** $f$ and we want
+
+$$
+x^\star = \operatorname*{arg\,min}_{x \in C} f(x),
+$$ {#eq-argmin}
+
+the *location* (not the value) of the smallest output, where $C$ is the **feasible set**
+of allowed inputs. For most of this article $C$ is an interval of the real line — often
+all of $\mathbb{R}$ — and $f$ is smooth (it has as many derivatives as we need). The
+question of *when a minimizer even exists* was OPTM-00's job; here we assume one exists
+and ask **how to find it**.
+
+This is not an idle exercise. Almost every model in the rest of this series is fit by
+minimizing a one-number score over its parameters: a regression minimizes squared error,
+a classifier minimizes a loss, a likelihood-based method minimizes a *negative*
+log-likelihood. When that score depends on a single parameter — a single rate, a single
+threshold, a single step length — we are in exactly the one-dimensional world of this
+article. And even when there are many parameters, the workhorse algorithms (gradient
+descent, coordinate descent, line search) repeatedly solve a *one-dimensional*
+subproblem: "how far do I step in this direction?" So the 1-D case is not a warm-up we
+discard. It is the atom that the multivariate machinery is built out of.
+
+## What came before calculus, and why it was not enough
+
+Before Fermat, finding a maximum or minimum was a bag of ad-hoc tricks — completing the
+square for a quadratic, clever inequalities, geometric arguments specific to one curve.
+There was no *general* method: change the function and you started over.
+
+Around 1636, Pierre de Fermat noticed something that did generalize. Near a smooth peak
+or trough, the function is *almost flat*: nudging the input barely changes the output,
+because the change of output is (to first order) proportional to the slope, and the slope
+is dying to zero. Fermat turned this into his method of *adequality* — set the
+first-order change to zero. A few decades later Newton and Leibniz gave that nudge a name,
+the **derivative**, and Fermat's observation became the rule we still teach:
+**extrema of a smooth function occur where the derivative is zero.** That is the *why*
+behind $f'(x)=0$, and we are going to derive it rather than recite it.
+
+::: {.callout-tip title="You might be asked"}
+*"Is 'set the derivative to zero' a definition, a theorem, or a heuristic?"* It is a
+**theorem with hypotheses**, and naming the hypotheses is the whole point of this
+article. The precise statement is **Fermat's stationary-point theorem**: *if $f$ is
+differentiable at an interior point $x^\star$ of its domain and has a local extremum
+there, then $f'(x^\star)=0$.* The three load-bearing words are **differentiable**
+(no kinks — see @sec-nondiff), **interior** (not at a boundary — see @sec-boundary), and
+**local extremum** (the converse fails — a zero derivative need not be an extremum, see
+@sec-second-order). An interviewer who asks this is checking whether you know it is
+conditional, not magic.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture standing on the graph of $f$, the height being the value you want to minimize.
+You can only move left or right. **The question "am I at the lowest point?" is local: it
+is answered entirely by the ground right under your feet.**
+
+If the ground slopes — say it tilts down to the right — then taking a small step right
+*lowers* you. You were not at the bottom. The only way no small step can lower you is if
+the ground is **level**: the tangent line is horizontal. That is the entire content of
+$f'(x)=0$, stated before any algebra. @fig-downhill makes it concrete.
+
+```{python}
+#| label: fig-downhill
+#| fig-cap: "Why a nonzero slope means you are not at the bottom. At the left point the tangent (red) tilts downward to the right, so a small step right strictly lowers $f$ — there is a downhill direction, so this cannot be a minimum. At the bottom (green) the tangent is flat: no small step in either direction lowers $f$. 'Minimum' and 'flat tangent' are the same statement seen two ways."
+f  = lambda x: 0.25 * (x - 3.0) ** 2 + 1.0
+fp = lambda x: 0.5 * (x - 3.0)
+xs = np.linspace(-0.5, 6.5, 400)
+
+fig, ax = plt.subplots()
+ax.plot(xs, f(xs), color=CURVE, label="$f(x)$")
+
+# a point with nonzero slope (downhill to the right)
+x0 = 0.6
+ax.scatter([x0], [f(x0)], color=TANGENT, s=55, zorder=4)
+tx = np.linspace(x0 - 1.1, x0 + 1.1, 2)
+ax.plot(tx, f(x0) + fp(x0) * (tx - x0), color=TANGENT, lw=1.6,
+        label="tilted tangent: step right lowers $f$")
+ax.annotate("", xy=(x0 + 0.9, f(x0) + fp(x0) * 0.9), xytext=(x0, f(x0)),
+            arrowprops=dict(arrowstyle="->", color=TANGENT, lw=1.8))
+
+# the minimum: flat tangent
+ax.scatter([3.0], [f(3.0)], color=ACCENT, s=70, zorder=4)
+ax.plot([3.0 - 1.0, 3.0 + 1.0], [f(3.0), f(3.0)], color=ACCENT, lw=1.6,
+        label="flat tangent: no downhill direction")
+
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("A nonzero slope is a downhill arrow")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+Two warnings are already visible in this picture and we will pay both off in full.
+First, *flat* is not the same as *lowest*: the top of a hill is flat too, and so is the
+momentary pause of an inflection. Second, the argument needed a step in **either**
+direction to be available — at the edge of the feasible set one direction is forbidden,
+and a slope can persist at the true minimum. Hold those two thoughts.
+
+# The first-order condition, derived {#sec-first-order}
+
+We now turn the picture into mathematics, deriving $f'(x)=0$ from the definition of the
+derivative — nothing assumed above the floor.
+
+## What the derivative is, in one breath {#sec-deriv-refresher}
+
+The reader has seen this and is rusty, so we restate it exactly once. The **derivative**
+of $f$ at $x$ is the limit of the slope of the line through two nearby points as they
+collapse together:
+
+$$
+f'(x) \;=\; \lim_{h \to 0} \frac{f(x+h) - f(x)}{h}.
+$$ {#eq-deriv-def}
+
+Read it as a rate: $f'(x)$ is *how fast the output changes per unit change in the input,
+right at $x$*. Its sign is the only thing we need for the first-order argument. If
+$f'(x) > 0$, then for all sufficiently small $h$ the quotient
+$\bigl(f(x+h)-f(x)\bigr)/h$ is close to that positive number, hence itself positive; the
+output rises as the input rises. If $f'(x) < 0$, the output falls as the input rises.
+That is the whole toolkit.
+
+## The interior first-order condition {#sec-fermat}
+
+::: {#thm-fermat}
+**Theorem (Fermat's first-order necessary condition).** Let $f$ be differentiable at a
+point $x^\star$ that is **interior** to the feasible set $C$ (so a whole open interval
+$(x^\star - \delta,\, x^\star + \delta)$ lies inside $C$). If $x^\star$ is a **local
+minimum** of $f$ on $C$ — meaning $f(x^\star) \le f(x)$ for every $x$ within some small
+distance — then
+
+$$
+f'(x^\star) = 0.
+$$
+:::
+
+::: {.proof}
+We argue by contradiction: suppose $f'(x^\star) \neq 0$ and show $x^\star$ cannot be a
+local minimum. There are two cases.
+
+**Case 1: $f'(x^\star) > 0$.** By the definition @eq-deriv-def, the difference quotient
+$\frac{f(x^\star + h) - f(x^\star)}{h}$ tends to a *positive* limit as $h \to 0$. By the
+definition of a limit, there is a small $\delta_1 > 0$ such that for every nonzero $h$
+with $|h| < \delta_1$, the quotient is still positive (it is within, say, half of
+$f'(x^\star)$ of that positive value, hence above zero). Now take a *negative* step: pick
+$h$ with $-\delta_1 < h < 0$. The quotient is positive and its denominator $h$ is
+negative, so the numerator must be negative:
+
+$$
+\frac{f(x^\star + h) - f(x^\star)}{h} > 0
+\quad\text{and}\quad h < 0
+\;\;\Longrightarrow\;\;
+f(x^\star + h) - f(x^\star) < 0,
+$$
+
+that is, $f(x^\star + h) < f(x^\star)$. We found a nearby point with a *smaller* value, to
+the **left** of $x^\star$. Because $x^\star$ is interior, this left neighbor is genuinely
+inside $C$ and allowed. So $x^\star$ is not a local minimum — contradiction.
+
+**Case 2: $f'(x^\star) < 0$.** Mirror image. The quotient is negative for all small
+$|h| < \delta_2$. Take a *positive* step, $0 < h < \delta_2$: a negative quotient with a
+positive denominator forces a negative numerator, $f(x^\star + h) - f(x^\star) < 0$, so
+$f(x^\star + h) < f(x^\star)$. A smaller value sits to the **right**, again inside $C$ by
+interiority. Contradiction once more.
+
+Both cases of $f'(x^\star) \neq 0$ produce a strictly lower nearby feasible point, so they
+are impossible at a local minimum. The only remaining possibility is $f'(x^\star) = 0$.
+$\qquad\blacksquare$
+:::
+
+That proof is the rigorous version of the downhill-arrow picture: *a nonzero derivative is
+a guaranteed direction of decrease* (left if the slope is positive, right if it is
+negative), and a guaranteed direction of decrease is incompatible with being at the
+bottom. Notice the proof never used that $x^\star$ was a *minimum* specifically — the same
+argument at a *maximum* finds a higher point — so the condition $f'=0$ catches **all**
+interior extrema, minima and maxima alike. That double duty is exactly why $f'=0$ alone
+cannot tell a minimum from a maximum, and why we need the second-order test of
+@sec-second-order.
+
+::: {.callout-important title="The word that does the work: *stationary*"}
+A point where $f'(x)=0$ is called a **stationary point** (or **critical point**). The
+name is apt: to first order, $f$ is *stationary* — momentarily not changing — as you pass
+through. @thm-fermat says **every interior local extremum is a stationary point.** It does
+**not** say the reverse. Stationarity is the *net* we cast; @sec-second-order is how we
+sort the catch. This necessary-but-not-sufficient pattern is the spine of the whole
+Optimization track: $\nabla f = 0$ in [OPTM-02], the KKT conditions in [OPTM-14] — all of
+them are "stationarity nets" followed by a second-order or convexity check.
+:::
+
+# Sorting the catch: the second-derivative test {#sec-second-order}
+
+Solving $f'(x)=0$ hands us a list of stationary points. Some are minima, some maxima, some
+neither. We need a *local* test to classify each one without plotting the whole function.
+
+## The intuition: curvature {#sec-curvature}
+
+At a stationary point the slope is zero, so the slope is *not* informative — it is the
+same (zero) at a min and a max. What distinguishes them is **how the slope is changing**,
+i.e. the slope of the slope: the **second derivative** $f''$.
+
+- At a minimum, the curve bends *upward* like a bowl: just left of the bottom the slope is
+  negative (going down), just right it is positive (going up). The slope is **increasing**
+  through the stationary point, so $f'' > 0$.
+- At a maximum, the curve bends *downward* like a dome: the slope goes from positive to
+  negative, **decreasing**, so $f'' < 0$.
+
+That is the whole idea. @fig-curvature shows both, plus the treacherous in-between case.
+
+```{python}
+#| label: fig-curvature
+#| fig-cap: "The second derivative reads curvature. **Left:** $f(x)=x^2$ curves upward ($f''=2>0$) — its stationary point at $0$ is a minimum. **Middle:** $f(x)=-x^2$ curves downward ($f''=-2<0$) — a maximum. **Right:** $f(x)=x^3$ has $f'(0)=0$ *and* $f''(0)=0$; it is neither a min nor a max but an inflection where the curve crosses its own tangent. A zero second derivative is the test going silent, not a verdict."
+xs = np.linspace(-1.6, 1.6, 400)
+fig, axes = plt.subplots(1, 3, figsize=(9.2, 3.4))
+
+for ax, (g, ttl, sub) in zip(axes, [
+    (lambda x: x**2,  "$f(x)=x^2$",  "$f''(0)=2>0$: minimum"),
+    (lambda x: -x**2, "$f(x)=-x^2$", "$f''(0)=-2<0$: maximum"),
+    (lambda x: x**3,  "$f(x)=x^3$",  "$f''(0)=0$: inconclusive"),
+]):
+    ax.plot(xs, g(xs), color=CURVE)
+    ax.scatter([0], [g(0.0)], color=ACCENT, s=60, zorder=4)
+    ax.axhline(g(0.0), color=GREY, lw=1.0, ls="--", alpha=0.7)  # flat tangent at 0
+    ax.set_title(ttl, fontsize=11)
+    ax.set_xlabel(sub, fontsize=9)
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+## The test, stated and proved {#sec-sot-proof}
+
+::: {#thm-second-order}
+**Theorem (second-derivative test).** Let $f$ be twice differentiable near a stationary
+point $x^\star$ (so $f'(x^\star)=0$), with $f''$ continuous there. Then:
+
+1. if $f''(x^\star) > 0$, the point $x^\star$ is a **strict local minimum**;
+2. if $f''(x^\star) < 0$, the point $x^\star$ is a **strict local maximum**;
+3. if $f''(x^\star) = 0$, the test is **inconclusive** — $x^\star$ may be a minimum, a
+   maximum, or neither.
+:::
+
+::: {.proof}
+We prove (1); (2) is the identical argument applied to $-f$, and we settle (3) by explicit
+counterexamples below.
+
+Assume $f''(x^\star) > 0$. The second derivative is the *rate of change of the first
+derivative*: $f''(x^\star) = \lim_{h\to 0}\frac{f'(x^\star + h) - f'(x^\star)}{h}$. Since
+$f'(x^\star)=0$, this reads $f''(x^\star) = \lim_{h\to 0} \frac{f'(x^\star+h)}{h}$, and by
+assumption that limit is positive. As in @thm-fermat's proof, a positive limit means there
+is a $\delta>0$ such that $\frac{f'(x^\star+h)}{h} > 0$ for all $0 < |h| < \delta$. Reading
+off the sign of $f'$ on each side:
+
+- for $0 < h < \delta$ (just to the **right**): the denominator $h$ is positive, so the
+  numerator $f'(x^\star + h)$ is positive — $f$ is **increasing** there;
+- for $-\delta < h < 0$ (just to the **left**): the denominator is negative, so
+  $f'(x^\star + h)$ is negative — $f$ is **decreasing** there.
+
+So $f$ decreases as we approach $x^\star$ from the left and increases as we leave to the
+right. Concretely, take any point $x = x^\star + h$ with $0 < |h| < \delta$. We use the
+**Mean Value Theorem** — a Calc-1 result: for a function differentiable on an interval,
+the total change equals the derivative at *some* interior point times the width,
+$f(x) - f(x^\star) = f'(c)\,(x - x^\star)$ for some $c$ strictly between $x^\star$ and $x$.
+
+If $x$ is to the right ($h>0$), then $c \in (x^\star, x)$ lies in the right region where we
+just showed $f' > 0$; and $x - x^\star = h > 0$. Product of two positives:
+$f(x) - f(x^\star) > 0$. If $x$ is to the left ($h<0$), then $c$ lies in the left region
+where $f' < 0$, and $x - x^\star = h < 0$. Product of two negatives:
+$f(x) - f(x^\star) > 0$ again. Either way $f(x) > f(x^\star)$ for every nearby $x \neq
+x^\star$, which is exactly the definition of a **strict local minimum**.
+$\qquad\blacksquare$
+:::
+
+The proof says in slow motion what @fig-curvature shows: $f'' > 0$ forces the slope to
+swing from negative (falling) to positive (rising) as we cross $x^\star$, and a slope that
+goes down-then-up traces a valley.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me a function where the second-derivative test fails, and say what you'd do
+instead."* Reach for $x^4$, $-x^4$, and $x^3$ at the origin — all three have
+$f'(0)=f''(0)=0$, yet $x^4$ has a minimum, $-x^4$ a maximum, and $x^3$ an inflection
+(neither). The test is genuinely blind here. **What you do instead:** fall back to the
+*definition* — check the sign of $f$ on each side of the point, or use the **higher-order
+test** (the first nonzero derivative). For $x^4$, the first nonzero derivative at $0$ is
+the fourth, $f^{(4)}(0)=24>0$, and the rule is: if the first nonzero derivative is of
+**even** order and **positive**, it is a minimum; even and negative, a maximum; **odd**
+order, an inflection (neither). We verify this on $x^4$ next.
+:::
+
+## The honest $f''=0$ case: $x^4$ worked out {#sec-x4}
+
+Clause (3) of @thm-second-order is not a technicality to wave away; it is a real hole in
+the test, and the cleanest way to internalize it is to watch it happen. Take
+
+$$
+f(x) = x^4, \qquad f'(x) = 4x^3, \qquad f''(x) = 12x^2.
+$$
+
+The stationary points solve $4x^3 = 0$, so $x^\star = 0$ is the only one. Now run the
+test: $f''(0) = 12\cdot 0^2 = 0$. **Inconclusive.** The machine has stopped. Yet the
+definition settles it directly: $x^4 \ge 0$ for every real $x$, with equality *only* at
+$x=0$, so $f(0)=0$ is the smallest value $f$ takes anywhere — $0$ is the global minimum.
+The test failed not because the answer is hard but because $x^4$ is *flatter than
+quadratic* at the bottom — it curves upward so gently that the second derivative, which
+only sees quadratic curvature, reads zero.
+
+The honest resolution is the higher-order test from the callout. Differentiate until a
+derivative is nonzero at $0$:
+
+$$
+f'(0)=0,\quad f''(0)=0,\quad f'''(x)=24x \Rightarrow f'''(0)=0,\quad f^{(4)}(x)=24
+\Rightarrow f^{(4)}(0)=24 \neq 0.
+$$
+
+The first nonzero derivative is the **fourth** — even order — and it is **positive**, so
+$0$ is a strict local minimum, confirming what the picture screamed. @fig-x4 contrasts the
+three flat-at-zero functions so the rule's logic is visible.
+
+```{python}
+#| label: fig-x4
+#| fig-cap: "Three functions that all satisfy $f'(0)=f''(0)=0$, so the second-derivative test is silent on every one. The higher-order test decides: $x^4$ (first nonzero derivative $f^{(4)}=24$, even and positive) is a minimum; $-x^4$ (even, negative) is a maximum; $x^3$ (first nonzero derivative $f'''=6$, odd order) is an inflection — neither. Same blind spot, three different truths."
+xs = np.linspace(-1.3, 1.3, 400)
+fig, ax = plt.subplots()
+ax.plot(xs, xs**4,  color=CURVE,  label="$x^4$  (min: even order 4, $+$)")
+ax.plot(xs, -xs**4, color=TANGENT, label="$-x^4$ (max: even order 4, $-$)")
+ax.plot(xs, xs**3,  color=ACCENT, label="$x^3$  (inflection: odd order 3)")
+ax.scatter([0, 0, 0], [0, 0, 0], color="black", s=30, zorder=5)
+ax.axhline(0, color=GREY, lw=0.8)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("When $f''=0$, the order of the first nonzero derivative decides")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+ax.set_ylim(-1.4, 1.7)
+plt.tight_layout()
+```
+
+# Worked example 1 — a quadratic cost, by hand {#sec-quadratic}
+
+We start where the method is exact and we can check every number: a quadratic objective,
+the bread-and-butter cost of least squares and of the local model that Newton's method
+([OPTM-09]) builds everywhere.
+
+A factory's per-unit cost as a function of the production rate $x$ (units per hour) is well
+modeled by an upward-opening quadratic — costs are high when you run too slow (fixed
+overhead spread thin) and high when you run too fast (overtime, waste), with a sweet spot
+between. Suppose
+
+$$
+f(x) = 2x^2 - 16x + 40, \qquad x > 0.
+$$ {#eq-quad}
+
+**Step 1 — first-order condition.** Differentiate with the Calc-1 power rule
+($\frac{d}{dx}x^n = n x^{n-1}$, and the derivative of a constant is $0$):
+
+$$
+f'(x) = 4x - 16.
+$$
+
+Set it to zero (@thm-fermat) and solve the linear equation:
+
+$$
+4x - 16 = 0 \;\Longrightarrow\; x^\star = 4.
+$$
+
+**Step 2 — second-order check.** Differentiate again: $f''(x) = 4$, a positive constant.
+Since $f''(4) = 4 > 0$, by @thm-second-order clause (1) the stationary point $x^\star = 4$
+is a strict local minimum. For this quadratic the local minimum is in fact the **global**
+minimum, and we can see exactly why by completing the square rather than appealing to any
+later result. Factor out the leading $2$ and complete the square inside:
+
+$$
+f(x) = 2x^2 - 16x + 40 = 2\bigl(x^2 - 8x\bigr) + 40
+     = 2\bigl((x-4)^2 - 16\bigr) + 40 = 2(x-4)^2 + 8.
+$$
+
+The term $2(x-4)^2$ is a square times a positive constant, so it is $\ge 0$ for every $x$
+and equals $0$ *only* at $x=4$. Hence $f(x) \ge 8$ everywhere, with equality only at
+$x=4$: the stationary point is the global minimizer, no qualification needed. (This
+"$f''>0$ everywhere $\Rightarrow$ a single global minimum" pattern is the seed of
+**convexity**, the dividing line of the field, developed in general in [OPTM-04]; for a
+quadratic the completed square proves it outright.)
+
+**Step 3 — the value.** The minimum *cost* is $f(4) = 2(16) - 16(4) + 40 = 32 - 64 + 40 =
+8$. So the cheapest run rate is $4$ units/hour at a cost of $8$.
+
+@fig-quadratic confirms the hand arithmetic and overlays the flat tangent that
+$f'(4)=0$ guarantees.
+
+```{python}
+#| label: fig-quadratic
+#| fig-cap: "Worked example 1. The quadratic cost $f(x)=2x^2-16x+40$ with its unique stationary point at $x^\\star=4$ (green), where the tangent is flat ($f'(4)=0$) and the curve bowls upward ($f''=4>0$), so it is the global minimum. The closed-form answer and the picture agree to the last digit."
+f  = lambda x: 2*x**2 - 16*x + 40
+fp = lambda x: 4*x - 16
+xs = np.linspace(0, 8, 400)
+xstar = 4.0
+
+fig, ax = plt.subplots()
+ax.plot(xs, f(xs), color=CURVE, label="$f(x)=2x^2-16x+40$")
+ax.scatter([xstar], [f(xstar)], color=ACCENT, s=80, zorder=5,
+           label=r"$x^\star=4,\ f=8$")
+ax.plot([xstar-1.6, xstar+1.6], [f(xstar), f(xstar)], color=TANGENT, lw=1.6,
+        label="flat tangent ($f'=0$)")
+ax.set_xlabel("production rate $x$ (units/hr)"); ax.set_ylabel("cost $f(x)$")
+ax.set_title("A quadratic cost: $f'(x)=0$ is exact here")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"For a general quadratic $f(x)=ax^2+bx+c$, where is the minimum, and when does one even
+exist?"* Differentiate: $f'(x) = 2ax + b$, set to zero, $x^\star = -\,b/(2a)$ — the
+vertex formula, now *derived* rather than memorized. The second derivative is $f''=2a$, so
+it is a **minimum iff $a>0$**, a maximum iff $a<0$, and if $a=0$ the function is a straight
+line with no interior extremum at all (it just runs off to $\pm\infty$). This is the
+simplest instance of the rule that governs Newton's method: every smooth function looks
+quadratic up close, and the sign of the curvature decides everything.
+:::
+
+# Worked example 2 — a one-parameter negative log-likelihood {#sec-poisson}
+
+The previous example was algebra. This one is the form practitioners meet constantly:
+**maximizing a likelihood by minimizing its negative logarithm**, with a single parameter.
+It is also where "set the derivative to zero" earns its keep statistically.
+
+A call center logs the number of calls arriving each minute. Counts of independent
+events in a fixed window are the textbook home of the **Poisson distribution**: a count
+$y$ has probability $p(y \mid \lambda) = e^{-\lambda}\lambda^{y}/y!$, where the single
+parameter $\lambda > 0$ is the *mean rate* — the average number of calls per minute. We
+observe $n$ minutes with counts $y_1,\dots,y_n$ and want the rate $\lambda$ that best
+explains them. (The Poisson model itself is built in [PROB-12]; here we need only its
+formula and treat finding $\lambda$ as the one-dimensional optimization it is.)
+
+**Step 1 — write the objective.** The **likelihood** is the probability of all the data as
+a function of $\lambda$; by independence it is the product of the per-minute
+probabilities. Maximizing a product of small numbers is numerically and algebraically
+nasty, so we take the negative logarithm and **minimize** that instead — legitimate
+because $-\ln$ is strictly decreasing, so it flips "most likely" into "smallest," moving
+the maximizer to the identical location (the same log trick the OLS article used in
+[REGR-01]). Writing the objective and expanding with $\ln(ab)=\ln a + \ln b$ and
+$\ln e^{z}=z$:
+
+$$
+\begin{aligned}
+\ell(\lambda)
+&= -\ln \prod_{i=1}^{n} \frac{e^{-\lambda}\lambda^{\,y_i}}{y_i!}
+ = -\sum_{i=1}^{n} \Bigl[\,\ln e^{-\lambda} + \ln \lambda^{\,y_i} - \ln(y_i!)\,\Bigr] \\[4pt]
+&= -\sum_{i=1}^{n} \Bigl[\,-\lambda + y_i \ln\lambda - \ln(y_i!)\,\Bigr]
+ = n\lambda - \Bigl(\textstyle\sum_i y_i\Bigr)\ln\lambda + \sum_i \ln(y_i!).
+\end{aligned}
+$$ {#eq-nll}
+
+**Step 2 — first-order condition.** Differentiate @eq-nll with respect to $\lambda$. The
+last term has no $\lambda$ (it is a constant, derivative $0$); the derivative of $n\lambda$
+is $n$; and $\frac{d}{d\lambda}\ln\lambda = 1/\lambda$ (a Calc-1 fact). So
+
+$$
+\ell'(\lambda) = n - \frac{\sum_i y_i}{\lambda}.
+$$
+
+Set $\ell'(\lambda)=0$ and solve:
+
+$$
+n - \frac{\sum_i y_i}{\lambda} = 0
+\;\Longrightarrow\;
+\lambda = \frac{1}{n}\sum_{i=1}^{n} y_i = \bar y.
+$$
+
+The rate that best explains the data is simply the **sample mean** of the counts — a
+clean, interpretable answer that the derivative test produced mechanically.
+
+**Step 3 — second-order check.** Differentiate again. With
+$\ell'(\lambda) = n - (\sum_i y_i)\lambda^{-1}$ and
+$\frac{d}{d\lambda}\lambda^{-1} = -\lambda^{-2}$,
+
+$$
+\ell''(\lambda) = \frac{\sum_i y_i}{\lambda^2}.
+$$
+
+For any data with at least one nonzero count, $\sum_i y_i > 0$ and $\lambda^2 > 0$, so
+$\ell''(\bar y) > 0$: a strict minimum by @thm-second-order, and since $\ell''>0$ for all
+$\lambda>0$ it is the unique global minimizer on the feasible set $\lambda > 0$.
+
+@fig-poisson draws the negative log-likelihood for a simulated day and marks the analytic
+minimizer $\bar y$, confirming it sits at the bottom.
+
+```{python}
+#| label: fig-poisson
+#| fig-cap: "Worked example 2. The Poisson negative log-likelihood $\\ell(\\lambda)$ for $n=200$ simulated minutes of call counts. The curve is a smooth bowl in the rate $\\lambda$; its unique minimizer (green) is the closed-form $\\hat\\lambda=\\bar y$ that solving $\\ell'(\\lambda)=0$ produced, marked here against the bottom located by a brute-force grid search; the printed output below shows the two agree to several decimals. The derivative test turns a probability model into a one-line estimator."
+rng = np.random.default_rng(11)
+true_lambda = 4.3
+y = rng.poisson(true_lambda, size=200)
+n = y.size
+ybar = y.mean()
+
+# negative log-likelihood up to the data-only constant sum ln(y_i!)
+const = np.sum([np.sum(np.log(np.arange(1, yi + 1))) for yi in y])
+def nll(lam):
+    return n * lam - y.sum() * np.log(lam) + const
+
+lams = np.linspace(2.5, 6.5, 400)
+fig, ax = plt.subplots()
+ax.plot(lams, nll(lams), color=CURVE, label=r"$\ell(\lambda)$")
+ax.scatter([ybar], [nll(ybar)], color=ACCENT, s=80, zorder=5,
+           label=fr"$\hat\lambda=\bar y={ybar:.3f}$")
+ax.axvline(ybar, color=ACCENT, lw=1.0, ls="--", alpha=0.6)
+ax.set_xlabel(r"rate $\lambda$"); ax.set_ylabel(r"negative log-likelihood $\ell(\lambda)$")
+ax.set_title("Minimizing a 1-parameter negative log-likelihood")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"closed-form minimizer  ybar      = {ybar:.4f}")
+print(f"numerical argmin over grid        = {lams[np.argmin(nll(lams))]:.4f}")
+print(f"second derivative at ybar > 0?    = {y.sum()/ybar**2:.3f}  (>0, confirms minimum)")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"You set the derivative of the log-likelihood to zero — but you were minimizing the
+*negative* log-likelihood. Doesn't the sign matter?"* It does not change the **location**,
+and that is the point worth being crisp about. Maximizing $\ln L$ and minimizing
+$-\ln L$ are the same problem because negation is strictly decreasing: it flips the curve
+top-to-bottom, sending the highest point to the lowest *at the same $\lambda$*. The
+stationarity equation is literally identical up to an overall sign,
+$\frac{d}{d\lambda}\ln L = -\,\frac{d}{d\lambda}(-\ln L)$, so setting either to zero gives
+the same $\hat\lambda$. The **maximize-vs-minimize** distinction is pure convention; the
+*second-order* sign is what actually flips (a max of $\ln L$ is a min of $-\ln L$). This is
+the same gradient-ascent/descent mirror that [OPTM-06] makes explicit in many dimensions.
+:::
+
+# Worked example 3 — the edge of applicability: a boundary minimum {#sec-boundary}
+
+Now the honest case, the one the Core warned about and the reason this article is not just
+"set $f'=0$ and stop." Here the derivative test, applied naively, gives the **wrong
+answer** — and a practitioner who trusts it blindly ships a bad decision.
+
+A retailer chooses an order quantity $x \ge 0$ for a perishable good. The total cost
+combines a holding/overage cost that grows with $x$ and a shortage penalty that shrinks
+with $x$, but a supplier contract caps the order at $x \le 6$. A realistic shape is
+
+$$
+f(x) = (x - 9)^2, \qquad \text{feasible set } C = [\,0,\, 6\,].
+$$ {#eq-boundary}
+
+The *unconstrained* parabola is minimized at $x=9$ — but $9$ is **outside** the feasible
+interval; the contract forbids it. Run the derivative test as taught and watch it
+mislead.
+
+**The naive (wrong) move.** Set $f'(x)=0$: $f'(x) = 2(x-9) = 0 \Rightarrow x = 9$. This is
+the only stationary point, and $f''=2>0$ certifies it as a minimum. A reader who stops
+here reports "minimum at $x=9$." But $9 \notin C$ — the answer is not even *allowed*.
+@thm-fermat does not apply, because its hypothesis demanded an **interior** point, and the
+true optimum is nowhere near the interior.
+
+**The correct procedure on a closed interval.** When the feasible set is a closed interval
+$[a,b]$, a continuous $f$ attains its minimum somewhere on it (this existence guarantee is
+OPTM-00's, the "closed and bounded" fact). The minimizer is at one of only three kinds of
+place, and we simply check them all — the standard Calc-1 *closed-interval method*:
+
+1. **interior stationary points** (where $f'=0$ *and* the point is inside $(a,b)$),
+2. the **left endpoint** $a$,
+3. the **right endpoint** $b$.
+
+For @eq-boundary: the only stationary point $x=9$ is **not** in $(0,6)$, so it is
+discarded. That leaves the two endpoints. Evaluate:
+
+$$
+f(0) = (0-9)^2 = 81, \qquad f(6) = (6-9)^2 = 9.
+$$
+
+The smallest feasible value is $f(6) = 9$, so the constrained minimizer is the **boundary
+point** $x^\star = 6$. Crucially, the derivative there is *not* zero:
+$f'(6) = 2(6-9) = -6 \neq 0$. The function is still sloping downhill toward $9$ at the
+boundary; we simply are not allowed to keep walking. @fig-boundary shows the parabola, the
+forbidden vertex, and the true optimum pinned against the wall.
+
+```{python}
+#| label: fig-boundary
+#| fig-cap: "Worked example 3, the edge of applicability. The cost $f(x)=(x-9)^2$ is minimized over the *feasible* interval $[0,6]$ (shaded). The unconstrained vertex $x=9$ (red, hollow) satisfies $f'=0$ but is forbidden. The true constrained minimum (green) is the **boundary point** $x^\\star=6$, where the slope is still nonzero ($f'(6)=-6$): the function wants to keep decreasing but the wall stops it. Here 'set the derivative to zero' gives the wrong answer outright."
+f  = lambda x: (x - 9)**2
+fp = lambda x: 2*(x - 9)
+xs = np.linspace(0, 10, 400)
+
+fig, ax = plt.subplots()
+ax.axvspan(0, 6, color=ACCENT, alpha=0.08, label="feasible set $[0,6]$")
+ax.plot(xs, f(xs), color=CURVE, label="$f(x)=(x-9)^2$")
+# forbidden unconstrained minimizer
+ax.scatter([9], [f(9)], facecolors="none", edgecolors=TANGENT, s=90, linewidth=2,
+           zorder=5, label=r"unconstrained $f'=0$ at $x=9$ (forbidden)")
+# true constrained minimizer at the boundary
+ax.scatter([6], [f(6)], color=ACCENT, s=90, zorder=6,
+           label=r"constrained min at boundary $x^\star=6$")
+# show the nonzero slope at the boundary
+tx = np.linspace(6 - 1.3, 6 + 1.3, 2)
+ax.plot(tx, f(6) + fp(6) * (tx - 6), color=TANGENT, lw=1.5,
+        label=r"tangent at $x=6$: slope $-6\neq 0$")
+ax.axvline(6, color=GREY, ls="--", lw=1.0, alpha=0.7)
+ax.set_xlabel("order quantity $x$"); ax.set_ylabel("cost $f(x)$")
+ax.set_title("A minimum at the boundary, where $f'\\neq 0$")
+ax.legend(loc="upper center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**"Set $f'(x)=0$" finds only *interior* stationary points. It is blind to the boundary.**
+On a constrained interval $[a,b]$ you must *also* evaluate the endpoints and compare,
+because the optimum can sit on a wall with a nonzero slope. Forgetting this is one of the
+most common optimization mistakes in practice — and it is the entire reason constrained
+optimization needs its own machinery. The endpoint comparison here is the one-dimensional
+ancestor of the **KKT conditions** ([OPTM-14]): an *active* constraint (a binding wall)
+contributes a nonzero multiplier precisely because the unconstrained slope there is not
+zero. When you next see complementary slackness, remember $f'(6)=-6$.
+:::
+
+::: {.callout-warning title="Pitfall"}
+**The derivative test also presumes differentiability.** A function with a *kink* — like
+$f(x)=|x|$, whose minimum is the corner at $0$ — has no derivative at its minimizer, so
+$f'(x)=0$ never holds there even though the minimum is interior. @sec-nondiff treats this;
+the general fix, the **subgradient**, is owned by [OPTM-05] and is what lets the lasso be
+optimized at its kinks.
+:::
+
+# When you cannot solve $f'(x)=0$: the first iterative search {#sec-iterative}
+
+Every example so far had a tidy closed form: $f'(x)=0$ was a linear or simple equation we
+solved with algebra. That is the lucky case. In general $f'(x)=0$ is **transcendental** —
+no formula isolates $x$. Try minimizing $f(x) = x - 2\ln x + \tfrac{1}{10}e^{x/3}$: the
+condition $f'(x) = 1 - 2/x + \tfrac{1}{30}e^{x/3} = 0$ tangles a polynomial term, a
+reciprocal, and an exponential, and no rearrangement frees $x$. We cannot *solve*; we must
+**search**. This is the conceptual birth of every iterative optimizer in the rest of the
+track.
+
+The key enabling idea is **unimodality**: a function is unimodal on $[a,b]$ if it
+decreases to a single low point and then increases — one valley, no false bottoms. (Every
+strictly convex function is unimodal; we will not need full convexity here.) Unimodality
+lets us *shrink* the interval that must contain the minimum, without ever solving an
+equation.
+
+## Bisection on the derivative {#sec-bisection}
+
+If $f$ is unimodal and differentiable, its derivative $f'$ does something clean: it is
+**negative** while $f$ is still falling (left of the minimum) and **positive** once $f$ is
+rising (right of it), crossing zero exactly at $x^\star$. So locating the minimum of $f$ is
+the same as locating the **sign change of $f'$** — and finding a sign change is what
+bisection does.
+
+The method: keep an interval $[a,b]$ with $f'(a) < 0$ and $f'(b) > 0$ (so the crossing is
+trapped inside). Evaluate the derivative at the midpoint $m = (a+b)/2$:
+
+- if $f'(m) > 0$, the crossing is to the **left**, so replace $b \leftarrow m$;
+- if $f'(m) < 0$, the crossing is to the **right**, so replace $a \leftarrow m$;
+- if $f'(m) = 0$, you landed on it exactly — stop.
+
+Each step **halves** the interval, so after $k$ steps the bracket has width
+$(b-a)/2^{k}$ — the uncertainty shrinks by a constant factor every iteration. This is the
+first *convergence rate* in the series: error $\propto 2^{-k}$, called **linear**
+convergence (linear in the log of the error). @fig-bisection traces it.
+
+```{python}
+#| label: fig-bisection
+#| fig-cap: "Bisection on $f'$ for the transcendental objective $f(x)=x-2\\ln x+\\tfrac{1}{10}e^{x/3}$, whose $f'(x)=0$ has no closed form. **Left:** $f$ with the true minimizer (green). **Right:** the bracket $[a,b]$ trapping the sign change of $f'$, halving every iteration (rows top to bottom). After a handful of steps the interval is microscopic — convergence is geometric, error $\\propto 2^{-k}$."
+f  = lambda x: x - 2*np.log(x) + 0.1*np.exp(x/3)
+fp = lambda x: 1 - 2/x + (1/30)*np.exp(x/3)
+
+a, b = 0.5, 6.0
+assert fp(a) < 0 and fp(b) > 0
+brackets = [(a, b)]
+for _ in range(8):
+    m = 0.5*(a+b)
+    if fp(m) > 0:
+        b = m
+    else:
+        a = m
+    brackets.append((a, b))
+xstar = 0.5*(a+b)
+
+xs = np.linspace(0.4, 6.2, 400)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.plot(xs, f(xs), color=CURVE, label="$f(x)$")
+axL.scatter([xstar], [f(xstar)], color=ACCENT, s=70, zorder=5,
+            label=fr"$x^\star\approx{xstar:.4f}$")
+axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$")
+axL.set_title("A transcendental objective"); axL.legend(loc="upper center", fontsize=9)
+
+for k, (lo, hi) in enumerate(brackets):
+    axR.plot([lo, hi], [k, k], color=GREY, lw=2.0, marker="|", markersize=9)
+axR.axvline(xstar, color=ACCENT, lw=1.4, ls="--", label="true minimizer")
+axR.invert_yaxis()
+axR.set_xlabel("$x$"); axR.set_ylabel("iteration $k$")
+axR.set_title("Bracket halves each step"); axR.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+print(f"final bracket width = {b-a:.2e} after 8 steps  (started at {6.0-0.5:.1f})")
+print(f"estimated minimizer = {xstar:.6f}")
+```
+
+## Golden-section search: when you only have $f$, not $f'$ {#sec-golden}
+
+Bisection needed the **derivative**. Sometimes you cannot get it — $f$ is a black box (a
+simulation, an experiment, a non-differentiable score) and all you can do is *evaluate*
+it. **Golden-section search** minimizes a unimodal $f$ using function values alone, by
+shrinking a bracket $[a,b]$ known to contain the minimum.
+
+Place two interior probes $c < d$ inside $[a,b]$ and compare:
+
+- if $f(c) < f(d)$, the minimum cannot be to the right of $d$ (unimodality: past the
+  valley $f$ only rises), so discard $(d, b]$ — set $b \leftarrow d$;
+- if $f(c) > f(d)$, symmetrically discard $[a, c)$ — set $a \leftarrow c$.
+
+The clever part is *where* to place $c, d$ so that one probe can be **reused** next round,
+saving an evaluation. Let us *derive* the placement rather than assert it. Work on a unit
+bracket $[0,1]$ (any interval rescales to this), place the two probes symmetrically a
+fraction $\rho \in (0, \tfrac12)$ in from each end,
+
+$$
+c = \rho, \qquad d = 1 - \rho,
+$$
+
+and suppose the comparison discards the right piece, so the new bracket becomes
+$[0,\,1-\rho]$ of width $1-\rho$. The old left probe $c=\rho$ survives inside this new
+bracket. For the *next* round to reuse it, $c$ must already sit where a freshly placed
+probe would go — namely a fraction $\rho$ in from one end of $[0,\,1-\rho]$. Measured from
+the **right** end $1-\rho$, a fresh probe lands at $(1-\rho) - \rho(1-\rho) = (1-\rho)^2$.
+Setting the survivor's position equal to that target,
+
+$$
+\rho = (1-\rho)^2 = 1 - 2\rho + \rho^2
+\quad\Longrightarrow\quad \rho^2 - 3\rho + 1 = 0
+\quad\Longrightarrow\quad \rho = \frac{3 - \sqrt5}{2} \approx 0.382,
+$$
+
+taking the root in $(0,\tfrac12)$ by the quadratic formula (the other root,
+$\tfrac{3+\sqrt5}{2}\approx 2.618$, is out of range). The *surviving* probe then sits a
+fraction $1-\rho = \tfrac{\sqrt5 - 1}{2} = 1/\varphi \approx 0.618$ in from the near end,
+where $\varphi = (1+\sqrt5)/2 \approx 1.618$ is the **golden ratio** — the reuse
+requirement has *forced* the golden ratio out of a quadratic, with no appeal to any
+outside fact. With the probes placed this way, each iteration shrinks the bracket by
+exactly the constant factor $1-\rho = 1/\varphi \approx 0.618$ — again **linear**
+convergence, slightly slower per step than bisection's $1/2$, but it never touches a
+derivative. @fig-golden runs it on the same objective.
+
+```{python}
+#| label: fig-golden
+#| fig-cap: "Golden-section search on the same $f$, using *function values only* (no derivative). Two probes split the bracket at the golden ratio so one is reused each round; the bracket shrinks by the constant factor $1/\\varphi\\approx0.618$ every step. Slower per step than bisection but derivative-free — the tool of choice when $f$ is a black box. The bracket (rows top to bottom) closes in on the same minimizer."
+f = lambda x: x - 2*np.log(x) + 0.1*np.exp(x/3)
+invphi  = (np.sqrt(5) - 1) / 2          # 1/phi  ~ 0.618
+invphi2 = (3 - np.sqrt(5)) / 2          # 1/phi^2
+
+a, b = 0.5, 6.0
+c = a + invphi2 * (b - a)
+d = a + invphi  * (b - a)
+fc, fd = f(c), f(d)
+gbrackets = [(a, b)]
+for _ in range(12):
+    if fc < fd:
+        b, d, fd = d, c, fc
+        c = a + invphi2 * (b - a); fc = f(c)
+    else:
+        a, c, fc = c, d, fd
+        d = a + invphi * (b - a); fd = f(d)
+    gbrackets.append((a, b))
+xstar_g = 0.5*(a+b)
+
+xs = np.linspace(0.4, 6.2, 400)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.plot(xs, f(xs), color=CURVE, label="$f(x)$ (black box)")
+axL.scatter([xstar_g], [f(xstar_g)], color=ACCENT, s=70, zorder=5,
+            label=fr"$x^\star\approx{xstar_g:.4f}$")
+axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$")
+axL.set_title("Derivative-free objective"); axL.legend(loc="upper center", fontsize=9)
+
+for k, (lo, hi) in enumerate(gbrackets):
+    axR.plot([lo, hi], [k, k], color=GREY, lw=2.0, marker="|", markersize=9)
+axR.axvline(xstar_g, color=ACCENT, lw=1.4, ls="--", label="true minimizer")
+axR.invert_yaxis()
+axR.set_xlabel("$x$"); axR.set_ylabel("iteration $k$")
+axR.set_title(r"Bracket $\times\,0.618$ each step"); axR.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+print(f"golden-section minimizer = {xstar_g:.6f}  (matches bisection)")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Bisection vs. golden-section — when do you use which, and what is the catch with both?"*
+Use **bisection on $f'$** when you can compute the derivative cheaply: it halves the
+bracket each step ($\times 0.5$), the fastest of the two. Use **golden-section** when $f$
+is a black box with no usable derivative — it needs only function values, at the cost of a
+slightly slower $\times 0.618$ shrink and one extra evaluation to set up. **The catch they
+share is unimodality.** Both assume a single valley; on a multi-modal function they will
+happily converge to *whichever* local minimum their starting bracket traps, with no warning
+that a deeper one exists elsewhere. Guaranteeing the local minimum is the global one is
+exactly what **convexity** buys you, which is why [OPTM-04] is the dividing line of the
+whole field. These bracketing methods are also the engine inside **line search**
+([OPTM-07]): every gradient-descent step solves a 1-D "how far do I go?" subproblem this
+way.
+:::
+
+# Failure modes and the honest boundary {#sec-failure}
+
+We have already met two of the three ways the derivative test fails; collect all of them
+here, because knowing the failure surface is the difference between "can take a
+derivative" and "knows when to trust it."
+
+## Stationary but not a minimum {#sec-not-min}
+
+The most basic trap, proved structurally in @thm-fermat: $f'(x)=0$ catches maxima and
+inflections too. Reporting a stationary point as "the minimum" without the second-order
+(or higher-order) check is simply wrong. The fix is cheap and mandatory: always run
+@thm-second-order, and fall back to the higher-order test of @sec-x4 when $f''$ vanishes.
+
+## Boundary minima {#sec-boundary-recap}
+
+@sec-boundary in full: on a constrained set the optimum may sit on a wall with
+$f' \neq 0$, invisible to "set the derivative to zero." The fix is the closed-interval
+method — check interior stationary points **and** endpoints and compare. This is the
+gateway to constrained optimization ([OPTM-13]–[OPTM-16]).
+
+## Non-differentiable points {#sec-nondiff}
+
+@thm-fermat assumed differentiability. A kink breaks it. The cleanest witness is
+$f(x)=|x|$: its minimum is the corner at $x=0$, an interior point of $\mathbb{R}$, yet
+$f'(0)$ does not exist — the left slope is $-1$, the right slope is $+1$, and they disagree,
+so no single tangent and no "$f'(0)=0$." The derivative test cannot even be *stated* here.
+@fig-nondiff shows it.
+
+```{python}
+#| label: fig-nondiff
+#| fig-cap: "The derivative test cannot see a kink. $f(x)=|x|$ has its minimum at the corner $x=0$, but $f'(0)$ does not exist — the slope jumps from $-1$ to $+1$ across the point, shown by the two one-sided tangents. No flat tangent exists at the minimizer, so '$f'=0$' has nothing to say. The repair is the *subgradient* (the whole interval of slopes $[-1,1]$ that fit under the graph at $0$), owned by OPTM-05."
+xs = np.linspace(-2, 2, 400)
+fig, ax = plt.subplots()
+ax.plot(xs, np.abs(xs), color=CURVE, label="$f(x)=|x|$")
+ax.scatter([0], [0], color=ACCENT, s=80, zorder=5, label="minimum at the kink $x=0$")
+ax.plot([-1.6, 0], [1.6, 0], color=TANGENT, lw=1.4, ls="--", label="left slope $-1$")
+ax.plot([0, 1.6], [0, 1.6], color=GREY,    lw=1.4, ls="--", label="right slope $+1$")
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title(r"No derivative at the minimizer: $f'(0)$ undefined")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+ax.set_ylim(-0.2, 2.1)
+plt.tight_layout()
+```
+
+The honest resolution is not in this article: it is the **subgradient**, which replaces the
+single slope at a kink with the *set* of all slopes whose lines stay below the graph (for
+$|x|$ at $0$, the whole interval $[-1,1]$), and the optimality condition $0 \in \partial
+f(x)$. That machinery is owned by [OPTM-05] and is exactly what makes the lasso solvable.
+Here we simply flag the boundary: smooth $\Rightarrow$ use the derivative test; kinked
+$\Rightarrow$ you need subgradients.
+
+## Many valleys: local vs. global {#sec-multimodal}
+
+The deepest limitation, and the one the entire rest of the track is organized around. The
+derivative test — and the bracketing searches of @sec-iterative — are **local**: they
+report a point with no downhill neighbors, but they cannot tell whether a *deeper* valley
+exists somewhere else. @fig-multimodal shows a function with several stationary points, two
+of which are genuine local minima by the second-derivative test, only one of which is the
+global minimum.
+
+```{python}
+#| label: fig-multimodal
+#| fig-cap: "The honest boundary of *local* optimality. This multi-modal $f$ has three stationary points; the second-derivative test certifies two of them as local minima (orange), but only one is the **global** minimum (green). $f'(x)=0$ and any local search are blind to the difference — started in the wrong basin they converge to the wrong valley with full confidence. Ruling this out requires *convexity* (one valley, guaranteed), the subject of OPTM-04."
+f  = lambda x: 0.10*x**4 - 0.30*x**3 - 1.6*x**2 + 2.0*x + 12
+fp = lambda x: 0.40*x**3 - 0.90*x**2 - 3.2*x + 2.0
+fpp = lambda x: 1.20*x**2 - 1.80*x - 3.2
+xs = np.linspace(-4.5, 6.0, 600)
+
+# locate stationary points by sign changes of fp on a fine grid
+g = np.linspace(-4.5, 6.0, 4000)
+sgn = np.sign(fp(g))
+roots = g[:-1][np.diff(sgn) != 0]
+mins = [r for r in roots if fpp(r) > 0]
+gmin = min(mins, key=f)
+
+fig, ax = plt.subplots()
+ax.plot(xs, f(xs), color=CURVE, label="$f(x)$")
+for r in mins:
+    ax.scatter([r], [f(r)], color="#e08a1e", s=55, zorder=4)
+ax.scatter([gmin], [f(gmin)], color=ACCENT, s=95, zorder=6,
+           edgecolor="white", linewidth=1.3, label="global minimum")
+ax.scatter([], [], color="#e08a1e", s=55, label="local minima ($f''>0$)")
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("Local search cannot see past its own valley")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Your optimizer returned a stationary point. How do you know it's the global minimum?"*
+The honest answer in one dimension: **in general, you don't** — $f'(x)=0$ and any local
+search certify only that no *nearby* point is lower. You earn a global guarantee in exactly
+two ways. **(1) Convexity:** if $f$ is convex (one bowl, $f''\ge 0$ everywhere in the
+smooth case), every local minimum *is* the global minimum — the result that makes
+optimization tractable, derived in [OPTM-04]. **(2) Exhaustion:** on a small, bounded
+domain you can grid or multi-start to make a deeper basin unlikely, but that is evidence,
+not proof. An interviewer asking this is probing whether you respect the local/global gap;
+conflating them is the single most expensive mistake in non-convex optimization (training
+neural nets, fitting mixtures), where the gap is unavoidable and we settle for a *good*
+local minimum.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You would rarely hand-code
+bisection or golden section. Every numerical stack ships robust 1-D minimizers:
+`scipy.optimize.minimize_scalar` defaults to **Brent's method** (a hybrid of
+golden-section and parabolic interpolation — derivative-free, with golden-section's
+guaranteed shrink as a fallback when the parabola misbehaves), and accepts a `bounds=`
+argument to honor a feasible interval, automatically handling the endpoint comparison of
+@sec-boundary. For the smooth, closed-form cases (@sec-quadratic, @sec-poisson) you would
+not optimize numerically at all — you would solve $f'(x)=0$ by hand or with a symbolic tool
+(`sympy.solve`) and get the exact answer. The practitioner's habit worth internalizing:
+**check whether $f'(x)=0$ has a closed form first** (it often does for the losses in this
+series), reach for an iterative scalar minimizer only when it does not, and *always* pass
+the bounds when the problem is constrained so the library checks the walls for you.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-00 *What Is an Optimization Problem?*]**, which named the objects
+— objective, argmin, feasible set, local vs. global. This article gave the **first method**
+for actually finding a minimizer when there is a single variable: $f'(x)=0$, the
+second-derivative test, the honest failure clauses, and the seed of iterative search. From
+here:
+
+- **[OPTM-02 *Minimizing in Many Variables*]** — the direct sequel. Everything here
+  generalizes: the single derivative becomes the **gradient** $\nabla f$, the condition
+  $f'(x)=0$ becomes **stationarity** $\nabla f(x)=0$, and the second-derivative test becomes
+  the **Hessian test** (positive-definite $\Rightarrow$ minimum, indefinite $\Rightarrow$
+  *saddle* — a failure mode with no 1-D analogue). It uses OLS as its headline example, the
+  exact move the Regression track links here for.
+- **[OPTM-04 *Convex Functions*]** — answers the local-vs-global question (@sec-multimodal):
+  for convex $f$, a stationary point *is* the global minimum. This is the guarantee that
+  turns "we found a valley" into "we found *the* valley."
+- **[OPTM-05 *Subgradients*]** — repairs the non-differentiable case (@sec-nondiff): how to
+  do "set the derivative to zero" at a kink like $|x|$.
+- **[OPTM-06 *Gradient Descent*]** — when there is no closed form *and* many variables, the
+  iterative-search idea of @sec-iterative grows into the algorithm that trains nearly every
+  model in the series.
+- **[OPTM-13 *Lagrange Multipliers*]** and **[OPTM-14 *KKT Conditions*]** — the boundary
+  minimum of @sec-boundary, handled properly: the binding-wall, nonzero-slope situation
+  becomes an *active constraint* with a nonzero multiplier.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The origin.** Pierre de Fermat's *Methodus ad disquirendam maximam et minimam* (c. 1636)
+  introduced setting the first-order change to zero — *adequality* — decades before the
+  derivative had a name. It is the direct ancestor of @thm-fermat, which still bears his
+  name.
+- **The closed-interval method and the second-derivative test** are standard Calculus-I
+  material; any rigorous single-variable calculus text (e.g. Spivak's *Calculus*, ch. 11)
+  develops them with the Mean Value Theorem we used in @sec-sot-proof.
+- **The bracketing searches.** Golden-section search and Brent's method are treated in
+  Press et al., *Numerical Recipes*, ch. 10 ("Minimization or Maximization of Functions"),
+  and in Nocedal & Wright, *Numerical Optimization*, which also develops the line-search
+  theory ([OPTM-07]) that these 1-D methods feed.
+- **Open threads this article deliberately deferred.** *What if there are many variables?*
+  — the gradient, [OPTM-02]. *What if a local minimum is not global?* — convexity,
+  [OPTM-04]. *What if $f$ has kinks?* — subgradients, [OPTM-05]. *What if the minimum is at
+  a constraint?* — Lagrange/KKT, [OPTM-13]–[OPTM-14]. Each is the multivariate, harder, or
+  more general descendant of a failure mode we made explicit in @sec-failure.

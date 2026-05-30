@@ -1,0 +1,1059 @@
+---
+title: "Duality: the Problem Behind the Problem"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+PRIMAL  = "#2b3a67"    # the primal objective / primal value
+DUAL    = "#c1121f"    # the dual function / dual value
+ACCENT  = "#0a7d4d"    # optima, highlights
+GOLD    = "#b8860b"    # multipliers / prices
+GREY    = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the third and culminating article of the
+> Optimization track's **constrained-optimization** branch. It assumes
+> [OPTM-13 *Lagrange Multipliers*] for the **Lagrangian**
+> $\mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu)$, the multiplier as a
+> **shadow price**, and the saddle-point warning that you never *minimize* the Lagrangian
+> jointly; and [OPTM-14 *Inequality Constraints and the KKT Conditions*] for the sign
+> condition $\boldsymbol\mu\ge\mathbf{0}$, **complementary slackness** $\mu_i g_i=0$, and
+> the full KKT system. From the convexity spine it uses [OPTM-03 *Convex Sets*] — in
+> particular the **separating-hyperplane theorem** — and [OPTM-04 *Convex Functions*] for
+> "a convex problem's stationary point is global." From the *Geometry of Data* track it
+> borrows nothing new beyond the gradient and the dot product already in play.
+>
+> **What it sets up.** It is the optimality-and-structure backbone the **dual support
+> vector machine** (Classification) links here for — the place where the kernel trick
+> becomes possible — and it completes the reading of the multiplier as a *price* begun in
+> OPTM-13. It is the conceptual capstone before the algorithmic articles
+> [OPTM-16 *Proximal and Projected Methods*].
+
+## Abstract {.unnumbered}
+
+Every constrained minimization problem carries a hidden twin. Take the Lagrangian
+$\mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu)$ of [OPTM-13]/[OPTM-14], and
+instead of solving the original ("primal") problem, *minimize $\mathcal{L}$ over
+$\mathbf{x}$ for fixed multipliers* — collapsing it to a function of the multipliers
+alone, the **Lagrange dual function** $g(\boldsymbol\lambda,\boldsymbol\mu)$. This article
+defends a single claim in full: **the dual function is always a lower bound on the primal
+optimum, no matter how ugly the primal is** (weak duality), and **for convex problems that
+satisfy a mild qualification, the bound is exact** (strong duality) — the two problems
+have the same optimal value and solving one solves the other. We derive weak duality from
+one inequality, prove the dual function is concave (so the dual is *always* a tractable
+convex problem even when the primal is not), measure the gap when it does not close, give
+the separating-hyperplane geometry that makes strong duality true under Slater's condition,
+and carry the machinery through three honest worked examples — a linear program whose dual
+is another LP, the SVM whose dual is the doorway to kernels, and a deliberately non-convex
+problem where the gap stays stubbornly open, marking the edge of applicability.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A constrained problem $\min_{\mathbf{x}} f(\mathbf{x})$ subject to constraints has a
+**Lagrangian** $\mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu)$ that folds the
+constraints into the objective with multiplier "prices." Hold the prices fixed and
+**minimize $\mathcal{L}$ over $\mathbf{x}$**; the result is the **dual function**
+$$
+g(\boldsymbol\lambda,\boldsymbol\mu)
+= \min_{\mathbf{x}}\ \mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu).
+$$
+Two facts, true with almost no assumptions, make this worth everything:
+
+1. **Weak duality.** For every admissible price ($\boldsymbol\mu\ge\mathbf{0}$),
+   $g(\boldsymbol\lambda,\boldsymbol\mu) \le p^\star$, the primal optimum. *Any* dual point
+   certifies a lower bound on the best achievable cost.
+2. **The dual is always convex.** $g$ is concave in $(\boldsymbol\lambda,\boldsymbol\mu)$
+   regardless of whether $f$ or the constraints are convex. So the **dual problem**
+   $\max_{\boldsymbol\mu\ge0}\,g$ — find the *best* lower bound — is always a tractable
+   concave maximization.
+
+When the primal is convex and a point strictly satisfies the inequalities (**Slater's
+condition**), the best lower bound exactly equals the primal optimum: $d^\star=p^\star$,
+**strong duality**, and the gap closes. Then the multipliers are the missing half of the
+KKT system, the dual is often the easier problem to actually solve, and — as in the SVM —
+its structure unlocks the kernel trick.
+:::
+
+Everything below orbits that box. The dual will first look like a sleight of hand —
+minimize the very Lagrangian we were warned never to minimize ([OPTM-13]'s saddle
+pitfall), and somehow get a bound for free. By the end you should see why it is forced:
+minimizing over $\mathbf{x}$ *relaxes* the problem (you stop enforcing the constraints and
+merely *charge* for violating them), and a relaxation can only make the optimum easier to
+reach, hence lower.
+
+# Why we are here: the multiplier was a price; what if we shop for it? {#sec-why}
+
+Hold one question in view for the whole article: **the multiplier in [OPTM-13] was a
+*price* on the constraint — so what happens if we stop treating the price as a byproduct
+and instead make it the thing we optimize over?** Every move below answers a piece of that.
+
+## What the constrained articles left open
+
+[OPTM-13] and [OPTM-14] handed us a complete optimality *test*: at a constrained optimum
+the KKT conditions hold — stationarity of the Lagrangian, feasibility, $\boldsymbol\mu\ge
+\mathbf{0}$, and complementary slackness. But a test is not a *method*, and it does not
+explain *why* the multipliers carry the meaning they do. The shadow-price reading of
+[OPTM-13] gave the first hint: $\lambda^\star = dp^\star/dc$, the multiplier is the
+marginal value of relaxing a constraint. That is suggestive. If a constraint has a *price*,
+then the whole constrained problem starts to look like an economy — and an economy has
+two faces. There is the **producer's problem** (choose quantities $\mathbf{x}$ to minimize
+cost subject to rules) and the **pricer's problem** (choose prices on the rules to extract
+as much guaranteed value as possible). Duality is the precise statement that these two
+problems are, for the well-behaved case, *the same problem seen from opposite sides*.
+
+There is also a brutally practical motivation, the one that built the field. Some problems
+are far easier to solve in their dual form than their primal form:
+
+- A **linear program** with many inequality constraints but few variables becomes, in the
+  dual, an LP with few constraints and many variables — and sometimes the dual is the one
+  your solver eats happily.
+- The **support vector machine** is, in its primal, a search over a weight vector that
+  lives in the (possibly enormous, possibly infinite) feature space. Its dual is a search
+  over one number per *training point* — and crucially, the dual only ever touches the data
+  through **inner products** $\mathbf{x}_i^\top\mathbf{x}_j$, which is exactly the opening
+  the **kernel trick** needs. The entire kernelized SVM is a gift of duality.
+- Any time you have a *candidate* solution and want a **certificate** that it is good — a
+  guarantee it is within $\varepsilon$ of optimal without knowing the optimum — a feasible
+  dual point hands you one for free, by weak duality.
+
+## The historical why
+
+The idea predates its modern name. In the 1820s Joseph Fourier studied systems of linear
+inequalities; by the 1930s and 40s, as **linear programming** was born (Kantorovich in the
+USSR for production planning, Dantzig in the US with the simplex method), it became clear
+that every LP had a partner LP whose optimum coincided with its own — **LP duality**, made
+rigorous by von Neumann (who connected it to the minimax theorem of game theory he had
+proved in 1928) and Gale–Kuhn–Tucker. The general nonlinear theory — the Lagrange dual,
+weak and strong duality, Slater's condition — crystallized through the 1950s–70s
+(Kuhn, Tucker, Slater, Rockafellar). The through-line worth holding: **duality is the
+optimization face of the separating-hyperplane theorem** ([OPTM-03]) and the game-theory
+face of **minimax**. Those three — separating hyperplanes, minimax, and Lagrange duality —
+are one idea in three costumes, and we will see all three costumes in this article.
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what is the dual and why should I care?"* The dual is what you get by
+**charging a price for each constraint instead of enforcing it**, then minimizing the
+now-unconstrained Lagrangian over the variables — and you care because (a) the result is
+*always* a valid lower bound on your true optimum, so it certifies how good any solution
+is, and (b) the dual problem is *always convex* even when your problem is not, and is often
+dramatically easier to solve. If you can only say one more thing, add: *for convex problems
+the dual optimum equals the primal optimum, so you can solve whichever side is easier.*
+:::
+
+# Intuition before symbols: relaxation buys a lower bound {#sec-intuition}
+
+We build weak duality from a picture, no formulas yet. Consider minimizing a cost
+$f(\mathbf{x})$ subject to a rule "$g(\mathbf{x})\le 0$." Enforcing the rule means: any
+$\mathbf{x}$ that breaks it is simply *forbidden* — its cost is, in effect, $+\infty$.
+That hard wall is what makes constrained problems hard.
+
+Now soften the wall. Instead of forbidding violations, **charge a toll** $\mu\ge 0$ per
+unit of violation, and let any $\mathbf{x}$ be considered. The cost of a point becomes
+$$
+f(\mathbf{x}) + \mu\, g(\mathbf{x}).
+$$
+Two things to notice, and they are the whole intuition:
+
+1. **For a feasible point** ($g(\mathbf{x})\le 0$), the toll term $\mu g(\mathbf{x})$ is
+   $\le 0$ — a *non-positive* charge. So the tolled cost is **no larger** than the true
+   cost $f(\mathbf{x})$. (We are, if anything, paying the feasible point a small bonus for
+   having constraint slack.)
+2. **We minimize the tolled cost over *all* $\mathbf{x}$** — including infeasible ones we
+   were not previously allowed to use. Adding options to a minimization can only push the
+   minimum *down or leave it unchanged*.
+
+Both effects point the same way: minimizing the tolled cost over all $\mathbf{x}$ gives a
+number **no larger** than the true constrained optimum. That number is the dual function
+value at price $\mu$. So *for any toll we pick, the relaxed minimum lower-bounds the truth.*
+Then the **dual problem** is simply: pick the toll $\mu\ge 0$ that makes this lower bound
+as **high** (as tight) as possible. @fig-relaxation-lb draws exactly this — how raising the
+price lifts the relaxed minimum toward the true optimum.
+
+```{python}
+#| label: fig-relaxation-lb
+#| fig-cap: "Relaxation buys a lower bound. We minimize $f(x)=(x-2)^2$ subject to $g(x)=x-0.5\\le 0$ (feasible region $x\\le 0.5$, shaded). The true constrained optimum sits at the boundary $x=0.5$ (green). For each toll $\\mu\\ge0$ the tolled cost $f(x)+\\mu g(x)$ (dashed) is a downward-shifted, slid parabola whose unconstrained minimum (red dot) is the dual value $g(\\mu)$. Every such minimum lies *below* the true optimum — a lower bound — and the bound is highest (tightest) at the $\\mu$ that makes the relaxed minimizer land exactly on the boundary."
+x = np.linspace(-1.5, 3.0, 400)
+f = (x - 2.0)**2
+gcon = x - 0.5  # g(x) <= 0  => x <= 0.5
+x_feas_opt = 0.5
+p_star = (x_feas_opt - 2.0)**2
+
+fig, ax = plt.subplots(figsize=(6.6, 4.4))
+ax.axvspan(-1.5, 0.5, color=ACCENT, alpha=0.08, label="feasible $x\\leq 0.5$")
+ax.plot(x, f, color=PRIMAL, lw=2.4, label=r"objective $f(x)=(x-2)^2$")
+for mu, a in zip([1.0, 3.0], [0.55, 0.9]):
+    L = f + mu * gcon
+    xmin = x[np.argmin(L)]
+    Lmin = L.min()
+    ax.plot(x, L, color=DUAL, lw=1.6, ls="--", alpha=a,
+            label=fr"$f+\mu g$, $\mu={mu:.0f}$")
+    ax.scatter([xmin], [Lmin], color=DUAL, s=55, zorder=5)
+ax.scatter([x_feas_opt], [p_star], color=ACCENT, s=110, zorder=6,
+           edgecolor="white", linewidth=1.4, label=r"true optimum $p^\star$")
+ax.axhline(p_star, color=ACCENT, lw=1.0, ls=":", alpha=0.7)
+ax.set_xlabel("$x$"); ax.set_ylabel("cost")
+ax.set_ylim(-1.5, 7.0)
+ax.set_title("Each toll gives a relaxed minimum below the truth")
+ax.legend(loc="upper center", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+```
+
+That picture is the entire emotional content of duality. The rest of the article makes the
+"$\le$" precise (it is one line), proves the dual is concave so the toll-shopping is itself
+an easy problem, and answers the deep question the picture cannot: *when does the best toll
+make the lower bound exactly equal to the truth?*
+
+# Formal development {#sec-formal}
+
+## The primal problem and its Lagrangian {#sec-primal}
+
+Fix the object of study. The general constrained problem — the **primal** — is
+$$
+\begin{aligned}
+\text{minimize}\quad & f(\mathbf{x}) \\
+\text{subject to}\quad & g_i(\mathbf{x}) \le 0, \quad i=1,\dots,m, \\
+& h_j(\mathbf{x}) = 0, \quad j=1,\dots,p,
+\end{aligned}
+$$ {#eq-primal}
+over $\mathbf{x}\in\mathbb{R}^n$, with $m$ inequality constraints and $p$ equality
+constraints. We call its optimal value
+$$
+p^\star = \min\{\, f(\mathbf{x}) : g_i(\mathbf{x})\le 0\ \forall i,\ h_j(\mathbf{x})=0\ \forall j \,\},
+$$
+and write $\mathbf{x}^\star$ for a minimizer when one exists. The set of $\mathbf{x}$
+satisfying all constraints is the **feasible set**; $p^\star=+\infty$ by convention if it is
+empty. **We make no convexity assumption yet** — $f, g_i, h_j$ are arbitrary
+(differentiable enough to talk about, but that is all). This generality is the point:
+weak duality will hold regardless.
+
+The **Lagrangian** of [OPTM-13]/[OPTM-14] attaches a multiplier to each constraint and adds
+it to the objective:
+$$
+\mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu)
+= f(\mathbf{x}) + \sum_{i=1}^m \mu_i\, g_i(\mathbf{x}) + \sum_{j=1}^p \lambda_j\, h_j(\mathbf{x}),
+$$ {#eq-lagrangian}
+with $\boldsymbol\mu=(\mu_1,\dots,\mu_m)$ the **inequality multipliers** and
+$\boldsymbol\lambda=(\lambda_1,\dots,\lambda_p)$ the **equality multipliers**.
+
+::: {.callout-warning title="Pitfall"}
+**Sign conventions multiply like rabbits — pin yours down.** Here we use the
+**$+$ convention**: $\mathcal{L}=f+\sum\mu_i g_i+\sum\lambda_j h_j$ with the inequality
+written $g_i\le 0$ and the requirement $\mu_i\ge 0$. (Some texts — including [OPTM-13]'s
+equality-only treatment — wrote $f-\lambda g$ for equalities; for equalities the sign is
+immaterial since $\lambda_j$ is free, but for **inequalities the sign is load-bearing**:
+$\mu_i\ge0$ is what makes the toll a genuine *charge* for violation, and it is exactly the
+dual-feasibility condition of KKT.) The mnemonic that fixes the sign forever: with $g_i\le
+0$ and $\mu_i\ge0$, a *feasible* point has $\mu_i g_i\le 0$, so the Lagrangian sits *at or
+below* $f$ — precisely the inequality that makes the relaxation a lower bound (@sec-weak).
+If your toll term ever *raises* the cost of a feasible point, your sign is wrong.
+:::
+
+Why these signs make the inequalities and equalities behave differently is worth one
+sentence: an **equality** $h_j=0$ can be violated in either direction, so its price
+$\lambda_j$ is allowed either sign; an **inequality** $g_i\le 0$ can only be "violated" by
+going positive, so we only ever want to *charge* for that, forcing $\mu_i\ge 0$.
+
+## The dual function {#sec-dual-function}
+
+::: {#def-dual-function}
+**Definition (Lagrange dual function).** The **dual function** is the Lagrangian minimized
+over the primal variable, with the multipliers held fixed:
+$$
+g(\boldsymbol\lambda,\boldsymbol\mu)
+\;=\; \inf_{\mathbf{x}}\ \mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu)
+\;=\; \inf_{\mathbf{x}}\ \Bigl[\, f(\mathbf{x}) + \sum_{i=1}^m \mu_i g_i(\mathbf{x})
+      + \sum_{j=1}^p \lambda_j h_j(\mathbf{x}) \,\Bigr].
+$$ {#eq-dual-function}
+:::
+
+We write $\inf$ (infimum, the greatest lower bound) rather than $\min$ deliberately: the
+minimization over the *unconstrained* $\mathbf{x}$ may not be attained — it can run off to
+$-\infty$, in which case $g(\boldsymbol\lambda,\boldsymbol\mu)=-\infty$. A dual value of
+$-\infty$ is a perfectly legal (and useless) lower bound; the dual problem will avoid those
+prices automatically.
+
+This is the exact move [OPTM-13]'s pitfall warned against — *do not minimize the Lagrangian
+jointly over $(\mathbf{x},\lambda)$* — but here we minimize over $\mathbf{x}$ **only**,
+holding the prices fixed. That is legitimate and is the heart of the construction: for each
+fixed price vector, we get a single number, and that number is a function of the prices
+alone. We have traded an $n$-dimensional constrained problem in $\mathbf{x}$ for a function
+of the $(m+p)$-dimensional price.
+
+::: {.callout-tip title="You might be asked"}
+*"Why minimize over $\mathbf{x}$ and not maximize?"* Because the primal is a *minimization*
+and we are building a **lower bound** on its optimum. Minimizing the Lagrangian over all
+$\mathbf{x}$ is precisely the relaxation of @sec-intuition: it removes the hard constraints
+and replaces them with a toll, and a relaxed minimum is $\le$ the true minimum. If the
+primal were a *maximization*, you would build an upper bound by *maximizing* the Lagrangian
+over $\mathbf{x}$, and the whole story would flip its sign — the dual of a max is a min.
+:::
+
+## Weak duality, proved in one inequality {#sec-weak}
+
+Here is the central claim of the article's first half, and it is genuinely one line of work.
+
+::: {#thm-weak}
+**Theorem (weak duality).** For any multipliers with $\boldsymbol\mu\ge\mathbf{0}$ (and
+$\boldsymbol\lambda$ arbitrary),
+$$
+g(\boldsymbol\lambda,\boldsymbol\mu) \;\le\; p^\star.
+$$
+The dual function, evaluated at any admissible price, is a lower bound on the primal optimum.
+:::
+
+::: {.proof}
+Let $\tilde{\mathbf{x}}$ be **any feasible point** of the primal — so
+$g_i(\tilde{\mathbf{x}})\le 0$ for all $i$ and $h_j(\tilde{\mathbf{x}})=0$ for all $j$.
+Evaluate the Lagrangian there. Term by term:
+
+- The objective contributes $f(\tilde{\mathbf{x}})$.
+- Each inequality term is $\mu_i\, g_i(\tilde{\mathbf{x}})$. Here $\mu_i\ge 0$ (admissible
+  price) and $g_i(\tilde{\mathbf{x}})\le 0$ (feasibility), and a non-negative number times a
+  non-positive number is **non-positive**: $\mu_i g_i(\tilde{\mathbf{x}})\le 0$.
+- Each equality term is $\lambda_j\, h_j(\tilde{\mathbf{x}})$, but $h_j(\tilde{\mathbf{x}})=0$
+  by feasibility, so the whole term is exactly $0$ — regardless of the sign of $\lambda_j$.
+
+Adding them up,
+$$
+\mathcal{L}(\tilde{\mathbf{x}},\boldsymbol\lambda,\boldsymbol\mu)
+= f(\tilde{\mathbf{x}}) + \underbrace{\sum_i \mu_i g_i(\tilde{\mathbf{x}})}_{\le\, 0}
+  + \underbrace{\sum_j \lambda_j h_j(\tilde{\mathbf{x}})}_{=\, 0}
+\;\le\; f(\tilde{\mathbf{x}}).
+$$
+So at *any* feasible point, the Lagrangian is below the objective. Now take the infimum of
+the Lagrangian over **all** $\mathbf{x}$ — which can only be smaller than its value at our
+particular feasible $\tilde{\mathbf{x}}$:
+$$
+g(\boldsymbol\lambda,\boldsymbol\mu)
+= \inf_{\mathbf{x}} \mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu)
+\;\le\; \mathcal{L}(\tilde{\mathbf{x}},\boldsymbol\lambda,\boldsymbol\mu)
+\;\le\; f(\tilde{\mathbf{x}}).
+$$
+This holds for *every* feasible $\tilde{\mathbf{x}}$, so it holds for the one that minimizes
+$f$ over the feasible set — i.e. taking the infimum of the right-hand side over feasible
+$\tilde{\mathbf{x}}$ gives $p^\star$:
+$$
+g(\boldsymbol\lambda,\boldsymbol\mu) \;\le\; \inf_{\tilde{\mathbf{x}}\ \text{feasible}} f(\tilde{\mathbf{x}}) = p^\star.
+\qquad\blacksquare
+$$
+:::
+
+Read the proof's two ingredients against the two effects of @sec-intuition: the
+"$\mu_i g_i\le 0$" step is the *toll is a non-positive charge on feasible points*, and the
+"$\inf_{\mathbf{x}}\le \mathcal{L}(\tilde{\mathbf{x}})$" step is the *minimizing over more
+options lowers the minimum*. The picture and the proof are the same two facts.
+
+::: {.callout-note title="What we leaned on"}
+The proof used nothing but: the sign rule (non-negative times non-positive is
+non-positive), the definition of infimum (the inf is $\le$ any particular value), and that
+feasibility kills the equality terms. **No convexity, no differentiability, no constraint
+qualification.** Weak duality is astonishingly robust — it holds for integer programs,
+non-convex programs, anything. That robustness is exactly why a dual point makes a
+universal *certificate*.
+:::
+
+## The dual problem, and why it is always convex {#sec-dual-problem}
+
+Weak duality says every admissible price gives a lower bound. Naturally we want the
+**best** (highest) lower bound. That is the **dual problem**:
+$$
+\begin{aligned}
+\text{maximize}\quad & g(\boldsymbol\lambda,\boldsymbol\mu) \\
+\text{subject to}\quad & \boldsymbol\mu \ge \mathbf{0},
+\end{aligned}
+$$ {#eq-dual-problem}
+with optimal value $d^\star = \max_{\boldsymbol\mu\ge0,\,\boldsymbol\lambda}
+g(\boldsymbol\lambda,\boldsymbol\mu)$. Weak duality, stated for the *best* bound, becomes
+the headline inequality
+$$
+\boxed{\ d^\star \;\le\; p^\star.\ }
+$$ {#eq-weak-gap}
+The difference $p^\star - d^\star \ge 0$ is the **duality gap**. Strong duality (next
+section) is the statement that, under conditions, the gap is *zero*.
+
+Now the structural miracle that makes the dual worth solving at all.
+
+::: {#thm-dual-concave}
+**Theorem (the dual function is concave).** The dual function
+$g(\boldsymbol\lambda,\boldsymbol\mu)$ is **concave** in $(\boldsymbol\lambda,\boldsymbol\mu)$,
+**no matter what** $f,g_i,h_j$ are — even if the primal is wildly non-convex. Consequently
+the dual problem @eq-dual-problem is a *concave maximization over a convex set*
+($\boldsymbol\mu\ge\mathbf{0}$ is a convex set), i.e. a convex optimization problem.
+:::
+
+::: {.proof}
+Fix $\mathbf{x}$ and look at the Lagrangian as a function of the multipliers alone. From
+@eq-lagrangian,
+$$
+\mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu)
+= f(\mathbf{x}) + \sum_i \mu_i g_i(\mathbf{x}) + \sum_j \lambda_j h_j(\mathbf{x}).
+$$
+For fixed $\mathbf{x}$, every term is **affine** (linear-plus-constant) in
+$(\boldsymbol\lambda,\boldsymbol\mu)$: $f(\mathbf{x})$ is a constant, and each
+$\mu_i g_i(\mathbf{x})$ and $\lambda_j h_j(\mathbf{x})$ is a constant ($g_i(\mathbf{x})$ or
+$h_j(\mathbf{x})$) times a multiplier. So for each fixed $\mathbf{x}$,
+$(\boldsymbol\lambda,\boldsymbol\mu)\mapsto\mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu)$
+is an affine function of the prices — and an affine function is both convex and concave, in
+particular **concave**.
+
+Now $g$ is the **pointwise infimum** of this family of affine functions, one for each
+$\mathbf{x}$:
+$$
+g(\boldsymbol\lambda,\boldsymbol\mu) = \inf_{\mathbf{x}} \mathcal{L}(\mathbf{x},\boldsymbol\lambda,\boldsymbol\mu).
+$$
+We finish with the general fact that *the pointwise infimum of any collection of concave
+functions is concave* — proved here in full so nothing is assumed. Let
+$\boldsymbol\theta=(\boldsymbol\lambda,\boldsymbol\mu)$ abbreviate the price vector, write
+$\ell_{\mathbf{x}}(\boldsymbol\theta)=\mathcal{L}(\mathbf{x},\boldsymbol\theta)$ for each
+affine (hence concave) member, and let $g(\boldsymbol\theta)=\inf_{\mathbf{x}}
+\ell_{\mathbf{x}}(\boldsymbol\theta)$. Take any two price vectors $\boldsymbol\theta_1,
+\boldsymbol\theta_2$ and a blend weight $t\in[0,1]$. For **each** fixed $\mathbf{x}$,
+concavity of $\ell_{\mathbf{x}}$ gives
+$$
+\ell_{\mathbf{x}}\bigl(t\boldsymbol\theta_1+(1-t)\boldsymbol\theta_2\bigr)
+\;\ge\; t\,\ell_{\mathbf{x}}(\boldsymbol\theta_1) + (1-t)\,\ell_{\mathbf{x}}(\boldsymbol\theta_2)
+\;\ge\; t\,g(\boldsymbol\theta_1) + (1-t)\,g(\boldsymbol\theta_2),
+$$
+where the second inequality used $\ell_{\mathbf{x}}(\boldsymbol\theta_k)\ge\inf_{\mathbf{x}'}
+\ell_{\mathbf{x}'}(\boldsymbol\theta_k)=g(\boldsymbol\theta_k)$ for $k=1,2$. The right-hand
+side does not depend on $\mathbf{x}$, so it is a lower bound on
+$\ell_{\mathbf{x}}(t\boldsymbol\theta_1+(1-t)\boldsymbol\theta_2)$ valid for **every**
+$\mathbf{x}$ — hence a lower bound on their infimum:
+$$
+g\bigl(t\boldsymbol\theta_1+(1-t)\boldsymbol\theta_2\bigr)
+= \inf_{\mathbf{x}} \ell_{\mathbf{x}}\bigl(t\boldsymbol\theta_1+(1-t)\boldsymbol\theta_2\bigr)
+\;\ge\; t\,g(\boldsymbol\theta_1) + (1-t)\,g(\boldsymbol\theta_2).
+$$
+That is exactly the definition of $g$ being **concave** (the chord lies *below* the graph —
+the mirror image of the convex chord-above rule of [OPTM-04]). $\qquad\blacksquare$
+:::
+
+This theorem is why duality is not just an interpretive lens but an *algorithm*. Even if
+your primal is a non-convex nightmare with thousands of local minima, the dual is a smooth
+concave maximization with one global maximum — solvable, in principle, by any method on the
+descent spine ([OPTM-06]–[OPTM-09]) applied to $-g$. The catch, of course, is that the gap
+@eq-weak-gap may be positive, so the dual answer need not equal the primal answer. The next
+section is about exactly when it does.
+
+::: {.callout-tip title="You might be asked"}
+*"You said the dual is always convex — even for a non-convex primal. Isn't that a free lunch
+that solves NP-hard problems?"* No, and knowing why is the test. The dual is always
+*tractable*, but for a non-convex primal the duality **gap is generally positive**
+($d^\star < p^\star$): solving the easy dual gives you a *lower bound*, not the answer. The
+hardness did not vanish; it moved into the gap. This is precisely how relaxation-based
+bounds work in combinatorial optimization (LP relaxations of integer programs): the dual
+gives a cheap bound that brackets the true optimum, and you close the remaining gap with
+branch-and-bound. We will *see* an open gap in @sec-edge.
+:::
+
+## Strong duality and Slater's condition {#sec-strong}
+
+The prize is **strong duality**: $d^\star = p^\star$, the gap closes, and the best lower
+bound is exactly the truth. It does **not** hold in general (a non-convex example in
+@sec-edge has a strictly positive gap). But for convex problems a mild qualification
+guarantees it.
+
+::: {#thm-slater}
+**Theorem (Slater's condition $\Rightarrow$ strong duality).** Suppose the primal
+@eq-primal is **convex** — $f$ and every $g_i$ are convex functions and every $h_j$ is
+affine — and suppose there exists a **strictly feasible** point: a point
+$\bar{\mathbf{x}}$ with $g_i(\bar{\mathbf{x}}) < 0$ for all inequality constraints (strict,
+not just $\le$) and $h_j(\bar{\mathbf{x}})=0$ for all equalities. Then strong duality holds,
+$d^\star = p^\star$, and the dual optimum is attained.
+:::
+
+We do not reproduce the full functional-analytic proof — it is the one genuinely
+above-floor result we *import* rather than build, and we flag it as such — but we give the
+**geometric heart**, which is a separating-hyperplane argument ([OPTM-03]) and is entirely
+intuitive. Consider the simplest case (one inequality, no equalities) and plot the set of
+achievable "(constraint value, objective value)" pairs as $\mathbf{x}$ ranges over
+everything:
+$$
+\mathcal{G} = \bigl\{\,(u, w) : u = g(\mathbf{x}),\ w = f(\mathbf{x})\ \text{for some } \mathbf{x}\,\bigr\}
+\ \subseteq\ \mathbb{R}^2.
+$$
+Read this set. The primal optimum $p^\star$ is the **lowest $w$ among points with $u\le 0$**
+(achieve the objective while satisfying the constraint) — the lowest point of $\mathcal{G}$
+in the left half-plane. The dual value at price $\mu$ is
+$g(\mu)=\inf_{\mathbf{x}}\,[f(\mathbf{x})+\mu g(\mathbf{x})]=\inf_{(u,w)\in\mathcal{G}}
+(w+\mu u)$: it is the lowest intercept of a line of slope $-\mu$ that still touches
+$\mathcal{G}$ — a **supporting line** of $\mathcal{G}$ from below. The best dual value
+$d^\star$ tilts that supporting line to maximize its intercept on the $w$-axis.
+
+When the primal is convex, the relevant region of $\mathcal{G}$ (formally, the set of
+$(u,w)$ that can be *achieved-or-beaten*) is a **convex set**, and a convex set has a
+**supporting hyperplane** at every boundary point (the separating-hyperplane theorem of
+[OPTM-03] applied to the set and the point $(0,p^\star)$). That supporting line, evaluated
+at $u=0$, hits the $w$-axis at exactly $p^\star$ — so the best supporting line achieves
+$d^\star = p^\star$ and the gap closes. Slater's strict-feasibility condition is the mild
+hypothesis that rules out a degenerate vertical supporting line (one with infinite slope,
+$\mu=\infty$, which would touch $\mathcal{G}$ only at the boundary $u=0$ and certify
+nothing). @fig-strong-geom draws both: the convex case where a finite-slope line supports at
+$(0,p^\star)$, and the non-convex case where the best line falls short, leaving a gap.
+
+```{python}
+#| label: fig-strong-geom
+#| fig-cap: "The geometry of strong duality. Each panel plots the achievable set $\\mathcal{G}=\\{(g(x),f(x))\\}$ (blue) of constraint-value vs. objective-value pairs. The primal optimum $p^\\star$ (green) is the lowest objective among points with $g\\leq0$ (left of the dashed line). A dual price $\\mu$ is a supporting line of slope $-\\mu$; its $w$-intercept is the dual value, and $d^\\star$ is the best such intercept (red). **Left (convex):** the lower boundary of $\\mathcal{G}$ is convex, a finite-slope line supports it exactly at $(0,p^\\star)$, and $d^\\star=p^\\star$ — no gap. **Right (non-convex):** a dent in the boundary means the best supporting line passes *below* $(0,p^\\star)$; $d^\\star<p^\\star$ and the gap is the vertical distance."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 4.6))
+
+def plot_G(ax, u, w, title, convex=True):
+    ax.fill_between(u, w, w.max() + 1.5, color=PRIMAL, alpha=0.12)
+    ax.plot(u, w, color=PRIMAL, lw=2.2)
+    ax.axvline(0, color=GREY, ls="--", lw=1.2)
+    # p_star: lowest w with u<=0
+    mask = u <= 0
+    i_p = np.argmin(np.where(mask, w, np.inf))
+    p_star = w[i_p]
+    ax.scatter([0], [p_star], color=ACCENT, s=110, zorder=6, edgecolor="white",
+               linewidth=1.3, label=r"$(0,\,p^\star)$")
+    # best supporting line: find slope that maximizes w-intercept while staying below G
+    mus = np.linspace(0, 6, 400)
+    best_d, best_mu = -np.inf, 0.0
+    for mu in mus:
+        intercept = np.min(w + mu * u)  # min over G of (w + mu u) = w-intercept
+        if intercept > best_d:
+            best_d, best_mu = intercept, mu
+    uu = np.linspace(u.min(), u.max(), 50)
+    ax.plot(uu, best_d - best_mu * uu, color=DUAL, lw=2.0,
+            label=fr"best support, $d^\star={best_d:.2f}$")
+    ax.scatter([0], [best_d], color=DUAL, s=70, zorder=6)
+    if abs(p_star - best_d) > 0.05:
+        ax.annotate("", xy=(0, p_star), xytext=(0, best_d),
+                    arrowprops=dict(arrowstyle="<->", color=GOLD, lw=1.8))
+        ax.text(0.15, (p_star + best_d)/2, "gap", color=GOLD, fontsize=10)
+    ax.set_xlabel(r"constraint value $u=g(x)$")
+    ax.set_ylabel(r"objective value $w=f(x)$")
+    ax.set_title(title)
+    ax.legend(loc="upper right", fontsize=8.5, framealpha=0.95)
+
+# Convex achievable boundary
+t = np.linspace(-2.0, 2.0, 300)
+uL = t
+wL = 0.6 * t**2 + 0.5 * t + 1.5   # convex lower boundary
+plot_G(axL, uL, wL, "Convex: line supports at $(0,p^\\star)$ — no gap")
+
+# Non-convex (dented) boundary
+uR = t
+wR = 0.6 * t**2 + 0.5 * t + 1.5 - 1.1 * np.exp(-((t + 0.1)**2) / 0.15)
+plot_G(axR, uR, wR, "Non-convex: best line falls short — gap")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What exactly is Slater's condition buying you, and when can it fail for a convex problem?"*
+Slater asks for a point that satisfies every *inequality strictly* (with room to spare) and
+the equalities exactly. Geometrically (the figure) it guarantees the achievable set is not
+pinned against the $u=0$ wall in a degenerate way, so a *finite-slope* supporting line
+exists — which is what gives a finite optimal multiplier and zero gap. It can fail for a
+convex problem when the feasible region has **empty interior** relative to the inequalities
+— e.g. a constraint $g(\mathbf{x})\le 0$ that is only ever met with equality (the feasible
+set is a lower-dimensional slice). Affine inequalities are forgiving: for them Slater
+weakens to mere feasibility (you do not need strictness), which is why linear and quadratic
+programs almost always have strong duality. The honest summary: *for convex problems strong
+duality is the rule and a failure is a degeneracy you can usually see.*
+:::
+
+## How the dual recovers the primal solution: KKT, completed {#sec-kkt-link}
+
+Strong duality is not just an equality of numbers — it tells you how to **reconstruct the
+primal solution from the dual one**, and it closes the loop with the KKT conditions of
+[OPTM-14]. Suppose strong duality holds, with primal optimum $\mathbf{x}^\star$ and dual
+optimum $(\boldsymbol\lambda^\star,\boldsymbol\mu^\star)$. Then $d^\star=p^\star$ means
+$$
+f(\mathbf{x}^\star) = g(\boldsymbol\lambda^\star,\boldsymbol\mu^\star)
+= \inf_{\mathbf{x}}\Bigl[f(\mathbf{x}) + \sum_i \mu_i^\star g_i(\mathbf{x}) + \sum_j \lambda_j^\star h_j(\mathbf{x})\Bigr]
+\le f(\mathbf{x}^\star) + \sum_i \mu_i^\star g_i(\mathbf{x}^\star) + \sum_j \lambda_j^\star h_j(\mathbf{x}^\star).
+$$
+The last inequality is just "the inf is $\le$ the value at $\mathbf{x}^\star$." But the
+equality terms vanish ($h_j(\mathbf{x}^\star)=0$, feasibility), so this reads
+$$
+f(\mathbf{x}^\star) \le f(\mathbf{x}^\star) + \sum_i \mu_i^\star g_i(\mathbf{x}^\star),
+\qquad\text{i.e.}\qquad
+\sum_i \mu_i^\star g_i(\mathbf{x}^\star) \ge 0.
+$$
+Yet every term in that sum is $\le 0$ (since $\mu_i^\star\ge 0$ and $g_i(\mathbf{x}^\star)\le
+0$ by feasibility). A sum of non-positive terms that is $\ge 0$ can only be **zero**, and
+moreover **each term must individually be zero**:
+$$
+\boxed{\ \mu_i^\star\, g_i(\mathbf{x}^\star) = 0 \quad \text{for every } i.\ }
+$$ {#eq-comp-slack}
+That is **complementary slackness** — the KKT condition that [OPTM-14] introduced as a rule
+— now *derived* as a consequence of strong duality. It says: for each constraint, either the
+price is zero ($\mu_i^\star=0$, the constraint is **inactive** and costs nothing) or the
+constraint is **active** ($g_i(\mathbf{x}^\star)=0$, tight at the boundary). A constraint
+cannot simultaneously have slack *and* a positive price. Furthermore, the same chain shows
+$\mathbf{x}^\star$ **minimizes the Lagrangian** $\mathcal{L}(\cdot,
+\boldsymbol\lambda^\star,\boldsymbol\mu^\star)$ over all $\mathbf{x}$ (the inf is attained at
+$\mathbf{x}^\star$), so its gradient there vanishes —
+$\nabla_{\mathbf{x}}\mathcal{L}(\mathbf{x}^\star,\boldsymbol\lambda^\star,\boldsymbol\mu^\star)=\mathbf{0}$
+— which is **stationarity**, the other half of KKT.
+
+So the picture is complete: **the dual optimum's multipliers are exactly the KKT
+multipliers**, and the recipe to solve a convex problem via its dual is — solve the dual for
+$(\boldsymbol\lambda^\star,\boldsymbol\mu^\star)$, then recover $\mathbf{x}^\star$ as the
+minimizer of the Lagrangian at those prices (using complementary slackness to determine
+which constraints are active). The SVM example (@sec-svm) does exactly this.
+
+# Worked examples {#sec-examples}
+
+Three honest problems, the third deliberately at the edge where the gap refuses to close.
+
+## Example 1 — a linear program and its dual LP {#sec-lp}
+
+The cleanest illustration: the dual of a linear program is another linear program, and
+strong duality is automatic (affine constraints). We will derive the dual *from the
+definition*, not quote it, so the mechanism is bare.
+
+**Primal.** A standard-form LP — minimize a linear cost subject to linear inequality
+constraints and non-negativity:
+$$
+\min_{\mathbf{x}\ge 0}\ \mathbf{c}^\top\mathbf{x}
+\quad\text{subject to}\quad
+A\mathbf{x} \ge \mathbf{b},
+$$
+with $A$ an $m\times n$ matrix. Rewrite the constraints in the $g\le0$ convention: $A\mathbf{x}\ge
+\mathbf{b}$ becomes $\mathbf{b}-A\mathbf{x}\le \mathbf{0}$, and $\mathbf{x}\ge0$ becomes
+$-\mathbf{x}\le\mathbf{0}$. Attach a multiplier $\boldsymbol\mu\ge\mathbf{0}$ to the first
+block and $\boldsymbol\nu\ge\mathbf{0}$ to the second:
+$$
+\mathcal{L}(\mathbf{x},\boldsymbol\mu,\boldsymbol\nu)
+= \mathbf{c}^\top\mathbf{x} + \boldsymbol\mu^\top(\mathbf{b}-A\mathbf{x}) + \boldsymbol\nu^\top(-\mathbf{x})
+= \boldsymbol\mu^\top\mathbf{b} + \bigl(\mathbf{c} - A^\top\boldsymbol\mu - \boldsymbol\nu\bigr)^\top\mathbf{x}.
+$$
+(The last step grouped the $\mathbf{x}$-terms: $\mathbf{c}^\top\mathbf{x} -
+\boldsymbol\mu^\top A\mathbf{x} - \boldsymbol\nu^\top\mathbf{x} = (\mathbf{c}-A^\top\boldsymbol\mu
+-\boldsymbol\nu)^\top\mathbf{x}$, using $\boldsymbol\mu^\top A\mathbf{x}=(A^\top\boldsymbol\mu)^\top\mathbf{x}$.)
+
+**Dual function** — minimize over $\mathbf{x}$. The Lagrangian is *linear* in $\mathbf{x}$:
+a constant $\boldsymbol\mu^\top\mathbf{b}$ plus a linear term
+$(\mathbf{c}-A^\top\boldsymbol\mu-\boldsymbol\nu)^\top\mathbf{x}$. A linear function of
+$\mathbf{x}$, minimized over all of $\mathbb{R}^n$, is $-\infty$ **unless its coefficient
+vector is exactly zero**, in which case it is the constant. So
+$$
+g(\boldsymbol\mu,\boldsymbol\nu) = \inf_{\mathbf{x}}\mathcal{L}
+= \begin{cases}
+\boldsymbol\mu^\top\mathbf{b}, & \text{if } \mathbf{c} - A^\top\boldsymbol\mu - \boldsymbol\nu = \mathbf{0},\\[2pt]
+-\infty, & \text{otherwise.}
+\end{cases}
+$$
+The dual problem maximizes $g$ over $\boldsymbol\mu\ge0,\boldsymbol\nu\ge0$. Since $-\infty$
+is never the maximizer, the dual *automatically enforces* the coefficient-zero condition as
+a constraint, and we can eliminate $\boldsymbol\nu$: $\boldsymbol\nu = \mathbf{c} -
+A^\top\boldsymbol\mu$, and $\boldsymbol\nu\ge\mathbf{0}$ becomes $A^\top\boldsymbol\mu\le
+\mathbf{c}$. The dual is therefore
+$$
+\boxed{\ \max_{\boldsymbol\mu\ge 0}\ \mathbf{b}^\top\boldsymbol\mu
+\quad\text{subject to}\quad A^\top\boldsymbol\mu \le \mathbf{c}.\ }
+$$
+This is itself a linear program — the famous **LP dual**. Note the elegant role-swap:
+the primal's cost vector $\mathbf{c}$ becomes the dual's constraint bound; the primal's
+constraint bound $\mathbf{b}$ becomes the dual's cost; and $A$ transposes. Because all
+constraints are affine, **strong duality holds whenever either problem is feasible**, so the
+two optimal values coincide. @fig-lp-duality solves a small concrete LP both ways and shows
+the dual value rising to meet the primal value.
+
+```{python}
+#| label: fig-lp-duality
+#| fig-cap: "A 2-variable LP and its dual, solved numerically. **Left:** the primal feasible polygon (intersection of $A\\mathbf{x}\\geq\\mathbf{b}$ and $\\mathbf{x}\\geq0$) with cost contours $\\mathbf{c}^\\top\\mathbf{x}$; the minimum sits at a vertex (green). **Right:** the dual feasible region $A^\\top\\boldsymbol\\mu\\leq\\mathbf{c},\\ \\boldsymbol\\mu\\geq0$ with its objective $\\mathbf{b}^\\top\\boldsymbol\\mu$ maximized (red). The two optimal values are printed and **match to numerical precision** — strong duality for an LP."
+from scipy.optimize import linprog
+
+# Primal: min c^T x  s.t.  A x >= b,  x >= 0
+c = np.array([2.0, 3.0])
+A = np.array([[1.0, 1.0],
+              [1.0, 2.0]])
+b = np.array([4.0, 5.0])
+
+# scipy minimizes with A_ub x <= b_ub; convert A x >= b  ->  -A x <= -b
+res_p = linprog(c, A_ub=-A, b_ub=-b, bounds=[(0, None), (0, None)])
+p_val = res_p.fun
+x_opt = res_p.x
+
+# Dual: max b^T mu  s.t. A^T mu <= c, mu >= 0  ->  min -b^T mu
+res_d = linprog(-b, A_ub=A.T, b_ub=c, bounds=[(0, None), (0, None)])
+d_val = -res_d.fun
+mu_opt = res_d.x
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 4.4))
+
+# Primal feasible region (x1,x2 >= 0 and Ax >= b)
+xx = np.linspace(0, 6, 400)
+yy = np.linspace(0, 6, 400)
+XX, YY = np.meshgrid(xx, yy)
+feas = (A[0,0]*XX + A[0,1]*YY >= b[0]) & (A[1,0]*XX + A[1,1]*YY >= b[1])
+axL.contourf(XX, YY, feas.astype(float), levels=[0.5, 1.5], colors=[PRIMAL], alpha=0.15)
+COST = c[0]*XX + c[1]*YY
+axL.contour(XX, YY, COST, levels=10, colors=GREY, linewidths=0.7, alpha=0.6)
+axL.scatter([x_opt[0]], [x_opt[1]], color=ACCENT, s=110, zorder=6, edgecolor="white",
+            linewidth=1.3, label=fr"primal opt, $p^\star={p_val:.3f}$")
+axL.set_xlim(0, 6); axL.set_ylim(0, 6)
+axL.set_xlabel(r"$x_1$"); axL.set_ylabel(r"$x_2$")
+axL.set_title("Primal LP")
+axL.legend(loc="upper right", fontsize=8.5, framealpha=0.95)
+
+# Dual feasible region (mu >= 0 and A^T mu <= c)
+mm = np.linspace(0, 4, 400)
+nn = np.linspace(0, 4, 400)
+M1, M2 = np.meshgrid(mm, nn)
+AT = A.T
+dfeas = (AT[0,0]*M1 + AT[0,1]*M2 <= c[0]) & (AT[1,0]*M1 + AT[1,1]*M2 <= c[1])
+axR.contourf(M1, M2, dfeas.astype(float), levels=[0.5, 1.5], colors=[DUAL], alpha=0.15)
+DOBJ = b[0]*M1 + b[1]*M2
+axR.contour(M1, M2, DOBJ, levels=10, colors=GREY, linewidths=0.7, alpha=0.6)
+axR.scatter([mu_opt[0]], [mu_opt[1]], color=DUAL, s=110, zorder=6, edgecolor="white",
+            linewidth=1.3, label=fr"dual opt, $d^\star={d_val:.3f}$")
+axR.set_xlim(0, 4); axR.set_ylim(0, 4)
+axR.set_xlabel(r"$\mu_1$"); axR.set_ylabel(r"$\mu_2$")
+axR.set_title("Dual LP")
+axR.legend(loc="upper right", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+print(f"primal optimum p* = {p_val:.6f}")
+print(f"dual   optimum d* = {d_val:.6f}")
+print(f"duality gap p* - d* = {p_val - d_val:.2e}  (== 0 to precision: strong duality)")
+```
+
+The printed gap is zero to machine precision: **the dual LP's best lower bound is exactly
+the primal LP's cost.** That is the whole content of LP duality, and the simplex method
+secretly maintains a primal and a dual solution simultaneously, terminating when their gap
+hits zero.
+
+## Example 2 — the support vector machine: where duality unlocks kernels {#sec-svm}
+
+This is the example the Classification track links here for, and the single most important
+payoff of duality in machine learning. We give the optimization core; the SVM *model*
+(margins, why we maximize them, the classification rule) is owned by Classification, which
+links back here for this derivation.
+
+**Primal (hard-margin SVM).** Given linearly separable data $(\mathbf{x}_i, y_i)$ with
+labels $y_i\in\{-1,+1\}$, find the maximum-margin separating hyperplane $\mathbf{w}^\top
+\mathbf{x}+b=0$. Maximizing the margin is minimizing $\tfrac12\|\mathbf{w}\|^2$ subject to
+every point being correctly classified with margin at least one:
+$$
+\min_{\mathbf{w}, b}\ \tfrac12\|\mathbf{w}\|^2
+\quad\text{subject to}\quad
+y_i(\mathbf{w}^\top\mathbf{x}_i + b) \ge 1, \quad i=1,\dots,N.
+$$
+This is convex (quadratic objective, affine constraints), so strong duality will hold. Put
+the constraints in $g\le 0$ form, $g_i = 1 - y_i(\mathbf{w}^\top\mathbf{x}_i+b)\le 0$, with
+multipliers $\alpha_i\ge 0$ (one per *training point*):
+$$
+\mathcal{L}(\mathbf{w}, b, \boldsymbol\alpha)
+= \tfrac12\|\mathbf{w}\|^2 + \sum_{i=1}^N \alpha_i\bigl(1 - y_i(\mathbf{w}^\top\mathbf{x}_i + b)\bigr).
+$$
+
+**Minimize over the primal variables $\mathbf{w}, b$.** Set the gradients to zero. For
+$\mathbf{w}$, using $\nabla_{\mathbf{w}}\tfrac12\|\mathbf{w}\|^2=\mathbf{w}$ and
+$\nabla_{\mathbf{w}}[-\alpha_i y_i\mathbf{w}^\top\mathbf{x}_i]=-\alpha_i y_i\mathbf{x}_i$:
+$$
+\nabla_{\mathbf{w}}\mathcal{L} = \mathbf{w} - \sum_i \alpha_i y_i \mathbf{x}_i = \mathbf{0}
+\quad\Longrightarrow\quad
+\mathbf{w} = \sum_{i=1}^N \alpha_i y_i \mathbf{x}_i.
+$$ {#eq-svm-w}
+This is already remarkable: **the optimal weight vector is a linear combination of the
+training points**, weighted by $\alpha_i y_i$. For $b$, only the term $-\sum_i\alpha_i y_i b$
+depends on $b$, with derivative $-\sum_i\alpha_i y_i$:
+$$
+\frac{\partial\mathcal{L}}{\partial b} = -\sum_i \alpha_i y_i = 0
+\quad\Longrightarrow\quad
+\sum_{i=1}^N \alpha_i y_i = 0.
+$$ {#eq-svm-b}
+
+**Substitute back to get the dual function.** Plug @eq-svm-w into $\mathcal{L}$ and use
+@eq-svm-b to kill the $b$-term. First the norm:
+$$
+\tfrac12\|\mathbf{w}\|^2 = \tfrac12\Bigl(\sum_i\alpha_i y_i\mathbf{x}_i\Bigr)^\top\Bigl(\sum_j\alpha_j y_j\mathbf{x}_j\Bigr)
+= \tfrac12\sum_{i,j}\alpha_i\alpha_j y_i y_j\,\mathbf{x}_i^\top\mathbf{x}_j.
+$$
+Next the constraint term. Expand $\sum_i\alpha_i(1 - y_i\mathbf{w}^\top\mathbf{x}_i - y_i b)
+= \sum_i\alpha_i - \sum_i\alpha_i y_i\mathbf{w}^\top\mathbf{x}_i - b\sum_i\alpha_i y_i$. The
+last piece is zero by @eq-svm-b. The middle piece, substituting $\mathbf{w}=\sum_j\alpha_j
+y_j\mathbf{x}_j$, is $\sum_i\alpha_i y_i\bigl(\sum_j\alpha_j y_j\mathbf{x}_j\bigr)^\top
+\mathbf{x}_i = \sum_{i,j}\alpha_i\alpha_j y_i y_j\,\mathbf{x}_i^\top\mathbf{x}_j$. Combining,
+$$
+g(\boldsymbol\alpha) = \underbrace{\tfrac12\sum_{i,j}\alpha_i\alpha_j y_i y_j\mathbf{x}_i^\top\mathbf{x}_j}_{\text{from }\frac12\|w\|^2}
++ \sum_i\alpha_i - \underbrace{\sum_{i,j}\alpha_i\alpha_j y_i y_j\mathbf{x}_i^\top\mathbf{x}_j}_{\text{from constraint}}
+= \sum_i\alpha_i - \tfrac12\sum_{i,j}\alpha_i\alpha_j y_i y_j\,\mathbf{x}_i^\top\mathbf{x}_j.
+$$
+So the **dual SVM** is
+$$
+\boxed{\ \max_{\boldsymbol\alpha\ge 0}\ \sum_{i=1}^N \alpha_i
+- \tfrac12\sum_{i,j}\alpha_i\alpha_j y_i y_j\,\mathbf{x}_i^\top\mathbf{x}_j
+\quad\text{subject to}\quad \sum_i\alpha_i y_i = 0.\ }
+$$ {#eq-svm-dual}
+Three consequences, each a gift of duality:
+
+- **The kernel trick lives here.** The dual touches the data **only** through the inner
+  products $\mathbf{x}_i^\top\mathbf{x}_j$. Replace every such inner product with a
+  *kernel* $K(\mathbf{x}_i,\mathbf{x}_j)$ — an inner product in some richer (possibly
+  infinite-dimensional) feature space — and you get a nonlinear classifier *without ever
+  computing in that space*. This is impossible to even state from the primal, where
+  $\mathbf{w}$ would be an infinite-dimensional object. Duality is what makes kernels
+  possible. (The kernel trick itself is owned by [CLAS], introduced with the SVM; here we
+  show only *why the dual is the door it walks through*.)
+- **Sparsity via complementary slackness.** By @eq-comp-slack, $\alpha_i>0$ only for points
+  with $g_i=0$, i.e. points *exactly on the margin* — the **support vectors**. All other
+  points have $\alpha_i=0$ and drop out of @eq-svm-w entirely. The classifier depends only
+  on the support vectors; this is the SVM's defining frugality, and it is a *derived*
+  consequence of duality, not a design choice.
+- **The dual is the easier problem.** It is a concave quadratic in $\boldsymbol\alpha$ with
+  one simple equality and box constraints $\boldsymbol\alpha\ge0$ — exactly what specialized
+  solvers (SMO) chew through efficiently.
+
+@fig-svm fits the dual SVM on a small 2-D dataset and marks the support vectors that
+complementary slackness selects.
+
+```{python}
+#| label: fig-svm
+#| fig-cap: "The hard-margin SVM, solved through its dual @eq-svm-dual. Two linearly separable classes (blue/red). Solving the dual quadratic program for $\\boldsymbol\\alpha$ and reconstructing $\\mathbf{w}=\\sum_i\\alpha_i y_i\\mathbf{x}_i$ gives the maximum-margin separator (black) and its margins (dashed). Complementary slackness forces $\\alpha_i>0$ only on the margin: the circled **support vectors** are the handful of points with nonzero dual weight; every other point could be deleted without changing the classifier."
+from scipy.optimize import minimize
+
+rng = np.random.default_rng(1)
+n_per = 12
+Xpos = rng.normal([2.2, 2.2], 0.55, size=(n_per, 2))
+Xneg = rng.normal([-1.0, -1.0], 0.55, size=(n_per, 2))
+Xsvm = np.vstack([Xpos, Xneg])
+ysvm = np.hstack([np.ones(n_per), -np.ones(n_per)])
+N = len(ysvm)
+
+# Dual: max sum a - 0.5 a^T Q a  s.t. sum a_i y_i = 0, a >= 0
+# Q_ij = y_i y_j x_i . x_j ; we minimize the negative.
+Q = (ysvm[:, None] * ysvm[None, :]) * (Xsvm @ Xsvm.T)
+
+def neg_dual(a):
+    return -(a.sum() - 0.5 * a @ Q @ a)
+def neg_dual_grad(a):
+    return -(np.ones_like(a) - Q @ a)
+
+cons = {"type": "eq", "fun": lambda a: a @ ysvm, "jac": lambda a: ysvm}
+bnds = [(0, None)] * N
+res = minimize(neg_dual, np.zeros(N), jac=neg_dual_grad, bounds=bnds,
+               constraints=cons, method="SLSQP",
+               options={"maxiter": 500, "ftol": 1e-10})
+alpha = np.maximum(res.x, 0)
+w = (alpha * ysvm) @ Xsvm
+sv = alpha > 1e-4
+# b from a support vector: y_i (w.x_i + b) = 1
+b = np.mean(ysvm[sv] - Xsvm[sv] @ w)
+
+fig, ax = plt.subplots(figsize=(6.4, 5.2))
+ax.scatter(Xpos[:, 0], Xpos[:, 1], color=PRIMAL, s=45, label="class $+1$")
+ax.scatter(Xneg[:, 0], Xneg[:, 1], color=DUAL, s=45, label="class $-1$")
+ax.scatter(Xsvm[sv, 0], Xsvm[sv, 1], facecolor="none", edgecolor=ACCENT, s=180,
+           linewidth=2.2, label="support vectors ($\\alpha_i>0$)")
+xline = np.linspace(-2.8, 4.0, 50)
+# decision boundary w.x + b = 0  ->  x2 = -(w0 x1 + b)/w1
+ax.plot(xline, -(w[0]*xline + b)/w[1], color="black", lw=2.0, label="separator")
+ax.plot(xline, -(w[0]*xline + b - 1)/w[1], color=GREY, ls="--", lw=1.3)
+ax.plot(xline, -(w[0]*xline + b + 1)/w[1], color=GREY, ls="--", lw=1.3)
+ax.set_xlim(-2.8, 4.0); ax.set_ylim(-2.8, 4.0)
+ax.set_aspect("equal")
+ax.set_xlabel(r"$x_1$"); ax.set_ylabel(r"$x_2$")
+ax.set_title("SVM via the dual: support vectors carry the solution")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+print(f"number of support vectors (alpha>0): {sv.sum()} of {N} points")
+print(f"sum_i alpha_i y_i = {alpha @ ysvm: .2e}  (== 0, the dual equality constraint)")
+```
+
+The printout confirms both dual facts operationally: only a handful of points have nonzero
+$\alpha_i$ (the support vectors), and the dual equality $\sum_i\alpha_i y_i=0$ holds to
+precision. We solved a search over $N$ numbers $\alpha_i$ instead of over $\mathbf{w}$, and
+in doing so exposed the inner-product structure that kernels exploit.
+
+## Example 3 — the edge of applicability: a non-convex problem with a positive gap {#sec-edge}
+
+Every honest treatment shows where the prize *fails to materialize*. Strong duality needs
+convexity; without it the gap can be strictly positive, and solving the (easy, convex) dual
+gives only a lower bound, not the answer. Here is a clean instance with a wide-open gap.
+
+**Primal.** Minimize a wavy non-convex objective on an interval enforced by one inequality:
+$$
+\min_{x}\ f(x) = x + 6\cos x
+\quad\text{subject to}\quad
+g(x) = x^2 - 25 \le 0
+\quad(\text{i.e. } -5 \le x \le 5).
+$$
+The objective is **non-convex** — $f''(x) = -6\cos x$ flips sign repeatedly, so the graph
+is a tilted sequence of humps and valleys. On $[-5,5]$ the lowest valley is an interior
+local minimum (we locate it numerically below), so the hypothesis of @thm-slater is
+violated and we have no guarantee the gap closes.
+
+**Dual.** With multiplier $\mu\ge 0$, the Lagrangian is
+$\mathcal{L}(x,\mu)=x+6\cos x+\mu(x^2-25)$. The dual function is
+$g(\mu)=\inf_x\mathcal{L}(x,\mu)$, taken over the *whole* line. Two observations make the
+dual well-behaved here: for $\mu=0$ the relaxation $x+6\cos x$ runs to $-\infty$ as
+$x\to-\infty$ (so $g(0)=-\infty$, a useless price), but for any $\mu>0$ the $\mu x^2$ term
+dominates at large $|x|$ and makes the Lagrangian **coercive** (it grows without bound in
+both directions), so its infimum is finite and *attained*. The dual is then a finite,
+concave function of $\mu$ — exactly as @thm-dual-concave promised, regardless of the
+primal's waviness. We compute it on a grid and compare its peak $d^\star$ to the true
+constrained optimum $p^\star$.
+
+```{python}
+#| label: fig-gap
+#| fig-cap: "A strictly positive duality gap. We minimize the non-convex $f(x)=x+6\\cos x$ subject to $g(x)=x^2-25\\leq0$ (so $-5\\leq x\\leq5$, shaded). **Left:** the objective is a tilted washboard; the constrained minimum $p^\\star$ (green) is the deepest interior valley. **Right:** the dual function $g(\\mu)=\\min_{x}[f(x)+\\mu(x^2-25)]$ over admissible prices $\\mu\\geq0$. It is concave (the hump of @thm-dual-concave), but its maximum $d^\\star$ (red) sits **well below** $p^\\star$ (green dashed) — the duality gap is large and unmistakable, because $f$ is non-convex and no toll can make the relaxed minimum reach the constrained one."
+def f_nc(x):
+    return x + 6.0 * np.cos(x)
+def g_nc(x):
+    return x**2 - 25.0
+
+# primal optimum on the feasible interval [-5, 5]
+xg = np.linspace(-5.0, 5.0, 40001)
+p_star = f_nc(xg).min()
+x_pstar = xg[np.argmin(f_nc(xg))]
+
+# dual: for each mu >= 0, minimize the Lagrangian over a wide x-grid (coercive for mu>0)
+xfine = np.linspace(-30.0, 30.0, 60001)
+mus = np.linspace(0.0, 6.0, 1200)
+dvals = np.array([(f_nc(xfine) + m * g_nc(xfine)).min() for m in mus])
+d_star = dvals.max()
+mu_star = mus[np.argmax(dvals)]
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 4.4))
+xplot = np.linspace(-6.5, 6.5, 800)
+axL.axvspan(-5, 5, color=ACCENT, alpha=0.08, label="feasible $[-5,5]$")
+axL.plot(xplot, f_nc(xplot), color=PRIMAL, lw=2.2, label=r"$f(x)=x+6\cos x$")
+axL.scatter([x_pstar], [p_star], color=ACCENT, s=110, zorder=6, edgecolor="white",
+            linewidth=1.3, label=fr"$p^\star={p_star:.3f}$")
+axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$")
+axL.set_title("Non-convex primal")
+axL.legend(loc="upper left", fontsize=8.5, framealpha=0.95)
+
+axR.plot(mus, dvals, color=DUAL, lw=2.2, label=r"dual $g(\mu)$")
+axR.axhline(p_star, color=ACCENT, ls="--", lw=1.4, label=fr"$p^\star={p_star:.3f}$")
+axR.scatter([mu_star], [d_star], color=DUAL, s=90, zorder=6, edgecolor="white",
+            linewidth=1.2, label=fr"$d^\star={d_star:.3f}$")
+axR.annotate("", xy=(mu_star, p_star), xytext=(mu_star, d_star),
+             arrowprops=dict(arrowstyle="<->", color=GOLD, lw=1.8))
+axR.text(mu_star + 0.15, (p_star + d_star)/2, f"gap\n$={p_star-d_star:.3f}$",
+         color=GOLD, fontsize=9)
+axR.set_xlabel(r"price $\mu \geq 0$"); axR.set_ylabel(r"dual value $g(\mu)$")
+axR.set_ylim(d_star - 3, p_star + 3)
+axR.set_title("Concave dual, but its max falls short")
+axR.legend(loc="lower right", fontsize=8.5, framealpha=0.95)
+plt.tight_layout()
+print(f"primal optimum p* = {p_star:.4f}  at x* = {x_pstar:.3f}")
+print(f"dual   optimum d* = {d_star:.4f}  at mu* = {mu_star:.3f}")
+print(f"duality gap p* - d* = {p_star - d_star:.4f}  (> 0: strong duality FAILS)")
+```
+
+The printed gap is strictly positive and large. Notice the dual function is still
+**concave** (the right panel is a clean hump, exactly as @thm-dual-concave guarantees
+regardless of the primal's non-convexity) — but its peak lands *below* the true optimum.
+**This is the precise boundary of duality's power:** the dual is always solvable and always
+a valid lower bound, but only convexity (plus Slater) promises the bound is *tight*. For
+non-convex problems the gap is the price of the relaxation, and you reach for
+branch-and-bound, semidefinite relaxations (SDP, which often tightens the gap dramatically),
+or global solvers to close it.
+
+# Failure modes and when to reach for the dual {#sec-failure}
+
+Judgment is the goal; here is the honest map of where duality helps and where it does not.
+
+::: {.callout-warning title="Pitfall"}
+**A small or zero duality gap is a *property*, not a guarantee — verify the conditions.**
+The recurring mistakes:
+
+1. **Assuming the gap is zero.** It is zero *for convex problems satisfying a constraint
+   qualification* (Slater for inequalities, feasibility for affine ones). For non-convex
+   problems (@sec-edge) the gap is generally positive — the dual optimum is a **lower
+   bound**, not the answer. Reporting $d^\star$ as "the solution" of a non-convex problem is
+   wrong.
+2. **Forgetting $\boldsymbol\mu\ge\mathbf{0}$.** Weak duality and the lower-bound certificate
+   require the inequality multipliers to be non-negative. Drop that and the toll can become a
+   bonus for violating constraints, destroying the bound.
+3. **Minimizing the Lagrangian jointly.** As [OPTM-13] warned, the saddle is a *minimum in
+   $\mathbf{x}$, maximum in the prices*. The dual function minimizes over $\mathbf{x}$ for
+   **fixed** prices, then the dual problem *maximizes* over prices. Doing both as a single
+   minimization sends the multipliers to $\pm\infty$.
+4. **Trusting an unbounded dual.** If $g(\boldsymbol\lambda,\boldsymbol\mu)=-\infty$ for all
+   prices (@sec-edge's cubic), the dual certifies nothing; this signals the primal is
+   unbounded below after relaxation, often because the objective is not coercive.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When would you actually solve the dual instead of the primal?"* Four concrete triggers,
+which are the practitioner's whole decision rule:
+
+- **The dual is lower-dimensional or simpler.** SVMs (one variable per data point, only
+  inner products appear), LPs where the dual has fewer constraints, problems with many
+  inequality constraints but few variables.
+- **You need a certificate.** Any feasible dual point bounds the primal optimum, so you can
+  *stop early* with a guarantee: if the primal cost of your current iterate and a dual lower
+  bound are within $\varepsilon$, you are within $\varepsilon$ of optimal. This **duality
+  gap as a stopping criterion** is built into interior-point methods.
+- **The constraints carry the structure you want to exploit.** Kernels (SVM), network-flow
+  duality, decomposition methods (Lagrangian relaxation / dual decomposition splits a
+  coupled problem into independent pieces by pricing the coupling constraints).
+- **The primal is non-convex but you want a bound.** The dual gives a cheap, always-valid
+  lower bound to seed branch-and-bound or to assess how far a heuristic solution might be
+  from optimal.
+
+And the honest counterpoint: *for an unconstrained or simply-constrained convex problem you
+can already solve directly (descent, Newton), the dual is extra machinery you do not need.*
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived through the constrained-optimization branch: [OPTM-13] built the Lagrangian and
+the shadow-price reading of the multiplier; [OPTM-14] added the inequality machinery — the
+sign condition $\boldsymbol\mu\ge\mathbf{0}$ and complementary slackness — as a KKT *test*.
+This article promoted the multiplier from a byproduct to the **decision variable of a twin
+problem**, proved that twin always lower-bounds the original and is always convex, and
+showed that for convex problems the two coincide — at which point the KKT conditions
+([OPTM-14]) re-emerge as the *consequence* of strong duality (@sec-kkt-link), not an
+axiom. This completes the constrained-optimization theory. From here:
+
+- **[OPTM-16 *Proximal and Projected Methods*]** — the *algorithms* that solve constrained
+  and non-smooth problems numerically, several of which (dual ascent, ADMM) operate directly
+  on the dual variables this article introduced.
+- **The dual SVM and the kernel trick** ([CLAS], support vector machines) — the exact
+  derivation of @sec-svm is what Classification links here for; the kernel trick is the
+  Classification track's to own, and it is *possible only because the dual exposes inner
+  products*.
+- **Duality as minimax and game theory** — the saddle structure
+  $\max_{\boldsymbol\mu\ge0}\min_{\mathbf{x}}\mathcal{L}$ is von Neumann's minimax; strong
+  duality is the statement that the order of min and max can be swapped, the bridge to
+  two-player zero-sum games.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The standard reference.** Boyd & Vandenberghe, *Convex Optimization*, Chapter 5
+  (duality) — the cleanest modern treatment of the dual function, weak/strong duality,
+  Slater's condition, the geometric (achievable-set) picture of @sec-strong, and the KKT
+  connection. This article follows its framing.
+- **Primary threads.** Von Neumann's 1928 minimax theorem and its 1947 connection to LP
+  duality (with Morgenstern); Gale, Kuhn, and Tucker's 1951 linear-programming duality;
+  Slater's 1950 constraint-qualification note; Rockafellar's *Convex Analysis* (1970) for
+  the full convex-analytic machinery (conjugate functions, the dual as a conjugate).
+- **Open threads this article deliberately deferred.** *The complete proof of strong
+  duality* — we gave the separating-hyperplane geometry and imported the full theorem;
+  the rigorous version (via the supporting hyperplane to the convex achievable set, or via
+  Fenchel conjugates) lives in Boyd & Vandenberghe §5.3 and Rockafellar. *The kernel trick
+  itself* — owned by [CLAS], which builds on @sec-svm. *Dual-based algorithms* (dual ascent,
+  augmented Lagrangian, ADMM, dual decomposition) — [OPTM-16] and the numerical-optimization
+  literature (Nocedal & Wright, *Numerical Optimization*). *Conic and semidefinite duality*,
+  which tightens the gap for many non-convex problems — a graduate convex-optimization course
+  or Boyd & Vandenberghe §5.9 and the SDP literature.

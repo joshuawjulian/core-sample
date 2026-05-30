@@ -39,8 +39,11 @@ A reusable workflow drafts + quality-gates every article in one track:
    `args` from the article list in `tracks/<slug>.md` (the `### <ID> — <title>` headings),
    and run the workflow with `{ track: {slug,name,file}, articles: [{id,slug,title}…] }`.
    **Pass only articles whose `.qmd` is not already on disk** (skip finished ones).
-3. **After a track's files exist:** add its Part to `_quarto.yml` (Part = track, chapters
-   = articles in ID order), `git commit`, `git push` — CI renders to the `latest` release.
+3. **After a track's files exist:** figure-gate them (`tools/check_figures.py`), zero-fill
+   IDs if needed (`tools/zfill_ids.py`), then just `git commit` + `git push`. No `_quarto.yml`
+   editing — CI runs `tools/make_track_books.py` (scans `articles/<slug>/`) and renders a
+   **per-track book PDF** plus **per-article PDFs** to the `latest` release. There is no
+   single combined book (dropped: too large).
 
 ## Pause policy
 

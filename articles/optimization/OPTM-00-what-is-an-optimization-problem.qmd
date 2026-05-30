@@ -1,0 +1,996 @@
+---
+title: "What Is an Optimization Problem?"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the series.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE  = "#2b3a67"    # the objective curve / surface
+MARK   = "#c1121f"    # the optimizer / highlighted point
+ACCENT = "#0a7d4d"    # feasible region / secondary highlight
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the front door to the entire **Optimization**
+> track, and it assumes nothing above the Calculus-I floor — functions, their graphs, and
+> the idea of a largest or smallest value on an interval. It leans on no other Core
+> Sample. Its whole job is to fix *vocabulary and viewpoint*: to turn the everyday phrase
+> "find the best" into one precise mathematical object, so that every later article has a
+> shared language. It sets up [OPTM-01 *One-Dimensional Minimization*] (the first actual
+> *method* — how Calculus I locates a minimum) and, through that, the entire machinery of
+> the track: stationary points, convexity, gradient descent, constraints, and duality.
+> Almost every other track in the series eventually says "fit the model by minimizing
+> *this*" and points back here for what that sentence means.
+
+## Abstract {.unnumbered}
+
+Across data science, the same four words keep surfacing: *find the best*. The best line
+through a cloud of points, the best parameters for a model, the best allocation of a
+budget. This article makes that phrase mean exactly one thing. An **optimization problem**
+is a triple — a **decision variable** you are free to choose, an **objective function**
+that scores every choice with a single number, and a **feasible set** of choices you are
+allowed to make — together with the instruction *make the score as small as possible*. We
+fix the notation `minimize f(x) subject to x ∈ C`, separate the **minimum value** from the
+**minimizer** that achieves it (the difference between `min` and `argmin`, which trips up
+more interviews than it should), explain why maximizing is the same problem in disguise,
+and distinguish a *local* best from the *global* best. The single claim this article
+defends is that **once you can write a problem in this form, you have already done the
+first and most important step** — and that the cases where no best choice exists are not
+exotic pathologies but the first honest lesson about what minimization can and cannot
+promise.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+An **optimization problem** asks: among all choices $x$ that are *allowed*, which one
+makes a chosen *score* smallest? It is fully specified by three pieces —
+
+- a **decision variable** $x$ (what you get to choose),
+- an **objective** $f(x)$ (the single number scoring each choice), and
+- a **feasible set** $\mathcal{C}$ (the choices that are allowed) —
+
+written compactly as
+$$
+\operatorname*{minimize}_{x}\; f(x) \quad\text{subject to}\quad x \in \mathcal{C}.
+$$
+The **minimum** is the smallest *value* $f$ attains on $\mathcal{C}$; the **minimizer**,
+written $\arg\min$, is the *choice* $x^\star$ that attains it. Maximizing $f$ is just
+minimizing $-f$, so "optimization" can always be read as minimization. Everything in this
+track — every algorithm, every theorem — is about finding $x^\star$ and $f(x^\star)$ for
+problems of this exact shape.
+:::
+
+Everything below orbits that box. The reason we spend a whole article on what looks like
+mere notation is that **the entire rest of the series is built on it.** When Regression
+says "the best line minimizes squared error," when Inference says "the maximum-likelihood
+estimate maximizes the likelihood," when a deep network is "trained," they are all
+instances of the one statement in the Core. Get the object right here, once, and those
+later sentences stop being slogans and become problems you know how to read.
+
+# Why we are here: the problem behind "find the best" {#sec-why}
+
+Keep one question in view for the whole article: **what, precisely, are we after when we
+say we want the best of something?** Every definition below is an answer to one piece of
+that question. If a piece ever feels like bureaucratic formalism, return here.
+
+## The phrase that hides a problem
+
+"Find the best" is one of the most natural things a human can ask for, and one of the most
+slippery. Best *what*? Best *by which measure*? Best *out of which options*? Watch how
+much is buried in three ordinary requests:
+
+- *"Draw the best line through these points."* Best how — closest in vertical distance? In
+  perpendicular distance? Fewest points missed? The answer changes the line.
+- *"Choose the best dose of a drug."* Best for efficacy, ignoring toxicity? Best trade-off
+  between the two? And what doses are even permitted — surely not negative, surely not
+  above some safety ceiling?
+- *"Spend this budget the best way."* Best return, but subject to *not spending more than
+  you have*, and perhaps not less than some minimum in each category.
+
+In each case the word "best" silently smuggles in three separate decisions that the asker
+never stated. Optimization's first contribution — before any calculus, any algorithm — is
+to **drag those three decisions into the open and name them.** Once named, the vague wish
+becomes a problem with a definite answer.
+
+## The history in one paragraph
+
+The instinct to optimize is ancient: Euclid (c. 300 BC) showed the shortest path from a
+point to a line is the perpendicular, and Heron of Alexandria explained reflection by
+light taking the *shortest* path. But optimization became a *method* with the calculus of
+Fermat, Newton, and Leibniz in the seventeenth century: Fermat noticed that a smooth
+function levels off — its tangent goes flat — exactly at its peaks and troughs, the seed of
+"set the derivative to zero" that [OPTM-01] develops in full. The word *program* in
+"linear programming" and "mathematical programming" comes from the 1940s, when George
+Dantzig and others, working on wartime logistics and resource *programs* (schedules), built
+the first systematic algorithms for optimizing under constraints. The modern explosion came
+when statistics and machine learning recognized that **fitting a model is solving an
+optimization problem** — and suddenly the entire field needed the machinery this track
+teaches. The thread connecting all of it, from Heron's light ray to a neural network, is
+the single object in the Core box.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is so much of machine learning phrased as optimization in the first place?"* Because
+**learning from data is choosing.** You have a family of candidate models indexed by
+parameters $x$ (the weights of a network, the coefficients of a regression), and you must
+*choose* the parameters that best fit the data. "Best fit" demands a score — a loss
+function $f(x)$ measuring how badly parameters $x$ explain the data — and the act of
+training *is* the act of minimizing that score. So optimization is not one tool among many
+in ML; it is the engine under essentially every supervised method. The objective changes
+from problem to problem (squared error, cross-entropy, a penalized likelihood), but the
+*shape* of the problem — minimize a score over a set of allowed parameters — never does.
+That is why this is a foundational track that the others draw on.
+:::
+
+# Intuition before symbols: the landscape {#sec-intuition}
+
+Before any notation, fix the picture that makes every later symbol obvious. Imagine the
+objective $f$ as the **height of a landscape**. Every possible choice $x$ is a location on
+the ground; the height of the terrain above that location is the score $f(x)$. Minimizing
+$f$ means *find the lowest point you can walk to.* Maximizing means find the highest peak.
+That single image — a hiker looking for the lowest valley — carries almost everything in
+this article, and a surprising amount of the whole track.
+
+The three pieces of the Core read straight off the landscape:
+
+- The **decision variable** is *where you are standing* — the location on the ground you
+  are free to move to.
+- The **objective** is *the altitude* at your location — the one number the terrain
+  assigns to each spot.
+- The **feasible set** is *the region you are permitted to walk in* — perhaps a fence rings
+  off part of the map, and you must find the lowest point inside the fence, even if a deeper
+  valley lies outside it.
+
+@fig-landscape draws this in one dimension, where "the landscape" is just the graph of a
+function and "the lowest point you can reach" is a point on that curve.
+
+```{python}
+#| label: fig-landscape
+#| fig-cap: "The landscape picture in one dimension. The curve is the objective $f(x)$ — the altitude over each choice $x$. Minimizing $f$ means finding the location of the lowest point on the curve (red). The dashed lines split the two questions this article keeps separate: the horizontal *location* $x^\\star$ (the **minimizer**, read off the $x$-axis) and the vertical *altitude* $f(x^\\star)$ (the **minimum value**, read off the $y$-axis)."
+x = np.linspace(-3.2, 3.2, 400)
+f = 0.25 * x**4 - 0.6 * x**3 - 1.5 * x**2 + 2.0 * x + 6.0
+# locate the global minimum on this window numerically (for the picture only)
+xstar = x[np.argmin(f)]
+fstar = f.min()
+
+fig, ax = plt.subplots()
+ax.plot(x, f, color=CURVE, label="objective $f(x)$")
+ax.scatter([xstar], [fstar], color=MARK, s=70, zorder=5, label="lowest point")
+ax.plot([xstar, xstar], [ax.get_ylim()[0], fstar], color=MARK, ls=":", lw=1.3)
+ax.plot([x.min(), xstar], [fstar, fstar], color=MARK, ls=":", lw=1.3)
+ax.annotate(r"minimizer $x^\star$", (xstar, ax.get_ylim()[0]),
+            xytext=(xstar + 0.2, ax.get_ylim()[0] + 1.0), color=MARK, fontsize=10)
+ax.annotate(r"minimum value $f(x^\star)$", (x.min(), fstar),
+            xytext=(x.min() + 0.1, fstar + 1.2), color=MARK, fontsize=10)
+ax.set_xlabel("choice $x$ (a location)")
+ax.set_ylabel("score $f(x)$ (the altitude)")
+ax.set_title("Minimizing = finding the lowest point you can reach")
+ax.legend(loc="upper center", framealpha=0.9)
+plt.tight_layout()
+```
+
+Hold onto this picture. When [OPTM-01] sets a derivative to zero, it is finding where the
+terrain goes flat; when [OPTM-06] does gradient descent, it is a hiker stepping downhill in
+fog; when [OPTM-13] adds Lagrange multipliers, it is the fence pushing back on the hiker at
+the boundary. They are all the same landscape, seen with progressively better equipment.
+
+# The formal development {#sec-formal}
+
+We now name the three pieces precisely. There is little to *derive* in this article — its
+content is *definitions done carefully* — but each definition is chosen to answer a piece
+of the "find the best" question, and we say which.
+
+## The decision variable {#sec-decision}
+
+::: {#def-decision}
+**Definition (decision variable).** The **decision variable** (or **optimization
+variable**) $x$ is the quantity we are free to choose. It ranges over a set of candidate
+values; most often $x$ is a single real number ($x \in \mathbb{R}$) or a list of $p$ real
+numbers $x = (x_1,\dots,x_p) \in \mathbb{R}^p$, in which case each $x_j$ is a separate knob
+we may turn independently.
+:::
+
+The decision variable answers *"which of these decisions am I making?"* In a regression fit
+it is the coefficients of the line; in a budget problem it is the dollar amount sent to each
+category; in training a classifier it is the vector of model weights. The crucial mental
+move — the one [REGR-01] calls "the pivot" — is that **the decision variable is the
+unknown we solve *for*, not data we are handed.** The data are fixed numbers baked into the
+objective; $x$ is what we get to choose.
+
+A note on dimension that matters more than it looks. When $x$ is one number, the landscape
+is a curve and we can *see* the whole thing (as in @fig-landscape). When $x$ has two
+components, the landscape is a genuine surface — still drawable. When $x$ has a thousand
+components (a modest neural network has millions), the landscape lives in a thousand-
+dimensional space that *no one can picture*. The entire reason this track grows beyond
+[OPTM-01]'s one-variable calculus is that we need tools that keep working when we lose the
+ability to draw the picture. But the picture's *logic* — find the lowest reachable point —
+never changes, which is why we anchor on it now.
+
+## The objective function {#sec-objective}
+
+::: {#def-objective}
+**Definition (objective function).** The **objective function** (also **cost**, **loss**,
+or **criterion**) $f$ is a rule that assigns to each candidate choice $x$ a single real
+number $f(x)$, the **score** of that choice. Formally $f : \mathcal{C} \to \mathbb{R}$. By
+convention we will always *minimize*, so a *lower* score is *better*: $f(x)$ measures how
+*bad* the choice $x$ is.
+:::
+
+The objective answers *"best by which measure?"* It is the single most consequential
+modeling decision in any optimization problem, because **it encodes what you mean by
+"best."** Change the objective and you change the answer, even with the same data and the
+same allowed choices. [REGR-01] shows this vividly: choosing *squared* error versus
+*absolute* error gives two genuinely different "best lines" through the same points. The
+objective is where your values, your assumptions, and your priorities get written down as
+mathematics — and the rest of the track takes the objective as *given* and asks only how to
+minimize it.
+
+Three properties of the objective will dominate later articles, so we name them now even
+though we cannot yet exploit them:
+
+- **Single number out.** The objective must return *one* number, even when you care about
+  several things. A drug must be both effective *and* safe — two concerns — but to optimize
+  you must combine them into one score (say, efficacy minus a penalty for toxicity). The
+  art of *scalarizing* competing goals into one objective is a real and subtle craft;
+  honest **multi-objective** problems where no single combination is forced are a genuine
+  edge of this whole framing, flagged in @sec-edge.
+- **Smoothness (or not).** Whether $f$ has a derivative everywhere decides which tools
+  apply. The smooth case is [OPTM-01]'s "set the derivative to zero"; the kinked case (like
+  the absolute value $|x|$, with its corner at $0$) needs the subgradient machinery of
+  [OPTM-05]. We are not using this yet — only flagging that the *shape* of $f$ matters.
+- **Convexity (or not).** Whether the landscape is a single bowl or a range of many valleys
+  decides whether a local best is *the* best — the dividing line of the entire field,
+  developed in [OPTM-03]–[OPTM-04]. We meet its first symptom in @sec-local-global below.
+
+## The feasible set {#sec-feasible}
+
+::: {#def-feasible}
+**Definition (feasible set).** The **feasible set** $\mathcal{C}$ is the collection of all
+*allowed* choices of $x$. A choice $x$ is **feasible** if $x \in \mathcal{C}$ and
+**infeasible** otherwise. When $\mathcal{C}$ is the entire space (every choice allowed),
+the problem is **unconstrained**; when $\mathcal{C}$ is a strict subset carved out by
+**constraints**, the problem is **constrained**.
+:::
+
+The feasible set answers *"best out of which options?"* It is the fence around the
+landscape. Constraints usually arrive as **equations and inequalities** that $x$ must
+satisfy. For example:
+
+$$
+\mathcal{C} = \bigl\{\, x \in \mathbb{R}^p : g_i(x) \le 0 \text{ for all } i,\;\;
+h_j(x) = 0 \text{ for all } j \,\bigr\}.
+$$ {#eq-feasible}
+
+Read @eq-feasible slowly: it says "$\mathcal{C}$ is the set of all choices $x$ such that
+every inequality constraint $g_i(x) \le 0$ holds and every equality constraint $h_j(x) = 0$
+holds." A budget constraint "spend no more than \$100" becomes
+$g(x) = (\text{total spend}) - 100 \le 0$; a requirement "the probabilities sum to one"
+becomes $h(x) = (\sum_k x_k) - 1 = 0$; a non-negativity rule "you cannot buy negative
+shares" becomes $g(x) = -x_k \le 0$. The whole **constrained-optimization** branch of this
+track ([OPTM-13]–[OPTM-16]) is devoted to honoring fences of exactly this form, and the
+*geometry* of feasible sets — what makes a fence "nice" — is the subject of convex sets in
+[OPTM-03].
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between an unconstrained and a constrained problem, and why does it
+matter so much?"* In an **unconstrained** problem ($\mathcal{C} = \mathbb{R}^p$) you may
+choose *any* $x$, so the minimum can only occur where the landscape is *flat* — there is no
+fence to lean against, and the entire solution method is "find where the derivative or
+gradient vanishes" ([OPTM-01], [OPTM-02]). In a **constrained** problem the minimum can sit
+*on the fence*, at a point where the objective is still sloping downhill but the constraint
+forbids you from going further. That changes the optimality condition completely: it is no
+longer "the slope is zero" but "the slope points straight into the fence" — the geometric
+heart of Lagrange multipliers ([OPTM-13]) and the KKT conditions ([OPTM-14]). Recognizing
+*which* kind of problem you have is the first thing an interviewer wants to see, because it
+selects the entire toolkit.
+:::
+
+## Putting it together: the canonical form {#sec-canonical}
+
+With the three pieces named, the full statement of an optimization problem is
+
+$$
+\operatorname*{minimize}_{x \in \mathbb{R}^p}\; f(x)
+\qquad \text{subject to} \qquad x \in \mathcal{C},
+$$ {#eq-canonical}
+
+read aloud as: *"minimize $f$ of $x$, over $x$, subject to $x$ lying in the feasible set
+$\mathcal{C}$."* The "$\operatorname*{minimize}$" announces the goal, the "$x$" underneath
+announces *what we are choosing* (the decision variable), $f(x)$ is the objective, and the
+"subject to" clause states the feasible set. When the constraints are given explicitly as
+in @eq-feasible, people often write them out:
+
+$$
+\operatorname*{minimize}_{x}\; f(x)
+\quad \text{subject to} \quad
+g_i(x) \le 0,\;\; h_j(x) = 0.
+$$
+
+This is *the* template. Every problem in the track, no matter how elaborate its objective or
+how exotic its constraints, fits in @eq-canonical. Learning optimization is learning to
+**(1) recognize a vague goal as a problem of this form**, then **(2) solve that problem.**
+This article is entirely about step (1); the rest of the track is step (2).
+
+# The two questions a problem asks: `min` versus `argmin` {#sec-min-argmin}
+
+Here is the distinction that separates a careful answer from a sloppy one, and it is asked
+in interviews precisely because it is so easy to blur. An optimization problem secretly asks
+*two* questions, and they have *two different kinds of answer*.
+
+The **minimum value** is the *best score achievable* — a single number on the altitude
+axis. We write it
+$$
+\min_{x \in \mathcal{C}} f(x) \;=\; \text{the smallest value } f \text{ takes on } \mathcal{C}.
+$$
+The **minimizer** is the *choice that achieves that best score* — a point on the ground,
+living in the same space as $x$. We write it
+$$
+\arg\min_{x \in \mathcal{C}} f(x) \;=\; \text{the } x^\star \in \mathcal{C}
+\text{ at which the minimum is attained, i.e. } f(x^\star) = \min_{x\in\mathcal{C}} f(x).
+$$
+
+In the landscape picture (@fig-landscape) the minimum value is *how low* the lowest point
+sits (read off the vertical axis); the minimizer is *where on the map* that lowest point is
+(read off the horizontal axis). They answer genuinely different questions:
+
+- *"How small can the loss get?"* — wants the **minimum value** (a number).
+- *"Which parameters give that smallest loss?"* — wants the **minimizer** (a point).
+
+In data science you almost always care about the **minimizer**: you want the *parameters*
+of the best model, not just the number telling you how good the best model is. The fitted
+coefficients of a regression are $\arg\min$; the residual sum of squares they achieve is
+$\min$. @fig-min-argmin pins the two apart on one curve.
+
+```{python}
+#| label: fig-min-argmin
+#| fig-cap: "`min` versus `argmin`, on a clean convex objective $f(x) = (x-2)^2 + 1$. The **minimizer** $x^\\star = 2$ is the *location* of the lowest point, an answer living on the $x$-axis (green). The **minimum value** $f(x^\\star) = 1$ is the *height* there, an answer living on the $y$-axis (red). Two different axes, two different kinds of answer to the same problem."
+x = np.linspace(-1.5, 5.5, 400)
+f = (x - 2.0)**2 + 1.0
+xstar, fstar = 2.0, 1.0
+
+fig, ax = plt.subplots()
+ax.plot(x, f, color=CURVE, label=r"$f(x) = (x-2)^2 + 1$")
+ax.scatter([xstar], [fstar], color=MARK, s=70, zorder=5)
+# minimizer: drop to x-axis
+ax.plot([xstar, xstar], [0, fstar], color=ACCENT, ls=":", lw=1.6)
+ax.scatter([xstar], [0], color=ACCENT, s=55, zorder=5)
+ax.annotate(r"$\arg\min f = x^\star = 2$", (xstar, 0),
+            xytext=(xstar + 0.2, 1.2), color=ACCENT, fontsize=10)
+# minimum value: across to y-axis
+ax.plot([-1.5, xstar], [fstar, fstar], color=MARK, ls=":", lw=1.6)
+ax.scatter([-1.5], [fstar], color=MARK, s=55, zorder=5)
+ax.annotate(r"$\min f = f(x^\star) = 1$", (-1.5, fstar),
+            xytext=(-1.3, fstar + 1.4), color=MARK, fontsize=10)
+ax.set_ylim(0, 10)
+ax.set_xlabel("choice $x$"); ax.set_ylabel("score $f(x)$")
+ax.set_title("The value vs. the location")
+ax.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**`min` is a number; `argmin` is a point — and `argmin` may be empty or may be a whole
+set.** Two traps follow. First, never write "$x^\star = \min_x f(x)$": the right-hand side
+is the minimum *value*, an altitude, while $x^\star$ is a *location*; equating them is a
+type error, like setting a temperature equal to a position. Write $x^\star = \arg\min_x
+f(x)$ and $f(x^\star) = \min_x f(x)$. Second, $\arg\min$ need not be a single point: the
+constant function $f(x) = 3$ has minimum value $3$ attained *everywhere*, so its $\arg\min$
+is the entire line; and a problem can have *no* minimizer at all (@sec-existence). For that
+reason $\arg\min$ is, strictly, a *set* of points, and "$x^\star = \arg\min f$" is shorthand
+for "$x^\star$ is *a* minimizer," safe only when you know the minimizer is unique — a
+guarantee that, as [OPTM-04] shows, comes from *strict convexity*.
+:::
+
+## Why maximizing is the same problem upside down {#sec-max}
+
+Half the problems in the wild ask to *maximize* — maximize profit, maximize likelihood,
+maximize a reward. We do not need a separate theory for them, because **maximizing $f$ is
+identical to minimizing $-f$.** This is not a convention or an approximation; it is an exact
+equivalence, and it is worth seeing why in full, because it is the reason this track can
+speak only of minimization without loss of generality.
+
+Flip the landscape upside down — replace every altitude $f(x)$ by its negative $-f(x)$.
+Peaks become valleys of exactly the same depth and at exactly the same locations. Concretely,
+for *any* point $x$ and the highest point $x^\star$,
+
+$$
+f(x^\star) \ge f(x) \quad \text{for all } x \in \mathcal{C}
+\qquad\Longleftrightarrow\qquad
+-f(x^\star) \le -f(x) \quad \text{for all } x \in \mathcal{C}.
+$$
+
+The left statement says "$x^\star$ gives the *largest* value of $f$"; multiplying an
+inequality by $-1$ flips its direction (the one algebra step), giving the right statement,
+"$x^\star$ gives the *smallest* value of $-f$." The chain of $\Longleftrightarrow$ means the
+*same location* $x^\star$ that maximizes $f$ also minimizes $-f$ — the **minimizer is
+literally unchanged.** Only the *value* flips sign:
+
+$$
+\arg\max_{x\in\mathcal{C}} f(x) = \arg\min_{x\in\mathcal{C}}\,\bigl(-f(x)\bigr),
+\qquad
+\max_{x\in\mathcal{C}} f(x) = -\min_{x\in\mathcal{C}}\,\bigl(-f(x)\bigr).
+$$
+
+@fig-max draws both landscapes at once so the reflection is unmistakable.
+
+```{python}
+#| label: fig-max
+#| fig-cap: "Maximizing $f$ is minimizing $-f$. The peak of $f$ (red, up top) sits at the *same horizontal location* $x^\\star$ as the trough of $-f$ (blue, below) — reflection through the dashed axis flips altitude but never moves the location. So the maximizer of $f$ and the minimizer of $-f$ are the identical point; only the sign of the value changes. This is why the whole track speaks only of minimization."
+x = np.linspace(-3, 3, 400)
+f = np.exp(-0.5 * (x - 0.6)**2) * 4.0   # a single bump (something to maximize)
+xstar = x[np.argmax(f)]
+
+fig, ax = plt.subplots()
+ax.axhline(0, color=GREY, lw=1.0, ls="--")
+ax.plot(x, f, color=MARK, label=r"$f(x)$  (maximize this)")
+ax.plot(x, -f, color=CURVE, label=r"$-f(x)$  (minimize this)")
+ax.scatter([xstar], [f.max()], color=MARK, s=60, zorder=5)
+ax.scatter([xstar], [-f.max()], color=CURVE, s=60, zorder=5)
+ax.plot([xstar, xstar], [-f.max(), f.max()], color=ACCENT, ls=":", lw=1.4)
+ax.annotate(r"same $x^\star$", (xstar, 0), xytext=(xstar + 0.25, 0.4),
+            color=ACCENT, fontsize=10)
+ax.set_xlabel("choice $x$"); ax.set_ylabel("score")
+ax.set_title("A maximum of $f$ is a minimum of $-f$ at the same place")
+ax.legend(loc="lower left", framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"The statistician maximizes the log-likelihood, but the optimizer minimizes a loss. Are
+they doing different things?"* No — they are doing the same thing with opposite sign
+conventions. Maximizing the log-likelihood $\ell(x)$ is exactly minimizing the **negative
+log-likelihood** $-\ell(x)$, and "NLL" is precisely the loss that machine-learning code
+minimizes. So when [REGR-01] shows that the least-squares line *is* the maximum-likelihood
+line under Gaussian noise, and the code minimizes squared error, there is no contradiction:
+minimizing the squared-error loss and maximizing the Gaussian likelihood are the same
+problem, related by exactly the $f \leftrightarrow -f$ flip above. Being fluent in this
+translation is the difference between thinking these are two fields and knowing they are
+one. (The maximization-flavored algorithm, *gradient ascent*, is just gradient descent on
+$-f$; it is named explicitly in [OPTM-06].)
+:::
+
+# Local versus global: a valley is not always *the* valley {#sec-local-global}
+
+The landscape picture warns of a danger the smooth phrase "the lowest point" papers over.
+A real terrain can have *several* valleys. The lowest point in the small dip beside you is
+a perfectly good *local* answer — you cannot do better without first climbing out — but it
+need not be the *global* lowest point on the whole map. This distinction is the single most
+important caveat in all of optimization, and we name it precisely.
+
+::: {#def-local-global}
+**Definition (local and global minimizers).** A feasible point $x^\star \in \mathcal{C}$ is
+a **global minimizer** if no feasible point does better:
+$$
+f(x^\star) \le f(x) \quad \text{for every } x \in \mathcal{C}.
+$$
+It is a **local minimizer** if it merely beats its *neighbors* — there is some radius
+$r > 0$ such that
+$$
+f(x^\star) \le f(x) \quad \text{for every feasible } x \text{ within distance } r \text{ of } x^\star.
+$$
+Every global minimizer is local (if you beat everyone, you beat your neighbors), but a local
+minimizer need not be global.
+:::
+
+Read the two definitions side by side. The *global* condition quantifies over **every**
+feasible point — it is a statement about the entire map. The *local* condition quantifies
+only over points **within distance $r$** — a statement about a small neighborhood. The
+gap between "best among my neighbors" and "best anywhere" is exactly the gap between a dip
+you happened to wander into and the true bottom. @fig-local-global shows a landscape with
+both, and it is the picture to keep in mind every time an algorithm "converges."
+
+```{python}
+#| label: fig-local-global
+#| fig-cap: "A landscape with more than one valley. The point on the right (orange) is a genuine **local** minimizer — every nearby point is higher, so a downhill-walking algorithm that arrives here gets stuck. But it is *not* **global**: the valley on the left (red) is strictly deeper. An algorithm that only ever steps downhill cannot tell these apart from inside the right-hand dip; distinguishing them requires either luck, restarts, or the structural guarantee of convexity ([OPTM-04]) that *forbids* a second valley."
+x = np.linspace(-3.5, 4.0, 500)
+f = 0.5 * np.sin(1.6 * x) + 0.12 * (x - 0.4)**2 + 0.04 * x
+i_glob = np.argmin(f)
+# find a local min on the right region that is not the global one
+mask = x > 1.0
+i_loc_rel = np.argmin(f[mask])
+i_loc = np.arange(len(x))[mask][i_loc_rel]
+
+fig, ax = plt.subplots()
+ax.plot(x, f, color=CURVE, label="objective $f(x)$")
+ax.scatter([x[i_glob]], [f[i_glob]], color=MARK, s=75, zorder=5,
+           label="global minimizer")
+ax.scatter([x[i_loc]], [f[i_loc]], color="#e07a1f", s=75, zorder=5,
+           label="a local (non-global) minimizer")
+ax.set_xlabel("choice $x$"); ax.set_ylabel("score $f(x)$")
+ax.set_title("Local minima are traps a downhill walker cannot escape")
+ax.legend(loc="upper center", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+Why dwell on this in an introductory article? Because it sets up the *organizing question*
+of the entire track. Almost every algorithm we will build — gradient descent, Newton's
+method, SGD — is, at heart, a downhill walker: it can find a *local* minimizer, but on a
+landscape with many valleys it has no way to know whether it found *the* one. There are only
+two escapes, and the track is structured around them:
+
+- **Restructure the problem** so it has only one valley. A **convex** objective is exactly
+  one whose landscape is a single bowl — no second valley to get trapped in — and for it
+  *every* local minimizer is automatically global. This is "the whole ballgame" of
+  [OPTM-04], and the reason convexity is treated as a dividing line: on the convex side, a
+  local answer *is* the answer; on the non-convex side, it generally is not.
+- **Accept local minima and manage them.** For genuinely non-convex problems (training a
+  deep network is the headline example) we cannot guarantee the global optimum, so we use
+  many random starts, momentum, and noise to escape shallow traps — the practical content of
+  [OPTM-08], [OPTM-11], and [OPTM-12].
+
+For *this* article the lesson is only that the word "minimum" hides two meanings, and that
+which one an algorithm delivers is never automatic. We flag it now; the track spends a dozen
+articles cashing it out.
+
+# When there is no answer at all: existence {#sec-existence}
+
+We have quietly assumed a lowest point *exists*. It need not. This is the first honest edge
+of the framing — the place where the neat phrase "minimize $f$ over $\mathcal{C}$" describes
+a question with **no answer**, and recognizing those cases is part of mastery, not a
+footnote to it.
+
+There are two distinct ways a minimizer can fail to exist, and the landscape picture makes
+both obvious.
+
+**Failure one: the floor keeps dropping (unbounded below).** If the terrain falls forever as
+you walk in some direction, there is no lowest point — for any altitude you name, you can get
+lower. The objective $f(x) = x$ over all of $\mathbb{R}$ has no minimum: as $x \to -\infty$,
+$f \to -\infty$, so no single $x^\star$ achieves the smallest value, because *there is no
+smallest value*. The plain English diagnosis: **an unconstrained problem whose objective
+can be driven to $-\infty$ has no minimizer.** Constraints often cure this by fencing off
+the runaway direction.
+
+**Failure two: the bottom is missing (the set is open, or the infimum is not attained).**
+This one is subtler and is the reason mathematicians distinguish the *infimum* (the greatest
+lower bound — the altitude the terrain *approaches*) from the *minimum* (a value actually
+*attained* at some point). Consider minimizing $f(x) = x$ over the **open** interval
+$\mathcal{C} = (0, 1)$ — all numbers strictly between $0$ and $1$, with the endpoints *not*
+included. You can make $f$ as close to $0$ as you like ($x = 0.001$, then $x = 0.000001$,
+…), so the values *approach* $0$ — but $0$ itself is not in $\mathcal{C}$, and *every*
+feasible point has another feasible point below it. There is a greatest lower bound (the
+infimum, $0$) but **no feasible point attains it**, so the minimum does not exist. The
+problem has an infimum but no minimizer. @fig-existence draws both failures.
+
+```{python}
+#| label: fig-existence
+#| fig-cap: "Two ways a minimizer fails to exist. **Left:** $f(x)=x$ on all of $\\mathbb{R}$ is *unbounded below* — the curve falls forever, so there is no lowest point. **Right:** $f(x)=x$ on the *open* interval $(0,1)$ (hollow endpoints) approaches the value $0$ but never reaches it — the infimum (dashed green) is $0$, yet no feasible point attains it, so there is no minimizer. In both cases the phrase 'minimize $f$' describes a question with no answer."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))
+
+# Left: unbounded below
+xx = np.linspace(-4, 4, 200)
+axL.plot(xx, xx, color=CURVE)
+axL.annotate("falls forever", (-3.5, -3.5), xytext=(-3.3, -1.2),
+             color=MARK, fontsize=10,
+             arrowprops=dict(arrowstyle="->", color=MARK))
+axL.set_title(r"Unbounded below: $f(x)=x$ on $\mathbb{R}$")
+axL.set_xlabel("$x$"); axL.set_ylabel("$f(x)$")
+
+# Right: open interval, infimum not attained
+xo = np.linspace(0.001, 0.999, 200)
+axR.plot(xo, xo, color=CURVE)
+axR.scatter([0, 1], [0, 1], facecolors="white", edgecolors=CURVE,
+            s=70, zorder=5, linewidth=1.8)  # hollow = excluded endpoints
+axR.axhline(0, color=ACCENT, ls="--", lw=1.4)
+axR.annotate("infimum 0,\nnever attained", (0, 0), xytext=(0.18, 0.35),
+             color=ACCENT, fontsize=10)
+axR.set_xlim(-0.15, 1.15); axR.set_ylim(-0.2, 1.1)
+axR.set_title(r"Open set: $f(x)=x$ on $(0,1)$")
+axR.set_xlabel("$x$"); axR.set_ylabel("$f(x)$")
+plt.tight_layout()
+```
+
+So when *is* a minimizer guaranteed to exist? Both failures point at the cure. Failure one
+is ruled out if the objective cannot run off to $-\infty$; failure two is ruled out if the
+feasible set *includes* its own boundary, so an approached value is actually reached. The
+classical theorem packages exactly this.
+
+::: {#thm-weierstrass}
+**Theorem (the existence guarantee, at the floor's level).** If the feasible set
+$\mathcal{C}$ is **closed** (it includes its own boundary — no missing edges like the open
+interval) and **bounded** (it fits inside some finite region — it does not run off to
+infinity), and the objective $f$ is **continuous** (its graph has no jumps), then $f$
+attains both a minimum and a maximum on $\mathcal{C}$: a minimizer $x^\star \in \mathcal{C}$
+exists.
+:::
+
+::: {.proof}
+A full proof belongs to a real-analysis course and rests on the technical notion of
+*compactness* (in $\mathbb{R}^p$, "closed and bounded"), which sits above this track's
+Calculus-I floor — so we **flag it as an imported prerequisite** rather than derive it
+here, and give the honest *intuition* that the floor does support. "Bounded" forbids
+Failure one: the terrain cannot fall forever because the region you may walk in is finite,
+so the altitudes you can reach are themselves bounded below, pinning down a greatest lower
+bound (an infimum). "Closed" forbids Failure two: the open-interval pathology happened
+precisely because the value $0$ was approached at a *missing* boundary point; a closed set
+contains its boundary, so any value the function approaches along a sequence of feasible
+points is actually achieved *at* a feasible point — the limit point is itself in
+$\mathcal{C}$. "Continuous" is what links the two: it guarantees that the altitude
+approached along such a sequence equals the altitude *at* the limiting location, so the
+infimum is attained there and is a genuine minimum. The slogan worth memorizing is **"a
+continuous function on a closed, bounded set attains its extremes."** $\qquad\blacksquare$
+:::
+
+::: {.callout-note title="What we imported, and where it lives"}
+This is the one place the article reaches above its Calculus-I floor. The full statement
+and proof of @thm-weierstrass — the **Extreme Value Theorem**, and its general form the
+*Weierstrass theorem* — rest on **compactness** and the behavior of sequences, which are
+real-analysis machinery the Core Sample series treats as a named prerequisite. We imported
+only the *statement* and gave the intuition the floor supports, so that the logic of "when
+does a best choice exist" could run end to end. Everything else in this article stays at the
+floor.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Your training loss decreased every epoch but never seemed to settle — what could be going
+on?"* The two failure modes of this section are live suspects, dressed in machine-learning
+clothes. If the loss can be driven *down without bound* — a model with an unpenalized weight
+that can grow forever while the loss keeps shrinking — you have **Failure one**, an
+objective unbounded below, and the standard cure is to *add a constraint or a penalty* (a
+regularizer like $\lambda\|x\|^2$) that fences off the runaway direction and restores a
+finite minimum. If instead the *optimal value is approached but never attained* — for
+instance a perfectly separable classification problem where pushing the weights ever larger
+makes the logistic loss ever smaller without limit — you have **Failure two**, an infimum
+that lives "at infinity" and is never reached, again cured by regularization that pulls the
+boundary back in. Knowing that "the loss won't settle" is often an *existence* problem, not
+a tuning problem, is exactly the practitioner judgment this track is for.
+:::
+
+# Worked framings: reading real goals into the canonical form {#sec-examples}
+
+The skill this article teaches is *translation*: taking a goal stated in plain language and
+writing it as @eq-canonical — naming the decision variable, the objective, and the feasible
+set. We do that now for three honest examples drawn from the rest of the series, ending with
+one at the edge of the framing where the translation strains. We do not *solve* them — the
+methods are later articles — we only put each into the canonical form, which is the step
+this article owns.
+
+## Framing 1 — Least squares as "minimize total squared error" {#sec-ls}
+
+This is the example the Regression track ([REGR-01]) is built on, and the one [OPTM-02] will
+solve. We have $n$ data pairs $(t_i, y_i)$ — say, waiting time $t_i$ and eruption duration
+$y_i$ for a geyser — and we want the *best straight line* $y \approx \beta_0 + \beta_1 t$
+through them. Translate:
+
+- **Decision variable:** the line is determined by its intercept and slope, so
+  $x = (\beta_0, \beta_1) \in \mathbb{R}^2$. *That* is what we choose — not the data, which
+  are fixed.
+- **Objective:** "best" means smallest total squared vertical gap (the choice [REGR-01]
+  justifies in full),
+  $$
+  f(\beta_0, \beta_1) = \sum_{i=1}^{n} \bigl(y_i - \beta_0 - \beta_1 t_i\bigr)^2.
+  $$
+- **Feasible set:** any line is allowed, so $\mathcal{C} = \mathbb{R}^2$ — this is an
+  **unconstrained** problem.
+
+In canonical form: $\operatorname*{minimize}_{(\beta_0,\beta_1)\in\mathbb{R}^2}
+\sum_i (y_i - \beta_0 - \beta_1 t_i)^2$. @fig-ls-framing shows the objective as a landscape
+over the plane of candidate lines — a single bowl, so its one valley is *the* valley
+(convex, foreshadowing [OPTM-04]).
+
+```{python}
+#| label: fig-ls-framing
+#| fig-cap: "Least squares as an optimization problem over the *plane of candidate lines*. Each location $(\\beta_0,\\beta_1)$ is one possible line; its altitude is the total squared error that line makes against the data. The landscape is a single convex bowl, so there is exactly one lowest point (red) — the best-fitting line. This is the picture [OPTM-02] solves by setting the gradient to zero."
+rng = np.random.default_rng(7)
+t = np.linspace(1, 9, 12)
+y = 2.0 + 0.8 * t + rng.normal(0, 1.0, size=t.size)
+
+b0g = np.linspace(-1, 5, 60)
+b1g = np.linspace(-0.4, 2.0, 60)
+B0, B1 = np.meshgrid(b0g, b1g)
+S = np.zeros_like(B0)
+for i in range(B0.shape[0]):
+    for j in range(B0.shape[1]):
+        pred = B0[i, j] + B1[i, j] * t
+        S[i, j] = np.sum((y - pred)**2)
+
+# the minimizing line, for the marker (closed form, used only to draw the dot)
+tb, yb = t.mean(), y.mean()
+b1s = np.sum((t - tb) * (y - yb)) / np.sum((t - tb)**2)
+b0s = yb - b1s * tb
+Sstar = np.sum((y - (b0s + b1s * t))**2)
+
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+fig = plt.figure(figsize=(6.4, 4.6))
+ax = fig.add_subplot(111, projection="3d")
+ax.plot_surface(B0, B1, S, cmap="viridis", alpha=0.85, linewidth=0, antialiased=True)
+ax.scatter([b0s], [b1s], [Sstar], color=MARK, s=70, depthshade=False)
+ax.text(b0s, b1s, Sstar + 25, "best line", color=MARK)
+ax.set_xlabel(r"$\beta_0$ (intercept)")
+ax.set_ylabel(r"$\beta_1$ (slope)")
+ax.set_zlabel(r"$f(\beta_0,\beta_1)$")
+ax.set_title("Squared error over the plane of lines")
+ax.view_init(elev=28, azim=-128)
+plt.tight_layout()
+```
+
+## Framing 2 — A constrained budget allocation {#sec-budget}
+
+Now a problem where the fence does real work. An investor has \$1 of capital to split across
+$p$ assets; let $x_k \ge 0$ be the fraction placed in asset $k$. A standard objective (the
+Markowitz idea) trades expected return against risk: minimize the portfolio's *variance* — a
+single number measuring how much the portfolio's value jitters, which a long-only investor
+wants small — while the allocations form a valid, fully-invested, long-only portfolio.
+Concretely, the variance is a weighted sum
+$$
+f(x) \;=\; \sum_{k}\sum_{m} x_k\,x_m\,\Sigma_{km},
+$$
+where $\Sigma_{km}$ is a fixed number describing how assets $k$ and $m$ move together (their
+*covariance*, a quantity owned by the Probability track and taken as given here). Each term
+multiplies *two* of our chosen fractions, so $f$ is **quadratic** in $x$ — a bowl-shaped
+score, the simplest objective beyond a straight line. (In matrix shorthand this same sum is
+written $x^\top \Sigma x$, the **quadratic form** that [OPTM-02] and the Geometry track
+develop; we only need its plain-English reading — "a weighted sum of products of the
+allocations" — to *frame* the problem here.) Translate:
+
+- **Decision variable:** $x = (x_1,\dots,x_p) \in \mathbb{R}^p$, the fractions invested.
+- **Objective:** $f(x) = \sum_{k}\sum_{m} x_k x_m \Sigma_{km}$, the portfolio variance
+  (smaller is safer).
+- **Feasible set:** the constraints are *fully invested*
+  $\sum_k x_k = 1$ (an equality $h(x) = \sum_k x_k - 1 = 0$) and *no short selling*
+  $x_k \ge 0$ for each $k$ (inequalities $g_k(x) = -x_k \le 0$). So
+  $$
+  \mathcal{C} = \Bigl\{\, x \in \mathbb{R}^p : \textstyle\sum_k x_k = 1,\;\; x_k \ge 0 \,\Bigr\},
+  $$
+  the **probability simplex** — a genuinely constrained set.
+
+This is exactly the shape of @eq-canonical with both equality and inequality constraints. It
+cannot be solved by "set the derivative to zero" alone, because the minimum may sit *on the
+fence* — at an allocation where lowering one asset's variance contribution would require a
+negative position the constraint forbids. That is the situation Lagrange multipliers and the
+KKT conditions ([OPTM-13]–[OPTM-14]) are built for. @fig-budget pictures the feasible set for
+$p = 3$ and a sample objective contour landing on it.
+
+```{python}
+#| label: fig-budget
+#| fig-cap: "A constrained problem for three assets. The feasible set (green triangle) is the probability simplex $\\{x_1+x_2+x_3=1,\\ x_k\\ge 0\\}$ — every valid fully-invested, long-only portfolio, shown in the $(x_1,x_2)$ plane with $x_3 = 1 - x_1 - x_2$ implied. The background shading is the objective (portfolio variance); the constrained minimum (red) is the lowest-variance point *inside the triangle*, which may differ from the unconstrained minimum that ignores the fence. Honoring such fences is the constrained-optimization branch of the track."
+# Objective: a simple quadratic in (x1, x2) standing in for portfolio variance.
+g = np.linspace(-0.1, 1.1, 300)
+X1, X2 = np.meshgrid(g, g)
+# variance-like bowl with a minimum near (0.55, 0.15) (outside? inside? — illustrative)
+F = 1.6 * (X1 - 0.55)**2 + 1.1 * (X2 - 0.15)**2 + 0.7 * (X1 - 0.55) * (X2 - 0.15)
+
+fig, ax = plt.subplots(figsize=(5.6, 5.0))
+cs = ax.contourf(X1, X2, F, levels=18, cmap="viridis", alpha=0.55)
+# the simplex region x1>=0, x2>=0, x1+x2<=1
+tri = plt.Polygon([(0, 0), (1, 0), (0, 1)], closed=True,
+                  facecolor=ACCENT, alpha=0.30, edgecolor=ACCENT, lw=2.0,
+                  label="feasible set (simplex)")
+ax.add_patch(tri)
+# constrained minimizer: search F on a fine grid restricted to the simplex
+pts = []
+for a in np.linspace(0, 1, 200):
+    for b in np.linspace(0, 1 - a, 200):
+        pts.append((a, b))
+pts = np.array(pts)
+vals = 1.6 * (pts[:, 0] - 0.55)**2 + 1.1 * (pts[:, 1] - 0.15)**2 \
+       + 0.7 * (pts[:, 0] - 0.55) * (pts[:, 1] - 0.15)
+xc = pts[np.argmin(vals)]
+ax.scatter([xc[0]], [xc[1]], color=MARK, s=80, zorder=6,
+           label="constrained minimum")
+ax.set_xlim(-0.1, 1.1); ax.set_ylim(-0.1, 1.1)
+ax.set_xlabel("$x_1$  (asset 1 share)")
+ax.set_ylabel("$x_2$  (asset 2 share)")
+ax.set_title("Minimize variance over the simplex")
+ax.legend(loc="upper right", framealpha=0.95, fontsize=9)
+plt.tight_layout()
+```
+
+## Framing 3 — Maximum likelihood as maximization rewritten as minimization {#sec-mle}
+
+The Inference track repeatedly says "estimate the parameter by *maximizing* the likelihood."
+By @sec-max that is a minimization in disguise, and seeing the translation is the point.
+Suppose we observe counts and model them with a one-parameter distribution whose parameter
+$\theta > 0$ controls the rate. The **likelihood** $L(\theta)$ is the probability the model
+assigns to the data we saw, as a function of $\theta$; the maximum-likelihood estimate is the
+$\theta$ that makes the observed data most probable. Translate:
+
+- **Decision variable:** $x = \theta$, with the natural domain $\theta > 0$.
+- **Objective:** we *maximize* $L(\theta)$, equivalently *maximize* the log-likelihood
+  $\ell(\theta) = \ln L(\theta)$ (logs do not move the location of a peak, since $\ln$ is
+  increasing — the same step [REGR-01] uses), equivalently **minimize the negative
+  log-likelihood** $f(\theta) = -\ell(\theta)$.
+- **Feasible set:** $\mathcal{C} = (0, \infty)$, the allowed parameter values.
+
+So "maximize the likelihood over $\theta > 0$" becomes the canonical
+$\operatorname*{minimize}_{\theta > 0}\ \bigl(-\ell(\theta)\bigr)$ — and note the feasible
+set $(0,\infty)$ is *open*, exactly the @sec-existence Failure-two danger: if the negative
+log-likelihood kept decreasing as $\theta \to 0^+$ or $\theta \to \infty$, no estimate would
+exist. @fig-mle shows the flip and the safe interior optimum.
+
+```{python}
+#| label: fig-mle
+#| fig-cap: "Maximum likelihood as minimization. The log-likelihood $\\ell(\\theta)$ (red) is *maximized* at $\\theta^\\star$; the negative log-likelihood $-\\ell(\\theta)$ (blue) is *minimized* at the identical $\\theta^\\star$ (dashed line). The optimizer is the same parameter either way — only the sign of the value differs. The optimum sits in the interior of the allowed range $\\theta>0$, so a minimizer exists; were the curve to fall forever toward an edge, it would not (the @sec-existence caution)."
+theta = np.linspace(0.3, 6.0, 400)
+# illustrative concave log-likelihood with an interior peak
+ell = -1.0 * (np.log(theta) - np.log(2.2))**2 * 3.0 - 0.2 * theta + 2.0
+tstar = theta[np.argmax(ell)]
+
+fig, ax = plt.subplots()
+ax.plot(theta, ell, color=MARK, label=r"log-likelihood $\ell(\theta)$ (maximize)")
+ax.plot(theta, -ell, color=CURVE, label=r"$-\ell(\theta)$ (minimize)")
+ax.axvline(tstar, color=ACCENT, ls=":", lw=1.6)
+ax.scatter([tstar], [ell.max()], color=MARK, s=60, zorder=5)
+ax.scatter([tstar], [-ell.max()], color=CURVE, s=60, zorder=5)
+ax.annotate(r"same $\theta^\star$", (tstar, 0), xytext=(tstar + 0.2, 0.5),
+            color=ACCENT, fontsize=10)
+ax.set_xlabel(r"parameter $\theta$"); ax.set_ylabel("score")
+ax.set_title("MLE: maximize $\\ell$ = minimize $-\\ell$")
+ax.legend(loc="lower center", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+## Framing 4 (the edge) — when "find the best" resists a single objective {#sec-edge}
+
+Every framing above quietly assumed a *single* number could score each choice. The honest
+edge of this whole formulation is the case where it cannot. Suppose you are designing a
+treatment and you care about **two** things at once: maximize efficacy *and* minimize
+toxicity. There is no God-given exchange rate between "one more unit of efficacy" and "one
+more unit of toxicity," so there is no single objective $f$ that everyone agrees on — and
+the canonical form @eq-canonical, which demands *one* objective, does not directly apply.
+
+This is a **multi-objective** problem, and it has no single minimizer; instead it has a
+whole frontier of *non-dominated* (Pareto-optimal) choices — options where you cannot
+improve one goal without sacrificing the other. @fig-pareto shows that frontier. There are
+two honest responses, and naming them is the practitioner judgment this article is meant to
+build:
+
+- **Scalarize.** Pick weights and collapse the goals into one objective, e.g.
+  $f(x) = -\text{efficacy}(x) + \lambda\,\text{toxicity}(x)$, restoring the canonical form —
+  but *now the weight $\lambda$ is a value judgment you have imported*, and different
+  $\lambda$ trace out different points on the frontier. This is exactly how a regularization
+  parameter ($\lambda\|x\|^2$) enters later articles: it is a scalarization of "fit the data
+  well" against "keep the model simple."
+- **Constrain one, optimize the other.** Fix an acceptable toxicity ceiling and maximize
+  efficacy subject to it — turning the second objective into a *constraint* and landing back
+  in the constrained canonical form of @sec-budget. This is often the most defensible move,
+  because the ceiling is a concrete, stateable policy.
+
+```{python}
+#| label: fig-pareto
+#| fig-cap: "The edge of the single-objective framing. With two competing goals (here: low toxicity *and* high efficacy, both wanted), no single point is 'best' — the grey cloud of options has a **Pareto frontier** (red) of non-dominated choices, each of which trades one goal for the other. The canonical form needs *one* objective, so to use the rest of this track you must either *scalarize* (pick a weight, collapsing the frontier to one chosen point) or *constrain* one goal and optimize the other. There is no purely mathematical way to pick a single point on the frontier — that choice is a value judgment."
+rng = np.random.default_rng(3)
+tox = rng.uniform(0.05, 1.0, size=220)
+# efficacy is, on average, higher when toxicity is higher (a real trade-off), plus noise
+eff = 0.4 + 0.7 * np.sqrt(tox) - 0.25 * tox**2 + rng.normal(0, 0.06, size=tox.size)
+
+# Pareto frontier: points not dominated (we want LOW tox, HIGH eff)
+order = np.argsort(tox)
+ts, es = tox[order], eff[order]
+frontier_mask = np.zeros(len(ts), dtype=bool)
+best_eff = -np.inf
+for i in range(len(ts)):           # scanning toward higher toxicity
+    if es[i] > best_eff:           # a new highest-efficacy-so-far is non-dominated
+        frontier_mask[i] = True
+        best_eff = es[i]
+
+fig, ax = plt.subplots()
+ax.scatter(tox, eff, color=GREY, s=18, alpha=0.55, label="candidate treatments")
+ax.plot(ts[frontier_mask], es[frontier_mask], color=MARK, marker="o",
+        ms=4, lw=1.8, label="Pareto frontier")
+ax.set_xlabel("toxicity  (want low $\\rightarrow$)")
+ax.set_ylabel("efficacy  (want high $\\uparrow$)")
+ax.set_title("Two goals, no single 'best': the Pareto frontier")
+ax.legend(loc="lower right", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**The hardest part of optimization is often choosing the objective, and that step is not
+itself an optimization problem.** This track will give you powerful machinery to minimize
+*any* $f$ you hand it — but it cannot tell you whether $f$ encodes what you actually want.
+A model that minimizes a misspecified loss will faithfully optimize the *wrong thing*: an
+objective that ignores fairness will cheerfully find the most accurate-but-unfair model; a
+scalarization with a badly chosen $\lambda$ will sit at a point on the Pareto frontier no
+stakeholder would have picked. The mathematics is value-neutral; the *choice of objective
+and constraints* is where your judgment lives. Optimization makes "find the best" precise —
+it does not absolve you of deciding what "best" should mean.
+:::
+
+# When this framing applies, and when it does not {#sec-applicability}
+
+Pulling the threads together into the practitioner judgment the series is for.
+
+**Use the optimization framing when** your goal can be honestly written as *one* scalar
+score over a *well-defined* set of allowed choices: fitting a model to data (the objective
+is a loss), allocating a resource (the objective is cost or return, the set is a budget),
+calibrating a system (the objective is a discrepancy you want small). The overwhelming
+majority of supervised machine learning, statistical estimation, and engineering design
+lives comfortably here, which is why this track is load-bearing for the rest of the series.
+
+**Be careful — or reach for something else — when:**
+
+- **The goals genuinely conflict and no exchange rate is given** (@sec-edge). Force them
+  into one objective only with an explicit, defensible scalarization, or constrain all but
+  one. Pretending a value judgment is a mathematical fact is the most common abuse of the
+  framing.
+- **The objective is not what you actually care about.** Minimizing training loss is a
+  *proxy* for generalizing to new data; optimizing the proxy too hard (overfitting) can make
+  the real goal *worse*. Recognizing the gap between the objective you can write down and the
+  outcome you want is the entire reason regularization and validation exist.
+- **A best choice may not exist** (@sec-existence). Unbounded or open problems have no
+  minimizer; the fix is usually a constraint or a penalty, and noticing that "it won't
+  converge" is an existence problem rather than a tuning problem is real expertise.
+- **The decision space is discrete and combinatorial** (which subset of features, which
+  routing of a network). The smooth-landscape calculus this track is built on does not
+  directly apply; that is the separate world of integer and combinatorial optimization, where
+  one reaches for branch-and-bound, dynamic programming, or specialized solvers. This track
+  is about *continuous* optimization, and it says so honestly.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me an example of a real problem that does **not** fit the standard optimization
+framing, and say why."* A clean answer names a *discrete* or *multi-objective* case and
+explains the mismatch. For instance: *"Choosing which subset of 50 features to include in a
+model is a combinatorial problem — the decision variable lives in a finite set of $2^{50}$
+subsets, not a continuous $\mathbb{R}^p$, so 'set the gradient to zero' has no meaning and
+the convex-optimization toolkit doesn't apply; you'd reach for combinatorial methods or a
+continuous relaxation like the lasso instead."* Or: *"Designing a drug to be both effective
+and non-toxic has no single objective — it's multi-objective, with a Pareto frontier rather
+than one optimum, so you must either scalarize with a chosen weight or constrain one goal."*
+Showing you know the *boundary* of the framing, not just how to operate inside it, is what
+separates a graduate-level answer from a recipe-follower's.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+This is the **vocabulary article** — the front door. You now have the one object the whole
+track manipulates: $\operatorname*{minimize}_{x\in\mathcal{C}} f(x)$, with its decision
+variable, objective, and feasible set; the $\min$/$\arg\min$ split; max-as-min; the
+local/global distinction; and the honest cases where no minimizer exists. From here the
+track begins to *solve*:
+
+- **[OPTM-01] *One-Dimensional Minimization: the Derivative Test*** — the first method.
+  When $x$ is a single number and $f$ is smooth, Calculus I locates the minimum by setting
+  $f'(x) = 0$, with the full *why* (a nonzero slope means you can still go downhill) and the
+  honest cases where the derivative test alone lies. This is the seed of everything.
+- **[OPTM-02] *Minimizing in Many Variables: $\nabla f = 0$*** — the same logic when $x$ is
+  a vector: stationary points, the Hessian test, and the OLS normal equations of
+  @sec-ls solved at last.
+- **The two spines.** *Convexity* ([OPTM-03]–[OPTM-05]) answers the question raised in
+  @sec-local-global — *when is a local minimum the global one?* *Descent* ([OPTM-06] onward)
+  answers *how do we reach a minimum when no formula exists?* They reconverge at the
+  algorithms that train real models.
+- **Constrained optimization** ([OPTM-13]–[OPTM-16]) honors the fences of @sec-budget; the
+  *calculus of variations* ([OPTM-17]) extends the whole framing from choosing a *point* to
+  choosing an entire *function*.
+
+And the outward links: this article is what Regression, Inference, Classification, and
+Unsupervised Learning all point back to when they say "fit the model by minimizing *this*."
+The sentence now has a precise meaning, and the rest of this track is how to carry it out.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The classical roots.** Fermat's *Methodus ad disquirendam maximam et minimam* (c. 1636)
+  is the origin of "the tangent is flat at an extremum," the idea [OPTM-01] formalizes.
+  Heron of Alexandria's *Catoptrica* argued reflection follows the shortest path — optimization
+  as a *principle of nature*, a thread that runs through Fermat's principle of least time and
+  the calculus of variations ([OPTM-17]).
+- **The modern texts.** Boyd & Vandenberghe, *Convex Optimization* (2004, free online), is
+  the standard reference for the canonical form, feasible sets, and everything in the
+  convexity and constrained spines; Nocedal & Wright, *Numerical Optimization* (2006), is the
+  reference for the descent and Newton algorithms. Both open, as we did, by fixing exactly the
+  object in the Core.
+- **Open threads this article deliberately deferred.** *How do we actually find $x^\star$?* —
+  every remaining article in the track. *When is a local minimum guaranteed global?* —
+  convexity, [OPTM-04]. *What exactly is "closed and bounded," and why does compactness force
+  a minimum?* — a real-analysis prerequisite the series treats as imported (the
+  Weierstrass/Extreme-Value theorem behind @thm-weierstrass). *What if the decision variable
+  is a whole function, not a vector?* — the calculus of variations, [OPTM-17].

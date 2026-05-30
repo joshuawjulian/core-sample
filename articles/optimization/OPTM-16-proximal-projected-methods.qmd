@@ -1,0 +1,1201 @@
+---
+title: "Proximal and Projected Methods: Descent Meets Constraints and Kinks"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # objective / surfaces / smooth part
+PROX    = "#c1121f"    # the prox/projection step, iterate path
+ACCENT  = "#0a7d4d"    # highlights / the optimum / feasible point
+GD      = "#6c757d"    # plain gradient step, for contrast
+GREY    = "#6c757d"
+FEAS    = "#9db4d4"    # feasible-region shading
+```
+
+> **Where this sits in the track.** This is the final node of the Optimization track's
+> **constrained-optimization** branch, and the place where the two great themes of the
+> track — *descent* (how to move downhill, [OPTM-06]) and *the awkward objects that break
+> plain descent* (constraints from [OPTM-03]/[OPTM-14], kinks from [OPTM-05]) — finally
+> fuse into one algorithm. It assumes [OPTM-03 *Convex Sets*] (a convex set has "no dents,"
+> and the projection onto it is well defined), [OPTM-05 *Subgradients*] (the subdifferential
+> $\partial f$, the optimality condition $\mathbf 0\in\partial f$, and **soft-thresholding**
+> as the solution of the scalar lasso subproblem — which we restate and re-derive inline at
+> @sec-l1-prox so this article reads end-to-end), [OPTM-06 *Gradient Descent*] (the gradient
+> step and the first-order Taylor picture), [OPTM-08 *Momentum*] (the look-ahead trick we
+> borrow for FISTA), and [OPTM-14 *KKT*] (the constrained optimality conditions we will
+> recover as a special case).
+>
+> **The one question.** Gradient descent needs a gradient, and it wanders freely through
+> all of $\mathbb R^n$. **What do we do when one of those assumptions fails** — when part
+> of the objective is *non-smooth* (a penalty like $\lambda\|\boldsymbol\beta\|_1$ that has
+> no gradient at a kink), or when the iterate is *not free* but must stay inside a
+> constraint set $C$? The answer to both turns out to be the same single idea.
+>
+> **What it sets up.** This article delivers the general-purpose **proximal-gradient** /
+> **projected-gradient** machinery that the regularization branch of Regression links here
+> for as the modern lasso/elastic-net solver (the alternative to coordinate descent of
+> [OPTM-10]), and that constrained solvers across Classification and Unsupervised Learning
+> reach for. It is a terminal node of the track.
+
+## Abstract {.unnumbered}
+
+Plain gradient descent assumes the objective is differentiable and the variable is free.
+Two enormously common situations violate exactly one assumption each: a **constraint**
+$\mathbf x\in C$ forbids free movement, and a **non-smooth penalty** (the lasso's
+$\|\boldsymbol\beta\|_1$) destroys the gradient at its kinks. This article shows that a
+single device repairs both. For constraints, **projected gradient descent** takes an
+ordinary gradient step and then *projects* the result back onto the feasible set $C$;
+we define the Euclidean projection, prove it exists and is unique for a closed convex
+$C$, and compute it in closed form for a box, a ball, and the probability simplex. For
+non-smooth penalties, the **proximal operator** $\operatorname{prox}_{\eta g}$ generalizes
+the projection — it is the projection's exact analogue when the "hard wall" of a
+constraint is replaced by a "soft penalty" $g$ — and **proximal gradient descent** (a
+gradient step on the smooth part followed by a prox step on the non-smooth part) minimizes
+$f+g$ with the smooth part's convergence rate. We then close three circles at once: the
+proximal step for the indicator of a set *is* projection, so projected gradient is a
+special case of proximal gradient; the prox of $\lambda\|\cdot\|_1$ *is* **soft-thresholding**
+(re-derived here from $\mathbf 0\in\partial g$), so proximal gradient applied to the lasso
+*is* the algorithm called **ISTA**, the modern lasso solver; and its accelerated cousin
+**FISTA** is nothing but ISTA wearing Nesterov's momentum from [OPTM-08], buying the
+$O(1/k^2)$ rate. We carry the machinery through honest worked examples — a box-constrained
+least squares, a sparse-signal recovery (ISTA vs. FISTA), and a simplex-constrained
+portfolio — and mark the edge of applicability: prox/projection is the right tool exactly
+when the prox of the awkward part is *cheap*, and the wrong tool when it is not.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+When plain gradient descent breaks because the objective is **not free** (a constraint
+$\mathbf x\in C$) or **not smooth** (a penalty with a kink), split the work into two
+half-steps. First take an ordinary gradient step on the *smooth, well-behaved* part. Then
+apply a **proximal step** to the *awkward* part: solve the tiny problem
+$$
+\operatorname{prox}_{\eta g}(\mathbf v)
+\;=\; \arg\min_{\mathbf x}\;\Bigl\{\, g(\mathbf x) + \tfrac{1}{2\eta}\,\|\mathbf x-\mathbf v\|^2 \,\Bigr\},
+$$
+which pulls the point $\mathbf v$ *toward* what $g$ wants without straying too far from
+$\mathbf v$. Two readings of $g$ unify everything:
+
+- If $g$ is the **indicator of a convex set $C$** (zero inside $C$, $+\infty$ outside),
+  the prox is the **Euclidean projection** $\Pi_C$, and the algorithm is **projected
+  gradient descent** — descent that honors a constraint.
+- If $g$ is a **non-smooth penalty** like $\lambda\|\boldsymbol\beta\|_1$, the prox is
+  **soft-thresholding**, and the algorithm is **proximal gradient descent (ISTA)** — the
+  modern lasso solver. Add Nesterov momentum ([OPTM-08]) and it becomes **FISTA**.
+
+Projection and proximal are the *same operation*; the indicator of a set is just the
+extreme penalty that allows nothing outside the wall.
+:::
+
+Everything below orbits that box. The single idea — *gradient step on the easy part, prox
+step on the hard part* — is what lets a descent method walk a constrained boundary, turn
+a corner at a kink without chattering, and produce exact zeros for sparse models. The
+intellectual content is in three places: *what the prox operator is and why it is the
+right object*, *why projection is the special case that handles constraints*, and *why
+soft-thresholding is the special case that solves the lasso* — at which point the whole
+constrained/regularized landscape collapses onto one update rule.
+
+# Why we are here: two ways plain descent breaks {#sec-why}
+
+Keep one question in view the entire article: **what is the minimal change to gradient
+descent that lets it cope with an objective it was never designed for?** Every step below
+answers a piece of that.
+
+Gradient descent ([OPTM-06]) is the workhorse of the descent spine. Its update,
+$$
+\mathbf x_{k+1} = \mathbf x_k - \eta\,\nabla f(\mathbf x_k),
+$$
+rests on two quiet assumptions that we have so far never questioned:
+
+1. **$f$ is differentiable** — so $\nabla f(\mathbf x_k)$ exists at every iterate.
+2. **$\mathbf x$ is free** — so the new point $\mathbf x_{k+1}$ is allowed to be anywhere
+   in $\mathbb R^n$.
+
+The trouble is that the two most important objectives in modern statistics and machine
+learning each violate exactly one of these — and they do it on purpose.
+
+## Break #1: the constraint (the variable is not free) {#sec-break-constraint}
+
+The constrained-optimization branch ([OPTM-13]–[OPTM-15]) was built around problems of the
+form $\min_{\mathbf x\in C} f(\mathbf x)$, where $C$ is a feasible set: a box of bounds, a
+ball $\|\mathbf x\|\le t$, a budget hyperplane, the probability simplex. The KKT conditions
+([OPTM-14]) *characterize* the constrained optimum, and Lagrange/duality ([OPTM-13],
+[OPTM-15]) give analytic handles. But none of those is an *algorithm* you can turn the
+crank on for a generic large problem. The natural impulse is to just run gradient descent —
+but a gradient step
+$\mathbf x_k - \eta\nabla f(\mathbf x_k)$ will cheerfully step *out* of $C$, returning an
+infeasible point. We need a descent method that stays inside the fence.
+
+## Break #2: the kink (the objective is not smooth) {#sec-break-kink}
+
+The regularized objectives that dominate high-dimensional statistics have the shape
+$$
+F(\boldsymbol\beta) \;=\; \underbrace{f(\boldsymbol\beta)}_{\text{smooth loss}}
+\;+\; \underbrace{g(\boldsymbol\beta)}_{\text{non-smooth penalty}},
+$$
+the canonical case being the **lasso**,
+$F(\boldsymbol\beta)=\tfrac12\|\mathbf y-X\boldsymbol\beta\|^2 + \lambda\|\boldsymbol\beta\|_1$.
+The loss $f$ is smooth (it is a quadratic), but the penalty $g=\lambda\|\boldsymbol\beta\|_1$
+has a **kink** at every axis — $|\beta_j|$ is not differentiable at $\beta_j=0$. That kink
+is not a defect; it is *the entire point*: it is precisely what drives coefficients to be
+**exactly zero**, producing sparse models. ([OPTM-05] established this; the kink is a
+feature.) But it means $\nabla F$ does not exist where it matters most.
+
+We saw in [OPTM-05] that a naïve fix — replace $\nabla g$ by a subgradient and run
+"subgradient descent" — *technically* converges but is painfully slow ($O(1/\sqrt k)$
+instead of $O(1/k)$) and, worse, **chatters**: it never produces an exact zero, because a
+subgradient step from a tiny nonzero $\beta_j$ almost never lands exactly on $0$. The
+sparsity we wanted is washed out by the very algorithm meant to find it. @fig-why-break
+shows both breakages side by side.
+
+```{python}
+#| label: fig-why-break
+#| fig-cap: "The two ways plain gradient descent breaks. **Left:** a constrained problem. The unconstrained gradient step (grey) leaves the feasible disk $C$; we need a way to pull it back. **Right:** a non-smooth objective $|x|$ near its kink at $0$. A subgradient step (grey) overshoots and lands at a nonzero point, then will overshoot back: it *chatters* around the kink and never settles exactly at $0$. Proximal methods cure both."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+
+# Left: a gradient step leaving a feasible disk.
+theta = np.linspace(0, 2*np.pi, 200)
+axL.fill(np.cos(theta), np.sin(theta), color=FEAS, alpha=0.55, label="feasible set $C$")
+axL.plot(np.cos(theta), np.sin(theta), color=CURVE, lw=1.5)
+x0 = np.array([0.6, 0.55])
+step = np.array([0.9, 0.8])          # an unconstrained gradient step
+x1 = x0 + step
+axL.annotate("", xy=x1, xytext=x0,
+             arrowprops=dict(arrowstyle="->", color=GD, lw=2))
+axL.scatter(*x0, color=ACCENT, s=60, zorder=5, label="current iterate")
+axL.scatter(*x1, color=GD, s=60, zorder=5, label="gradient step leaves $C$")
+axL.set_xlim(-1.4, 1.9); axL.set_ylim(-1.4, 1.9); axL.set_aspect("equal")
+axL.set_title("Break #1: the step leaves the fence")
+axL.legend(loc="lower left", fontsize=8, framealpha=0.9)
+
+# Right: subgradient chatter near the kink of |x|.
+xs = np.linspace(-1.2, 1.2, 200)
+axR.plot(xs, np.abs(xs), color=CURVE, lw=2, label=r"$g(x)=|x|$")
+pts = [0.8, -0.35, 0.18, -0.09]      # a chattering sequence around 0
+for i, p in enumerate(pts):
+    axR.scatter(p, abs(p), color=PROX, s=45, zorder=5)
+    axR.annotate(str(i), (p, abs(p)+0.06), fontsize=8, ha="center", color=PROX)
+axR.axvline(0, color=GREY, ls=":", lw=1)
+axR.set_title("Break #2: subgradient steps chatter at the kink")
+axR.set_xlabel("$x$"); axR.set_ylabel("$g(x)$")
+axR.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The thesis of this article is that **both breakages have the same cure.** A constraint is
+secretly an infinitely steep penalty (you pay $+\infty$ for leaving $C$); a kink is a
+finite penalty with a corner. The proximal operator handles a penalty of *any* steepness,
+so it handles both. We build that operator now, starting from the constraint case because
+its picture — projecting back onto a wall — is the most concrete.
+
+# Projected gradient descent: descent that honors a fence {#sec-projected}
+
+## The projection onto a convex set {#sec-projection}
+
+The most intuitive repair for break #1 is exactly what you would do by hand: take the
+gradient step; if it lands outside $C$, snap it back to the *nearest* feasible point.
+"Nearest" in the Euclidean sense gives the **projection**.
+
+::: {#def-projection}
+**Definition (Euclidean projection).** Let $C\subseteq\mathbb R^n$ be a nonempty set. The
+**projection** of a point $\mathbf v$ onto $C$ is the closest point of $C$ to $\mathbf v$:
+$$
+\Pi_C(\mathbf v) \;=\; \arg\min_{\mathbf x\in C}\; \tfrac12\,\|\mathbf x - \mathbf v\|^2 .
+$$
+:::
+
+We minimize $\tfrac12\|\mathbf x-\mathbf v\|^2$ rather than $\|\mathbf x-\mathbf v\|$
+because the two have the same minimizer (squaring is increasing on $[0,\infty)$, so it does
+not move the argmin) and the squared form is smooth — the same reason squared error beat
+absolute error in [REGR-01]. The $\tfrac12$ is cosmetic, chosen so a later derivative comes
+out clean.
+
+A projection is only useful if it is *well defined* — if there is exactly one closest point.
+That is precisely the payoff of convexity from [OPTM-03].
+
+::: {#thm-projection}
+**Theorem (projection onto a closed convex set).** If $C$ is nonempty, **closed**, and
+**convex**, then for every $\mathbf v\in\mathbb R^n$ the projection $\Pi_C(\mathbf v)$
+**exists and is unique**.
+:::
+
+::: {.proof}
+*Existence.* Fix $\mathbf v$ and pick any reference point $\mathbf c_0\in C$ (nonempty, so
+one exists). The function $h(\mathbf x)=\tfrac12\|\mathbf x-\mathbf v\|^2$ is continuous and
+grows without bound as $\|\mathbf x\|\to\infty$. So the search can be confined to the
+*bounded* set $C\cap\{\mathbf x:\|\mathbf x-\mathbf v\|\le\|\mathbf c_0-\mathbf v\|\}$ — any
+point farther from $\mathbf v$ than $\mathbf c_0$ is already beaten by $\mathbf c_0$ and
+cannot be the minimizer. That set is closed (intersection of two closed sets) and bounded,
+hence **compact**, and a continuous function on a compact set attains its minimum (the
+extreme-value fact from [OPTM-00]). So a closest point exists.
+
+*Uniqueness.* This is where convexity does the work. Suppose two distinct points
+$\mathbf a\ne\mathbf b$ in $C$ were both closest, at the common minimal distance
+$r=\|\mathbf a-\mathbf v\|=\|\mathbf b-\mathbf v\|$. Consider their midpoint
+$\mathbf m=\tfrac12(\mathbf a+\mathbf b)$. Because $C$ is convex, the segment between
+$\mathbf a$ and $\mathbf b$ lies in $C$, so $\mathbf m\in C$. Now compute how far
+$\mathbf m$ is from $\mathbf v$. Write $\mathbf a-\mathbf v=\mathbf p$ and
+$\mathbf b-\mathbf v=\mathbf q$, so $\|\mathbf p\|=\|\mathbf q\|=r$ and
+$\mathbf m-\mathbf v=\tfrac12(\mathbf p+\mathbf q)$. The **parallelogram law** (a direct
+consequence of expanding inner products, which we expand here so nothing is imported)
+$$
+\|\mathbf p+\mathbf q\|^2 + \|\mathbf p-\mathbf q\|^2 = 2\|\mathbf p\|^2 + 2\|\mathbf q\|^2
+$$
+follows by writing $\|\mathbf p\pm\mathbf q\|^2 = \|\mathbf p\|^2 \pm 2\,\mathbf p^\top\mathbf q + \|\mathbf q\|^2$
+and adding (the cross terms $\pm 2\mathbf p^\top\mathbf q$ cancel). Solve for
+$\|\mathbf p+\mathbf q\|^2$:
+$$
+\|\mathbf m-\mathbf v\|^2 = \tfrac14\|\mathbf p+\mathbf q\|^2
+= \tfrac14\bigl(2r^2 + 2r^2 - \|\mathbf p-\mathbf q\|^2\bigr)
+= r^2 - \tfrac14\|\mathbf a-\mathbf b\|^2 .
+$$
+Since $\mathbf a\ne\mathbf b$, the subtracted term is strictly positive, so
+$\|\mathbf m-\mathbf v\| < r$. But $\mathbf m\in C$ is then *strictly closer* to
+$\mathbf v$ than the supposed minimum distance $r$ — a contradiction. Hence the closest
+point is unique. $\qquad\blacksquare$
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the projection need $C$ convex? What goes wrong otherwise?"* Existence survives
+without convexity (closedness is enough), but **uniqueness fails**. Project the center of a
+circle onto the circle (a non-convex set): *every* point of the circle is equidistant, so
+there is no single nearest point — the projection is set-valued and the algorithm has no
+well-defined move. The midpoint argument above is exactly the step that breaks: the
+midpoint of two boundary points is *not* on a circle, so we cannot conclude it is feasible
+and closer. Convexity is what makes "snap to the nearest feasible point" an unambiguous
+operation.
+:::
+
+## Three projections you can compute by hand {#sec-three-projections}
+
+Projected gradient is only practical when $\Pi_C$ is cheap. Three convex sets cover an
+enormous share of real constrained problems, and each has a closed-form projection we now
+derive.
+
+**(a) A box $C=\{\mathbf x: \ell_j\le x_j\le u_j\}$.** The objective
+$\tfrac12\sum_j (x_j-v_j)^2$ *separates* across coordinates — it is a sum of one-variable
+problems with no coupling — so we minimize each $\tfrac12(x_j-v_j)^2$ over
+$[\ell_j,u_j]$ independently. A scalar parabola in $x_j$ centered at $v_j$ is minimized as
+close to $v_j$ as the interval allows: if $v_j$ is inside $[\ell_j,u_j]$ keep it, otherwise
+take the nearer endpoint. That is **clipping**:
+$$
+[\Pi_C(\mathbf v)]_j = \operatorname{clip}(v_j,\ell_j,u_j) = \min\bigl(u_j,\ \max(\ell_j, v_j)\bigr).
+$$
+
+**(b) A Euclidean ball $C=\{\mathbf x:\|\mathbf x\|\le t\}$.** If $\|\mathbf v\|\le t$ the
+point is already feasible, so $\Pi_C(\mathbf v)=\mathbf v$. If $\|\mathbf v\|>t$, the closest
+feasible point lies on the boundary sphere along the ray from the origin through
+$\mathbf v$ (moving off that ray only increases the distance), at radius exactly $t$:
+$$
+\Pi_C(\mathbf v) = \begin{cases}\mathbf v, & \|\mathbf v\|\le t,\\[2pt]
+t\,\dfrac{\mathbf v}{\|\mathbf v\|}, & \|\mathbf v\|>t.\end{cases}
+$$
+We can prove the ray claim cleanly. We want to minimize $\tfrac12\|\mathbf x-\mathbf v\|^2$
+subject to $\|\mathbf x\|\le t$, an inequality-constrained problem. By KKT ([OPTM-14]),
+either the constraint is inactive (giving $\mathbf x=\mathbf v$, valid only when
+$\|\mathbf v\|\le t$) or active, $\|\mathbf x\|=t$, with stationarity
+$(\mathbf x-\mathbf v)+\mu\mathbf x=\mathbf 0$ for some $\mu\ge 0$. The latter gives
+$\mathbf x=\mathbf v/(1+\mu)$ — a positive multiple of $\mathbf v$, i.e. on the ray — and
+imposing $\|\mathbf x\|=t$ fixes the multiple to $t/\|\mathbf v\|$.
+
+**(c) The probability simplex $C=\{\mathbf x:\ x_j\ge 0,\ \sum_j x_j=1\}$.** This one is
+genuinely less obvious; it is the constraint behind portfolio weights, mixture weights, and
+attention distributions. The Lagrangian/KKT analysis ([OPTM-13]/[OPTM-14]) for
+$\min \tfrac12\|\mathbf x-\mathbf v\|^2$ subject to $\mathbf 1^\top\mathbf x=1$,
+$\mathbf x\ge\mathbf 0$ gives the per-coordinate stationarity
+$x_j - v_j - \theta + \mu_j = 0$ with $\mu_j\ge 0$ and complementary slackness
+$\mu_j x_j=0$. Reading this exactly as in the box case, each coordinate is a *shifted clip
+at zero*, $x_j=\max(v_j+\theta,0)=(v_j+\theta)_+$, where the single scalar $\theta$ is
+chosen so the coordinates sum to one: $\sum_j (v_j+\theta)_+ = 1$. That last equation has a
+unique root in $\theta$ (its left side is continuous and strictly increasing in $\theta$
+wherever positive), found by a quick sort-and-search. We use this projection in the
+portfolio example of @sec-ex-simplex; the derivation is the same shadow-price machinery
+from [OPTM-13], so we do not re-walk it here beyond naming the result.
+
+@fig-projections draws all three.
+
+```{python}
+#| label: fig-projections
+#| fig-cap: "Three closed-form projections. **Left:** onto a box, each coordinate is clipped to its interval. **Center:** onto a ball, an outside point is pulled radially to the boundary sphere, an inside point is left alone. **Right:** onto the probability simplex (the segment $x_1+x_2=1$, $x\ge0$ in 2-D), the nearest feasible point of an infeasible $\\mathbf v$. In every case the dashed segment from $\\mathbf v$ to $\\Pi_C(\\mathbf v)$ is the shortest path to the set."
+fig, (axB, axC, axS) = plt.subplots(1, 3, figsize=(10.5, 3.6))
+
+# (a) box
+axB.add_patch(plt.Rectangle((-1, -1), 2, 2, fc=FEAS, ec=CURVE, alpha=0.55, lw=1.5))
+for v in [np.array([1.6, 0.4]), np.array([1.7, 1.5]), np.array([0.2, -0.5])]:
+    p = np.clip(v, -1, 1)
+    axB.annotate("", xy=p, xytext=v, arrowprops=dict(arrowstyle="->", color=PROX, lw=1.6, ls="--"))
+    axB.scatter(*v, color=GD, s=40, zorder=5)
+    axB.scatter(*p, color=ACCENT, s=40, zorder=6)
+axB.set_xlim(-2, 2.2); axB.set_ylim(-2, 2.2); axB.set_aspect("equal")
+axB.set_title("(a) project onto a box")
+
+# (b) ball
+th = np.linspace(0, 2*np.pi, 200); t = 1.2
+axC.fill(t*np.cos(th), t*np.sin(th), color=FEAS, alpha=0.55)
+axC.plot(t*np.cos(th), t*np.sin(th), color=CURVE, lw=1.5)
+for v in [np.array([1.9, 1.3]), np.array([-1.8, 0.6]), np.array([0.3, 0.4])]:
+    nv = np.linalg.norm(v)
+    p = v if nv <= t else t*v/nv
+    axC.annotate("", xy=p, xytext=v, arrowprops=dict(arrowstyle="->", color=PROX, lw=1.6, ls="--"))
+    axC.scatter(*v, color=GD, s=40, zorder=5)
+    axC.scatter(*p, color=ACCENT, s=40, zorder=6)
+axC.set_xlim(-2.4, 2.4); axC.set_ylim(-2.4, 2.4); axC.set_aspect("equal")
+axC.set_title("(b) project onto a ball")
+
+# (c) simplex in 2-D: the segment x1+x2=1, x>=0
+def proj_simplex(v):
+    u = np.sort(v)[::-1]
+    css = np.cumsum(u)
+    rho = np.nonzero(u * np.arange(1, len(u)+1) > (css - 1))[0][-1]
+    theta = (css[rho] - 1) / (rho + 1)
+    return np.maximum(v - theta, 0)
+axS.plot([1, 0], [0, 1], color=CURVE, lw=2.5)
+axS.fill([0, 1, 0], [0, 0, 1], color=FEAS, alpha=0.25)
+for v in [np.array([1.3, 0.9]), np.array([0.8, -0.3])]:
+    p = proj_simplex(v)
+    axS.annotate("", xy=p, xytext=v, arrowprops=dict(arrowstyle="->", color=PROX, lw=1.6, ls="--"))
+    axS.scatter(*v, color=GD, s=40, zorder=5)
+    axS.scatter(*p, color=ACCENT, s=40, zorder=6)
+axS.set_xlim(-0.5, 1.6); axS.set_ylim(-0.5, 1.6); axS.set_aspect("equal")
+axS.set_title("(c) project onto the simplex")
+plt.tight_layout()
+```
+
+## The projected gradient step, and why it descends {#sec-projected-step}
+
+With projection in hand, the algorithm writes itself. **Projected gradient descent** for
+$\min_{\mathbf x\in C} f(\mathbf x)$ is
+$$
+\boxed{\;\mathbf x_{k+1} = \Pi_C\bigl(\mathbf x_k - \eta\,\nabla f(\mathbf x_k)\bigr).\;}
+$$ {#eq-projected-step}
+Step downhill ignoring the fence, then snap back onto it. @fig-projected-path shows the
+iterates hugging the boundary as they descend toward the constrained optimum.
+
+There is an immediate worry to voice, because an interviewer will: *does this thing
+actually go downhill?* Snapping back is itself a move, and a priori it could undo the
+progress of the gradient step. The reassurance is a clean geometric fact about projections
+onto convex sets, which we will need again for the prox.
+
+::: {#lem-firmly-nonexpansive}
+**Lemma (projection is non-expansive).** For a closed convex $C$ and any
+$\mathbf u,\mathbf v\in\mathbb R^n$,
+$$
+\|\Pi_C(\mathbf u) - \Pi_C(\mathbf v)\| \;\le\; \|\mathbf u - \mathbf v\|.
+$$
+Projecting two points never moves them farther apart.
+:::
+
+::: {.proof}
+The engine is the **obtuse-angle characterization** of the projection, which we derive
+first because it is the workhorse identity of this whole article. Let
+$\mathbf p=\Pi_C(\mathbf v)$. For any other feasible $\mathbf x\in C$ and any
+$t\in(0,1]$, the point $\mathbf p+t(\mathbf x-\mathbf p)$ lies in $C$ (convexity), and since
+$\mathbf p$ is the closest point,
+$$
+\|\mathbf p-\mathbf v\|^2 \;\le\; \|\mathbf p + t(\mathbf x-\mathbf p) - \mathbf v\|^2 .
+$$
+Expand the right side, writing $\mathbf d=\mathbf x-\mathbf p$:
+$$
+\|\mathbf p-\mathbf v\|^2 \le \|\mathbf p-\mathbf v\|^2 + 2t\,(\mathbf p-\mathbf v)^\top\mathbf d + t^2\|\mathbf d\|^2 .
+$$
+Cancel $\|\mathbf p-\mathbf v\|^2$, divide by $t>0$, and let $t\downarrow 0$ so the
+$t\|\mathbf d\|^2$ term vanishes:
+$$
+0 \le (\mathbf p-\mathbf v)^\top(\mathbf x-\mathbf p),
+\qquad\text{i.e.}\qquad
+(\mathbf v-\mathbf p)^\top(\mathbf x-\mathbf p)\le 0\ \ \text{for all }\mathbf x\in C.
+$$ {#eq-obtuse}
+This says the vector from $\mathbf p$ back to $\mathbf v$ makes an **obtuse (≥ 90°) angle**
+with the vector from $\mathbf p$ to any feasible $\mathbf x$ — geometrically, $C$ lies
+entirely on the far side of the hyperplane through $\mathbf p$ perpendicular to
+$\mathbf v-\mathbf p$.
+
+Now take two points. Let $\mathbf p=\Pi_C(\mathbf u)$, $\mathbf q=\Pi_C(\mathbf v)$. Apply
+@eq-obtuse once with center $\mathbf p$ and test point $\mathbf q\in C$, and once with
+center $\mathbf q$ and test point $\mathbf p\in C$:
+$$
+(\mathbf u-\mathbf p)^\top(\mathbf q-\mathbf p)\le 0,
+\qquad
+(\mathbf v-\mathbf q)^\top(\mathbf p-\mathbf q)\le 0.
+$$
+Add them. The second rewrites as $(\mathbf v-\mathbf q)^\top(\mathbf p-\mathbf q) =
+-(\mathbf v-\mathbf q)^\top(\mathbf q-\mathbf p)$, so the sum is
+$$
+(\mathbf u-\mathbf p-\mathbf v+\mathbf q)^\top(\mathbf q-\mathbf p)\le 0
+\;\Longrightarrow\;
+(\mathbf q-\mathbf p)^\top(\mathbf q-\mathbf p) \le (\mathbf v-\mathbf u)^\top(\mathbf q-\mathbf p),
+$$
+that is $\|\mathbf q-\mathbf p\|^2 \le (\mathbf v-\mathbf u)^\top(\mathbf q-\mathbf p)$. By
+the **Cauchy–Schwarz inequality** $\mathbf a^\top\mathbf b\le\|\mathbf a\|\,\|\mathbf b\|$
+(itself a Calc-level fact about the dot product), the right side is at most
+$\|\mathbf v-\mathbf u\|\,\|\mathbf q-\mathbf p\|$. Cancel one factor of
+$\|\mathbf q-\mathbf p\|$ (if it is zero the claim is trivial) to get
+$\|\mathbf q-\mathbf p\|\le\|\mathbf v-\mathbf u\|$. $\qquad\blacksquare$
+:::
+
+The non-expansiveness is exactly what keeps projected gradient honest: a constrained
+optimum $\mathbf x^\star$ is a **fixed point** of the map
+$\mathbf x\mapsto\Pi_C(\mathbf x-\eta\nabla f(\mathbf x))$ (it satisfies the KKT condition,
+shown at @sec-prox-recovers-kkt), and because $\Pi_C$ never expands while the gradient step
+on a smooth convex $f$ contracts toward $\mathbf x^\star$ (the [OPTM-07] machinery), the
+composition still drives the iterates in. The upshot, which we will subsume into the
+proximal analysis: **with $\eta\le 1/L$, projected gradient descent on an $L$-smooth convex
+$f$ converges at the same $O(1/k)$ rate as ordinary gradient descent.** The fence costs us
+nothing in rate.
+
+```{python}
+#| label: fig-projected-path
+#| fig-cap: "Projected gradient descent minimizing a quadratic over a disk. From the start (black), each iteration steps down the negative gradient (grey dashed, leaving the disk) and then projects back to the boundary (red). The iterates slide along the constraint boundary to the constrained optimum (green), which sits where the unconstrained minimum's pull is exactly balanced by the boundary normal — the KKT condition of @sec-prox-recovers-kkt."
+# f(x) = 1/2 (x-c)^T A (x-c), minimized over the unit disk.
+A = np.array([[3.0, 1.0], [1.0, 2.0]])
+c = np.array([1.6, 1.4])                  # unconstrained min, outside the disk
+def grad(x): return A @ (x - c)
+L = np.max(np.linalg.eigvalsh(A))
+eta = 1.0 / L
+def proj_ball(v, t=1.0):
+    n = np.linalg.norm(v); return v if n <= t else t*v/n
+
+x = np.array([-0.9, -0.3]); path = [x.copy()]; pre = []
+for _ in range(25):
+    g = x - eta*grad(x)
+    pre.append(g.copy())
+    x = proj_ball(g)
+    path.append(x.copy())
+path = np.array(path); pre = np.array(pre)
+
+fig, ax = plt.subplots(figsize=(5.6, 5.2))
+th = np.linspace(0, 2*np.pi, 200)
+ax.fill(np.cos(th), np.sin(th), color=FEAS, alpha=0.4)
+ax.plot(np.cos(th), np.sin(th), color=CURVE, lw=1.5)
+# contours of f
+gx, gy = np.meshgrid(np.linspace(-1.6, 1.9, 120), np.linspace(-1.6, 1.9, 120))
+Z = np.zeros_like(gx)
+for i in range(gx.shape[0]):
+    for j in range(gx.shape[1]):
+        d = np.array([gx[i,j], gy[i,j]]) - c
+        Z[i,j] = 0.5 * d @ A @ d
+ax.contour(gx, gy, Z, levels=12, colors=GREY, linewidths=0.5, alpha=0.6)
+for k in range(len(pre)):
+    ax.annotate("", xy=pre[k], xytext=path[k],
+                arrowprops=dict(arrowstyle="->", color=GD, lw=0.9, ls="--", alpha=0.7))
+ax.plot(path[:,0], path[:,1], "-o", color=PROX, ms=3, lw=1.2, label="projected iterates")
+ax.scatter(*path[0], color="black", s=60, zorder=6, label="start")
+ax.scatter(*path[-1], color=ACCENT, s=90, zorder=6, label="constrained optimum")
+ax.scatter(*c, color=CURVE, marker="*", s=160, zorder=6, label="unconstrained min")
+ax.set_xlim(-1.6, 1.9); ax.set_ylim(-1.6, 1.9); ax.set_aspect("equal")
+ax.set_title("Projected gradient descent on a disk")
+ax.legend(loc="lower right", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+# The proximal operator: a soft wall instead of a hard one {#sec-prox}
+
+Projection answers break #1. To answer break #2 — a *finite* penalty with a kink — we
+generalize "snap back to the set" into "pull toward what the penalty wants." That
+generalization is the proximal operator, and it is the conceptual center of the article.
+
+## Definition and the trade-off it encodes {#sec-prox-def}
+
+::: {#def-prox}
+**Definition (proximal operator).** For a convex function $g:\mathbb R^n\to\mathbb R\cup\{+\infty\}$
+and a step size $\eta>0$, the **proximal operator** of $\eta g$ evaluated at a point
+$\mathbf v$ is
+$$
+\operatorname{prox}_{\eta g}(\mathbf v)
+\;=\; \arg\min_{\mathbf x}\;\Bigl\{\, g(\mathbf x) \;+\; \tfrac{1}{2\eta}\,\|\mathbf x - \mathbf v\|^2 \,\Bigr\}.
+$$
+:::
+
+Read it as a negotiation. The first term $g(\mathbf x)$ wants to drag $\mathbf x$ toward
+wherever $g$ is small (for the lasso penalty, toward zero). The second term
+$\tfrac{1}{2\eta}\|\mathbf x-\mathbf v\|^2$ is a **leash**: it penalizes straying from the
+incoming point $\mathbf v$, with the step size $\eta$ setting the leash length — large
+$\eta$ is a slack leash (let $g$ pull hard), small $\eta$ is a tight leash (stay near
+$\mathbf v$). The prox returns the compromise point. Three sanity checks make the
+definition concrete:
+
+- If $\eta\to 0$ the leash is infinitely tight and
+  $\operatorname{prox}_{\eta g}(\mathbf v)\to\mathbf v$: tiny steps barely respond to $g$.
+- If $g\equiv 0$ there is nothing to pull toward and
+  $\operatorname{prox}_{\eta g}(\mathbf v)=\mathbf v$: the prox of "no penalty" is the
+  identity, which is why a smooth-only problem never needs a prox step.
+- If $g$ is differentiable, the minimizer satisfies the stationarity condition
+  $\nabla g(\mathbf x)+\tfrac1\eta(\mathbf x-\mathbf v)=\mathbf 0$, i.e.
+  $\mathbf x=\mathbf v-\eta\nabla g(\mathbf x)$ — an *implicit* (backward) gradient step on
+  $g$. So the prox is the "implicit gradient step," which is why it is so stable. (We do not
+  lean on this case; the prox earns its keep precisely when $g$ is *not* differentiable.)
+
+The same existence/uniqueness guarantee as projection holds, for the same reason.
+
+::: {#lem-prox-welldef}
+**Lemma (the prox is well defined).** If $g$ is convex, closed (lower-semicontinuous), and
+proper (not identically $+\infty$), then $\operatorname{prox}_{\eta g}(\mathbf v)$ exists
+and is unique for every $\mathbf v$ and every $\eta>0$.
+:::
+
+::: {.proof}
+The objective $m(\mathbf x)=g(\mathbf x)+\tfrac1{2\eta}\|\mathbf x-\mathbf v\|^2$ is the sum
+of a convex function $g$ and the **strongly convex** quadratic
+$\tfrac1{2\eta}\|\mathbf x-\mathbf v\|^2$ (its Hessian is $\tfrac1\eta I\succ 0$, so by the
+strong-convexity discussion of [OPTM-04] it is strictly convex with curvature bounded below
+by $\tfrac1\eta$). A convex-plus-strongly-convex function is itself strongly convex, hence
+**strictly convex**, so it has at most one minimizer. And it grows at least as fast as the
+quadratic in every direction (the convex $g$ is bounded below by an affine function, a
+property of closed proper convex functions), so it is coercive and attains its minimum.
+Existence and uniqueness follow exactly as for the projection in @thm-projection — indeed,
+projection is the special case $g=\iota_C$ below. $\qquad\blacksquare$
+:::
+
+## Projection is a proximal operator {#sec-proj-is-prox}
+
+We promised the two cures are one. Here is the bridge, in a single line. Define the
+**indicator function** of a set $C$,
+$$
+\iota_C(\mathbf x) = \begin{cases}0, & \mathbf x\in C,\\ +\infty, & \mathbf x\notin C,\end{cases}
+$$
+which is convex exactly when $C$ is convex (the epigraph of $\iota_C$ is $C\times[0,\infty)$,
+a convex set iff $C$ is). It is the "infinitely steep penalty" — you pay nothing to be
+feasible and an infinite price to leave. Now compute its prox:
+$$
+\operatorname{prox}_{\eta\,\iota_C}(\mathbf v)
+= \arg\min_{\mathbf x}\Bigl\{\iota_C(\mathbf x)+\tfrac1{2\eta}\|\mathbf x-\mathbf v\|^2\Bigr\}
+= \arg\min_{\mathbf x\in C}\ \tfrac1{2\eta}\|\mathbf x-\mathbf v\|^2
+= \Pi_C(\mathbf v).
+$$
+The $+\infty$ outside $C$ forces the argmin to stay inside $C$ (any infeasible $\mathbf x$
+gives objective $+\infty$ and is dominated), and inside $C$ the term $\iota_C$ is zero so we
+are left minimizing the squared distance — the very definition of projection. The constant
+$\tfrac1{2\eta}>0$ does not move the argmin. So:
+
+::: {.callout-important title="The unification"}
+**Projection is the prox of an indicator function.** Therefore *projected gradient descent
+is the special case of proximal gradient descent where the non-smooth part is the indicator
+of the feasible set.* Everything we prove about the prox below applies verbatim to
+projection, and the rest of the article can speak of a single algorithm.
+:::
+
+# Proximal gradient descent (ISTA) {#sec-prox-grad}
+
+## The algorithm, derived from the right local model {#sec-ista-derivation}
+
+We want to minimize the composite objective
+$$
+F(\mathbf x) = f(\mathbf x) + g(\mathbf x),
+\qquad f\ \text{convex and }L\text{-smooth},\quad g\ \text{convex, possibly non-smooth},
+$$
+where $L$-smooth means $\nabla f$ is Lipschitz with constant $L$ — the descent-lemma
+condition from [OPTM-07]. We cannot step on $\nabla F$ because $g$ has no gradient. The
+idea is to *only* linearize the part we can, $f$, and keep $g$ exact.
+
+Recall the **descent lemma** of [OPTM-07]: $L$-smoothness gives the quadratic upper bound
+$$
+f(\mathbf x) \;\le\; f(\mathbf x_k) + \nabla f(\mathbf x_k)^\top(\mathbf x-\mathbf x_k)
++ \tfrac{L}{2}\|\mathbf x-\mathbf x_k\|^2 ,
+$$
+a parabola sitting above $f$ and touching it at $\mathbf x_k$. Plain gradient descent
+minimizes this upper bound over $\mathbf x$ to choose the next iterate (with step
+$\eta=1/L$). The proximal idea is to minimize the *same* surrogate but **add the exact $g$**
+— since we can afford to keep $g$, we do not approximate it:
+$$
+\mathbf x_{k+1}
+= \arg\min_{\mathbf x}\ \Bigl\{ f(\mathbf x_k) + \nabla f(\mathbf x_k)^\top(\mathbf x-\mathbf x_k)
++ \tfrac{1}{2\eta}\|\mathbf x-\mathbf x_k\|^2 + g(\mathbf x)\Bigr\},
+$$
+writing $\eta$ in place of $1/L$ to allow other step sizes. Now we massage the
+$\mathbf x$-dependent smooth part into a single squared distance — **completing the
+square** — so the whole thing becomes a prox. Drop the constant $f(\mathbf x_k)$ (it does
+not affect the argmin) and group:
+$$
+\nabla f(\mathbf x_k)^\top(\mathbf x-\mathbf x_k) + \tfrac{1}{2\eta}\|\mathbf x-\mathbf x_k\|^2
+= \tfrac{1}{2\eta}\Bigl(\|\mathbf x-\mathbf x_k\|^2 + 2\eta\,\nabla f(\mathbf x_k)^\top(\mathbf x-\mathbf x_k)\Bigr).
+$$
+Inside the parentheses, complete the square in $\mathbf x$ by adding and subtracting
+$\eta^2\|\nabla f(\mathbf x_k)\|^2$:
+$$
+\|\mathbf x-\mathbf x_k\|^2 + 2\eta\,\nabla f(\mathbf x_k)^\top(\mathbf x-\mathbf x_k)
+= \bigl\|\mathbf x - \bigl(\mathbf x_k - \eta\nabla f(\mathbf x_k)\bigr)\bigr\|^2
+- \eta^2\|\nabla f(\mathbf x_k)\|^2.
+$$
+The subtracted term is a constant (no $\mathbf x$), so it drops from the argmin. We are
+left with
+$$
+\mathbf x_{k+1} = \arg\min_{\mathbf x}\ \Bigl\{\, g(\mathbf x) + \tfrac{1}{2\eta}\bigl\|\mathbf x - (\mathbf x_k - \eta\nabla f(\mathbf x_k))\bigr\|^2 \,\Bigr\},
+$$
+which is **exactly** $\operatorname{prox}_{\eta g}$ evaluated at the ordinary gradient-step
+point $\mathbf x_k-\eta\nabla f(\mathbf x_k)$. That is the algorithm:
+
+::: {.callout-important title="Proximal gradient descent"}
+$$
+\boxed{\;\mathbf x_{k+1} = \operatorname{prox}_{\eta g}\bigl(\mathbf x_k - \eta\,\nabla f(\mathbf x_k)\bigr).\;}
+$$ {#eq-ista}
+**Forward step** on the smooth part (an ordinary gradient step on $f$), then **backward /
+prox step** on the non-smooth part. When $g=\iota_C$ this is projected gradient
+@eq-projected-step; when $g=0$ it is plain gradient descent (the prox is the identity).
+:::
+
+The derivation is the *why* the whole article has been building toward: we did not bolt the
+prox on by analogy, we *derived* it as the exact minimizer of "linearize what you can,
+keep exact what you cannot." @fig-ista-surrogate makes the surrogate picture concrete in
+1-D.
+
+```{python}
+#| label: fig-ista-surrogate
+#| fig-cap: "One proximal-gradient step in 1-D on $F(x)=f(x)+g(x)$ with $f$ smooth (a quadratic) and $g(x)=\\lambda|x|$. At the current point $x_k$ we replace $f$ by its quadratic upper bound (the descent-lemma parabola, grey dashed) but keep $g$ exact. The next iterate $x_{k+1}$ (red) is the minimizer of surrogate-plus-exact-penalty, i.e. the prox of the gradient-step point. Note it lands *at the kink* $x=0$: the prox produces an exact zero, which a subgradient step could not."
+lam = 0.6; Lc = 2.0
+fq = lambda x: 0.5*Lc*(x-1.3)**2          # smooth part
+gp = lambda x: lam*np.abs(x)
+xk = 0.9
+fk, fpk = fq(xk), Lc*(xk-1.3)
+surr = lambda x: fk + fpk*(x-xk) + 0.5*Lc*(x-xk)**2   # descent-lemma parabola
+v = xk - (1/Lc)*fpk
+# prox of lam|.|/Lc at v is soft-threshold
+def soft(v, k): return np.sign(v)*max(abs(v)-k, 0.0)
+xk1 = soft(v, lam/Lc)
+
+xs = np.linspace(-1.0, 2.4, 400)
+fig, ax = plt.subplots(figsize=(6.4, 4.2))
+ax.plot(xs, fq(xs)+gp(xs), color=CURVE, lw=2.2, label=r"$F=f+g$")
+ax.plot(xs, surr(xs)+gp(xs), color=GD, lw=1.6, ls="--", label="surrogate $+\\,g$")
+ax.scatter(xk, fq(xk)+gp(xk), color="black", s=55, zorder=5, label="$x_k$")
+ax.scatter(xk1, fq(xk1)+gp(xk1), color=PROX, s=70, zorder=6, label="$x_{k+1}=\\,$prox")
+ax.axvline(0, color=GREY, ls=":", lw=1)
+ax.set_xlabel("$x$"); ax.set_ylabel("objective")
+ax.set_title("One ISTA step: linearize $f$, keep $g$ exact, prox")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Why it converges, and at what rate {#sec-ista-rate}
+
+The reason proximal gradient inherits the smooth method's rate is that the prox step is
+*also* non-expansive, just like projection — they are both instances of the same firmly
+non-expansive class. We state the guarantee and sketch the mechanism without re-deriving
+the full [OPTM-07] descent machinery (which owns it).
+
+::: {#thm-ista-rate}
+**Theorem (proximal-gradient convergence).** Let $f$ be convex and $L$-smooth and $g$
+convex, closed, proper, with $F=f+g$ attaining its minimum $F^\star$ at some
+$\mathbf x^\star$. With a fixed step $\eta\le 1/L$, the proximal-gradient iterates
+@eq-ista satisfy
+$$
+F(\mathbf x_k) - F^\star \;\le\; \frac{\|\mathbf x_0-\mathbf x^\star\|^2}{2\eta k}
+\;=\; O\!\left(\frac1k\right).
+$$
+The non-smooth penalty costs **nothing** in rate: composite minimization is as fast as
+minimizing the smooth part alone.
+:::
+
+::: {.proof}
+*(Mechanism.)* The key object is the **prox-gradient map**
+$G_\eta(\mathbf x)=\tfrac1\eta\bigl(\mathbf x-\operatorname{prox}_{\eta g}(\mathbf x-\eta\nabla f(\mathbf x))\bigr)$,
+the analogue of the gradient: the update @eq-ista reads
+$\mathbf x_{k+1}=\mathbf x_k-\eta\,G_\eta(\mathbf x_k)$. Two facts, each provable from the
+pieces we already have, combine to give the rate.
+
+First, a **sufficient-decrease** inequality. Plug $\mathbf x_{k+1}$ — the *minimizer* of the
+surrogate-plus-$g$ from @sec-ista-derivation — back into that surrogate. Because
+$\mathbf x_{k+1}$ minimizes the surrogate, its surrogate value is no larger than the
+surrogate value at $\mathbf x_k$, which equals $F(\mathbf x_k)$ (the parabola touches $f$
+there and $g$ is exact). And because the surrogate is an *upper bound* on $F$ (descent
+lemma, with $\eta\le 1/L$ making the parabola steep enough to dominate), $F(\mathbf x_{k+1})$
+is no larger than its surrogate value. Chaining: $F(\mathbf x_{k+1})\le F(\mathbf x_k)$ —
+the objective never increases — with the decrease controlled by
+$\tfrac1{2\eta}\|\mathbf x_{k+1}-\mathbf x_k\|^2$.
+
+Second, the optimality condition of the prox subproblem. Since $\mathbf x_{k+1}$ minimizes
+$g(\mathbf x)+\tfrac1{2\eta}\|\mathbf x-(\mathbf x_k-\eta\nabla f(\mathbf x_k))\|^2$, the
+subgradient optimality condition $\mathbf 0\in\partial(\cdot)$ ([OPTM-05]) gives
+$$
+\mathbf 0 \in \partial g(\mathbf x_{k+1}) + \tfrac1\eta\bigl(\mathbf x_{k+1}-\mathbf x_k\bigr) + \nabla f(\mathbf x_k),
+$$
+so a specific subgradient of $g$ at $\mathbf x_{k+1}$ equals
+$-\nabla f(\mathbf x_k)-\tfrac1\eta(\mathbf x_{k+1}-\mathbf x_k)$. Feeding this into the
+convexity inequalities for $f$ and $g$ separately (the tangent-below bound of [OPTM-04] for
+each piece) and summing telescopes, after summing over $k$, into the stated $O(1/k)$ bound.
+The full telescoping algebra is the [OPTM-07] proof with $\nabla f$ replaced by $G_\eta$
+throughout; the only new ingredient is the prox optimality condition, supplied above. The
+*fixed point* of the map — where $\mathbf x_{k+1}=\mathbf x_k$, i.e. $G_\eta=\mathbf 0$ — is
+exactly the composite optimality condition $\mathbf 0\in\nabla f(\mathbf x)+\partial g(\mathbf x)$,
+shown next. $\qquad\blacksquare$
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"What is the optimality condition for $\min f+g$, and how does the algorithm encode it?"*
+A point $\mathbf x^\star$ minimizes $F=f+g$ iff $\mathbf 0\in\nabla f(\mathbf x^\star)+\partial g(\mathbf x^\star)$
+— the smooth gradient plus a subgradient of the non-smooth part can cancel. (This is the
+sum rule for subdifferentials from [OPTM-05], specialized to one smooth summand.) The prox
+update has $\mathbf x^\star$ as a fixed point precisely when this holds: set
+$\mathbf x_{k+1}=\mathbf x_k=\mathbf x^\star$ in the prox optimality condition from the proof
+and the $\tfrac1\eta(\mathbf x_{k+1}-\mathbf x_k)$ term vanishes, leaving
+$\mathbf 0\in\nabla f(\mathbf x^\star)+\partial g(\mathbf x^\star)$. So *the algorithm
+stops exactly when the optimality condition is met* — the cleanest possible statement that
+it solves the right problem.
+:::
+
+## Recovering KKT: projected gradient is the constrained optimum's fixed point {#sec-prox-recovers-kkt}
+
+When $g=\iota_C$, the composite condition $\mathbf 0\in\nabla f(\mathbf x^\star)+\partial\iota_C(\mathbf x^\star)$
+*is* the KKT condition of [OPTM-14], which closes the loop with the constrained branch. The
+subdifferential of an indicator at a feasible point is the **normal cone**
+$\partial\iota_C(\mathbf x^\star)=\{\mathbf w:\mathbf w^\top(\mathbf x-\mathbf x^\star)\le 0\ \forall\mathbf x\in C\}$
+— the set of directions pointing "outward" against which $C$ entirely lies (this is the
+obtuse-angle condition @eq-obtuse with $\mathbf w$ playing the role of $\mathbf v-\mathbf p$).
+So the optimality condition reads: $-\nabla f(\mathbf x^\star)$ is a normal-cone direction,
+i.e. **the negative gradient points straight out of the feasible set** — there is no
+feasible descent direction left. For a smooth boundary $\{g(\mathbf x)=0\}$ that says
+$-\nabla f=\mu\nabla g$ with $\mu\ge0$, exactly the KKT stationarity of [OPTM-14]. Projected
+gradient descent therefore halts precisely at a KKT point. The descent algorithm and the
+optimality theory we built earlier are two views of one thing.
+
+# The lasso circle: the $\ell_1$ prox is soft-thresholding {#sec-l1-prox}
+
+Now the payoff that names the algorithm. The lasso is
+$F(\boldsymbol\beta)=\tfrac12\|\mathbf y-X\boldsymbol\beta\|^2 + \lambda\|\boldsymbol\beta\|_1$,
+so $f(\boldsymbol\beta)=\tfrac12\|\mathbf y-X\boldsymbol\beta\|^2$ (smooth, gradient
+$\nabla f=-X^\top(\mathbf y-X\boldsymbol\beta)=X^\top(X\boldsymbol\beta-\mathbf y)$) and
+$g(\boldsymbol\beta)=\lambda\|\boldsymbol\beta\|_1$ (non-smooth). To run @eq-ista we need
+$\operatorname{prox}_{\eta\lambda\|\cdot\|_1}$. This is the result owned by [OPTM-05]; we
+re-derive it here in full so the article stands alone.
+
+## The prox of the $\ell_1$ norm separates {#sec-l1-separates}
+
+The $\ell_1$ norm is a **sum over coordinates**, $\|\boldsymbol\beta\|_1=\sum_j|\beta_j|$,
+and the leash $\tfrac1{2\eta}\|\boldsymbol\beta-\mathbf v\|^2=\sum_j\tfrac1{2\eta}(\beta_j-v_j)^2$
+is *also* a sum over coordinates with no cross terms. So the prox objective
+$\sum_j\bigl[\lambda|\beta_j|+\tfrac1{2\eta}(\beta_j-v_j)^2\bigr]$ **separates**: we can
+minimize each coordinate independently. Write $\kappa=\eta\lambda$ and solve the single
+scalar problem
+$$
+\beta^\star = \arg\min_{\beta}\ \Bigl\{\, \kappa|\beta| + \tfrac12(\beta-v)^2 \,\Bigr\}
+$$
+(we pulled the factor $\eta$ out by multiplying the objective by $\eta$, which does not move
+the argmin). This is exactly the scalar lasso subproblem of [OPTM-05].
+
+## Solving the scalar problem with the subgradient condition {#sec-soft-derive}
+
+The objective $h(\beta)=\kappa|\beta|+\tfrac12(\beta-v)^2$ is convex (sum of convex pieces)
+but not differentiable at $\beta=0$. The optimality condition is $0\in\partial h(\beta)$
+([OPTM-05]). Away from zero, $|\beta|$ is differentiable with derivative $\operatorname{sign}(\beta)$,
+so we handle three cases.
+
+**Case $\beta>0$.** Here $h'(\beta)=\kappa + (\beta-v)$. Setting it to zero gives
+$\beta=v-\kappa$. This is a *consistent* solution (it really is positive) only when
+$v-\kappa>0$, i.e. $v>\kappa$.
+
+**Case $\beta<0$.** Here $h'(\beta)=-\kappa+(\beta-v)$, zero at $\beta=v+\kappa$, consistent
+($<0$) only when $v<-\kappa$.
+
+**Case $\beta=0$.** The subdifferential of $|\beta|$ at $0$ is the interval $[-1,1]$
+([OPTM-05]: every line of slope between $-1$ and $1$ stays below the graph at the kink), so
+$\partial h(0)=\kappa[-1,1]+(0-v)=[-\kappa-v,\ \kappa-v]$. The condition $0\in\partial h(0)$
+reads $-\kappa-v\le 0\le \kappa-v$, i.e. $|v|\le\kappa$. So whenever $v$ is within $\kappa$
+of zero, the minimizer is **exactly zero** — the kink "captures" a whole band of inputs.
+
+Stitching the three cases together gives the **soft-thresholding operator**:
+$$
+\boxed{\;
+\operatorname{prox}_{\kappa|\cdot|}(v) \;=\; S_\kappa(v) \;=\;
+\begin{cases}
+v-\kappa, & v>\kappa,\\
+0, & |v|\le\kappa,\\
+v+\kappa, & v<-\kappa,
+\end{cases}
+\;=\; \operatorname{sign}(v)\,\bigl(|v|-\kappa\bigr)_+ ,
+\;}
+$$ {#eq-soft}
+where $(z)_+=\max(z,0)$. It shrinks every coordinate *toward* zero by $\kappa$ and **sets to
+exactly zero** any coordinate within $\kappa$ of it. @fig-soft contrasts it with the
+hard-threshold and the identity, and shows the dead zone that manufactures sparsity.
+
+```{python}
+#| label: fig-soft
+#| fig-cap: "Soft-thresholding $S_\\kappa(v)=\\operatorname{sign}(v)(|v|-\\kappa)_+$, the prox of $\\kappa|\\cdot|$ (red), against the identity $v\\mapsto v$ (grey dashed, the prox of no penalty). The flat **dead zone** $|v|\\le\\kappa$ is where coefficients are crushed to exactly zero — this is the kink of $|\\cdot|$ cashed out as the sparsity-making mechanism. Outside the dead zone the output is the input pulled back toward zero by exactly $\\kappa$ (note the curve runs parallel to, but below, the identity)."
+kappa = 1.0
+v = np.linspace(-4, 4, 400)
+S = np.sign(v) * np.maximum(np.abs(v) - kappa, 0.0)
+fig, ax = plt.subplots(figsize=(6.0, 4.4))
+ax.plot(v, v, color=GD, ls="--", lw=1.5, label="identity (no penalty)")
+ax.plot(v, S, color=PROX, lw=2.4, label=r"$S_\kappa(v)$")
+ax.axvspan(-kappa, kappa, color=FEAS, alpha=0.4, label="dead zone $|v|\\leq\\kappa$")
+ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+ax.set_xlabel("$v$ (gradient-step coordinate)"); ax.set_ylabel("output $\\beta_j$")
+ax.set_title("Soft-thresholding: shrink, with a dead zone")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Putting it together: ISTA {#sec-ista-full}
+
+Substituting the soft-threshold prox into @eq-ista and using
+$\nabla f(\boldsymbol\beta)=X^\top(X\boldsymbol\beta-\mathbf y)$ gives the celebrated
+**Iterative Shrinkage-Thresholding Algorithm (ISTA)** for the lasso:
+$$
+\boxed{\;
+\boldsymbol\beta_{k+1} = S_{\eta\lambda}\Bigl(\boldsymbol\beta_k - \eta\,X^\top(X\boldsymbol\beta_k - \mathbf y)\Bigr),
+\;}
+$$ {#eq-ista-lasso}
+the soft-threshold applied coordinatewise with threshold $\eta\lambda$. A safe step size is
+$\eta=1/L$ with $L=\lambda_{\max}(X^\top X)$ (the largest eigenvalue, the smoothness
+constant of the quadratic — the [OPTM-07] story). Read the update: *gradient step on the
+least-squares loss, then shrink-and-zero.* The non-smooth penalty, which made $\nabla F$
+nonexistent, has become a single elementwise clipping. This is the modern lasso solver, and
+it is **the third place soft-thresholding is cashed out** — [OPTM-05] derived it, [OPTM-10]
+used it as the coordinate-descent update, and here it is the proximal step.
+
+::: {.callout-tip title="You might be asked"}
+*"How does ISTA relate to coordinate descent for the lasso ([OPTM-10])?"* Both arrive at
+soft-thresholding, but they apply it differently. **Coordinate descent** updates one
+$\beta_j$ at a time, soft-thresholding using the *current* values of all other coordinates
+(a Gauss–Seidel sweep), and it solves each 1-D problem exactly with no step size.
+**ISTA/proximal gradient** updates *all* coordinates simultaneously from one shared
+gradient step, then soft-thresholds the whole vector at once (a Jacobi-style update with a
+step size $\eta$). Coordinate descent typically converges in fewer passes for the plain
+lasso and is what `glmnet` uses; proximal gradient generalizes far beyond separable
+penalties (any $g$ with a cheap prox — group lasso, nuclear norm, total variation) and
+accelerates cleanly to FISTA. The honest one-liner: *coordinate descent wins on the vanilla
+lasso; proximal gradient wins on generality and acceleration.*
+:::
+
+# FISTA: ISTA with Nesterov momentum {#sec-fista}
+
+ISTA inherits gradient descent's $O(1/k)$ rate — and its weakness. On an ill-conditioned
+problem (a long narrow valley, large condition number $\kappa=L/\mu$ from [OPTM-07]) that
+$O(1/k)$ crawl is slow. [OPTM-08] showed the cure for the smooth case: **Nesterov
+acceleration**, the look-ahead momentum that improves the rate to $O(1/k^2)$ without using
+second derivatives. The beautiful fact is that the *same* momentum bolts onto the proximal
+step unchanged, giving **FISTA** (Fast ISTA).
+
+::: {.callout-important title="FISTA"}
+Maintain an extrapolated point $\mathbf z_k$ and momentum weights $t_k$. Initialize
+$\mathbf z_1=\mathbf x_0$, $t_1=1$. Then
+$$
+\begin{aligned}
+\mathbf x_k &= \operatorname{prox}_{\eta g}\bigl(\mathbf z_k - \eta\nabla f(\mathbf z_k)\bigr) && \text{(an ISTA step from the look-ahead point)}\\
+t_{k+1} &= \tfrac{1}{2}\Bigl(1 + \sqrt{1 + 4t_k^2}\Bigr) && \text{(the Nesterov momentum schedule)}\\
+\mathbf z_{k+1} &= \mathbf x_k + \frac{t_k - 1}{t_{k+1}}\bigl(\mathbf x_k - \mathbf x_{k-1}\bigr) && \text{(extrapolate past the new point)}
+\end{aligned}
+$$
+The only change from ISTA is that the gradient and prox are evaluated at the *extrapolated*
+$\mathbf z_k$, not at $\mathbf x_k$ — exactly the look-ahead of [OPTM-08]. The penalty term
+$g$ rides along untouched. This buys the rate
+$F(\mathbf x_k)-F^\star\le \dfrac{2L\|\mathbf x_0-\mathbf x^\star\|^2}{(k+1)^2}=O(1/k^2)$.
+:::
+
+The momentum coefficient $\frac{t_k-1}{t_{k+1}}$ climbs toward $1$ as $k$ grows, so FISTA
+pushes harder along a consistent direction the longer it has been moving that way — the
+rolling-ball intuition of [OPTM-08], now rolling past kinks because the prox handles the
+non-smooth part at each look-ahead point. @fig-fista compares ISTA and FISTA on a real
+sparse-recovery problem; the acceleration is dramatic.
+
+```{python}
+#| label: fig-fista
+#| fig-cap: "ISTA vs. FISTA on a sparse-recovery lasso. We recover a sparse $\\boldsymbol\\beta^\\star$ (10 nonzeros out of 200) from 100 noisy linear measurements $\\mathbf y=X\\boldsymbol\\beta^\\star+\\text{noise}$ by minimizing $\\tfrac12\\|\\mathbf y-X\\boldsymbol\\beta\\|^2+\\lambda\\|\\boldsymbol\\beta\\|_1$. **Left:** objective gap $F(\\boldsymbol\\beta_k)-F^\\star$ on a log scale — FISTA's $O(1/k^2)$ leaves ISTA's $O(1/k)$ far behind. **Right:** the recovered coefficients from FISTA — out of 200 coordinates, all but a handful are crushed to *exactly* zero (the soft-threshold dead zone at work), and the recovered nonzeros sit on the true support, modulo a few small false positives that a larger $\\lambda$ would remove at the cost of bias."
+rng = np.random.default_rng(0)
+n_obs, p, s = 100, 200, 10
+X = rng.standard_normal((n_obs, p)) / np.sqrt(n_obs)
+beta_true = np.zeros(p)
+supp = rng.choice(p, s, replace=False)
+beta_true[supp] = rng.standard_normal(s) * 2.5
+y = X @ beta_true + 0.05 * rng.standard_normal(n_obs)
+lam = 0.15
+L = np.linalg.eigvalsh(X.T @ X).max()
+eta = 1.0 / L
+
+def soft_vec(v, k): return np.sign(v) * np.maximum(np.abs(v) - k, 0.0)
+def F(b): return 0.5*np.sum((y - X @ b)**2) + lam*np.sum(np.abs(b))
+
+def ista(iters):
+    b = np.zeros(p); hist = []
+    for _ in range(iters):
+        b = soft_vec(b - eta * (X.T @ (X @ b - y)), eta*lam)
+        hist.append(F(b))
+    return b, np.array(hist)
+
+def fista(iters):
+    b = np.zeros(p); z = b.copy(); t = 1.0; bp = b.copy(); hist = []
+    for _ in range(iters):
+        b = soft_vec(z - eta * (X.T @ (X @ z - y)), eta*lam)
+        tn = 0.5*(1 + np.sqrt(1 + 4*t*t))
+        z = b + ((t - 1)/tn)*(b - bp)
+        bp = b.copy(); t = tn
+        hist.append(F(b))
+    return b, np.array(hist)
+
+iters = 400
+_, h_i = ista(iters)
+b_f, h_f = fista(iters)
+Fstar = min(h_i.min(), h_f.min()) - 1e-12
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 3.8))
+axL.semilogy(h_i - Fstar, color=GD, lw=2, label="ISTA  $O(1/k)$")
+axL.semilogy(h_f - Fstar, color=PROX, lw=2, label="FISTA $O(1/k^2)$")
+axL.set_xlabel("iteration $k$"); axL.set_ylabel(r"$F(\beta_k)-F^\star$")
+axL.set_title("Acceleration: FISTA vs. ISTA"); axL.legend(framealpha=0.9)
+
+axR.stem(np.where(beta_true != 0)[0], beta_true[beta_true != 0],
+         linefmt=CURVE, markerfmt="o", basefmt=" ", label="true")
+rec = np.where(np.abs(b_f) > 1e-6)[0]
+axR.scatter(rec, b_f[rec], color=PROX, marker="x", s=60, zorder=5, label="FISTA estimate")
+axR.axhline(0, color=GREY, lw=0.8)
+axR.set_xlabel("coordinate $j$"); axR.set_ylabel(r"$\beta_j$")
+axR.set_title("Recovered support (exact zeros elsewhere)")
+axR.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+print(f"nonzeros in FISTA estimate: {np.sum(np.abs(b_f) > 1e-6)}  (true: {s})")
+print(f"final F gap  ISTA: {h_i[-1]-Fstar:.2e}   FISTA: {h_f[-1]-Fstar:.2e}")
+```
+
+::: {.callout-warning title="Pitfall"}
+**FISTA is not monotone.** Unlike ISTA, the objective $F(\mathbf x_k)$ can *increase* on
+some steps — the momentum overshoots, exactly as heavy-ball does in [OPTM-08]. This is
+normal and the $O(1/k^2)$ rate still holds for the iterate sequence, but it surprises people
+watching the loss curve and can look like divergence. If you need a guaranteed-decreasing
+variant, "monotone FISTA" keeps the better of the FISTA point and the plain ISTA point each
+step. Also: like all momentum methods FISTA assumes a *fixed* problem; if you are doing
+stochastic minibatch updates ([OPTM-11]) the look-ahead interacts badly with gradient noise
+and the clean acceleration guarantee evaporates.
+:::
+
+# Worked examples {#sec-examples}
+
+We have already carried sparse recovery through end-to-end (@fig-fista). Two more honest
+examples round out the applicability picture: one where projection is the whole story, and
+one near the edge where the method strains.
+
+## Example: box-constrained least squares (non-negative regression) {#sec-ex-box}
+
+A genuinely common constraint: fit $\mathbf y\approx X\boldsymbol\beta$ but force every
+coefficient to be **non-negative** — concentrations, counts, mixing proportions, and
+spectra are all physically $\ge 0$, and an unconstrained fit that returns a negative
+coefficient is nonsense. This is $\min_{\boldsymbol\beta\ge\mathbf 0}\tfrac12\|\mathbf y-X\boldsymbol\beta\|^2$,
+a box constraint $C=\{\boldsymbol\beta\ge\mathbf 0\}$ whose projection is clipping at zero,
+$\Pi_C(\mathbf v)=\max(\mathbf v,\mathbf 0)$. Projected gradient is then
+$\boldsymbol\beta_{k+1}=\max\bigl(\boldsymbol\beta_k-\eta X^\top(X\boldsymbol\beta_k-\mathbf y),\,\mathbf 0\bigr)$.
+
+```{python}
+#| label: fig-box-nnls
+#| fig-cap: "Non-negative least squares by projected gradient. The true coefficients (blue) are non-negative and sparse-ish. **Ordinary least squares** (grey) is unconstrained and returns several *negative* estimates — physically impossible for, say, chemical concentrations. **Projected gradient** (red) clips at zero every iteration and lands on a non-negative fit that respects the physics, with the negatives correctly pinned at zero."
+rng = np.random.default_rng(3)
+n_obs, p = 60, 12
+X = rng.standard_normal((n_obs, p))
+beta_true = np.maximum(rng.standard_normal(p) * 1.5 + 0.3, 0)   # nonneg truth
+beta_true[[2, 5, 9]] = 0.0
+y = X @ beta_true + 0.4 * rng.standard_normal(n_obs)
+
+# unconstrained OLS
+beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
+
+# projected gradient (NNLS)
+L = np.linalg.eigvalsh(X.T @ X).max(); eta = 1.0 / L
+b = np.zeros(p)
+for _ in range(2000):
+    b = np.maximum(b - eta * (X.T @ (X @ b - y)), 0.0)
+beta_pg = b
+
+idx = np.arange(p); w = 0.27
+fig, ax = plt.subplots(figsize=(7.4, 4.0))
+ax.bar(idx - w, beta_true, w, color=CURVE, label="true ($\\geq 0$)")
+ax.bar(idx,     beta_ols,  w, color=GD,    label="OLS (unconstrained)")
+ax.bar(idx + w, beta_pg,   w, color=PROX,  label="projected gradient")
+ax.axhline(0, color=GREY, lw=1)
+ax.set_xlabel("coefficient index $j$"); ax.set_ylabel(r"$\beta_j$")
+ax.set_title("Non-negative least squares via projected gradient")
+ax.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+print(f"OLS has {np.sum(beta_ols < -1e-6)} negative coefficients (infeasible)")
+print(f"projected-gradient negatives: {np.sum(beta_pg < -1e-6)}")
+```
+
+The unconstrained fit cannot help producing negatives — least squares does not know the
+physics. Projected gradient bakes the physics into every step at the cost of one
+$\max(\cdot,0)$ per iteration. Whenever the constraint set has a one-line projection (a box
+here), this is the simplest possible constrained solver.
+
+## Example: simplex-constrained portfolio (the prox earns its keep) {#sec-ex-simplex}
+
+A more demanding constraint, where the projection is the clever part. A long-only portfolio
+holds weights $\mathbf w$ on $p$ assets that must be non-negative and sum to one — the
+**probability simplex** $C=\{\mathbf w\ge\mathbf 0,\ \mathbf 1^\top\mathbf w=1\}$. We
+minimize a risk objective $\tfrac12\mathbf w^\top\Sigma\mathbf w$ (variance under covariance
+$\Sigma$) over the simplex — the long-only minimum-variance portfolio. Projected gradient
+uses the simplex projection from @sec-three-projections.
+
+```{python}
+#| label: fig-simplex-portfolio
+#| fig-cap: "Long-only minimum-variance portfolio by projected gradient on the simplex. **Left:** the objective (portfolio variance) decreasing across iterations to the constrained minimum. **Right:** the converged weights — all non-negative and summing to exactly one. Where the unconstrained risk-minimizer would short an asset, the simplex projection's clip-at-zero pins that weight to *exactly zero* (here one asset is dropped), enforcing the long-only rule to machine precision rather than approximately."
+rng = np.random.default_rng(7)
+p = 8
+Araw = rng.standard_normal((p, p))
+Sigma = Araw @ Araw.T / p + 0.05*np.eye(p)     # a PSD covariance
+
+def proj_simplex(v):
+    u = np.sort(v)[::-1]; css = np.cumsum(u)
+    rho = np.nonzero(u * np.arange(1, len(u)+1) > (css - 1))[0][-1]
+    theta = (css[rho] - 1) / (rho + 1)
+    return np.maximum(v - theta, 0)
+
+L = np.linalg.eigvalsh(Sigma).max(); eta = 1.0 / L
+w = np.ones(p) / p; obj = []
+for _ in range(300):
+    w = proj_simplex(w - eta * (Sigma @ w))
+    obj.append(0.5 * w @ Sigma @ w)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 3.8))
+axL.plot(obj, color=PROX, lw=2)
+axL.set_xlabel("iteration"); axL.set_ylabel("portfolio variance")
+axL.set_title("Objective decreasing on the simplex")
+axR.bar(np.arange(p), w, color=CURVE)
+axR.axhline(0, color=GREY, lw=0.8)
+axR.set_xlabel("asset $j$"); axR.set_ylabel("weight $w_j$")
+axR.set_title("Converged weights (sum to 1, some exactly 0)")
+plt.tight_layout()
+print(f"sum of weights = {w.sum():.6f}   (must be 1)")
+print(f"min weight     = {w.min():.6f}   (must be >= 0)")
+print(f"assets at zero = {np.sum(w < 1e-6)} of {p}")
+```
+
+The printed checks confirm feasibility exactly — weights sum to one and none is negative —
+which a penalty-based relaxation would only achieve approximately. This is the case for
+*projected* gradient over a soft penalty: when the constraint is a hard requirement (a
+portfolio that sums to 1.001 is not a portfolio), projection enforces it to machine
+precision every step.
+
+## The edge of applicability: when the prox is not cheap {#sec-ex-edge}
+
+The entire method rests on one assumption, and it is the place to be honest: **proximal and
+projected gradient are only practical when the prox/projection is cheap to compute.** Every
+example above had a closed-form prox — clipping, soft-thresholding, the simplex sort. When
+it does not, the method can be *worse* than the alternatives, because each "step" hides an
+inner optimization.
+
+Consider minimizing $f$ over the intersection of two convex sets, $C=C_1\cap C_2$ (say a
+box *and* a ball, or two halfspace systems). The set is convex, so a unique projection
+exists — but there is **no closed form** for $\Pi_{C_1\cap C_2}$ even when $\Pi_{C_1}$ and
+$\Pi_{C_2}$ are each trivial. Naïvely projecting onto $C_1$ then $C_2$ does *not* give the
+projection onto the intersection.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability. Projecting onto the intersection of a box and a ball. **Alternating** projections (project onto the box, then the ball, then the box, ...) do converge to a feasible point in the intersection — but the limit is generally **not** $\\Pi_{C_1\\cap C_2}(\\mathbf v)$, the true nearest point (green star). The dashed path shows the alternating iterates zig-zagging into the lens-shaped intersection; they land on the boundary, not at the closest interior-feasible point. When the prox of the *combined* constraint has no closed form, a single projected-gradient step is itself an iterative subproblem, and the method loses its appeal."
+fig, ax = plt.subplots(figsize=(5.8, 5.4))
+# box C1 and ball C2
+ax.add_patch(plt.Rectangle((-0.2, -0.6), 1.6, 1.4, fc="none", ec=CURVE, lw=2, label="box $C_1$"))
+th = np.linspace(0, 2*np.pi, 200); R = 1.0; ctr = np.array([0.5, 0.3])
+ax.plot(ctr[0]+R*np.cos(th), ctr[1]+R*np.sin(th), color=PROX, lw=2)
+v = np.array([2.0, 1.7])
+def proj_box(z): return np.array([np.clip(z[0], -0.2, 1.4), np.clip(z[1], -0.6, 0.8)])
+def proj_ball(z):
+    d = z - ctr; n = np.linalg.norm(d)
+    return z if n <= R else ctr + R*d/n
+z = v.copy(); pts = [z.copy()]
+for _ in range(12):
+    z = proj_box(z); pts.append(z.copy())
+    z = proj_ball(z); pts.append(z.copy())
+pts = np.array(pts)
+ax.plot(pts[:,0], pts[:,1], "--o", color=GD, ms=3, lw=1.2, label="alternating projections")
+ax.scatter(*v, color="black", s=60, zorder=6, label="point $v$")
+# crude true projection onto intersection by dense search
+gx, gy = np.meshgrid(np.linspace(-0.3, 1.5, 300), np.linspace(-0.7, 0.9, 300))
+inside = (gx >= -0.2)&(gx <= 1.4)&(gy >= -0.6)&(gy <= 0.8)&(((gx-ctr[0])**2+(gy-ctr[1])**2) <= R**2)
+cand = np.c_[gx[inside], gy[inside]]
+true_p = cand[np.argmin(np.sum((cand - v)**2, axis=1))]
+ax.scatter(*true_p, color=ACCENT, marker="*", s=200, zorder=7, label="true $\\Pi_{C_1 \\cap C_2}(v)$")
+ax.set_xlim(-0.5, 2.2); ax.set_ylim(-0.8, 2.0); ax.set_aspect("equal")
+ax.set_title("When the prox has no closed form")
+ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+**When you reach for something else.** If the prox is expensive, the honest alternatives
+are: (i) **operator splitting** — ADMM or Douglas–Rachford, which handle a *sum* of
+awkward terms each with its own cheap prox, never needing the prox of the combination; (ii)
+**dual / interior-point methods** ([OPTM-15]) when the structure is a moderate-size
+constrained QP/LP, where a general-purpose solver is faster and more accurate; or (iii)
+**coordinate descent** ([OPTM-10]) when the non-smooth part is separable and 1-D solves are
+exact. Proximal gradient is the right tool precisely in the wide middle: a smooth loss plus
+*one* structured non-smooth term whose prox is a known closed form (the $\ell_1$, group,
+nuclear, or total-variation norms; a single box/ball/simplex constraint).
+
+::: {.callout-tip title="You might be asked"}
+*"When is proximal/projected gradient the right choice, and when is it not?"* The decision
+tree you should be able to recite:
+
+- **Use it** when the objective splits as *smooth $f$ + structured non-smooth $g$* (or
+  *smooth $f$ + a single simple constraint*), and the **prox of $g$ (or projection onto
+  $C$) has a cheap closed form** — clipping, soft-thresholding, the simplex sort. Then you
+  get the smooth method's $O(1/k)$ rate (or $O(1/k^2)$ with FISTA), exact zeros / exact
+  feasibility, and a tiny per-iteration cost.
+- **Prefer coordinate descent** ([OPTM-10]) for the plain separable lasso/elastic-net — it
+  is usually faster in wall-clock for that specific problem.
+- **Do not use it** when the prox of the awkward part is itself an iterative
+  subproblem (e.g. an intersection of constraints, or a non-separable penalty with no
+  formula) — switch to ADMM / operator splitting, or to a dual/interior-point method.
+- **Avoid the accelerated form** under heavy gradient noise (stochastic minibatches):
+  FISTA's momentum amplifies noise; plain proximal-SGD or Adam-style methods ([OPTM-12])
+  are steadier there.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the constrained-optimization branch — [OPTM-13 *Lagrange Multipliers*],
+[OPTM-14 *KKT*], [OPTM-15 *Duality*] — which told you *what* a constrained optimum looks
+like, and from the convexity/descent spines — [OPTM-03 *Convex Sets*], [OPTM-05
+*Subgradients*], [OPTM-06 *Gradient Descent*], [OPTM-08 *Momentum*] — which told you how to
+move downhill and how to do calculus at a kink. This article fused them into *one
+algorithm* that descends while honoring a fence or a penalty.
+
+- The **projection** is the prox of an indicator (@sec-proj-is-prox), so projected gradient
+  is proximal gradient in disguise; its fixed point is the **KKT** point of [OPTM-14]
+  (@sec-prox-recovers-kkt).
+- The **$\ell_1$ prox is soft-thresholding** (@sec-l1-prox), the exact operator [OPTM-05]
+  derived and [OPTM-10] used — so ISTA, coordinate descent, and the subgradient optimality
+  condition are three roads to the same lasso update.
+- **FISTA** (@sec-fista) is ISTA carrying Nesterov's momentum from [OPTM-08].
+
+**Downstream**, this is the general-purpose solver that the Regression regularization
+articles ([REGR-15] lasso, [REGR-16] elastic net) can link here for as the alternative to
+coordinate descent, and that constrained/regularized solvers across Classification and
+Unsupervised Learning reach for. The track's remaining node, [OPTM-17 *A Gentle Calculus of
+Variations*], leaves finite-dimensional optimization entirely to minimize over *functions*.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding ISTA/FISTA paper.** A. Beck and M. Teboulle, "A Fast Iterative
+  Shrinkage-Thresholding Algorithm for Linear Inverse Problems," *SIAM Journal on Imaging
+  Sciences* 2 (2009) — the source of @eq-ista-lasso, the FISTA schedule, and the $O(1/k^2)$
+  rate proof we summarized in @thm-ista-rate.
+- **The standard monograph.** N. Parikh and S. Boyd, "Proximal Algorithms," *Foundations
+  and Trends in Optimization* 1 (2014): the prox of dozens of common functions in closed
+  form, the projection/prox unification of @sec-proj-is-prox, and the operator-splitting
+  methods (ADMM, Douglas–Rachford) that @sec-ex-edge points to when the prox is not cheap.
+- **The convex-analysis backbone.** Rockafellar's *Convex Analysis* for the
+  subdifferential calculus, normal cones, and the firmly-non-expansive theory that makes
+  @lem-firmly-nonexpansive and @thm-ista-rate go through in full generality.
+- **Open threads this article deliberately deferred.** *Operator splitting (ADMM)* — how to
+  minimize a *sum* of non-smooth terms, each with its own prox, the answer when @sec-ex-edge
+  bites. *Stochastic proximal methods* — proximal-SGD and its variance-reduced cousins, the
+  marriage of this article with [OPTM-11]. *Accelerated projection for strongly convex
+  constrained problems* — the linear-rate ($O(\rho^k)$) story that mirrors [OPTM-07] when
+  $f$ is strongly convex.

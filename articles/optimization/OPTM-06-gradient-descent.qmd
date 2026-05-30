@@ -1,0 +1,1125 @@
+---
+title: "Gradient Descent: Walking Downhill"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # the objective / surfaces
+PATH    = "#c1121f"    # the iterate path / steps
+ACCENT  = "#0a7d4d"    # highlights / the optimum
+GREY    = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the first article of the Optimization
+> track's **descent spine**, and the algorithm the rest of the machine-learning series
+> runs on. It assumes [OPTM-02 *Minimizing in Many Variables*] for everything it builds
+> on: the **gradient** $\nabla f$, the fact (derived there) that $-\nabla f$ is the
+> **steepest-descent direction**, and the target it chases — the stationarity condition
+> $\nabla f(\mathbf{x}^\star)=\mathbf{0}$. [OPTM-02] also told us *when* that target is the
+> answer: at a smooth interior minimum. This article answers the question [OPTM-02]
+> deferred: **what do you do when you cannot solve $\nabla f=\mathbf{0}$ in closed form?**
+> You walk downhill, one gradient step at a time.
+>
+> **What it uses, and from where.** The single new analytic tool is the **first-order
+> Taylor expansion** — a Calc-1 object, restated inline in @sec-taylor. The **gradient**
+> and **directional derivative** are the Geometry-of-Data / [OPTM-02] objects, used, not
+> rebuilt.
+>
+> **What it sets up.** [OPTM-07 *Step Size and Convergence*] proves *when* and *how fast*
+> the walk reaches the bottom (L-smoothness, rates, the condition number). [OPTM-08
+> *Momentum*] and [OPTM-09 *Newton's Method*] make it faster. [OPTM-11 *Stochastic
+> Gradient Descent*] makes it scale to millions of data points. This article **supplies**
+> the *gradient descent / gradient ascent* prerequisite that Regression ([REGR-17],
+> logistic regression) and Statistical Inference ([INFR-B2], the MLE with no closed form)
+> link here for.
+
+## Abstract {.unnumbered}
+
+[OPTM-02] told us that an interior minimum of a smooth function sits where the gradient
+vanishes, $\nabla f(\mathbf{x}^\star)=\mathbf{0}$ — but solving that equation in closed
+form is a luxury reserved for quadratics. Logistic regression, neural networks, and most
+of the objectives the rest of the series minimizes have **no formula** for their
+minimizer. This article derives the universal fallback: **gradient descent**, the
+iteration
+
+$$
+\mathbf{x}_{k+1} = \mathbf{x}_k - \eta\,\nabla f(\mathbf{x}_k).
+$$
+
+We do not assert this rule; we *derive* it, from the first-order Taylor expansion, as the
+step that decreases $f$ fastest per unit distance — making $-\nabla f$ the inevitable
+direction and the **learning rate** $\eta$ the one free dial. We give the mirror-image
+**gradient ascent** ($+\eta\nabla f$) for the maximization problems the Inference track
+hands us, walk the iterates downhill on a contour map, and show with figures the three
+regimes of $\eta$: too small and the walk crawls, too large and it diverges, just right
+and it converges. Two honest worked examples carry it through end to end — a quadratic
+bowl, where we can check every step against the exact answer, and **logistic regression**,
+where there *is* no exact answer and gradient descent is the genuine tool. We close at the
+edge of applicability: the narrow valley where plain gradient descent zig-zags and crawls,
+the failure that motivates everything after it in the track.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+When you cannot solve $\nabla f=\mathbf{0}$, **start somewhere and repeatedly step
+against the gradient**:
+$$
+\mathbf{x}_{k+1} = \mathbf{x}_k - \eta\,\nabla f(\mathbf{x}_k).
+$$
+The direction $-\nabla f(\mathbf{x}_k)$ is forced: it is the **steepest-descent
+direction**, the way the function drops fastest right where you stand (derived in
+[OPTM-02]). The scalar $\eta>0$, the **learning rate** or **step size**, is the only knob,
+and it controls *how far* you trust that local downhill direction before you re-measure.
+The gradient shrinks to zero as you near a stationary point, so the steps shrink
+automatically and the walk *settles* — it does not need to be told it has arrived. For
+**maximization**, flip the sign: **gradient ascent**, $\mathbf{x}_{k+1}=\mathbf{x}_k +
+\eta\,\nabla f(\mathbf{x}_k)$, climbs the same hill. Everything else in the descent spine
+is a smarter answer to one question this rule leaves open: *how do I choose, or replace,
+$\eta$?*
+:::
+
+Everything below orbits that box. The update will look almost too simple — "subtract a
+multiple of the gradient" — but by the end you should see it as the *only* thing you can
+do with purely local information, and you should see exactly where it earns its keep and
+exactly where it stalls. The step size $\eta$ is the whole drama: it is the single
+parameter that decides whether the walk converges, crawls, or flies apart, and the next
+article ([OPTM-07]) is devoted to choosing it with a guarantee.
+
+# Why we are here: the closed form runs out {#sec-why}
+
+Keep one question in view for the whole article: **when there is no formula for the
+minimizer, how do we reach it using only what we can measure locally — the value and the
+slope — at the point where we currently stand?** Every step below answers a piece of that.
+
+## The luxury we are about to lose {#sec-luxury}
+
+[OPTM-02] gave us a beautiful recipe: to minimize a smooth $f:\mathbb{R}^n\to\mathbb{R}$,
+write down the gradient, set $\nabla f(\mathbf{x})=\mathbf{0}$, and solve. When $f$ is a
+**quadratic** — the least-squares cost $\|\mathbf{y}-X\boldsymbol\beta\|^2$, ridge
+regression, the Gaussian MLE — each component of the gradient is *linear* in the unknowns,
+so $\nabla f=\mathbf{0}$ is a linear system $A\mathbf{x}=\mathbf{b}$, and linear algebra
+hands back the exact answer in one shot (the normal equations of [REGR-01] and [OPTM-02]).
+
+That is a luxury, and it runs out fast. Consider the single most common objective in
+applied statistics after least squares: the **logistic-regression** negative
+log-likelihood, which we will fit in full in @sec-ex-logistic. Its gradient (derived
+there) is
+
+$$
+\nabla f(\boldsymbol\beta)
+= \sum_{i=1}^{n}\Bigl(\sigma(\mathbf{x}_i^\top\boldsymbol\beta) - y_i\Bigr)\mathbf{x}_i,
+\qquad
+\sigma(z)=\frac{1}{1+e^{-z}}.
+$$
+
+Set this to zero and try to solve for $\boldsymbol\beta$. You cannot — the unknown
+$\boldsymbol\beta$ is trapped *inside* the nonlinear function $\sigma$, wrapped in an
+exponential, summed over the data. There is no rearrangement, no formula, no closed form.
+And logistic regression is the *easy* case; a neural network's loss is this pathology
+compounded a million-fold.
+
+So the recipe "$\nabla f=\mathbf{0}$, solve" describes the *destination* — a point where
+the gradient vanishes — but gives no way to *travel* there when the equation is
+unsolvable. We need an algorithm that reaches a zero-gradient point without ever solving
+for it symbolically. That algorithm is gradient descent, and it is the engine under nearly
+every model in the rest of the series.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just solve $\nabla f=\mathbf{0}$ numerically — feed it to a root-finder?"* You
+can, and Newton's method ([OPTM-09]) does essentially that, using the Hessian. But two
+things make gradient descent the more fundamental tool. First, a generic root-finder needs
+*second-order* information (the Jacobian of $\nabla f$, i.e. the Hessian) to know which way
+to step, and forming and inverting an $n\times n$ Hessian costs $O(n^3)$ — ruinous when
+$n$ is in the millions. Gradient descent uses *only* the gradient, which is $O(n)$ to store
+and often cheap to compute. Second, $\nabla f=\mathbf{0}$ has solutions that are *maxima
+and saddles* too ([OPTM-02]); a blind root-finder might converge to any of them, whereas
+gradient descent, by construction, *descends* — it moves toward minima specifically. The
+interviewer is checking whether you see that "find a zero of $\nabla f$" and "minimize $f$"
+are different goals, and gradient descent commits to the second.
+:::
+
+## A two-line history: the oldest idea in optimization {#sec-history}
+
+The method is old — older than statistics as a discipline. **Augustin-Louis Cauchy**
+proposed it in 1847, in a half-page note on solving systems of equations in astronomy: to
+make a positive quantity small, he observed, you should change the variables in the
+direction that decreases it fastest, and the calculus tells you that direction is the
+negative gradient. That is the entire idea, and it has not changed in 180 years. What
+changed is the world it landed in: when the objective became the loss of a model with
+millions of parameters and the dataset became too large to hold in memory at once, this
+humble one-line iteration — cheap, gradient-only, embarrassingly parallel — turned out to
+be the *only* thing that scales. The deep-learning revolution runs on Cauchy's 1847 note,
+lightly dressed up (momentum, [OPTM-08]; stochasticity, [OPTM-11]; per-coordinate scaling,
+[OPTM-12]). Holding that in mind explains the article's shape: we derive the plain step
+first because every later refinement is a patch on *this* step.
+
+# Intuition before symbols: blindfolded on a hillside {#sec-intuition}
+
+Picture the landscape of [OPTM-02] again: the graph of $f$ as terrain, height $f(\mathbf{x})$
+above each input point $\mathbf{x}$, and you are trying to reach the lowest valley. But now
+impose the real constraint of the no-closed-form world: **you are blindfolded in a thick
+fog.** You cannot see the valley. You cannot see the terrain beyond your own feet. All you
+can do, at the single point where you stand, is two things:
+
+1. feel the **height** there — the value $f(\mathbf{x}_k)$; and
+2. feel the **slope** under your feet in every direction — the gradient $\nabla f(\mathbf{x}_k)$.
+
+What is the sensible move? Take a step in the direction that goes downhill fastest, then
+stop, re-measure the slope at your new spot, and repeat. The gradient is exactly the
+instrument that reports "steepest uphill is *that* way, this steep"; so steepest *downhill*
+is the opposite way, $-\nabla f$, and you step along it. That is gradient descent, in one
+sentence, before any symbol: **repeatedly feel the local slope and take a step downhill.**
+
+Two features of this blindfolded walk are worth fixing now, because they explain the whole
+algorithm. First, **you only ever use local information** — height and slope at your
+current foot. You never get to see the global shape. That is both the method's power (local
+information is cheap, even in a million dimensions) and its limitation (a blindfolded walker
+settles into *whatever* valley they stumble into, not necessarily the deepest — the
+local-vs-global gap of [OPTM-02], revisited in @sec-failure). Second, **how big a step you
+take matters enormously.** A tiny shuffle and you will be on the hillside until nightfall; a
+giant leap and you may sail clear over the valley and land higher up the far slope. That
+step length is the learning rate $\eta$, and @fig-blindfold sketches the walk.
+
+```{python}
+#| label: fig-blindfold
+#| fig-cap: "Gradient descent as a blindfolded walk on the contour map of a bowl $f(x,y)=x^2+3y^2$. From the start (red dot, upper right) each step moves *against* the local gradient — perpendicular to the contour line, straight downhill — by an amount set by the learning rate. The steps shrink automatically as the slope flattens near the minimum (green), because the gradient itself shrinks there. The walker never sees the whole map; it only ever feels the slope under its current foot."
+f  = lambda X, Y: X**2 + 3*Y**2
+gx = lambda x, y: 2*x
+gy = lambda x, y: 6*y
+
+eta = 0.12
+pt = np.array([2.6, 1.5])
+pts = [pt.copy()]
+for _ in range(18):
+    g = np.array([gx(*pt), gy(*pt)])
+    pt = pt - eta * g
+    pts.append(pt.copy())
+pts = np.array(pts)
+
+xs = np.linspace(-3, 3, 80); ys = np.linspace(-2, 2, 80)
+X, Y = np.meshgrid(xs, ys)
+fig, ax = plt.subplots()
+ax.contour(X, Y, f(X, Y), levels=18, colors=GREY, linewidths=0.7, alpha=0.7)
+ax.plot(pts[:, 0], pts[:, 1], "-o", color=PATH, ms=4, lw=1.6, label="GD iterates")
+ax.scatter([pts[0, 0]], [pts[0, 1]], color=PATH, s=80, zorder=5, label="start $\\mathbf{x}_0$")
+ax.scatter([0], [0], color=ACCENT, s=110, zorder=5, edgecolor="white",
+           linewidth=1.4, label="minimum")
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+ax.set_title("Walking downhill, one gradient step at a time")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+ax.set_aspect("equal")
+plt.tight_layout()
+```
+
+# The formal development {#sec-formal}
+
+We now turn the blindfolded walk into mathematics. The whole derivation rests on one
+question: *given only the value and gradient at $\mathbf{x}_k$, which step decreases $f$ the
+most?* Answering it requires a local model of $f$, and the local model is the Taylor
+expansion.
+
+## The one tool we need: the first-order Taylor expansion {#sec-taylor}
+
+The gradient tells us the slope *exactly at* $\mathbf{x}_k$, but a step moves us *away* from
+$\mathbf{x}_k$, where the slope is generally different. To reason about a step of finite
+size we need to predict $f$ at nearby points, and the instrument for that is the **Taylor
+expansion** — a Calc-1 object we restate here at the level we use it, just as [OPTM-02]
+restated the gradient.
+
+In one variable, Calc 1 says that for a differentiable $f$ and a small step $h$,
+$$
+f(x+h) = f(x) + f'(x)\,h + (\text{a remainder that shrinks faster than } h),
+$$
+which is just the statement that the tangent line is the best straight-line approximation
+near $x$: the function and its tangent agree in value and in slope at $x$. The multivariable
+version — a Geometry-of-Data result, the vector generalization of exactly this — replaces
+the single number $f'(x)\,h$ with the dot product of the gradient and the step vector. For a
+step $\mathbf{d}\in\mathbb{R}^n$ away from $\mathbf{x}$,
+
+$$
+f(\mathbf{x} + \mathbf{d})
+= f(\mathbf{x}) + \nabla f(\mathbf{x})^\top \mathbf{d} + r(\mathbf{d}),
+\qquad \frac{r(\mathbf{d})}{\|\mathbf{d}\|}\to 0 \text{ as } \mathbf{d}\to\mathbf{0}.
+$$ {#eq-taylor1}
+
+Read @eq-taylor1 plainly: **near $\mathbf{x}$, the function looks like a flat tilted plane**
+— height $f(\mathbf{x})$, tilted in the direction and steepness of the gradient. The
+remainder $r(\mathbf{d})$ collects the curvature and everything higher; the defining
+property $r(\mathbf{d})/\|\mathbf{d}\|\to 0$ says it is *negligible compared to the step
+itself* when the step is small. So for a short enough step, the tilted-plane model
+@eq-taylor1 is trustworthy, and we are entitled to choose our step by reasoning about that
+plane. This single approximation is the entire analytic content of gradient descent.
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+The only object imported from outside this article is the **first-order Taylor expansion**
+@eq-taylor1. Its one-variable form is Calc-1 (the tangent-line approximation); its
+multivariable form, with the gradient dot product replacing $f'(x)h$, is owned by the
+**Geometry of Data / Applied Linear Algebra** track and was already used in [OPTM-02]'s
+directional-derivative derivation. We restate it at the level we use it; the **gradient**
+$\nabla f$ and the **directional derivative** $\nabla f^\top\mathbf{u}$ are likewise
+[OPTM-02] objects, used here, not rebuilt. Everything we *do* with the expansion is derived
+in full below.
+:::
+
+## Choosing the direction: steepest descent, re-derived {#sec-direction}
+
+A step is two things: a **direction** (where to go) and a **length** (how far). Pin down the
+direction first, holding the length fixed. So fix a step length $\delta>0$ and write the
+step as $\mathbf{d}=\delta\,\mathbf{u}$ with $\mathbf{u}$ a *unit* vector ($\|\mathbf{u}\|=1$)
+giving the direction. We want the direction $\mathbf{u}$ that makes $f$ *drop the most* for
+that fixed step length. Using the tilted-plane model @eq-taylor1, the change in $f$ is, to
+first order,
+
+$$
+f(\mathbf{x} + \delta\mathbf{u}) - f(\mathbf{x})
+\;\approx\; \nabla f(\mathbf{x})^\top (\delta\mathbf{u})
+\;=\; \delta\,\bigl(\nabla f(\mathbf{x})^\top \mathbf{u}\bigr).
+$$ {#eq-change}
+
+Since $\delta>0$ is fixed and positive, *minimizing the change* means **minimizing the dot
+product** $\nabla f(\mathbf{x})^\top\mathbf{u}$ over all unit directions $\mathbf{u}$. This
+is precisely the steepest-direction question [OPTM-02] answered with the dot-product angle
+formula, and we redo it here because it is the heart of the matter. Writing $\theta$ for the
+angle between $\nabla f(\mathbf{x})$ and $\mathbf{u}$ and using
+$\mathbf{a}^\top\mathbf{b}=\|\mathbf{a}\|\,\|\mathbf{b}\|\cos\theta$ with $\|\mathbf{u}\|=1$,
+
+$$
+\nabla f(\mathbf{x})^\top \mathbf{u}
+= \|\nabla f(\mathbf{x})\|\,\cos\theta.
+$$
+
+The gradient's length $\|\nabla f(\mathbf{x})\|$ is a fixed nonnegative number at the point
+$\mathbf{x}$; the only thing the direction $\mathbf{u}$ controls is $\cos\theta\in[-1,1]$.
+The dot product is therefore **most negative** when $\cos\theta=-1$, i.e. $\theta=180^\circ$
+— when $\mathbf{u}$ points *exactly opposite* to the gradient:
+
+$$
+\boxed{\;\mathbf{u}^\star = -\frac{\nabla f(\mathbf{x})}{\|\nabla f(\mathbf{x})\|}.\;}
+$$ {#eq-bestdir}
+
+So among all directions of a fixed small length, the one that decreases $f$ fastest is the
+**negative gradient direction**. This is not a definition or a convention — it falls out of
+the tilted-plane model and the angle formula. The negative gradient is forced.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the negative gradient really the best direction to move, or just a good one?"* Be
+precise: $-\nabla f$ is the direction of **steepest descent** *in the Euclidean sense* — it
+maximizes the instantaneous rate of decrease per unit Euclidean step length. That is the
+honest claim, and @eq-bestdir is its proof. But "steepest in Euclidean distance" is a
+*choice of how to measure distance*, and it is not the only one. If you measure step length
+in a different geometry — say, scaled by the curvature — the steepest-descent direction
+changes, and you get a different (often better) method. **Newton's method** ([OPTM-09]) is
+exactly steepest descent in the geometry defined by the Hessian, and it can be dramatically
+faster in a stretched valley (@sec-failure). So the right answer is: the negative gradient
+is *provably* steepest under the Euclidean ruler, and the entire rest of the descent spine
+is about choosing a better ruler.
+:::
+
+## Choosing the length: the learning rate, and the update {#sec-length}
+
+We have the direction. Now the length. The tilted-plane model says $f$ keeps dropping as
+long as we keep moving along $-\nabla f$ — but that model is only trustworthy *near*
+$\mathbf{x}$, because the remainder $r(\mathbf{d})$ in @eq-taylor1 grows once the step is no
+longer small. Push too far and the real function curves away from the plane: we can overshoot
+the valley and end up higher than we started.
+
+So we do not commit to a "best" length from the linear model alone — the linear model has no
+best length, it just keeps predicting more descent forever. Instead we take a step of a
+*chosen* size and re-measure. Combine the direction @eq-bestdir with a step length, and fold
+the gradient's magnitude into a single positive scalar $\eta$ (so that flatter spots, where
+the gradient is small, naturally produce smaller steps). The result is the **gradient
+descent update**:
+
+$$
+\boxed{\;\mathbf{x}_{k+1} = \mathbf{x}_k - \eta\,\nabla f(\mathbf{x}_k).\;}
+$$ {#eq-gd}
+
+Here $\eta>0$ is the **learning rate** (machine-learning name) or **step size**
+(optimization name). Notice the elegant bookkeeping: we did not divide by
+$\|\nabla f\|$ as @eq-bestdir would suggest. We kept the *raw* gradient. That means the step
+length is $\eta\,\|\nabla f(\mathbf{x}_k)\|$ — proportional to how steep the slope is. Where
+the terrain is steep, we stride; where it flattens out near a minimum, the gradient shrinks
+and so do the steps, until $\nabla f(\mathbf{x}_k)\approx\mathbf{0}$ and the iteration
+**stops moving on its own**. The algorithm self-regulates its step length without being told
+where the bottom is — exactly the behavior we wanted from the blindfolded walker.
+
+::: {#def-gd}
+**Definition (gradient descent).** Given a differentiable objective
+$f:\mathbb{R}^n\to\mathbb{R}$, a starting point $\mathbf{x}_0$, and a learning rate
+$\eta>0$, **gradient descent** generates the sequence
+$$
+\mathbf{x}_{k+1} = \mathbf{x}_k - \eta\,\nabla f(\mathbf{x}_k),
+\qquad k = 0, 1, 2, \dots
+$$
+and (when it converges) returns the limit $\mathbf{x}_k\to\mathbf{x}^\star$, a stationary
+point where $\nabla f(\mathbf{x}^\star)=\mathbf{0}$.
+:::
+
+We should immediately verify the one thing the whole derivation promised: that a step
+*actually decreases* $f$. The promise is true, but only for small enough $\eta$, and pinning
+down "small enough" precisely is the subject of [OPTM-07]. Here we prove the qualitative
+fact, which is all the linear model can deliver.
+
+::: {#thm-descent}
+**Theorem (a small step descends).** Suppose $\nabla f(\mathbf{x}_k)\neq\mathbf{0}$. Then for
+all sufficiently small learning rates $\eta>0$, the gradient-descent step strictly decreases
+the objective: $f(\mathbf{x}_{k+1}) < f(\mathbf{x}_k)$.
+:::
+
+::: {.proof}
+Apply the Taylor expansion @eq-taylor1 with the actual step $\mathbf{d}=-\eta\nabla
+f(\mathbf{x}_k)$:
+
+$$
+f(\mathbf{x}_{k+1})
+= f(\mathbf{x}_k) + \nabla f(\mathbf{x}_k)^\top\bigl(-\eta\nabla f(\mathbf{x}_k)\bigr)
+  + r(\mathbf{d}).
+$$
+
+The middle term simplifies using $\mathbf{a}^\top\mathbf{a}=\|\mathbf{a}\|^2$ (a vector
+dotted with itself is its squared length):
+
+$$
+\nabla f(\mathbf{x}_k)^\top\bigl(-\eta\nabla f(\mathbf{x}_k)\bigr)
+= -\eta\,\nabla f(\mathbf{x}_k)^\top\nabla f(\mathbf{x}_k)
+= -\eta\,\|\nabla f(\mathbf{x}_k)\|^2.
+$$
+
+So the change in the objective is
+
+$$
+f(\mathbf{x}_{k+1}) - f(\mathbf{x}_k)
+= -\eta\,\|\nabla f(\mathbf{x}_k)\|^2 + r(\mathbf{d}).
+$$ {#eq-descent-change}
+
+The first term is *strictly negative* (since $\eta>0$ and $\|\nabla f(\mathbf{x}_k)\|^2>0$ by
+assumption). For the second term, recall the defining property of the remainder:
+$r(\mathbf{d})/\|\mathbf{d}\|\to0$ as $\mathbf{d}\to\mathbf{0}$. The step length is
+$\|\mathbf{d}\|=\eta\,\|\nabla f(\mathbf{x}_k)\|$, which $\to 0$ as $\eta\to0$. So as $\eta$
+shrinks, the remainder shrinks *faster* than the step length, hence faster than the linear
+term, which is itself proportional to $\eta$. Concretely, divide @eq-descent-change by
+$\eta$:
+
+$$
+\frac{f(\mathbf{x}_{k+1}) - f(\mathbf{x}_k)}{\eta}
+= -\|\nabla f(\mathbf{x}_k)\|^2 + \frac{r(\mathbf{d})}{\eta}.
+$$
+
+As $\eta\to0$, the term $r(\mathbf{d})/\eta = \|\nabla f(\mathbf{x}_k)\|\cdot
+r(\mathbf{d})/\|\mathbf{d}\|\to0$, so the right side tends to $-\|\nabla f(\mathbf{x}_k)\|^2
+< 0$. A quantity tending to a strictly negative limit is itself strictly negative for all
+small enough $\eta$. Therefore $f(\mathbf{x}_{k+1})-f(\mathbf{x}_k)<0$ for those $\eta$.
+$\qquad\blacksquare$
+:::
+
+This is the rigorous form of "a small step downhill goes down." It also reveals the
+tension that defines the whole algorithm: @eq-descent-change has a *good* term linear in
+$\eta$ (more descent for a bigger step) fighting a *bad* term, the remainder, which grows
+*faster* than linearly once the step is large. Small $\eta$ keeps the bad term negligible
+and guarantees descent but wastes the step; large $\eta$ wrings out more descent per step
+until the remainder takes over and the guarantee breaks. Choosing $\eta$ to balance them is
+[OPTM-07]'s entire job. @fig-tangent draws the tilted plane the proof rests on.
+
+```{python}
+#| label: fig-tangent
+#| fig-cap: "The first-order model behind the step, shown in 1-D ($f(x)=x^2$ at $x_k=1.5$). The tangent line (red) is the Taylor model @eq-taylor1: it matches $f$ in value and slope at $x_k$. Gradient descent reads its slope, steps against it, and re-measures. The model is excellent for a *small* step (the tangent hugs the curve near $x_k$) and worsens for a large one (the curve peels away) -- which is exactly why too large a learning rate breaks the descent guarantee of @thm-descent."
+f  = lambda x: x**2
+fp = lambda x: 2*x
+xk = 1.5
+xs = np.linspace(-0.5, 2.6, 200)
+tangent = f(xk) + fp(xk) * (xs - xk)
+
+fig, ax = plt.subplots()
+ax.plot(xs, f(xs), color=CURVE, label="$f(x)=x^2$")
+ax.plot(xs, tangent, color=PATH, lw=1.8, label="tangent model at $x_k$")
+ax.scatter([xk], [f(xk)], color=CURVE, s=60, zorder=5)
+ax.annotate("$x_k$", (xk, f(xk)), (xk + 0.05, f(xk) + 0.5))
+ax.axhline(0, color=GREY, lw=0.8)
+ax.set_ylim(-1.5, 7)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f$")
+ax.set_title("Step against the tangent slope, then re-measure")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Gradient ascent: the same walk, uphill {#sec-ascent}
+
+Half the objectives in the series are *maximization* problems — most importantly the
+**log-likelihood** of the Statistical Inference track ([INFR-B2]), which we *maximize* to
+find the maximum-likelihood estimate. There is nothing new to derive. To maximize $f$, run
+the identical argument with "increase" in place of "decrease": the direction that *raises*
+$f$ fastest is the one maximizing the dot product $\nabla f^\top\mathbf{u}$, which (by the
+same angle formula) is $\mathbf{u}^\star=+\nabla f/\|\nabla f\|$ — *along* the gradient. The
+update flips one sign:
+
+$$
+\boxed{\;\mathbf{x}_{k+1} = \mathbf{x}_k + \eta\,\nabla f(\mathbf{x}_k)\;}
+\qquad\text{(\textbf{gradient ascent}).}
+$$ {#eq-ga}
+
+This is not a separate algorithm; it is gradient descent on $-f$. Minimizing $-f$ steps
+along $-\nabla(-f)=+\nabla f$, which is @eq-ga exactly. So everything we prove about
+descent transfers verbatim by the substitution $f\mapsto -f$. When the Inference track says
+"maximize the log-likelihood by gradient ascent," it means run @eq-ga; when it is more
+natural to *minimize the negative* log-likelihood (the convention this Optimization track
+prefers, so the whole machinery is "descent"), it means run @eq-gd on $-\ell$. They are the
+same computation. We will use this freely: the logistic-regression example in @sec-ex-logistic
+minimizes the *negative* log-likelihood, which is descent; an interviewer who asks you to
+"maximize the likelihood with gradient ascent" wants @eq-ga, and you should be able to say
+in one breath that the two are mirror images.
+
+# The learning rate is the whole drama {#sec-eta}
+
+The update @eq-gd has exactly one free parameter, $\eta$, and it decides everything. @thm-descent
+promised descent only for "sufficiently small" $\eta$; this section shows, with figures, the
+three regimes you get as you turn the dial, on a problem simple enough to see all of them at
+once. We use a 1-D quadratic, $f(x)=\tfrac12 a x^2$ with $a>0$, because there the iteration
+has a *closed-form* trajectory we can analyze exactly — a rare gift, and the cleanest
+possible window into the dynamics.
+
+## The exact trajectory on a 1-D quadratic {#sec-1d-dynamics}
+
+For $f(x)=\tfrac12 a x^2$ the gradient is $f'(x)=a x$, so the update @eq-gd is
+
+$$
+x_{k+1} = x_k - \eta\,(a x_k) = (1-\eta a)\,x_k.
+$$
+
+Each step *multiplies* the current position by the fixed factor $(1-\eta a)$. Iterating from
+$x_0$,
+
+$$
+x_k = (1-\eta a)^k\, x_0.
+$$ {#eq-geom}
+
+This is a geometric sequence, and its entire fate hinges on the magnitude of the ratio
+$\rho = 1-\eta a$. Recall from Calc-1 / precalculus that $\rho^k$ does three different things
+depending on $|\rho|$:
+
+- if $|\rho|<1$, then $\rho^k\to0$, so $x_k\to0$ — **convergence** to the minimum at $x=0$;
+- if $|\rho|>1$, then $|\rho^k|\to\infty$, so $|x_k|\to\infty$ — **divergence**, blowing up;
+- if $|\rho|=1$, then $|x_k|=|x_0|$ forever — it neither converges nor diverges (it oscillates
+  between $\pm x_0$ when $\rho=-1$).
+
+Now translate the condition $|1-\eta a|<1$ on the learning rate. Solving
+$-1 < 1-\eta a < 1$: the right inequality gives $\eta a>0$, i.e. $\eta>0$ (always true); the
+left gives $\eta a<2$, i.e.
+
+$$
+\boxed{\;0 < \eta < \frac{2}{a}\;}\quad\Longrightarrow\quad\text{convergence.}
+$$ {#eq-1d-stable}
+
+So there is a hard ceiling, $\eta_{\max}=2/a$, set by the curvature $a$. Below it the walk
+converges; above it, it diverges; and *within* the convergent range the behavior splits
+again at $\eta=1/a$ (where $\rho=0$): for $0<\eta<1/a$ the ratio $\rho$ is positive and the
+iterates approach $0$ **monotonically** from one side; for $1/a<\eta<2/a$ the ratio is
+negative and the iterates **overshoot and oscillate**, ping-ponging across the minimum with
+shrinking amplitude. The sweet spot $\eta=1/a$ reaches the exact minimum in a *single step*
+($x_1=0$). @fig-three-rates shows all the regimes.
+
+```{python}
+#| label: fig-three-rates
+#| fig-cap: "The three regimes of the learning rate, on $f(x)=\\tfrac12 a x^2$ with $a=1$ (so $\\eta_{\\max}=2/a=2$). **Left, $\\eta=0.1$ (too small):** correct direction, but a slow crawl -- many steps to reach the bottom. **Middle, $\\eta=0.9$ (good):** rapid monotone descent. **Right, $\\eta=2.05$ (too large, just past $\\eta_{\\max}$):** the iterates overshoot and the amplitude *grows* -- divergence. The vertical guides mark $\\eta_{\\max}=2$, the cliff edge from @eq-1d-stable."
+a = 1.0
+f1 = lambda x: 0.5 * a * x**2
+xs = np.linspace(-3.2, 3.2, 200)
+
+def run(eta, x0=3.0, steps=14):
+    xs_path = [x0]
+    x = x0
+    for _ in range(steps):
+        x = x - eta * (a * x)
+        xs_path.append(x)
+    return np.array(xs_path)
+
+cases = [(0.1, "too small: crawl"), (0.9, "good: fast descent"),
+         (2.05, "too large: diverge")]
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 3.4))
+for ax, (eta, ttl) in zip(axes, cases):
+    path = run(eta)
+    ax.plot(xs, f1(xs), color=CURVE, lw=1.6)
+    ax.plot(path, f1(path), "-o", color=PATH, ms=4, lw=1.2)
+    ax.scatter([0], [0], color=ACCENT, s=70, zorder=5, edgecolor="white")
+    ax.set_title(f"$\\eta={eta}$\n{ttl}", fontsize=10)
+    ax.set_xlabel("$x$")
+    ax.set_ylim(-0.5, 6)
+    ax.set_xlim(-3.4, 3.4)
+axes[0].set_ylabel("$f(x)$")
+plt.tight_layout()
+```
+
+The figure makes vivid what @eq-1d-stable proves: too small wastes time, too large destroys
+the method, and there is a finite window in between whose width is governed by the curvature
+$a$. In many dimensions the role of "$a$" is played by the *largest* curvature — the biggest
+eigenvalue of the Hessian — and that is where the trouble of @sec-failure comes from.
+
+::: {.callout-warning title="Pitfall"}
+**There is no universally safe learning rate; the safe ceiling depends on the curvature of
+*your* objective.** @eq-1d-stable says the walk diverges the instant $\eta$ exceeds $2/a$,
+where $a$ is the curvature. A rate that converges beautifully on one problem will blow up on
+a more sharply curved one. This is why a divergent training run (the loss shooting to
+infinity or `NaN`) is, nine times out of ten, simply a learning rate set too high for the
+problem's curvature — and why the first thing to try is *lowering* $\eta$. [OPTM-07] makes
+"$a$" precise as the **L-smoothness** constant and turns @eq-1d-stable into the general
+guarantee $\eta\le 1/L$.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"If a smaller learning rate is always safer, why not just use a tiny one and never worry
+about divergence?"* Because @fig-three-rates' left panel is the cost: a tiny $\eta$ takes
+the right direction but covers almost no ground, so you need a huge number of iterations —
+and each iteration evaluates the full gradient, which for a large dataset is expensive. From
+@eq-geom, the error shrinks by the factor $|1-\eta a|$ per step, so the *number of steps* to
+reach a given accuracy scales like $1/\eta$ for small $\eta$ — halve the rate and you double
+the run. The practical answer is to use the *largest* rate that still reliably converges
+(near, but safely below, $\eta_{\max}$), or to choose it adaptively with a **line search**
+([OPTM-07]) that grows the step when it is safe and shrinks it when a step would overshoot.
+"Just use a tiny rate" trades a divergence risk for a guaranteed crawl, and the crawl can be
+the more expensive mistake.
+:::
+
+# Worked example 1 — a quadratic bowl, every step checkable {#sec-ex-quadratic}
+
+We start where the answer is known, so we can audit gradient descent against the truth. Take
+the two-variable quadratic from the [OPTM-02] worked example, a coupled operating cost,
+
+$$
+f(x,y) = x^2 + xy + y^2 - 4x - 5y + 10,
+$$ {#eq-ex1}
+
+whose exact minimizer [OPTM-02] found by solving $\nabla f=\mathbf{0}$ to be
+$(x^\star,y^\star)=(1,2)$ with minimum value $f^\star=3$. We will now *reach* that point by
+the blindfolded walk and confirm it lands where the closed form said it would — the honest
+sanity check that the algorithm works before we trust it on a problem with no closed form.
+
+The gradient, computed in [OPTM-02], is
+
+$$
+\nabla f(x,y) = \begin{pmatrix} 2x + y - 4 \\ x + 2y - 5 \end{pmatrix}.
+$$
+
+That is the only ingredient gradient descent needs. The update @eq-gd reads, component by
+component,
+
+$$
+\begin{aligned}
+x_{k+1} &= x_k - \eta\,(2x_k + y_k - 4), \\
+y_{k+1} &= y_k - \eta\,(x_k + 2y_k - 5).
+\end{aligned}
+$$
+
+We run it from a deliberately bad start, $(x_0,y_0)=(-1,-1)$, and watch it home in.
+
+```{python}
+#| label: fig-ex1-path
+#| fig-cap: "Gradient descent on the coupled quadratic @eq-ex1 from the start $(-1,-1)$ with $\\eta=0.15$. **Left:** the iterates (red) walk across the tilted elliptical contours -- note each step crosses its contour at right angles (steepest descent) -- and converge to the exact minimizer $(1,2)$ (green) that [OPTM-02] found by closed form. **Right:** the objective value $f(\\mathbf{x}_k)$ versus iteration drops monotonically toward $f^\\star=3$ (dashed). The walk found the closed-form answer without ever solving $\\nabla f=\\mathbf{0}$."
+f   = lambda x, y: x**2 + x*y + y**2 - 4*x - 5*y + 10
+grad = lambda x, y: np.array([2*x + y - 4, x + 2*y - 5])
+
+eta = 0.15
+pt = np.array([-1.0, -1.0])
+path = [pt.copy()]
+for _ in range(40):
+    pt = pt - eta * grad(*pt)
+    path.append(pt.copy())
+path = np.array(path)
+fvals = np.array([f(p[0], p[1]) for p in path])
+
+xs = np.linspace(-1.6, 3.2, 90); ys = np.linspace(-1.6, 4.2, 90)
+X, Y = np.meshgrid(xs, ys)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.8))
+axL.contour(X, Y, f(X, Y), levels=20, colors=GREY, linewidths=0.7, alpha=0.7)
+axL.plot(path[:, 0], path[:, 1], "-o", color=PATH, ms=3.5, lw=1.4, label="GD iterates")
+axL.scatter([path[0, 0]], [path[0, 1]], color=PATH, s=70, zorder=5, label="start")
+axL.scatter([1], [2], color=ACCENT, s=110, zorder=5, edgecolor="white",
+            linewidth=1.4, label="minimum $(1,2)$")
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+axL.set_title("Iterates converge to the exact minimizer")
+axL.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+axL.set_aspect("equal")
+
+axR.plot(fvals, "-o", color=CURVE, ms=3.5)
+axR.axhline(3.0, color=ACCENT, ls="--", lw=1.4, label="$f^\\star=3$")
+axR.set_xlabel("iteration $k$"); axR.set_ylabel("$f(\\mathbf{x}_k)$")
+axR.set_title("Objective decreases to the optimum")
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"start        : ({path[0,0]:+.3f}, {path[0,1]:+.3f}),  f = {fvals[0]:.4f}")
+print(f"after 40 steps: ({path[-1,0]:+.4f}, {path[-1,1]:+.4f}),  f = {fvals[-1]:.6f}")
+print(f"exact minimum : (+1.0000, +2.0000),  f = 3.000000")
+print(f"final gradient norm = {np.linalg.norm(grad(*path[-1])):.2e}  (-> 0 confirms stationarity)")
+```
+
+The printout is the audit: after 40 steps the iterate sits within a tiny fraction of $(1,2)$,
+the objective has fallen to essentially $3$, and the gradient norm has collapsed toward zero
+— the algorithm has driven $\nabla f$ to (numerically) $\mathbf{0}$, exactly the stationarity
+target of [OPTM-02], without ever solving the linear system. The right panel shows the
+objective decreasing monotonically, the visible content of @thm-descent: every step went
+downhill because $\eta=0.15$ is safely inside the stable window.
+
+This example is honest about something: for a quadratic we did *not need* gradient descent —
+[OPTM-02]'s closed form was faster and exact. We ran it here precisely *because* the answer
+is known, so we could confirm the method converges to the truth. The next example removes
+that safety net.
+
+# Worked example 2 — logistic regression, where there is no formula {#sec-ex-logistic}
+
+This is the example the Regression track ([REGR-17]) links here for, and the honest habitat
+of gradient descent: an objective with **no closed-form minimizer**. We fit a logistic
+regression — predict a binary outcome (admitted / not, default / not, click / no-click) from
+predictors — by minimizing its negative log-likelihood, and we *derive its gradient from
+scratch* so nothing is imported.
+
+## The model and its objective {#sec-logistic-setup}
+
+For each observation $i=1,\dots,n$ we have a predictor vector $\mathbf{x}_i\in\mathbb{R}^p$
+(with a leading $1$ folded in for the intercept) and a binary label $y_i\in\{0,1\}$. Logistic
+regression models the probability that $y_i=1$ by squashing the linear score
+$\mathbf{x}_i^\top\boldsymbol\beta$ through the **logistic (sigmoid) function**
+
+$$
+\sigma(z) = \frac{1}{1+e^{-z}},
+\qquad
+p_i = \sigma(\mathbf{x}_i^\top\boldsymbol\beta) = \Pr(y_i=1\mid\mathbf{x}_i).
+$$
+
+The sigmoid maps any real score to $(0,1)$, so $p_i$ is a valid probability. (The *why* of
+this model — odds, log-odds, the link function — is the Regression track's to own; here we
+take the objective as given and *minimize* it.) The likelihood of all the data, assuming
+independence, is the product $\prod_i p_i^{y_i}(1-p_i)^{1-y_i}$ (each factor is $p_i$ when
+$y_i=1$ and $1-p_i$ when $y_i=0$). As in [REGR-01], we take the negative logarithm to turn
+the product into a sum and the maximization into a minimization, giving the **negative
+log-likelihood** objective:
+
+$$
+f(\boldsymbol\beta)
+= -\sum_{i=1}^{n}\Bigl[\, y_i\ln p_i + (1-y_i)\ln(1-p_i)\,\Bigr],
+\qquad p_i=\sigma(\mathbf{x}_i^\top\boldsymbol\beta).
+$$ {#eq-nll}
+
+This is the function we descend. It has no closed-form minimizer — setting $\nabla f=\mathbf{0}$
+gives a system with $\boldsymbol\beta$ locked inside $\sigma$ (the obstruction from
+@sec-luxury). But it *is* smooth and (as the Regression track shows) convex, so gradient
+descent is exactly the right tool.
+
+## Deriving the gradient, with nothing skipped {#sec-logistic-grad}
+
+We need $\nabla f(\boldsymbol\beta)$, and we build it from one clean fact about the sigmoid
+plus the chain rule. First, the sigmoid's derivative — a small computation worth doing once:
+
+$$
+\sigma'(z)
+= \frac{d}{dz}\,(1+e^{-z})^{-1}
+= -(1+e^{-z})^{-2}\cdot(-e^{-z})
+= \frac{e^{-z}}{(1+e^{-z})^2}.
+$$
+
+Now the trick that makes everything collapse. Write $\sigma=\frac{1}{1+e^{-z}}$ and
+$1-\sigma=\frac{e^{-z}}{1+e^{-z}}$ (common denominator: $\frac{1+e^{-z}-1}{1+e^{-z}}$).
+Their product is
+
+$$
+\sigma(z)\bigl(1-\sigma(z)\bigr)
+= \frac{1}{1+e^{-z}}\cdot\frac{e^{-z}}{1+e^{-z}}
+= \frac{e^{-z}}{(1+e^{-z})^2}
+= \sigma'(z).
+$$
+
+So we have the identity we will use:
+
+$$
+\boxed{\;\sigma'(z) = \sigma(z)\bigl(1-\sigma(z)\bigr).\;}
+$$ {#eq-sigmoid-deriv}
+
+Now differentiate the objective @eq-nll with respect to the coefficient vector
+$\boldsymbol\beta$. Take one data point's contribution
+$f_i = -\bigl[y_i\ln p_i + (1-y_i)\ln(1-p_i)\bigr]$ and chase it through the chain rule. Let
+$z_i=\mathbf{x}_i^\top\boldsymbol\beta$, so $p_i=\sigma(z_i)$ and (by @sec-objects of
+[OPTM-02], differentiating a dot product) $\nabla_{\boldsymbol\beta}\, z_i = \mathbf{x}_i$.
+The chain rule gives
+
+$$
+\nabla_{\boldsymbol\beta}\, f_i
+= \frac{\partial f_i}{\partial p_i}\cdot\frac{dp_i}{dz_i}\cdot\nabla_{\boldsymbol\beta}\,z_i
+= \frac{\partial f_i}{\partial p_i}\cdot \sigma'(z_i)\cdot\mathbf{x}_i.
+$$
+
+Compute the first factor by differentiating the two logarithms (recall
+$\frac{d}{dp}\ln p=\frac1p$ and $\frac{d}{dp}\ln(1-p)=-\frac{1}{1-p}$):
+
+$$
+\frac{\partial f_i}{\partial p_i}
+= -\Bigl[\frac{y_i}{p_i} - \frac{1-y_i}{1-p_i}\Bigr]
+= -\,\frac{y_i(1-p_i) - (1-y_i)p_i}{p_i(1-p_i)}
+= -\,\frac{y_i - p_i}{p_i(1-p_i)},
+$$
+
+where the numerator simplifies because $y_i(1-p_i)-(1-y_i)p_i = y_i - y_i p_i - p_i + y_i p_i
+= y_i - p_i$. Now substitute this and the sigmoid identity @eq-sigmoid-deriv,
+$\sigma'(z_i)=p_i(1-p_i)$, and watch the denominator cancel:
+
+$$
+\nabla_{\boldsymbol\beta}\, f_i
+= -\,\frac{y_i - p_i}{p_i(1-p_i)}\cdot \underbrace{p_i(1-p_i)}_{=\,\sigma'(z_i)}\cdot\mathbf{x}_i
+= -(y_i - p_i)\,\mathbf{x}_i
+= (p_i - y_i)\,\mathbf{x}_i.
+$$
+
+The whole messy expression collapses to $(p_i - y_i)\mathbf{x}_i$ — the **prediction error**
+$p_i-y_i$ times the predictor. Summing over all points gives the full gradient:
+
+$$
+\boxed{\;\nabla f(\boldsymbol\beta)
+= \sum_{i=1}^{n}\bigl(\sigma(\mathbf{x}_i^\top\boldsymbol\beta) - y_i\bigr)\,\mathbf{x}_i.\;}
+$$ {#eq-logistic-grad}
+
+This is the gradient promised in @sec-luxury, now derived line by line. Its form is worth a
+moment: each point pushes $\boldsymbol\beta$ in the direction of its predictor $\mathbf{x}_i$,
+weighted by how wrong the current prediction is ($p_i-y_i$). A correctly predicted point
+($p_i\approx y_i$) contributes almost nothing; a badly predicted one pulls hard. Gradient
+descent on logistic regression is, literally, *repeatedly nudging the coefficients to reduce
+the points it is currently getting most wrong.* (This same "error times feature" shape is
+exactly the least-squares gradient too — the unifying structure the descent spine exploits.)
+
+## Fitting it by gradient descent {#sec-logistic-fit}
+
+We now run @eq-gd with the gradient @eq-logistic-grad on a realistic two-predictor dataset:
+classify points by whether their linear score plus noise crosses a threshold — a genuinely
+linearly-imperfect classification, the regime logistic regression is built for. Because the
+features have somewhat different scales, we use a modest learning rate.
+
+```{python}
+#| label: fig-logistic
+#| fig-cap: "Logistic regression fit by gradient descent ($n=200$, two predictors plus intercept), the no-closed-form case. **Left:** the data (two classes) and the fitted decision boundary $\\sigma(\\mathbf{x}^\\top\\boldsymbol\\beta)=0.5$, i.e. $\\mathbf{x}^\\top\\boldsymbol\\beta=0$ -- the line gradient descent arrived at. **Right:** the negative log-likelihood @eq-nll falling monotonically over 300 gradient steps to its (flat) minimum. There is no formula for this minimizer; descent is how we reach it."
+rng = np.random.default_rng(20240530)
+n = 200
+# two genuinely overlapping classes
+X2 = np.column_stack([rng.normal(0, 1.4, n), rng.normal(0, 1.4, n)])
+true_beta = np.array([0.4, 1.8, -1.3])   # intercept, b1, b2
+Xd = np.column_stack([np.ones(n), X2])
+logits = Xd @ true_beta
+probs = 1 / (1 + np.exp(-logits))
+y = (rng.uniform(size=n) < probs).astype(float)
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+def nll(beta):
+    p = sigmoid(Xd @ beta)
+    p = np.clip(p, 1e-12, 1 - 1e-12)
+    return -np.sum(y * np.log(p) + (1 - y) * np.log(1 - p))
+
+def grad(beta):
+    return Xd.T @ (sigmoid(Xd @ beta) - y)
+
+beta = np.zeros(3)
+eta = 0.01
+losses = [nll(beta)]
+for _ in range(300):
+    beta = beta - eta * grad(beta)
+    losses.append(nll(beta))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 3.9))
+m0 = y == 0; m1 = y == 1
+axL.scatter(X2[m0, 0], X2[m0, 1], color=CURVE, s=22, alpha=0.7, label="class 0")
+axL.scatter(X2[m1, 0], X2[m1, 1], color=PATH, s=22, alpha=0.7, label="class 1")
+gx = np.linspace(X2[:, 0].min(), X2[:, 0].max(), 100)
+# decision boundary: b0 + b1*x + b2*y = 0  ->  y = -(b0 + b1*x)/b2
+gy = -(beta[0] + beta[1] * gx) / beta[2]
+axL.plot(gx, gy, color=ACCENT, lw=2.2, label="fitted boundary")
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$")
+axL.set_title("Fitted decision boundary")
+axL.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+
+axR.plot(losses, color=CURVE)
+axR.set_xlabel("iteration $k$"); axR.set_ylabel("negative log-likelihood")
+axR.set_title("Objective falls to its minimum")
+plt.tight_layout()
+
+print(f"starting NLL          = {losses[0]:.2f}")
+print(f"final NLL (300 steps) = {losses[-1]:.2f}")
+print(f"fitted beta           = [{beta[0]:+.3f}, {beta[1]:+.3f}, {beta[2]:+.3f}]")
+print(f"final gradient norm   = {np.linalg.norm(grad(beta)):.3e}  (-> 0)")
+```
+
+The right panel is the proof of concept: the negative log-likelihood — a function with *no
+closed-form minimizer* — falls smoothly and monotonically to its floor, and the gradient
+norm collapses toward zero, meaning we have reached a stationary point of @eq-nll. The fitted
+coefficients are close to (though not exactly) the ones that generated the data; they would
+not be exact even with the true minimizer, because the labels are noisy and the fit
+recovers the *most likely* $\boldsymbol\beta$ given the sample, not the generating one. The
+crucial point for this article: **everything we did used only the gradient @eq-logistic-grad
+and the update @eq-gd.** No matrix was inverted, no equation was solved symbolically. This is
+the workflow that scales from two predictors to a billion-parameter network.
+
+::: {.callout-tip title="You might be asked"}
+*"You fit logistic regression with gradient descent here, but production libraries use
+Newton's method or L-BFGS for it. Why, and when does the choice matter?"* For logistic
+regression specifically, the objective is convex and the Hessian is cheap enough to form
+when $p$ (the number of predictors) is modest, so **Newton's method / IRLS** ([OPTM-09])
+converges in a *handful* of iterations versus gradient descent's hundreds — second-order
+curvature information lets it take far smarter steps. That is why `statsmodels` and classic
+logistic-regression code use IRLS. The trade flips when $p$ is large: forming and inverting
+the $p\times p$ Hessian costs $O(p^3)$ and becomes the bottleneck, so for high-dimensional or
+huge-$n$ problems people use **L-BFGS** (a quasi-Newton method, [OPTM-09]) or plain SGD
+([OPTM-11]). The honest one-liner: *gradient descent is the universal fallback that always
+applies; Newton-type methods are faster when you can afford the curvature, and you usually
+can for low-dimensional logistic regression.* We used plain GD here because it is the method
+this article is about and because it transparently shows the mechanism.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Gradient descent is universal, but "universal" is not "always good." This section shows
+exactly where the plain method strains, because each failure is the motivation for a later
+article in the track — and recognizing them is the difference between "can run an optimizer"
+and "knows which one to run."
+
+## The narrow valley: zig-zagging and the condition number {#sec-zigzag}
+
+The sharpest weakness of plain gradient descent appears when the objective's contours are
+*long, thin ellipses* rather than round circles — when the surface is far more steeply curved
+in one direction than another. The 1-D analysis of @sec-1d-dynamics already warned us: the
+stable learning rate is capped by the *largest* curvature ($\eta<2/a$), but the *slowest*
+direction to converge is the one with the *smallest* curvature. When those two curvatures
+differ wildly, you are forced to use a small $\eta$ (to avoid diverging along the steep
+direction) which then crawls along the shallow direction. The result is the notorious
+**zig-zag**: the iterates bounce back and forth across the narrow valley while inching slowly
+along it.
+
+```{python}
+#| label: fig-zigzag
+#| fig-cap: "The edge of applicability: a narrow valley. **Left:** a well-conditioned bowl $f=x^2+y^2$ (round contours) -- gradient descent heads almost straight to the minimum. **Right:** an ill-conditioned bowl $f=x^2+25y^2$ (contours stretched $25{:}1$) -- the *same* algorithm zig-zags wildly across the valley, taking many steps to creep along it. The learning rate is capped by the steep $y$-direction yet must traverse the shallow $x$-direction. The ratio of curvatures is the **condition number** ([OPTM-07]); the larger it is, the worse the zig-zag, and curing it is the job of momentum ([OPTM-08]) and Newton's method ([OPTM-09])."
+def descend(grad, eta, x0, steps):
+    pts = [np.array(x0, float)]
+    p = np.array(x0, float)
+    for _ in range(steps):
+        p = p - eta * grad(p)
+        pts.append(p.copy())
+    return np.array(pts)
+
+# well-conditioned: f = x^2 + y^2
+g_round = lambda p: np.array([2*p[0], 2*p[1]])
+# ill-conditioned: f = x^2 + 25 y^2
+g_thin  = lambda p: np.array([2*p[0], 50*p[1]])
+
+path_r = descend(g_round, 0.1,  [2.5, 2.5], 30)
+path_t = descend(g_thin,  0.035, [2.5, 0.9], 60)   # eta near the y-stability cap
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 3.8))
+xs = np.linspace(-3, 3, 90); ys = np.linspace(-3, 3, 90)
+X, Y = np.meshgrid(xs, ys)
+
+axL.contour(X, Y, X**2 + Y**2, levels=15, colors=GREY, linewidths=0.7, alpha=0.7)
+axL.plot(path_r[:, 0], path_r[:, 1], "-o", color=PATH, ms=3, lw=1.3)
+axL.scatter([0], [0], color=ACCENT, s=90, zorder=5, edgecolor="white")
+axL.set_title("Round contours: direct"); axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+axL.set_aspect("equal")
+
+ys2 = np.linspace(-1.2, 1.2, 90)
+Xt, Yt = np.meshgrid(xs, ys2)
+axR.contour(Xt, Yt, Xt**2 + 25*Yt**2, levels=15, colors=GREY, linewidths=0.7, alpha=0.7)
+axR.plot(path_t[:, 0], path_t[:, 1], "-o", color=PATH, ms=3, lw=1.3)
+axR.scatter([0], [0], color=ACCENT, s=90, zorder=5, edgecolor="white")
+axR.set_title("Stretched contours: zig-zag"); axR.set_xlabel("$x$"); axR.set_ylabel("$y$")
+axR.set_aspect("equal")
+plt.tight_layout()
+```
+
+This is not a bug; it is the inherent cost of using *only* the gradient, which knows the
+slope but not the curvature. The amount of stretching is measured by the **condition number**
+of the Hessian (the ratio of its largest to smallest eigenvalue), and gradient descent's
+speed degrades directly with it — the quantitative story of [OPTM-07]. The cures are the next
+two articles: **momentum** ([OPTM-08]) damps the cross-valley oscillation by averaging recent
+steps, and **Newton's method** ([OPTM-09]) rescales by the curvature so the stretched valley
+looks round again. Recognizing a zig-zag in your loss curve or trajectory is the signal that
+you have hit this regime.
+
+## Non-convexity: a local valley is all you get {#sec-nonconvex}
+
+The blindfolded walk settles into whatever basin it starts in. If $f$ has several valleys —
+the generic situation for neural networks and mixtures — gradient descent finds *a* local
+minimum, with no guarantee it is the global one. @fig-nonconvex shows two runs of the
+identical algorithm on a double-welled landscape converging to *different* minima purely
+because of where they started.
+
+```{python}
+#| label: fig-nonconvex
+#| fig-cap: "Non-convexity: the start decides the destination. The landscape $f(x)=x^4-3x^2+x$ has two valleys of different depths. The same gradient-descent rule, launched from $x_0=-1.8$ (red) and $x_0=+1.8$ (green), slides into *different* local minima. The left start happens to find the deeper (global) minimum; the right start is trapped in the shallower one. Plain gradient descent has no mechanism to prefer the global valley -- it only ever goes locally downhill."
+f1  = lambda x: x**4 - 3*x**2 + x
+f1p = lambda x: 4*x**3 - 6*x + 1
+xs = np.linspace(-2.1, 2.1, 300)
+
+def run1d(x0, eta=0.02, steps=80):
+    xs_p = [x0]; x = x0
+    for _ in range(steps):
+        x = x - eta * f1p(x)
+        xs_p.append(x)
+    return np.array(xs_p)
+
+pL = run1d(-1.8); pR = run1d(+1.8)
+fig, ax = plt.subplots()
+ax.plot(xs, f1(xs), color=CURVE, lw=1.8)
+ax.plot(pL, f1(pL), "-o", color=PATH, ms=3, lw=1.0, label="start $x_0=-1.8$")
+ax.plot(pR, f1(pR), "-o", color=ACCENT, ms=3, lw=1.0, label="start $x_0=+1.8$")
+ax.scatter([pL[0], pR[0]], [f1(pL[0]), f1(pR[0])], color="black", s=45, zorder=6)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("Two starts, two different local minima")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+**When this matters and what you reach for.** If you *need* the global minimum and the
+problem is non-convex, gradient descent alone will not give it; you use multiple random
+restarts, or you exploit structure that rules out bad local minima. The deep reason this is
+unavoidable is the subject of the **convexity spine** ([OPTM-04]): for a *convex* objective,
+every local minimum is the global one, so this failure mode simply cannot occur — which is
+why convexity is "the whole ballgame." Logistic regression and least squares are convex, so
+@sec-ex-quadratic and @sec-ex-logistic were safe; a neural network is not, and there the
+practical wisdom is that a *good enough* local minimum is the realistic goal, and the
+saddle-heavy geometry of [OPTM-02] makes the situation less dire than this 1-D picture
+suggests.
+
+## Non-differentiable points: the gradient does not exist {#sec-nondiff}
+
+Gradient descent needs a gradient. An objective with a **kink** — most importantly the
+$\ell_1$-penalized losses of the lasso, $\|\mathbf{y}-X\boldsymbol\beta\|^2 +
+\lambda\|\boldsymbol\beta\|_1$, whose penalty has a corner wherever a coefficient hits zero —
+has *no* gradient at those corners, so @eq-gd cannot even be written there. Plain gradient
+descent chatters or stalls at a kink. The repair is the **subgradient** ([OPTM-05]) and the
+**proximal** methods ([OPTM-16]) built on it; here we simply flag the boundary: *smooth
+$\Rightarrow$ gradient descent applies; kinked $\Rightarrow$ you need subgradients or
+proximal steps.*
+
+## Constraints: the minimum is on a wall {#sec-constrained}
+
+Finally, @eq-gd walks freely through all of $\mathbb{R}^n$. If the iterate must stay inside a
+constraint set — $\boldsymbol\beta$ confined to a ball or a box — an unconstrained gradient
+step can walk straight out of the feasible region. The fix is **projected gradient descent**
+([OPTM-16]): take the step, then project back onto the feasible set. The deeper theory of
+constrained optima (where the gradient at the optimum is *nonzero*, balanced by the
+constraints) is Lagrange multipliers and KKT, [OPTM-13]–[OPTM-14].
+
+::: {.callout-tip title="You might be asked"}
+*"When is gradient descent the right tool, and when is it the wrong one?"* The honest summary
+you should be able to recite:
+
+- **Use it** when (a) the objective is **smooth** (differentiable), (b) you cannot or do not
+  want to solve $\nabla f=\mathbf{0}$ in closed form, (c) the gradient is **cheap** relative
+  to the Hessian — which is the rule, not the exception, in high dimensions — and (d) the
+  problem is **convex** (so the local minimum it finds is global) or you are content with a
+  good local minimum. This is the overwhelming majority of modern model fitting.
+- **Do not reach for plain GD** when the objective is **non-smooth** (lasso, hinge loss — use
+  subgradient/proximal methods, [OPTM-05], [OPTM-16]); when it is **constrained** (projected
+  gradient, Lagrange/KKT, [OPTM-13], [OPTM-14], [OPTM-16]); when the problem is small and
+  **ill-conditioned** so the curvature is worth computing (Newton/quasi-Newton, [OPTM-09]);
+  or when it is a **finite sum over millions of points** so the full gradient is too expensive
+  per step (stochastic gradient descent, [OPTM-11]).
+- **And the practitioner's reflexes:** a diverging loss usually means $\eta$ is too large for
+  the curvature (@sec-zigzag's pitfall); a crawling loss means $\eta$ is too small or the
+  problem is ill-conditioned (use momentum/Newton); and a loss that converges to something
+  disappointing on a non-convex problem may just be the wrong basin (restart).
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You rarely hand-code @eq-gd for a
+production model, but you should know exactly what the libraries do, because it is precisely
+this loop. Three practical points the derivation leaves implicit:
+
+- **Supply the analytic gradient when you can.** @eq-logistic-grad was worth deriving because
+  the alternative — estimating $\nabla f$ by finite differences (perturb each coordinate,
+  re-evaluate $f$) — costs $n$ extra function evaluations per step and is numerically noisy.
+  Modern deep-learning frameworks (PyTorch, JAX, TensorFlow) instead compute the *exact*
+  gradient automatically by **automatic differentiation** (backpropagation), which is the
+  chain rule of @sec-logistic-grad applied mechanically through the whole computation. You
+  write $f$; the framework hands you $\nabla f$.
+- **Scale your features.** @fig-zigzag's ill-conditioning is often *self-inflicted*: predictors
+  on wildly different numerical scales stretch the contours. Standardizing each feature to
+  comparable scale rounds the bowl and lets a single learning rate work in every direction —
+  the cheapest possible cure for the zig-zag, applied before the optimizer ever runs.
+- **Decide when to stop.** The iteration @eq-gd never exactly reaches $\nabla f=\mathbf{0}$;
+  you stop when the gradient norm $\|\nabla f(\mathbf{x}_k)\|$ falls below a tolerance, or the
+  objective stops decreasing meaningfully, or a step budget is hit. The gradient-norm
+  criterion is the principled one — it directly measures how close you are to the stationarity
+  target of [OPTM-02].
+
+Concretely: `scipy.optimize.minimize(f, x0, jac=grad, method="L-BFGS-B")` runs a quasi-Newton
+descent for you ([OPTM-09]); `sklearn`'s `LogisticRegression` and `SGDClassifier` wrap exactly
+the loop of @sec-ex-logistic; and every deep-learning training script is `for batch in data:
+params -= lr * grad` — @eq-gd, made stochastic by [OPTM-11]. You now know what the `lr`
+argument is, why too large a value blows the run up, and why the gradient is what gets
+subtracted.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-02 *Minimizing in Many Variables*]**, which established that an
+interior minimum sits at $\nabla f=\mathbf{0}$ and *derived* that $-\nabla f$ is the
+steepest-descent direction — but left open what to do when that equation has no closed-form
+solution. This article answered it: **walk downhill**, $\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\nabla
+f(\mathbf{x}_k)$, derived from the first-order Taylor model as the step that descends fastest,
+with **gradient ascent** ($+\eta\nabla f$) the mirror for maximization. The descent spine now
+continues:
+
+- **[OPTM-07 *Step Size and Convergence*]** answers the questions this article opened and
+  punted: *exactly* how small must $\eta$ be (the L-smoothness condition $\eta\le1/L$,
+  generalizing @eq-1d-stable), *how fast* the walk converges ($O(1/k)$ for convex, linear for
+  strongly convex), and how the **condition number** governs the zig-zag of @sec-zigzag. It
+  also makes the descent guarantee @thm-descent quantitative via the descent lemma.
+- **[OPTM-08 *Momentum and Accelerated Gradient Descent*]** attacks the @sec-zigzag failure
+  directly: a velocity term that averages recent steps damps the cross-valley oscillation and
+  speeds the crawl along the valley floor.
+- **[OPTM-09 *Newton's Method*]** uses the **Hessian** of [OPTM-02] to take curvature-aware
+  steps that are immune to the condition number — the second-order upgrade, and the IRLS that
+  fits logistic regression in a handful of iterations rather than @sec-ex-logistic's hundreds.
+- **[OPTM-11 *Stochastic Gradient Descent*]** replaces the full gradient @eq-logistic-grad
+  (a sum over all $n$ points) with a cheap estimate from a minibatch — the version that scales
+  to millions of points and trains every deep model.
+
+Downstream, this article **supplies** the *gradient descent / gradient ascent* prerequisite
+that **[REGR-17 *Logistic Regression*]** links here for (the @sec-ex-logistic fit) and that
+**[INFR-B2 *Computing the MLE*]** links here for (gradient *ascent* on the log-likelihood,
+@sec-ascent). It is the on-ramp to nearly every model-training procedure in the series.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The original source.** A.-L. Cauchy, *"Méthode générale pour la résolution des systèmes
+  d'équations simultanées,"* *Comptes Rendus de l'Académie des Sciences* 25 (1847): the
+  half-page note that introduced steepest descent. Worth reading once for how little the idea
+  has changed.
+- **The standard modern treatment.** Nocedal & Wright, *Numerical Optimization*, ch. 3 (line
+  search methods), develops the steepest-descent step, the descent condition @thm-descent, and
+  the convergence machinery [OPTM-07] takes up. Boyd & Vandenberghe, *Convex Optimization*,
+  §9.3, gives the convex-analysis view and the role of the condition number in the zig-zag.
+- **The first-order Taylor expansion** that the whole derivation rests on (@sec-taylor) is the
+  Calc-1 tangent-line approximation in its multivariable form; its rigorous statement (with the
+  remainder estimate) is owned by the Geometry of Data / Applied Linear Algebra track.
+- **Open threads this article deliberately deferred.** *How small must $\eta$ be, and how fast
+  does it converge?* — [OPTM-07]. *Can we beat the zig-zag without the Hessian?* — momentum,
+  [OPTM-08]. *Can we use the Hessian and become condition-number-independent?* — Newton,
+  [OPTM-09]. *What if the objective is a sum over too many points to evaluate at once?* —
+  stochastic gradient descent, [OPTM-11]. *What if it has kinks or constraints?* — subgradients
+  and proximal/projected methods, [OPTM-05], [OPTM-16]. Each is the answer to a question this
+  article raised and a failure mode it made explicit.

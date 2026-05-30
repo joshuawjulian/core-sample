@@ -1,0 +1,1070 @@
+---
+title: "Adaptive and Modern Optimizers: AdaGrad, RMSProp, Adam"
+subtitle: "Core Sample · Optimization"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Optimization track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE   = "#2b3a67"    # plain SGD / baseline path
+STEP    = "#c1121f"    # the adaptive path / the interesting curve
+ACCENT  = "#0a7d4d"    # optimum / Adam / safe choices
+GREY    = "#6c757d"
+EXTRA   = "#d97706"    # a third method (RMSProp / AdaGrad)
+```
+
+> **Where this sits in the track.** This is the **terminal practical node** of the
+> Optimization track's descent spine — the article that explains what practitioners
+> *actually* type when they train a model. It assumes [OPTM-06 *Gradient Descent*] for the
+> bare update $\mathbf{x}_{k+1}=\mathbf{x}_k-\eta\nabla f(\mathbf{x}_k)$ and the
+> steepest-descent reading of $-\nabla f$; [OPTM-07 *Step Size and Convergence*] for
+> **$L$-smoothness**, the **condition number** $\kappa=L/\mu$, and the fact that GD's speed
+> is throttled by $\kappa$; [OPTM-08 *Momentum*] for the **velocity** term
+> $\mathbf{v}_{k+1}=\beta\mathbf{v}_k-\eta\nabla f$ as an exponentially weighted memory of
+> past gradients; and [OPTM-11 *Stochastic Gradient Descent*] for the **stochastic
+> gradient** $\nabla f_{i_k}$, its **unbiasedness**, its non-vanishing **variance**
+> $\sigma^2$, the **noise floor**, and the decaying-step machinery.
+>
+> **What it borrows, and from where.** Nothing new from outside the track. Every object —
+> gradients, exponential moving averages, the steepest-descent argument, the condition
+> number — has already been built in OPTM-06 through OPTM-11. This article *assembles* them
+> into the three optimizers the field runs on, deriving each update term by term.
+>
+> **What it sets up.** This is the engine room. **Classification**, **Unsupervised
+> Learning**, and every deep-model treatment that says "trained with Adam" or "fit by SGD
+> with momentum" links here for what those words mean. It is the last descent-spine article;
+> after it, the track turns to constrained optimization (OPTM-13 onward).
+
+## Abstract {.unnumbered}
+
+Plain stochastic gradient descent ([OPTM-11]) uses **one scalar step size** $\eta$ for
+every parameter. That is a problem the moment different parameters live on different scales
+or receive gradients of wildly different magnitudes — a rare, high-information feature and a
+common, low-information one cannot share a learning rate without one of them being
+mistuned. This article derives the family of **adaptive** optimizers that fix this by giving
+*each coordinate its own effective step size*, computed on the fly from the gradients that
+coordinate has seen. We build them in the order history did. **AdaGrad** accumulates the
+*sum* of squared gradients per coordinate and divides the step by its square root — derived
+from a regret-minimization argument and motivated by sparse features — then we expose its
+fatal flaw: the accumulator only grows, so the effective step decays to zero and learning
+halts. **RMSProp** replaces the ever-growing sum with an **exponential moving average**
+(the same fading memory as momentum, [OPTM-08]), so the scale tracks *recent* curvature and
+never starves. **Adam** fuses the two ideas the track has built — momentum on the gradient
+(a first-moment EMA) and RMSProp's per-coordinate scaling (a second-moment EMA) — and adds
+a **bias-correction** step that we derive exactly, fixing the cold-start undercounting of an
+EMA initialized at zero. We close at the honest edge: Adam's fast early progress versus its
+documented tendency to generalize *worse* than well-tuned SGD-with-momentum, the
+convergence counterexample that forced AMSGrad, the decoupled-weight-decay fix (AdamW), and
+the practitioner's actual decision rule for which optimizer to reach for.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Plain SGD scales *every* coordinate of the gradient by the same step size $\eta$. **Adaptive
+methods give each coordinate its own step size, shrinking the step for coordinates whose
+gradients have been large and keeping it big for coordinates whose gradients have been
+small.** Track a per-coordinate running measure $v_j$ of the squared gradient in coordinate
+$j$, and step
+$$
+x_{j,\,k+1} = x_{j,k} - \frac{\eta}{\sqrt{v_{j,k}}+\varepsilon}\,g_{j,k},
+$$
+so the *effective* learning rate in coordinate $j$ is $\eta/\sqrt{v_{j,k}}$. The three
+methods differ only in how they form $v_j$. **AdaGrad** uses the *cumulative sum*
+$v_{j,k}=\sum_{t\le k} g_{j,t}^2$ — which adapts to sparse, badly-scaled features but
+**grows without bound**, so every effective step decays to zero and training stalls.
+**RMSProp** replaces the sum with an *exponential moving average*
+$v_{j,k}=\rho v_{j,k-1}+(1-\rho)g_{j,k}^2$, a fading memory of *recent* squared gradients
+that never starves. **Adam** combines RMSProp's second-moment EMA with a *first-moment* EMA
+of the gradient itself — momentum ([OPTM-08]) — and **bias-corrects** both moving averages
+to undo the zero-initialization undercount. The result is the default optimizer of modern
+machine learning: robust to scaling, fast out of the gate, and forgiving of a poorly chosen
+learning rate. The honest catch, which the article ends on: Adam's speed sometimes comes at
+the cost of *worse generalization* than carefully tuned SGD-with-momentum, and a naive
+moving average can even break convergence — fixes the field had to bolt on afterward.
+:::
+
+Everything below orbits that box. The single shared move — *divide each coordinate's step by
+the square root of a running average of its squared gradient* — is the whole idea. AdaGrad,
+RMSProp, and Adam are three answers to one sub-question: *which* running average? Read the
+article as the evolution of that one choice, each version fixing the last one's specific,
+nameable failure.
+
+# Why we are here: one step size cannot fit every parameter {#sec-why}
+
+Keep one question in view for the entire article: **why is a single global learning rate the
+wrong tool the moment parameters differ in scale or activity, and what is the minimal change
+to the SGD step that fixes it?** Every derivation answers a piece of that.
+
+## The wound SGD left open {#sec-wound}
+
+[OPTM-07] diagnosed gradient descent's central weakness — it is throttled by the **condition
+number** $\kappa=L/\mu$, the ratio of the steepest to the gentlest curvature. In an
+ill-conditioned bowl the negative gradient points mostly *across* the narrow valley rather
+than *along* it, and a single step size $\eta$ must be small enough not to diverge in the
+steep direction, which makes it agonizingly slow in the gentle direction. [OPTM-08]'s
+momentum attacked this by *remembering* the consistent downhill direction. But momentum
+still applies the **same** step size to every coordinate. The deeper disease is untreated:
+**different coordinates genuinely want different step sizes.**
+
+Make that concrete. Suppose the objective, near the optimum, looks like a quadratic with
+axis-aligned curvatures that differ by orders of magnitude — coordinate $1$ steep, coordinate
+$2$ flat:
+
+$$
+f(x_1, x_2) = \tfrac{1}{2}\bigl(L\,x_1^2 + \mu\,x_2^2\bigr),
+\qquad L \gg \mu.
+$$
+
+The gradient is $\nabla f = (L x_1,\ \mu x_2)$. A *single* $\eta$ faces an impossible
+compromise: to keep the steep coordinate from diverging it must obey $\eta < 2/L$, but then
+the flat coordinate moves by only $\eta\mu \ll 1$ of the way each step and crawls. The
+*right* answer is obvious if you are allowed to use it: **a different step size per
+coordinate** — large for the flat coordinate, small for the steep one. That is exactly what a
+second-order method ([OPTM-09]) computes from the Hessian, paying $O(p^3)$ for the privilege.
+The adaptive optimizers of this article are the cheap, first-order imitation: *estimate how
+much each coordinate's gradient has been bouncing, and shrink the step where it bounces
+hardest* — all from the gradients you already compute, at $O(p)$ cost.
+
+```{python}
+#| label: fig-why-anisotropic
+#| fig-cap: "Why one step size cannot win. The objective $f=\\tfrac12(L x_1^2+\\mu x_2^2)$ with $L=30$, $\\mu=1$ -- steep in $x_1$, flat in $x_2$. **Navy:** plain GD with the largest stable step ($\\eta$ just under $2/L$): it is safe in the steep $x_1$ direction but barely moves along the flat $x_2$ direction, so it crawls down the valley floor. **Red:** the *same* step rescaled *per coordinate* by $1/\\sqrt{\\text{curvature}}$ -- the adaptive idea -- which races to the optimum because each coordinate finally gets the step it wants. The grey arrows on the floor show the per-coordinate step the navy path is forced to share."
+L, mu = 30.0, 1.0
+def grad(x): return np.array([L * x[0], mu * x[1]])
+
+x0 = np.array([1.0, 4.0])
+# Plain GD: largest stable step
+eta = 1.9 / L
+xg = x0.copy(); pathG = [xg.copy()]
+for _ in range(60):
+    xg = xg - eta * grad(xg); pathG.append(xg.copy())
+pathG = np.array(pathG)
+
+# Per-coordinate (idealized adaptive) step: divide each coord by sqrt(curvature)
+scale = np.array([np.sqrt(L), np.sqrt(mu)])
+xa = x0.copy(); pathA = [xa.copy()]
+eta_a = 0.25
+for _ in range(60):
+    xa = xa - eta_a * grad(xa) / scale**2 * scale  # = eta_a * grad / scale
+    pathA.append(xa.copy())
+pathA = np.array(pathA)
+
+gx = np.linspace(-1.2, 1.2, 200); gy = np.linspace(-1.0, 4.5, 200)
+GX, GY = np.meshgrid(gx, gy)
+Z = 0.5 * (L * GX**2 + mu * GY**2)
+fig, ax = plt.subplots(figsize=(6.6, 4.6))
+ax.contour(GX, GY, Z, levels=np.linspace(1, 250, 22), colors=GREY, linewidths=0.7, alpha=0.7)
+ax.plot(pathG[:, 0], pathG[:, 1], "-o", color=CURVE, ms=3, lw=1.4, label="plain GD (one step size)")
+ax.plot(pathA[:, 0], pathA[:, 1], "-o", color=STEP, ms=3, lw=1.6, label="per-coordinate step (adaptive idea)")
+ax.scatter([x0[0]], [x0[1]], color="black", s=55, zorder=6, label="start")
+ax.scatter([0], [0], color=ACCENT, s=110, zorder=6, edgecolor="white", linewidth=1.4, label="minimum")
+ax.set_xlabel("$x_1$ (steep)"); ax.set_ylabel("$x_2$ (flat)")
+ax.set_title("One step size compromises; per-coordinate steps do not")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+## The sparse-feature problem that birthed AdaGrad {#sec-sparse}
+
+There is a second, equally common situation where one step size fails, and it is the one
+AdaGrad was explicitly designed for. In many real models — text classification with
+bag-of-words features, recommendation systems, click prediction — the input features are
+**sparse**: most are zero in any given example. A feature like "contains the word
+*defenestration*" is nonzero in a handful of documents and zero in millions of others.
+
+Now think about what a per-example gradient does to that feature's weight. The gradient of
+the loss with respect to a feature's weight is *zero whenever the feature is zero in the
+current example* (the weight does not enter the prediction, so it cannot affect the loss).
+So a rare feature's weight receives a gradient signal only on the rare steps where the
+feature fires — say once in $10{,}000$ steps. A common feature's weight is updated on
+essentially every step. Under a single global $\eta$, the rare feature's weight is updated
+$10{,}000$ times less often, and effectively never learns, even though those rare features
+are often the *most informative* ones (a rare word can be a near-perfect class signal).
+
+The fix AdaGrad proposes is intuitive once stated: **give each coordinate a step size
+inversely related to how much total gradient signal it has accumulated.** A rare feature,
+having accumulated little, keeps a large step and takes a big stride on the rare occasions it
+fires; a common feature, having accumulated a lot, takes small, careful steps. We derive this
+precisely in @sec-adagrad. Hold onto the picture: *adaptivity is per-coordinate fairness — it
+lets the infrequent, high-information coordinates keep up with the frequent, low-information
+ones.*
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just normalize the features so they are all on the same scale, and use plain
+SGD?"* You can and should standardize *dense* features, and it genuinely helps with the
+anisotropy of @sec-wound. But it does not solve the sparse-feature problem of @sec-sparse:
+standardizing changes a feature's *magnitude*, not its *frequency*. A rare standardized
+feature still fires rarely, so its weight still receives a gradient on only a few steps, and
+a global step size still cannot serve it and the common features at once. Adaptivity adjusts
+to *update frequency and history*, which preprocessing cannot. The honest summary: feature
+scaling and adaptive optimizers attack overlapping but distinct problems — scaling fixes
+static differences in magnitude, adaptivity fixes dynamic differences in how often and how
+hard each coordinate is pushed. In practice deep nets use both (normalization layers *and*
+Adam), and an interviewer is checking that you see they are not redundant.
+:::
+
+## A two-line history: from online convex optimization to every transformer {#sec-history}
+
+The lineage is tight and recent. **AdaGrad** came from **Duchi, Hazan, and Singer** (2011),
+out of the *online convex optimization* / regret-minimization community — its per-coordinate
+$1/\sqrt{\text{accumulated gradient}}$ scaling falls out of minimizing a regret bound, which
+we sketch in @sec-adagrad. Its decaying-rate flaw was felt almost immediately. **RMSProp**
+was proposed by **Geoffrey Hinton** in 2012 — famously, in a *Coursera lecture slide*, never
+formally published — as the one-line fix: swap AdaGrad's cumulative sum for an exponential
+moving average. **Adam** (**Kingma and Ba**, 2014) combined RMSProp's per-coordinate scaling
+with classical momentum ([OPTM-08]) and added bias correction; its name is short for
+"*adaptive moment estimation*." Within a few years Adam was the default optimizer for nearly
+every deep network, and it remains the workhorse for training large language models today.
+Holding this history in view explains the article's shape: each method is a *named patch* on
+the previous one's *named flaw*, and you understand the family best by understanding the
+sequence of repairs, not by memorizing three update rules.
+
+# Intuition before symbols: per-coordinate terrain sensing {#sec-intuition}
+
+Before any formulas, here is the mental image that makes all three methods one idea. Return to
+the blindfolded walker of [OPTM-06], descending a hillside whose shape differs along different
+compass directions: maybe steep and rutted east–west, smooth and gently sloping north–south.
+Plain SGD forces the walker to use the *same stride length* in every direction. To avoid
+stumbling in the rutted east–west direction they must take tiny, cautious steps — and then
+they barely make progress in the smooth north–south direction where long strides would be
+perfectly safe.
+
+An adaptive walker does something smarter: **they sense the terrain separately in each
+direction and adjust their stride per direction.** Where the ground has been bucking and
+heaving (large, erratic gradients), they shorten their stride for safety. Where it has been
+smooth (small, steady gradients), they lengthen it to cover ground. They estimate "how rough
+has it been lately" in each direction from the only information they have — the magnitudes of
+the slopes they have recently felt — and set each direction's stride to roughly
+$\eta/\sqrt{\text{recent roughness}}$.
+
+That single sentence is AdaGrad, RMSProp, and Adam. The three methods are three answers to
+*"how do you measure 'recent roughness'?"* AdaGrad sums up *all* the roughness ever felt —
+which means the longer the walk, the more cautious every stride becomes, until the walker is
+taking infinitesimal steps and effectively stops. RMSProp measures roughness with a *fading
+memory*, weighting recent terrain more than ancient terrain, so the stride tracks the
+*current* ground and never seizes up. Adam adds the momentum idea from [OPTM-08] on top —
+the walker also remembers the *consistent direction* of the slope, not just its roughness —
+so they build speed along reliable downhill directions while still shortening stride over
+rough ground. @fig-roadmap previews the payoff on the anisotropic bowl.
+
+```{python}
+#| label: fig-roadmap
+#| fig-cap: "The whole article on one slide. The anisotropic bowl $f=\\tfrac12(L x_1^2+\\mu x_2^2)$, $L=30$, $\\mu=1$, all methods from the same start with a *single global* base learning rate. **Plain SGD-style GD** (navy) is forced into a tiny safe step and crawls. **AdaGrad** (orange) rescales per coordinate and accelerates -- but watch it slow late as its accumulator grows. **RMSProp** (red) keeps a healthy per-coordinate step throughout. **Adam** (green) adds momentum and sweeps to the optimum fastest. Same gradients, same base $\\eta$; the only difference is how each method sets its *per-coordinate* effective step."
+L, mu = 30.0, 1.0
+def grad(x): return np.array([L * x[0], mu * x[1]])
+x0 = np.array([1.0, 4.0]); eps = 1e-8; base_eta = 0.30; nsteps = 80
+
+def run_gd(eta=1.9/L):
+    x = x0.copy(); P = [x.copy()]
+    for _ in range(nsteps):
+        x = x - eta * grad(x); P.append(x.copy())
+    return np.array(P)
+def run_adagrad(eta=base_eta):
+    x = x0.copy(); acc = np.zeros(2); P = [x.copy()]
+    for _ in range(nsteps):
+        g = grad(x); acc += g**2
+        x = x - eta * g / (np.sqrt(acc) + eps); P.append(x.copy())
+    return np.array(P)
+def run_rmsprop(eta=base_eta, rho=0.9):
+    x = x0.copy(); v = np.zeros(2); P = [x.copy()]
+    for _ in range(nsteps):
+        g = grad(x); v = rho * v + (1 - rho) * g**2
+        x = x - eta * g / (np.sqrt(v) + eps); P.append(x.copy())
+    return np.array(P)
+def run_adam(eta=base_eta, b1=0.9, b2=0.999):
+    x = x0.copy(); m = np.zeros(2); v = np.zeros(2); P = [x.copy()]
+    for t in range(1, nsteps + 1):
+        g = grad(x); m = b1 * m + (1 - b1) * g; v = b2 * v + (1 - b2) * g**2
+        mh = m / (1 - b1**t); vh = v / (1 - b2**t)
+        x = x - eta * mh / (np.sqrt(vh) + eps); P.append(x.copy())
+    return np.array(P)
+
+gx = np.linspace(-1.2, 1.2, 200); gy = np.linspace(-1.0, 4.6, 200)
+GX, GY = np.meshgrid(gx, gy); Z = 0.5 * (L * GX**2 + mu * GY**2)
+fig, ax = plt.subplots(figsize=(6.8, 4.8))
+ax.contour(GX, GY, Z, levels=np.linspace(1, 250, 22), colors=GREY, linewidths=0.6, alpha=0.6)
+for P, col, lab in [(run_gd(), CURVE, "plain GD"),
+                    (run_adagrad(), EXTRA, "AdaGrad"),
+                    (run_rmsprop(), STEP, "RMSProp"),
+                    (run_adam(), ACCENT, "Adam")]:
+    ax.plot(P[:, 0], P[:, 1], "-", lw=1.7, color=col, label=lab)
+ax.scatter([x0[0]], [x0[1]], color="black", s=50, zorder=6, label="start")
+ax.scatter([0], [0], color=ACCENT, s=100, zorder=6, edgecolor="white", linewidth=1.3)
+ax.set_xlabel("$x_1$ (steep)"); ax.set_ylabel("$x_2$ (flat)")
+ax.set_title("Four optimizers, same start, same base $\\eta$")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Formal development I: AdaGrad {#sec-adagrad}
+
+We now make "sense the terrain per coordinate" precise, starting with the first and simplest
+adaptive method. Throughout, $\mathbf{g}_k$ denotes the gradient at step $k$ — the *stochastic*
+gradient $\nabla f_{i_k}(\mathbf{x}_k)$ in the SGD setting of [OPTM-11], or the full gradient
+when the data are small; the adaptive machinery is identical either way. We write its $j$-th
+coordinate as $g_{j,k}$, the $j$-th coordinate of the parameter as $x_{j,k}$, and we work
+coordinate by coordinate because that is the entire point.
+
+## The update rule {#sec-adagrad-rule}
+
+::: {#def-adagrad}
+**Definition (AdaGrad).** Maintain a per-coordinate accumulator $G_{j,k}$ of squared
+gradients, initialized $G_{j,0}=0$. At each step, for every coordinate $j$,
+$$
+G_{j,k} = G_{j,k-1} + g_{j,k}^2,
+\qquad
+x_{j,\,k+1} = x_{j,k} - \frac{\eta}{\sqrt{G_{j,k}} + \varepsilon}\,g_{j,k},
+$$ {#eq-adagrad}
+where $\eta>0$ is a global base step size and $\varepsilon>0$ is a tiny constant (typically
+$10^{-8}$) present only to prevent division by zero before any gradient has accumulated.
+:::
+
+Unpack @eq-adagrad against the Core. The accumulator $G_{j,k}=\sum_{t=1}^{k}g_{j,t}^2$ is the
+**cumulative sum of squared gradients** in coordinate $j$ — a running tally of how much that
+coordinate has been pushed, in total, up to now. The *effective* step size in coordinate $j$
+is
+
+$$
+\eta_{j,k}^{\text{eff}} = \frac{\eta}{\sqrt{G_{j,k}}+\varepsilon}
+= \frac{\eta}{\sqrt{\sum_{t=1}^{k} g_{j,t}^2}+\varepsilon}.
+$$
+
+Read it: a coordinate that has accumulated large squared gradients gets a *small* effective
+step; one that has accumulated little keeps a *large* one. This is exactly the per-coordinate
+fairness of @sec-sparse — a rare feature, having fired seldom, has a small $G_j$ and so takes
+a big stride when it finally does fire — and the per-coordinate rescaling of @sec-wound, with
+the steep coordinate (large gradients) automatically slowed.
+
+Why the *square root*, and not, say, dividing by $G_{j,k}$ itself? Two readings, both worth
+carrying. **Dimensionally:** $g_{j,k}^2$ has the units of (gradient)$^2$, so
+$\sqrt{G_{j,k}}$ has the units of gradient, and $g_{j,k}/\sqrt{G_{j,k}}$ is *dimensionless* —
+the update is then $\eta$ times a unitless quantity, so $\eta$ carries the units of the
+parameter and the rescaling is scale-free. Dividing by $G_{j,k}$ instead would leave an
+inverse-gradient unit and make the method behave erratically under rescaling. **Statistically:**
+$\sqrt{G_{j,k}/k}$ is (up to the mean) the *root-mean-square* gradient magnitude in coordinate
+$j$, so the step divides the gradient by an estimate of its own typical size — the natural,
+scale-invariant thing to do. The square root will reappear, for the same reasons, in RMSProp
+and Adam.
+
+## Where the $1/\sqrt{\cdot}$ comes from: the regret argument {#sec-adagrad-regret}
+
+The square-root rule is not an arbitrary choice that happens to work — it is the rule that
+*minimizes a worst-case regret bound*, and the derivation is illuminating enough to give in
+outline (the full bound lives in Duchi–Hazan–Singer 2011; we build the load-bearing step). In
+online convex optimization you face a sequence of convex losses $f_1, f_2, \dots$, one per
+step, and after seeing each you update $\mathbf{x}$. **Regret** measures how much worse your
+running choices did than the single best fixed point in hindsight:
+
+$$
+R_K = \sum_{k=1}^{K} f_k(\mathbf{x}_k) - \min_{\mathbf{x}}\sum_{k=1}^{K} f_k(\mathbf{x}).
+$$
+
+A standard analysis of a per-coordinate step size $\eta_{j}$ (held fixed for the bound) gives
+a regret contribution from coordinate $j$ of the form
+
+$$
+R_{K}^{(j)} \;\le\; \frac{D_j^2}{2\eta_j} \;+\; \frac{\eta_j}{2}\sum_{k=1}^{K} g_{j,k}^2,
+$$ {#eq-regret}
+
+where $D_j$ bounds how far the iterate can roam in coordinate $j$. The first term is the cost
+of starting far from the optimum (large when the step is small — you cannot get there); the
+second is the cost of the gradients buffeting you (large when the step is big — you overreact).
+We minimize the bound over $\eta_j$. Differentiate the right-hand side of @eq-regret with
+respect to $\eta_j$ and set it to zero (the Calc-1 move, exactly OPTM-01):
+
+$$
+\frac{d}{d\eta_j}\left[\frac{D_j^2}{2\eta_j} + \frac{\eta_j}{2}\sum_k g_{j,k}^2\right]
+= -\frac{D_j^2}{2\eta_j^2} + \frac{1}{2}\sum_k g_{j,k}^2 = 0
+\;\;\Longrightarrow\;\;
+\eta_j^\star = \frac{D_j}{\sqrt{\sum_{k=1}^{K} g_{j,k}^2}}.
+$$
+
+There it is: **the regret-optimal per-coordinate step size is proportional to
+$1/\sqrt{\sum_k g_{j,k}^2}$** — one over the square root of the accumulated squared gradient,
+exactly AdaGrad's effective step. The cumulative sum and the square root are not heuristics;
+they are the closed-form minimizer of the worst-case regret. Substituting $\eta_j^\star$ back
+into @eq-regret collapses the two terms into a single $D_j\sqrt{\sum_k g_{j,k}^2}$, and summing
+over coordinates yields AdaGrad's regret bound — provably no worse, and often much better, than
+the best fixed global step in hindsight, especially when the gradients are sparse (most
+$g_{j,k}=0$, so the sums stay small).
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what does AdaGrad's adaptivity buy you that a tuned constant step does
+not?"* It automatically allocates a *larger* total learning rate to coordinates that receive
+*less* total gradient signal — and the regret bound proves this allocation is optimal in
+hindsight, with the biggest gains exactly when the gradients are sparse or scaled very
+differently across coordinates. A tuned constant step is optimal only if you happen to pick
+the single $\eta$ that is best *on average* across all coordinates, which is necessarily a
+compromise; AdaGrad gets the right $\eta$ per coordinate, for free, from the gradient history.
+:::
+
+## The fatal flaw: the accumulator only grows {#sec-adagrad-flaw}
+
+Now the flaw the Core promised, and it is baked into @eq-adagrad. The accumulator
+$G_{j,k}=\sum_{t=1}^k g_{j,t}^2$ is a sum of *non-negative* terms, so it is **monotonically
+non-decreasing**: it never shrinks, and as long as the coordinate keeps receiving any gradient
+signal at all, it grows without bound, $G_{j,k}\to\infty$. The effective step
+$\eta/\sqrt{G_{j,k}}$ therefore **decays to zero** as training proceeds — and it does so
+regardless of whether the iterate has actually reached the optimum.
+
+This is exactly right for a *convex, one-pass* online problem — the regret derivation wanted
+the step to shrink like $1/\sqrt{k}$, the Robbins–Monro-flavored decay of [OPTM-11]. But it is
+*wrong* for the long, multi-epoch training of a deep model, where you want to keep learning at
+a healthy rate for a long time. There, AdaGrad's monotone decay is premature: the effective
+step can shrink to near-zero while the model is still far from a good solution, and training
+**stalls** — not because it converged, but because every coordinate's step starved. The very
+mechanism that gives AdaGrad its clean regret bound (an accumulator that only grows) is what
+kills it on the problems we care most about.
+
+@fig-adagrad-decay makes the starvation visible: AdaGrad's effective step size sliding
+inexorably toward zero, and the resulting loss curve flattening far above the optimum.
+
+```{python}
+#| label: fig-adagrad-decay
+#| fig-cap: "AdaGrad starves itself. A logistic-regression-style smooth convex objective trained for many steps. **Left:** AdaGrad's effective step size $\\eta/\\sqrt{G_k}$ for a representative coordinate, on a log scale -- it decays monotonically toward zero because the accumulator $G_k$ only ever grows, never forgetting old gradients. **Right:** the resulting suboptimality. AdaGrad (orange) makes fast early progress, then **stalls** as its step starves -- the curve flattens far above the optimum -- while RMSProp (red), which forgets old gradients via an EMA (next section), keeps a healthy step and continues descending. The flaw is structural, not a tuning mistake."
+rng = np.random.default_rng(4)
+n, p = 600, 25
+X = rng.standard_normal((n, p))
+wtrue = rng.standard_normal(p)
+ylog = (X @ wtrue + 0.5 * rng.standard_normal(n) > 0).astype(float)
+def sig(z): return 1.0 / (1.0 + np.exp(-z))
+def floss(w):
+    z = X @ w
+    return np.mean(np.logaddexp(0, z) - ylog * z)
+def fgrad(w): return X.T @ (sig(X @ w) - ylog) / n
+# good reference optimum via many GD steps
+wref = np.zeros(p)
+for _ in range(4000): wref = wref - 1.0 * fgrad(wref)
+fstar = floss(wref)
+eps = 1e-8; eta = 0.5
+
+# AdaGrad
+w = np.zeros(p); G = np.zeros(p); ada_loss = []; ada_eff = []
+for k in range(1, 4001):
+    g = fgrad(w); G += g**2
+    w = w - eta * g / (np.sqrt(G) + eps)
+    if k % 20 == 0:
+        ada_loss.append(floss(w) - fstar); ada_eff.append(eta / (np.sqrt(G[0]) + eps))
+# RMSProp
+w = np.zeros(p); v = np.zeros(p); rms_loss = []
+for k in range(1, 4001):
+    g = fgrad(w); v = 0.9 * v + 0.1 * g**2
+    w = w - 0.05 * g / (np.sqrt(v) + eps)
+    if k % 20 == 0: rms_loss.append(floss(w) - fstar)
+ks = np.arange(20, 4001, 20)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
+axL.semilogy(ks, ada_eff, color=EXTRA)
+axL.set_xlabel("iteration $k$"); axL.set_ylabel("AdaGrad effective step (log)")
+axL.set_title("Effective step starves to zero")
+axR.semilogy(ks, np.clip(ada_loss, 1e-10, None), color=EXTRA, label="AdaGrad")
+axR.semilogy(ks, np.clip(rms_loss, 1e-10, None), color=STEP, label="RMSProp")
+axR.set_xlabel("iteration $k$"); axR.set_ylabel(r"$f-f^\star$ (log)")
+axR.set_title("AdaGrad stalls; RMSProp keeps going")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Formal development II: RMSProp {#sec-rmsprop}
+
+The fix for AdaGrad's starvation is to make the accumulator **forget**. That is precisely
+what an exponential moving average does, and we have already built one: it is the same fading
+memory as momentum's velocity ([OPTM-08]).
+
+## From a growing sum to a fading average {#sec-rmsprop-rule}
+
+The problem was that $G_{j,k}=\sum_{t\le k} g_{j,t}^2$ weights every past squared gradient
+*equally and forever*. RMSProp replaces it with a weighted average that *discounts* the past
+geometrically, so a squared gradient from a thousand steps ago has negligible influence.
+
+::: {#def-rmsprop}
+**Definition (RMSProp).** Maintain a per-coordinate **exponential moving average (EMA)** of
+squared gradients, $v_{j,0}=0$. With a decay rate $\rho\in[0,1)$ (typically $0.9$ or $0.99$),
+$$
+v_{j,k} = \rho\,v_{j,k-1} + (1-\rho)\,g_{j,k}^2,
+\qquad
+x_{j,\,k+1} = x_{j,k} - \frac{\eta}{\sqrt{v_{j,k}}+\varepsilon}\,g_{j,k}.
+$$ {#eq-rmsprop}
+:::
+
+The step is *identical* to AdaGrad's @eq-adagrad except that the cumulative sum $G_{j,k}$ is
+replaced by the EMA $v_{j,k}$. To see that this is a genuine fading memory — and to make the
+"$\sqrt{v}$ is a running RMS" reading exact — unroll the recurrence exactly as [OPTM-08]
+unrolled the velocity. With $v_{j,0}=0$,
+
+$$
+v_{j,k} = (1-\rho)\sum_{t=1}^{k} \rho^{\,k-t}\,g_{j,t}^2.
+$$ {#eq-rmsprop-unroll}
+
+So $v_{j,k}$ is a **weighted average of past squared gradients**, with the most recent
+($t=k$) carrying weight $(1-\rho)$, the one before it $(1-\rho)\rho$, then $(1-\rho)\rho^2$,
+and so on — weights that decay geometrically into the past and (as we verify next) sum to one
+in the limit, making $v_{j,k}$ a true *average*, the running mean-square gradient. The
+contrast with AdaGrad is the whole point: AdaGrad's weights are all $1$ (nothing forgotten);
+RMSProp's decay, so the average tracks *recent* gradient magnitude. The name is literal: the
+step divides by $\sqrt{v}$, the **r**oot-**m**ean-**s**quare of recent gradients —
+**RMSProp**.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does forgetting fix the starvation, mechanically?"* Because the EMA reaches a *steady
+state* instead of growing without bound. If a coordinate's squared gradients hover around
+some level $s$, then $G_k=\sum g_t^2 \approx ks$ grows linearly forever (AdaGrad), so
+$\eta/\sqrt{G_k}\approx \eta/\sqrt{ks}\to 0$. But the EMA settles: plug a constant $g_t^2=s$
+into @eq-rmsprop-unroll and the geometric sum gives $v_k\to s$, a *constant*, so the effective
+step $\eta/\sqrt{v_k}\to \eta/\sqrt{s}$ stabilizes at a finite, healthy value and stays there.
+Forgetting converts a divergent sum into a convergent average — that is the entire repair.
+:::
+
+## Verifying the EMA is a true average {#sec-rmsprop-weights}
+
+We claimed the weights $(1-\rho)\rho^{\,k-t}$ sum to (essentially) one, so $v_{j,k}$ really
+is a weighted *average* and not just a weighted sum. Sum the weights in @eq-rmsprop-unroll
+over the $k$ past terms. Let $s = k-t$ run from $0$ (the present) to $k-1$ (the oldest):
+
+$$
+\sum_{t=1}^{k} (1-\rho)\rho^{\,k-t}
+= (1-\rho)\sum_{s=0}^{k-1}\rho^{\,s}
+= (1-\rho)\cdot\frac{1-\rho^{\,k}}{1-\rho}
+= 1 - \rho^{\,k}.
+$$
+
+The middle step is the finite geometric-series formula $\sum_{s=0}^{k-1}\rho^s =
+\frac{1-\rho^k}{1-\rho}$ (a Calc-precursor identity: multiply the sum by $(1-\rho)$ and watch
+all but the first and last terms telescope). So the weights sum to $1-\rho^k$, which is
+**slightly less than $1$ for small $k$** and rises to $1$ as $k\to\infty$ (since $\rho^k\to0$
+for $|\rho|<1$). For large $k$ the EMA is a true average. The deficit $\rho^k$ at small $k$ is
+not a rounding nuisance — it is a genuine bias, the EMA *undercounts* early on because it is
+averaging against a phantom zero (the initialization $v_0=0$). That undercount is harmless
+enough in RMSProp that it is usually ignored, but it is the exact defect Adam will
+**bias-correct** in @sec-adam-bias. Notice it now; we cash it out shortly.
+
+# Formal development III: Adam {#sec-adam}
+
+Adam — *adaptive moment estimation* — is the synthesis the whole track has been building
+toward. It layers the two ideas we have in hand: **momentum** ([OPTM-08]) on the gradient
+itself, and **RMSProp**'s per-coordinate scaling by recent squared-gradient magnitude. Then
+it fixes the small-$k$ undercount of @sec-rmsprop-weights with an exact bias correction. We
+build it term by term.
+
+## The two moments {#sec-adam-moments}
+
+Adam maintains *two* per-coordinate EMAs. The first is an EMA of the gradient — the
+"velocity" of [OPTM-08], here called the **first moment** because it estimates the *mean* of
+the gradient:
+
+$$
+m_{j,k} = \beta_1\,m_{j,k-1} + (1-\beta_1)\,g_{j,k},
+\qquad m_{j,0}=0.
+$$ {#eq-adam-m}
+
+The second is RMSProp's EMA of the squared gradient — the **second (raw) moment**, estimating
+the *mean square* of the gradient:
+
+$$
+v_{j,k} = \beta_2\,v_{j,k-1} + (1-\beta_2)\,g_{j,k}^2,
+\qquad v_{j,0}=0.
+$$ {#eq-adam-v}
+
+The decay rates are conventionally $\beta_1=0.9$ (the gradient memory, the same role as
+momentum's $\beta$) and $\beta_2=0.999$ (a *longer* memory for the squared-gradient scale, so
+the per-coordinate step is steady). The names "first/second moment" are exact: $m$ is a
+running estimate of $\mathbb{E}[g_j]$ and $v$ of $\mathbb{E}[g_j^2]$, the first two moments of
+the (noisy, stochastic) gradient in coordinate $j$. Adam *estimates the mean gradient and the
+mean squared gradient, per coordinate, online.*
+
+## Why these two, together {#sec-adam-why}
+
+Hold the two moments side by side and read what each contributes — this is the design logic,
+and it ties straight back to the *why*. The first moment $m_{j,k}$ is **momentum**: it
+accumulates the gradient's *consistent direction*, averaging out the stochastic noise of
+[OPTM-11] and the zig-zag of [OPTM-08], so the step points along the reliable downhill trend
+rather than the latest noisy sample. The second moment $v_{j,k}$ is **RMSProp's terrain
+sensing**: $\sqrt{v_{j,k}}$ is the recent RMS gradient magnitude in coordinate $j$, so
+dividing by it gives the per-coordinate rescaling that fixes anisotropy (@sec-wound) and
+sparse-feature fairness (@sec-sparse).
+
+The combined step, ignoring bias correction for one moment, is
+
+$$
+x_{j,\,k+1} = x_{j,k} - \eta\,\frac{m_{j,k}}{\sqrt{v_{j,k}}+\varepsilon},
+$$
+
+which reads beautifully: *step in the direction of the smoothed (momentum) gradient, with a
+per-coordinate stride inversely proportional to that coordinate's recent gradient
+magnitude.* The numerator decides **direction and consistency**; the denominator decides
+**per-coordinate scale**. Momentum without scaling (plain [OPTM-08]) still suffers anisotropy;
+scaling without momentum (RMSProp) still chases noise; Adam does both. There is even a clean
+"signal-to-noise" reading: when the gradient is consistent, $|m_j|$ is large and close to
+$\sqrt{v_j}$, so the ratio is near $\pm1$ and Adam takes a confident unit-ish step; when the
+gradient is pure noise that averages to zero, $m_j\to0$ while $\sqrt{v_j}$ stays positive, so
+the ratio shrinks and Adam takes a cautious small step. The update *automatically slows down
+exactly where the gradient signal is unreliable.*
+
+## Bias correction, derived exactly {#sec-adam-bias}
+
+Now the piece that distinguishes Adam from "RMSProp plus momentum," and the one most worth
+deriving in full because it is the most commonly hand-waved. Both EMAs start at zero,
+$m_0=v_0=0$, so in the early steps they are biased *toward zero* — they have not had time to
+"warm up" to the true moment, exactly the $1-\rho^k$ deficit we flagged in
+@sec-rmsprop-weights. Adam corrects this *exactly*, and here is the derivation.
+
+Take the second moment $v_{j,k}$; the first is identical with $\beta_1$ in place of $\beta_2$.
+From the unrolled form (same algebra as @eq-rmsprop-unroll, with $\beta_2$ for $\rho$),
+
+$$
+v_{j,k} = (1-\beta_2)\sum_{t=1}^{k}\beta_2^{\,k-t}\,g_{j,t}^2.
+$$
+
+We want to know the **expected value** of $v_{j,k}$ and compare it to the quantity it is meant
+to estimate, $\mathbb{E}[g_{j,k}^2]$. Take expectations of both sides. To make the dependence
+clean, make the standard mild assumption that the second moment is roughly stationary over the
+averaging window — $\mathbb{E}[g_{j,t}^2]\approx\mathbb{E}[g_{j,k}^2]$ for the $t$ that carry
+non-negligible weight (this is exact if the second moment is constant, and a good
+approximation otherwise; any residual is folded into a small error term). Then
+$\mathbb{E}[g_{j,t}^2]$ pulls out of the sum as a common factor:
+
+$$
+\mathbb{E}[v_{j,k}]
+= (1-\beta_2)\sum_{t=1}^{k}\beta_2^{\,k-t}\,\mathbb{E}[g_{j,t}^2]
+\approx \mathbb{E}[g_{j,k}^2]\cdot(1-\beta_2)\sum_{t=1}^{k}\beta_2^{\,k-t}.
+$$
+
+The remaining sum is exactly the geometric sum we computed in @sec-rmsprop-weights, equal to
+$1-\beta_2^{\,k}$. Therefore
+
+$$
+\mathbb{E}[v_{j,k}] \approx \bigl(1-\beta_2^{\,k}\bigr)\,\mathbb{E}[g_{j,k}^2].
+$$ {#eq-bias}
+
+Read @eq-bias: the EMA's expectation is the true second moment **multiplied by the shrink
+factor $1-\beta_2^{\,k}$**, which is small for small $k$ (e.g. with $\beta_2=0.999$ and $k=1$,
+the factor is $0.001$ — the estimate is a thousand times *too small*) and rises to $1$ as
+$k\to\infty$. The EMA systematically *undercounts* the true moment early on, by precisely the
+factor $1-\beta_2^k$. The fix is now forced: **divide by the shrink factor to undo it.** Define
+the **bias-corrected** moments
+
+$$
+\hat m_{j,k} = \frac{m_{j,k}}{1-\beta_1^{\,k}},
+\qquad
+\hat v_{j,k} = \frac{v_{j,k}}{1-\beta_2^{\,k}}.
+$$ {#eq-adam-hat}
+
+By @eq-bias, $\mathbb{E}[\hat v_{j,k}]\approx\mathbb{E}[g_{j,k}^2]$ — the correction makes the
+estimate **unbiased**, exactly canceling the $1-\beta_2^k$ deficit. (The first moment is
+identical with $\beta_1$.) For large $k$ the correction factor $\to1$ and does nothing; it
+matters *only* in the early steps, where without it Adam's denominator $\sqrt{v}$ would be
+absurdly small and the very first updates would explode. Bias correction is what lets Adam use
+an aggressive base $\eta$ from step one without blowing up.
+
+::: {#def-adam}
+**Definition (Adam).** With $\beta_1,\beta_2\in[0,1)$, base step $\eta$, and $\varepsilon>0$,
+initialize $m_0=v_0=0$ and at each step $k=1,2,\dots$, per coordinate, form the two moment
+EMAs, bias-correct them, and step:
+$$
+\begin{aligned}
+m_{j,k} &= \beta_1 m_{j,k-1} + (1-\beta_1)g_{j,k}, &
+v_{j,k} &= \beta_2 v_{j,k-1} + (1-\beta_2)g_{j,k}^2, \\[4pt]
+\hat m_{j,k} &= \frac{m_{j,k}}{1-\beta_1^{\,k}}, &
+\hat v_{j,k} &= \frac{v_{j,k}}{1-\beta_2^{\,k}},
+\end{aligned}
+$$
+$$
+x_{j,\,k+1} = x_{j,k} - \eta\,\frac{\hat m_{j,k}}{\sqrt{\hat v_{j,k}}+\varepsilon}.
+$$ {#eq-adam}
+The standard defaults are $\beta_1=0.9$, $\beta_2=0.999$, $\varepsilon=10^{-8}$, and $\eta$
+around $10^{-3}$ — and they work so robustly across problems that Adam is often run with no
+tuning at all beyond $\eta$.
+:::
+
+@fig-bias makes the correction's effect visible: without it, the first dozen Adam steps are
+violently mis-scaled; with it, they are calibrated from step one.
+
+```{python}
+#| label: fig-bias
+#| fig-cap: "Bias correction, made visible. **Left:** the shrink factor $1-\\beta_2^k$ (red) for $\\beta_2=0.999$ and $1-\\beta_1^k$ (navy) for $\\beta_1=0.9$. The first-moment factor warms up in ~30 steps; the second-moment factor takes thousands -- so early on the *uncorrected* $v$ is drastically too small. **Right:** Adam on a simple quadratic, with and without bias correction. *Without* correction (orange) the first steps are wildly oversized -- $\\sqrt{v}$ is near zero, so $m/\\sqrt{v}$ blows up -- and the path lurches before recovering. *With* correction (green) every step is properly scaled from the start. The fix matters precisely in the opening steps."
+b1, b2 = 0.9, 0.999
+ks = np.arange(1, 200)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
+axL.plot(ks, 1 - b1**ks, color=CURVE, label=r"$1-\beta_1^k$ ($\beta_1=0.9$)")
+axL.plot(ks, 1 - b2**ks, color=STEP, label=r"$1-\beta_2^k$ ($\beta_2=0.999$)")
+axL.set_xlabel("iteration $k$"); axL.set_ylabel("EMA weight sum (warm-up factor)")
+axL.set_title("How fast each EMA warms up")
+axL.legend(fontsize=9, framealpha=0.9)
+
+# Adam with / without bias correction on a simple quadratic
+def quad_grad(x): return np.array([3.0 * x[0], 1.0 * x[1]])
+def run_adam_bias(correct, eta=0.1, steps=60):
+    x = np.array([2.0, 2.0]); m = np.zeros(2); v = np.zeros(2); eps = 1e-8; P = [x.copy()]
+    for t in range(1, steps + 1):
+        g = quad_grad(x)
+        m = b1 * m + (1 - b1) * g; v = b2 * v + (1 - b2) * g**2
+        if correct:
+            mh = m / (1 - b1**t); vh = v / (1 - b2**t)
+        else:
+            mh, vh = m, v
+        x = x - eta * mh / (np.sqrt(vh) + eps); P.append(x.copy())
+    return np.array(P)
+Pno = run_adam_bias(False); Pyes = run_adam_bias(True)
+gx = np.linspace(-2.5, 2.5, 150); gy = np.linspace(-2.5, 2.5, 150)
+GX, GY = np.meshgrid(gx, gy); Z = 0.5 * (3 * GX**2 + GY**2)
+axR.contour(GX, GY, Z, levels=14, colors=GREY, linewidths=0.6, alpha=0.6)
+axR.plot(Pno[:, 0], Pno[:, 1], "-o", ms=2.5, color=EXTRA, label="no bias correction")
+axR.plot(Pyes[:, 0], Pyes[:, 1], "-o", ms=2.5, color=ACCENT, label="with bias correction")
+axR.scatter([0], [0], color=ACCENT, s=80, zorder=6, edgecolor="white")
+axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$"); axR.set_title("Early steps: corrected vs. not")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Worked examples {#sec-examples}
+
+We now run all four optimizers on real, honest problems — never a toy rigged to flatter
+adaptivity. The first is the regime adaptivity was built for; the second is a real,
+representative deep-style problem; the third is the edge of applicability, where adaptivity
+*loses*.
+
+## Example 1 — sparse text-style features: where AdaGrad shines {#sec-ex-sparse}
+
+This is the problem of @sec-sparse made concrete: logistic regression on **sparse** features,
+where most coordinates are zero in any given example and a few rare coordinates carry strong
+signal. This is the habitat AdaGrad was designed for, and the example is honest because it is
+exactly the bag-of-words / click-prediction setting where adaptive methods first won.
+
+```{python}
+#| label: fig-ex-sparse
+#| fig-cap: "Sparse features: adaptivity earns its keep. Logistic regression on a synthetic-but-realistic sparse dataset ($n=2000$, $p=200$, ~95% of feature entries zero, with a few rare-but-informative coordinates). All methods use a *single global* base learning rate. **Plain SGD** (navy) is forced to a small global step and cannot give the rare, informative coordinates the large strides they need, so it learns them painfully slowly. **AdaGrad** (orange), **RMSProp** (red), and **Adam** (green) all give those rare coordinates per-coordinate large steps and reach a good solution far faster. This is the regime where the adaptive idea is unambiguously the right tool."
+rng = np.random.default_rng(8)
+n, p = 2000, 200
+# sparse design: each entry nonzero with prob 0.05
+mask = rng.random((n, p)) < 0.05
+X = mask * rng.standard_normal((n, p))
+wtrue = np.zeros(p); idx = rng.choice(p, 15, replace=False)
+wtrue[idx] = rng.standard_normal(15) * 2.5
+y = (X @ wtrue + 0.5 * rng.standard_normal(n) > 0).astype(float)
+def sig(z): return 1.0 / (1.0 + np.exp(-z))
+def floss(w):
+    z = X @ w; return np.mean(np.logaddexp(0, z) - y * z)
+def gi(w, i): return (sig(X[i] @ w) - y[i]) * X[i]
+wref = np.zeros(p)
+for _ in range(2000): wref = wref - 0.5 * (X.T @ (sig(X @ wref) - y) / n)
+fstar = floss(wref); eps = 1e-8
+
+def train(method, steps=8000, eta=0.05):
+    w = np.zeros(p); m = np.zeros(p); v = np.zeros(p); G = np.zeros(p); hist = []
+    for k in range(1, steps + 1):
+        i = rng.integers(n); g = gi(w, i)
+        if method == "sgd":
+            w = w - eta * g
+        elif method == "adagrad":
+            G += g**2; w = w - eta * g / (np.sqrt(G) + eps)
+        elif method == "rmsprop":
+            v = 0.9 * v + 0.1 * g**2; w = w - eta * g / (np.sqrt(v) + eps)
+        elif method == "adam":
+            m = 0.9 * m + 0.1 * g; v = 0.999 * v + 0.001 * g**2
+            mh = m / (1 - 0.9**k); vh = v / (1 - 0.999**k)
+            w = w - eta * mh / (np.sqrt(vh) + eps)
+        if k % 40 == 0: hist.append(floss(w) - fstar)
+    return np.array(hist)
+
+ks = np.arange(40, 8001, 40)
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+for meth, col, lab in [("sgd", CURVE, "plain SGD"), ("adagrad", EXTRA, "AdaGrad"),
+                       ("rmsprop", STEP, "RMSProp"), ("adam", ACCENT, "Adam")]:
+    ax.semilogy(ks, np.clip(train(meth), 1e-8, None), color=col, label=lab)
+ax.set_xlabel("iteration $k$"); ax.set_ylabel(r"$f-f^\star$ (log)")
+ax.set_title("Sparse features: adaptive methods beat plain SGD")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The story is clean: on genuinely sparse data with a shared global step, plain SGD cannot serve
+the rare informative coordinates, and all three adaptive methods leave it behind. Note AdaGrad
+does *well here* — this short, near-convex run is exactly the online setting its regret bound
+targets, and its monotone decay has not yet had time to starve it. That is the honest other
+half of @sec-adagrad-flaw: AdaGrad's flaw bites on long, non-convex training, not on the short
+convex problems it was built for.
+
+## Example 2 — a small neural network: the modern default {#sec-ex-nn}
+
+The second example is the one practitioners actually face: training a small non-convex model
+(a two-layer neural network on a nonlinear classification task). There is no closed form, the
+landscape is non-convex with the saddles of [OPTM-02], and this is the regime where Adam
+became the default. We train the same network with each optimizer and watch the training loss.
+
+```{python}
+#| label: fig-ex-nn
+#| fig-cap: "The modern default, on a non-convex problem. A two-layer tanh network ($2\\to16\\to1$) trained on a two-moons-style nonlinear classification task, minibatch size 32, each optimizer with a *reasonable* (lightly tuned) learning rate. **Plain SGD** (navy) makes slow, noisy progress and is sensitive to the step size. **RMSProp** (red) and especially **Adam** (green) descend faster and more smoothly with far less tuning -- the per-coordinate scaling tames the wildly different gradient magnitudes across the network's weights and biases. AdaGrad (orange) starts well but its monotone decay (@sec-adagrad-flaw) slows it late. This robustness-with-little-tuning is exactly why Adam became the default for deep models."
+rng = np.random.default_rng(3)
+# two-moons-ish data
+nA = 400
+th = rng.uniform(0, np.pi, nA)
+Xa = np.c_[np.cos(th), np.sin(th)] + 0.12 * rng.standard_normal((nA, 2))
+Xb = np.c_[1 - np.cos(th), 0.5 - np.sin(th)] + 0.12 * rng.standard_normal((nA, 2))
+Xd = np.vstack([Xa, Xb]); yd = np.r_[np.zeros(nA), np.ones(nA)]
+N = Xd.shape[0]; H = 16
+
+def init():
+    return {"W1": rng.standard_normal((2, H)) * 0.5, "b1": np.zeros(H),
+            "W2": rng.standard_normal((H, 1)) * 0.5, "b2": np.zeros(1)}
+def fwd(P, X):
+    h = np.tanh(X @ P["W1"] + P["b1"]); z = h @ P["W2"] + P["b2"]
+    return z.ravel(), h
+def loss_grad(P, X, y):
+    z, h = fwd(P, X); s = 1 / (1 + np.exp(-z))
+    L = np.mean(np.logaddexp(0, z) - y * z)
+    dz = (s - y) / len(y)
+    gW2 = h.T @ dz[:, None]; gb2 = np.array([dz.sum()])
+    dh = dz[:, None] @ P["W2"].T * (1 - h**2)
+    gW1 = X.T @ dh; gb1 = dh.sum(axis=0)
+    return L, {"W1": gW1, "b1": gb1, "W2": gW2, "b2": gb2}
+def full_loss(P): return loss_grad(P, Xd, yd)[0]
+
+keys = ["W1", "b1", "W2", "b2"]; eps = 1e-8
+def train_nn(method, steps=3000, eta=0.05, bs=32):
+    P = init()
+    m = {k: np.zeros_like(P[k]) for k in keys}; v = {k: np.zeros_like(P[k]) for k in keys}
+    G = {k: np.zeros_like(P[k]) for k in keys}; hist = []
+    for k in range(1, steps + 1):
+        idx = rng.integers(0, N, bs)
+        _, g = loss_grad(P, Xd[idx], yd[idx])
+        for key in keys:
+            gg = g[key]
+            if method == "sgd":
+                P[key] -= eta * gg
+            elif method == "adagrad":
+                G[key] += gg**2; P[key] -= eta * gg / (np.sqrt(G[key]) + eps)
+            elif method == "rmsprop":
+                v[key] = 0.9 * v[key] + 0.1 * gg**2
+                P[key] -= eta * gg / (np.sqrt(v[key]) + eps)
+            elif method == "adam":
+                m[key] = 0.9 * m[key] + 0.1 * gg; v[key] = 0.999 * v[key] + 0.001 * gg**2
+                mh = m[key] / (1 - 0.9**k); vh = v[key] / (1 - 0.999**k)
+                P[key] -= eta * mh / (np.sqrt(vh) + eps)
+        if k % 20 == 0: hist.append(full_loss(P))
+    return np.array(hist)
+
+ks = np.arange(20, 3001, 20)
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+for meth, col, lab, e in [("sgd", CURVE, "plain SGD", 0.2), ("adagrad", EXTRA, "AdaGrad", 0.1),
+                          ("rmsprop", STEP, "RMSProp", 0.01), ("adam", ACCENT, "Adam", 0.02)]:
+    ax.plot(ks, train_nn(meth, eta=e), color=col, label=f"{lab}")
+ax.set_xlabel("iteration $k$"); ax.set_ylabel("training loss")
+ax.set_title("Two-layer network: Adam/RMSProp descend fastest with little tuning")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Example 3 — the edge: where well-tuned SGD wins on generalization {#sec-ex-edge}
+
+Now the honest edge, the example that separates "knows the update rules" from "knows when not
+to use them." Adam's fast *training*-loss descent does not always translate into the best
+*test*-set performance. There is substantial evidence — and we reproduce its mechanism — that
+on some problems Adam converges to solutions that **generalize worse** than those found by
+well-tuned plain SGD or SGD-with-momentum, even though Adam's training loss is lower. We make
+the gap visible by tracking *held-out* loss, not training loss.
+
+```{python}
+#| label: fig-ex-edge
+#| fig-cap: "The edge of applicability: lower training loss, worse generalization. A model trained on a noisy regression task, tracking loss on a *held-out test set* (not the training set). **Adam** (green) drives the *training* loss down fastest, but its **test** loss bottoms out *higher* and can creep back up -- it overfits the noise more readily. Well-tuned **SGD with momentum** (navy) descends more slowly but reaches a *lower test* loss and holds it. This is the documented Adam-vs-SGD generalization gap: Adam optimizes faster but sometimes finds a solution that fits the training noise rather than the signal. When final test performance is what matters and you can afford the tuning, SGD+momentum often still wins."
+rng = np.random.default_rng(15)
+ntr, nte, p = 400, 2000, 80
+Xtr = rng.standard_normal((ntr, p)); Xte = rng.standard_normal((nte, p))
+wtrue = rng.standard_normal(p) / np.sqrt(p)
+ytr = Xtr @ wtrue + 0.7 * rng.standard_normal(ntr)
+yte = Xte @ wtrue + 0.7 * rng.standard_normal(nte)
+def tr_grad_i(w, i): return (Xtr[i] @ w - ytr[i]) * Xtr[i]
+def te_loss(w): return 0.5 * np.mean((Xte @ w - yte)**2)
+eps = 1e-8
+
+def run(method, steps=6000, eta=0.01, b1m=0.9):
+    w = np.zeros(p); m = np.zeros(p); v = np.zeros(p); hist = []
+    for k in range(1, steps + 1):
+        i = rng.integers(ntr); g = tr_grad_i(w, i)
+        if method == "sgdm":
+            m = b1m * m - eta * g; w = w + m
+        elif method == "adam":
+            m = 0.9 * m + 0.1 * g; v = 0.999 * v + 0.001 * g**2
+            mh = m / (1 - 0.9**k); vh = v / (1 - 0.999**k)
+            w = w - eta * mh / (np.sqrt(vh) + eps)
+        if k % 30 == 0: hist.append(te_loss(w))
+    return np.array(hist)
+
+ks = np.arange(30, 6001, 30)
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ax.plot(ks, run("adam", eta=0.02), color=ACCENT, label="Adam (test loss)")
+ax.plot(ks, run("sgdm", eta=0.01), color=CURVE, label="SGD + momentum (test loss)")
+ax.set_xlabel("iteration $k$"); ax.set_ylabel("held-out test loss")
+ax.set_title("Adam trains faster but can generalize worse")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**Lower training loss is not lower test loss.** Adam's headline strength — driving the
+*training* objective down fast — is measured on the data you fit, and that is not what you
+ultimately care about. On problems with limited data or heavy noise, Adam's aggressive
+per-coordinate adaptivity can fit the training noise more eagerly than SGD, landing in a
+"sharper" minimum that generalizes worse. The fix in practice is not to abandon Adam but to
+*regularize it properly* (weight decay, and specifically **AdamW**, @sec-amsgrad-adamw) and to
+*always evaluate on held-out data*, never on the training loss alone. If you tune a learning
+rate by watching training loss go down, you are optimizing the wrong quantity — the universal
+version of this article's edge case.
+:::
+
+# Failure modes and the honest debate {#sec-failure}
+
+## When SGD-with-momentum still wins {#sec-sgdm}
+
+The generalization gap of @sec-ex-edge is the headline caveat, and it has a concrete decision
+rule. For problems where you have the time and compute to **tune carefully**, where the
+dataset is large enough that overfitting is the main risk, and where **final test performance
+is the metric** — large-scale image classification is the classic example — well-tuned **SGD
+with momentum** ([OPTM-08]) frequently matches or beats Adam on the test set, and many
+state-of-the-art vision results are trained that way. Adam's advantage is **robustness and
+speed with little tuning**: it gets a *good* model fast, almost regardless of the learning
+rate, which is exactly what you want for rapid iteration, for problems where you cannot afford
+a learning-rate sweep, and for architectures (transformers, RNNs) where the gradient scales
+across layers are so heterogeneous that per-coordinate adaptivity is nearly mandatory. The
+honest one-liner: *Adam to get something working fast and for heterogeneous-scale models;
+tuned SGD+momentum to squeeze out the last drop of generalization when you can afford it.*
+
+## The convergence counterexample, and the fixes (AMSGrad, AdamW) {#sec-amsgrad-adamw}
+
+There is a deeper, theoretical failure worth knowing. In 2018, Reddi, Kale, and Kumar
+(*"On the Convergence of Adam and Beyond"*) exhibited a simple convex problem on which Adam
+**provably fails to converge** to the optimum — it cycles. The mechanism is the EMA's
+*forgetting*: the second moment $v_k$ can *decrease* from one step to the next (an EMA, unlike
+AdaGrad's monotone sum, can shrink when recent gradients are small), which can cause the
+effective step to *grow* at the wrong moment and let a rare but informative large gradient be
+washed out by the forgetting before it has been acted on. The proposed fix, **AMSGrad**, is
+small and pointed: use the *running maximum* of the second moment, $\hat v_k^{\max}=\max(\hat
+v_{k-1}^{\max},\hat v_k)$, in the denominator, so the effective step is *non-increasing* and
+the pathology cannot occur. AMSGrad restores the convergence guarantee at a small practical
+cost; in practice plain Adam usually converges fine, but knowing *why* it can fail — and that
+the fix is "stop the denominator from shrinking" — is exactly the kind of thing an interviewer
+probes.
+
+A second, more practically important fix concerns **weight decay**. The standard way to
+regularize is to add an $\ell_2$ penalty $\tfrac{\lambda}{2}\|\mathbf{x}\|^2$ to the
+objective, whose gradient is $\lambda\mathbf{x}$ — naively, you just add $\lambda x_j$ to each
+coordinate's gradient. But in Adam that penalty gradient then gets divided by $\sqrt{\hat
+v_j}$ along with everything else, so coordinates with large gradients get *less* effective
+weight decay than intended — the regularization is coupled to the adaptive scaling and
+distorted. **AdamW** (Loshchilov and Hutter, 2017) *decouples* weight decay from the gradient
+update: it applies the per-coordinate Adam step to the *loss* gradient only, then shrinks the
+weights by a separate $\eta\lambda x_j$ term outside the $\sqrt{\hat v}$ rescaling,
+
+$$
+x_{j,\,k+1} = x_{j,k} - \eta\,\frac{\hat m_{j,k}}{\sqrt{\hat v_{j,k}}+\varepsilon}
+              \;-\; \eta\,\lambda\,x_{j,k}.
+$$
+
+This small change measurably improves generalization and is now the default for training large
+models. The lesson threads back to the *why*: adaptivity rescales *everything* it touches, so
+anything you want applied uniformly — like weight decay — must be kept *outside* the rescaling.
+
+::: {.callout-tip title="You might be asked"}
+*"Adam is the default — so why does anyone still use plain SGD or SGD-with-momentum?"* Three
+reasons, and a strong answer hits all three. **(1) Generalization:** on data-rich problems
+with careful tuning, SGD+momentum often reaches a *lower test* loss (@sec-ex-edge,
+@sec-sgdm) — Adam optimizes the training objective more aggressively, which is not always what
+you want. **(2) Convergence guarantees:** plain Adam can fail to converge on adversarial convex
+problems (@sec-amsgrad-adamw); SGD's convergence theory ([OPTM-11]) is cleaner and AMSGrad was
+invented to patch Adam's. **(3) Simplicity and memory:** Adam stores *two* extra
+per-parameter buffers ($m$ and $v$) — for a billion-parameter model that is gigabytes of
+optimizer state, where SGD+momentum needs only one buffer and plain SGD none. The honest
+framing: Adam is the default because it is *fast and forgiving*, not because it is universally
+*best* — and naming the regimes where SGD wins is the difference between repeating folklore
+and understanding it.
+:::
+
+## A note on $\varepsilon$, and other quiet gotchas {#sec-eps}
+
+A few small but real traps round out the practitioner picture. The constant $\varepsilon$ in
+the denominator is not purely cosmetic: it caps the *maximum* effective step a coordinate can
+take (when $\sqrt{\hat v_j}\to0$, the step approaches $\eta/\varepsilon$ rather than infinity),
+so on problems where some gradients are genuinely tiny, a too-small $\varepsilon$ can let those
+coordinates take wild steps — some practitioners deliberately raise $\varepsilon$ (to $10^{-4}$
+or more) to tame this. The choice of $\beta_2$ trades responsiveness for stability: closer to
+$1$ means a longer, steadier second-moment memory but slower reaction to a genuine change in
+gradient scale. And **learning-rate warmup** — starting $\eta$ near zero and ramping it up over
+the first few hundred or thousand steps — is now standard with Adam for large models, precisely
+because even with bias correction the second-moment estimate is high-variance in the opening
+steps, and a large early step on a noisy $\sqrt{\hat v}$ can destabilize training. Warmup,
+schedules (cosine decay, step decay), and AdamW are the engineering layer wrapped around the
+clean update of @eq-adam; the math is settled, the recipes are craft.
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You would never hand-code
+@eq-adam in production. Every framework ships all three: `torch.optim.SGD` (with a `momentum`
+argument), `torch.optim.Adagrad`, `torch.optim.RMSprop`, `torch.optim.Adam`, and
+`torch.optim.AdamW`; the same names appear in `optax` (JAX), `keras.optimizers`, and
+`tensorflow`. The defaults baked in are exactly the ones derived here —
+$\beta_1=0.9,\beta_2=0.999,\varepsilon=10^{-8}$ for Adam — and the bias-correction step of
+@sec-adam-bias is applied internally, which is why a fresh Adam run does not explode on step
+one. What you now know that the API does not advertise: *why* there are two moment buffers,
+*why* the denominator is a square root of an EMA, *why* the first few steps are
+bias-corrected, *why* AdamW exists separately from Adam, and *why* the loss curve being lower
+is not the same as the model being better. The library is the engine; this article is the
+schematic.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[OPTM-11 *Stochastic Gradient Descent*]** (the noisy gradient, its variance,
+and the noise floor that motivates per-coordinate care), carrying **[OPTM-08 *Momentum*]**
+(the velocity / first-moment EMA) and **[OPTM-07 *Step Size and Convergence*]** (the condition
+number $\kappa$ that anisotropy is all about). This article assembled them into the three
+adaptive optimizers: **AdaGrad** (cumulative-sum scaling, with its monotone-decay flaw),
+**RMSProp** (the EMA fix), and **Adam** (RMSProp + momentum + exact bias correction), plus the
+honest debate (Adam's generalization gap, AMSGrad, AdamW).
+
+This is the **terminal node of the descent spine.** From here:
+
+- **The constrained-optimization arc — [OPTM-13 *Lagrange Multipliers*] onward** — turns from
+  *how to descend* to *how to descend while honoring constraints*, the other half of the
+  optimization story.
+- **As a supply depot:** when **Classification**, **Unsupervised Learning**, and every
+  deep-model treatment say "trained with Adam" or "fit by SGD with momentum," *this* is the
+  article that says what those words mean — the per-coordinate adaptive step derived here is
+  the literal engine of modern model training.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding papers.** J. Duchi, E. Hazan & Y. Singer, "Adaptive Subgradient Methods for
+  Online Learning and Stochastic Optimization," *JMLR* 12 (2011) — AdaGrad and the regret
+  argument of @sec-adagrad-regret. G. Hinton's Coursera *Neural Networks* lecture 6 (2012) —
+  the original (unpublished) RMSProp slide. D. Kingma & J. Ba, "Adam: A Method for Stochastic
+  Optimization," *ICLR* (2015) — Adam, the bias-correction derivation of @sec-adam-bias, and
+  the moment-estimation framing.
+- **The honest debate.** S. Reddi, S. Kale & S. Kumar, "On the Convergence of Adam and
+  Beyond," *ICLR* (2018) — the non-convergence counterexample and AMSGrad. A. Wilson et al.,
+  "The Marginal Value of Adaptive Gradient Methods in Machine Learning," *NeurIPS* (2017) — the
+  empirical case that tuned SGD generalizes better (@sec-ex-edge). I. Loshchilov & F. Hutter,
+  "Decoupled Weight Decay Regularization," *ICLR* (2019) — AdamW.
+- **Open threads this article deliberately deferred.** *How do these interact with
+  learning-rate schedules and warmup?* — engineering craft sketched in @sec-eps, with a deep
+  literature of its own. *What is the second moment really estimating — diagonal curvature?* —
+  there is a precise connection to a diagonal approximation of the Hessian / Fisher information
+  that ties adaptivity back to the second-order methods of [OPTM-09]; that link is the natural
+  rabbit hole. *Do adaptive methods change the implicit regularization of SGD?* — the
+  flat-minima / generalization question raised in [OPTM-11]'s non-convex discussion, here sharpened by the
+  Adam-vs-SGD gap, remains an active research frontier.
