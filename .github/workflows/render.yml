@@ -58,24 +58,6 @@ jobs:
           done
           echo "Track books produced:"; ls -la out/tracks || true
 
-      # --- Per-article standalone PDFs (grab one article). Best-effort. ---
-      # Rendered in a temp copy of articles/ so each is a standalone document
-      # (articles/_metadata.yml supplies the PDF format).
-      - name: Render standalone article PDFs
-        continue-on-error: true
-        run: |
-          set +e
-          SRC="$RUNNER_TEMP/standalone"
-          mkdir -p "$SRC"
-          cp -r articles/. "$SRC/"
-          mkdir -p out/articles
-          find "$SRC" -name '*.qmd' -print0 | while IFS= read -r -d '' f; do
-            quarto render "$f" --to pdf >/dev/null 2>&1 || echo "WARN: $f"
-          done
-          # copy only the article PDFs, not the *_files/ figure intermediates
-          find "$SRC" -name '*.pdf' -not -path '*_files/*' -exec cp {} out/articles/ \;
-          echo "Article PDFs produced:"; ls out/articles | wc -l
-
       - name: Upload PDFs as build artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,4 +78,4 @@ jobs:
           gh release create latest $files \
             --title "Latest PDFs" \
             --prerelease \
-            --notes "Auto-built from ${{ github.sha }}. Per-track books + per-article PDFs."
+            --notes "Auto-built from ${{ github.sha }}. One bound PDF per track."
