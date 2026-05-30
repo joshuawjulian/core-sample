@@ -423,7 +423,7 @@ how widely the individual per-example gradients fan out around their true averag
 
 ```{python}
 #| label: fig-variance
-#| fig-cap: 'The gradient noise, made visible. For a finite-sum quadratic, at three locations (far from the optimum, near it, and *at* it), the thin grey arrows are individual per-example gradients $\\nabla f_i$ and the thick red arrow is their average, the true gradient $\\nabla f$. Far away (left) every example roughly agrees on ''downhill,'' so the noise is small relative to the signal. *At the optimum* (right) the true gradient is zero -- the red arrow vanishes -- yet the individual arrows are as long as ever and merely cancel. That non-vanishing scatter at the optimum is $\\sigma^2$, and it is why a fixed-step SGD can never settle.'
+#| fig-cap: 'The gradient noise, made visible. For a finite-sum quadratic, at three locations (far from the optimum, near it, and *at* it), the thin grey arrows are individual per-example gradients $\nabla f_i$ and the thick red arrow is their average, the true gradient $\nabla f$. Far away (left) every example roughly agrees on ''downhill,'' so the noise is small relative to the signal. *At the optimum* (right) the true gradient is zero -- the red arrow vanishes -- yet the individual arrows are as long as ever and merely cancel. That non-vanishing scatter at the optimum is $\sigma^2$, and it is why a fixed-step SGD can never settle.'
 rng = np.random.default_rng(3)
 n = 24
 A = np.array([[2.0, 0.0], [0.0, 2.0]])
@@ -599,7 +599,7 @@ practitioner facts follow immediately, and they are the daily reality of trainin
 
 ```{python}
 #| label: fig-noise-floor
-#| fig-cap: 'The noise floor, measured. SGD with a *constant* step on a finite-sum quadratic, for three step sizes, plotting suboptimality $f(\\mathbf{x}_k)-f^\\star$ (log scale, averaged over runs to show the trend). Each run drops fast, then **plateaus** at a floor it never gets below -- and the floor height scales with $\\eta$ exactly as @eq-floor predicts ($\\eta=0.05$ floors ten times higher than $\\eta=0.005$). A constant step buys speed *or* accuracy, never both. The dashed lines mark the predicted $O(\\eta)$ floor levels.'
+#| fig-cap: 'The noise floor, measured. SGD with a *constant* step on a finite-sum quadratic, for three step sizes, plotting suboptimality $f(\mathbf{x}_k)-f^\star$ (log scale, averaged over runs to show the trend). Each run drops fast, then **plateaus** at a floor it never gets below -- and the floor height scales with $\eta$ exactly as @eq-floor predicts ($\eta=0.05$ floors ten times higher than $\eta=0.005$). A constant step buys speed *or* accuracy, never both. The dashed lines mark the predicted $O(\eta)$ floor levels.'
 rng = np.random.default_rng(7)
 n, p = 500, 10
 B = rng.standard_normal((n, p))
@@ -705,7 +705,7 @@ constant steps of @fig-noise-floor only plateaued.
 
 ```{python}
 #| label: fig-decay
-#| fig-cap: 'Decaying the step size beats the floor. The same finite-sum problem as @fig-noise-floor. **Grey/orange:** two *constant* steps, each plateauing at its own noise floor (@eq-floor). **Green:** the harmonic schedule $\\eta_k=\\eta_0/(k+1)$ satisfying the Robbins--Monro conditions @eq-rm1--@eq-rm2 -- it keeps descending past every constant-step floor, driving suboptimality toward zero (the slope is the $O(1/k)$ rate of @sec-rate). The decay is slow enough to keep travelling, fast enough to damp the noise.'
+#| fig-cap: 'Decaying the step size beats the floor. The same finite-sum problem as @fig-noise-floor. **Grey/orange:** two *constant* steps, each plateauing at its own noise floor (@eq-floor). **Green:** the harmonic schedule $\eta_k=\eta_0/(k+1)$ satisfying the Robbins--Monro conditions @eq-rm1--@eq-rm2 -- it keeps descending past every constant-step floor, driving suboptimality toward zero (the slope is the $O(1/k)$ rate of @sec-rate). The decay is slow enough to keep travelling, fast enough to damp the noise.'
 rng = np.random.default_rng(11)
 n, p = 500, 10
 B = rng.standard_normal((n, p)); xtrue = rng.standard_normal(p)
@@ -839,7 +839,7 @@ falling as $1/b$ and the resulting smoother descent.
 
 ```{python}
 #| label: fig-minibatch
-#| fig-cap: 'Minibatching trades noise for cost. **Left:** measured variance of the minibatch gradient versus batch size $b$ on a finite-sum problem (log--log); it falls as $\\sigma^2/b$ (the dashed reference line has slope $-1$), confirming @eq-batch-var. **Right:** SGD descent for $b\\in\\{1,8,64\\}$ at matched *cost* (so larger batches take proportionally fewer steps). Larger batches give a smoother, lower-floor path per step, but because each step costs $b\\times$ more, the per-computation advantage has diminishing returns -- the $b=8$ and $b=64$ curves are close, while both beat the very jittery $b=1$.'
+#| fig-cap: 'Minibatching trades noise for cost. **Left:** measured variance of the minibatch gradient versus batch size $b$ on a finite-sum problem (log--log); it falls as $\sigma^2/b$ (the dashed reference line has slope $-1$), confirming @eq-batch-var. **Right:** SGD descent for $b\in\{1,8,64\}$ at matched *cost* (so larger batches take proportionally fewer steps). Larger batches give a smoother, lower-floor path per step, but because each step costs $b\times$ more, the per-computation advantage has diminishing returns -- the $b=8$ and $b=64$ curves are close, while both beat the very jittery $b=1$.'
 rng = np.random.default_rng(5)
 n, p = 800, 12
 B = rng.standard_normal((n, p)); xtrue = rng.standard_normal(p)

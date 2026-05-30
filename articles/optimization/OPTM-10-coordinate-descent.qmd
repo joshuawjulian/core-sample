@@ -437,7 +437,7 @@ descent is forbidden from making it. @fig-jam shows the trap.
 
 ```{python}
 #| label: fig-jam
-#| fig-cap: 'Coordinate descent jamming on a non-smooth, non-separable objective $f(x_1,x_2)=3(x_1^2+x_2^2)+5|x_1-x_2|-(x_1+x_2)$. The kink of $|x_1-x_2|$ runs along the *diagonal ridge* $x_1=x_2$ (green dotted), and the true minimum (green dot) sits on that ridge at $(\\tfrac16,\\tfrac16)$. Starting from $(3,-3)$, exact coordinate descent (red) snaps onto the ridge and then **freezes** at $(-\\tfrac23,-\\tfrac23)$ (black X): no horizontal or vertical move lowers $f$, because the $[-1,1]$ subdifferential of the kink pins each coordinate. Only a *joint* diagonal move descends the ridge toward the true minimum — and coordinate descent cannot make it. This is the failure that separability prevents.'
+#| fig-cap: 'Coordinate descent jamming on a non-smooth, non-separable objective $f(x_1,x_2)=3(x_1^2+x_2^2)+5|x_1-x_2|-(x_1+x_2)$. The kink of $|x_1-x_2|$ runs along the *diagonal ridge* $x_1=x_2$ (green dotted), and the true minimum (green dot) sits on that ridge at $(\tfrac16,\tfrac16)$. Starting from $(3,-3)$, exact coordinate descent (red) snaps onto the ridge and then **freezes** at $(-\tfrac23,-\tfrac23)$ (black X): no horizontal or vertical move lowers $f$, because the $[-1,1]$ subdifferential of the kink pins each coordinate. Only a *joint* diagonal move descends the ridge toward the true minimum — and coordinate descent cannot make it. This is the failure that separability prevents.'
 def f_jam(x1, x2):
     return 3 * (x1 ** 2 + x2 ** 2) + 5 * np.abs(x1 - x2) - (x1 + x2)
 
@@ -666,7 +666,7 @@ anything within $\lambda$ of zero to exactly zero.** @fig-soft draws the operato
 
 ```{python}
 #| label: fig-soft
-#| fig-cap: 'The soft-thresholding operator $S_\\lambda(\\rho)=\\operatorname{sign}(\\rho)(|\\rho|-\\lambda)_+$ (red), the exact solution of the scalar lasso problem $\\min_\\beta \\tfrac12(\\beta-\\rho)^2+\\lambda|\\beta|$. It is the identity (grey dashed) shifted toward zero by $\\lambda$, with a flat **dead zone** $|\\rho|\\le\\lambda$ where the answer is exactly $0$. That dead zone is *why the lasso produces sparsity*: any predictor whose correlation with the partial residual is below the penalty is zeroed out entirely. The ''hard'' threshold (green) — used by best-subset / $\\ell_0$ ideas — keeps values unshrunk but discontinuous; soft-thresholding is the convex, continuous relaxation coordinate descent delivers for free.'
+#| fig-cap: 'The soft-thresholding operator $S_\lambda(\rho)=\operatorname{sign}(\rho)(|\rho|-\lambda)_+$ (red), the exact solution of the scalar lasso problem $\min_\beta \tfrac12(\beta-\rho)^2+\lambda|\beta|$. It is the identity (grey dashed) shifted toward zero by $\lambda$, with a flat **dead zone** $|\rho|\le\lambda$ where the answer is exactly $0$. That dead zone is *why the lasso produces sparsity*: any predictor whose correlation with the partial residual is below the penalty is zeroed out entirely. The ''hard'' threshold (green) — used by best-subset / $\ell_0$ ideas — keeps values unshrunk but discontinuous; soft-thresholding is the convex, continuous relaxation coordinate descent delivers for free.'
 def soft(rho, lam):
     return np.sign(rho) * np.maximum(np.abs(rho) - lam, 0.0)
 
@@ -720,7 +720,7 @@ recover the sparse coefficient vector.
 
 ```{python}
 #| label: fig-lasso-fit
-#| fig-cap: 'Coordinate-descent lasso on a sparse, high-dimensional problem ($n=120$, $p=200$, only $6$ nonzero true coefficients). **Left:** the objective $f(\\boldsymbol\\beta)=\\tfrac{1}{2n}\\|\\mathbf{y}-X\\boldsymbol\\beta\\|^2+\\lambda\\|\\boldsymbol\\beta\\|_1$ versus full coordinate sweeps — it drops monotonically (@thm-smooth-convergence''s descent property) and converges in a handful of sweeps. **Right:** the recovered coefficients (red) against the truth (green circles). The lasso has zeroed out the $194$ irrelevant predictors exactly (the soft-threshold dead zone) and recovered the $6$ true ones, shrunk slightly toward zero — the honest price of the $\\ell_1$ penalty.'
+#| fig-cap: 'Coordinate-descent lasso on a sparse, high-dimensional problem ($n=120$, $p=200$, only $6$ nonzero true coefficients). **Left:** the objective $f(\boldsymbol\beta)=\tfrac{1}{2n}\|\mathbf{y}-X\boldsymbol\beta\|^2+\lambda\|\boldsymbol\beta\|_1$ versus full coordinate sweeps — it drops monotonically (@thm-smooth-convergence''s descent property) and converges in a handful of sweeps. **Right:** the recovered coefficients (red) against the truth (green circles). The lasso has zeroed out the $194$ irrelevant predictors exactly (the soft-threshold dead zone) and recovered the $6$ true ones, shrunk slightly toward zero — the honest price of the $\ell_1$ penalty.'
 rng = np.random.default_rng(0)
 n, p, k = 120, 200, 6
 X = rng.standard_normal((n, p))
@@ -794,7 +794,7 @@ sweeps. @fig-path traces it.
 
 ```{python}
 #| label: fig-path
-#| fig-cap: 'The lasso regularization path, computed by warm-started coordinate descent ($n=120$, $p=200$, $6$ true nonzeros). Each curve is one coefficient $\\hat\\beta_j(\\lambda)$ as the penalty $\\lambda$ decreases (left to right, log scale). At large $\\lambda$ (left) all coefficients are zero; as $\\lambda$ shrinks, predictors enter one by one. The six true predictors (colored, solid) enter early and grow; the $194$ noise predictors (grey) stay near zero until $\\lambda$ is very small. Coordinate descent produces this entire family of models in barely more time than a single fit, because each solve warm-starts from its neighbor — the property that made `glmnet` the standard lasso tool.'
+#| fig-cap: 'The lasso regularization path, computed by warm-started coordinate descent ($n=120$, $p=200$, $6$ true nonzeros). Each curve is one coefficient $\hat\beta_j(\lambda)$ as the penalty $\lambda$ decreases (left to right, log scale). At large $\lambda$ (left) all coefficients are zero; as $\lambda$ shrinks, predictors enter one by one. The six true predictors (colored, solid) enter early and grow; the $194$ noise predictors (grey) stay near zero until $\lambda$ is very small. Coordinate descent produces this entire family of models in barely more time than a single fit, because each solve warm-starts from its neighbor — the property that made `glmnet` the standard lasso tool.'
 lams = np.logspace(np.log10(1.0), np.log10(0.02), 40)
 beta = np.zeros(p)
 paths = np.zeros((len(lams), p))
@@ -832,7 +832,7 @@ step against a subgradient of $f$) and compare progress per unit of work.
 
 ```{python}
 #| label: fig-compare
-#| fig-cap: 'Coordinate descent (red) vs. a subgradient method (grey) on the same lasso objective ($n=120$, $p=200$). The $x$-axis is full passes over the data (one coordinate sweep $\\approx$ one subgradient step in data touched). Coordinate descent drives the objective down fast and converges; the subgradient method, lacking an exact 1-D solve and forced to a decaying step size by the kink, crawls and never produces exact zeros. On a *separable* non-smooth problem with a closed-form coordinate update, coordinate descent is the right tool — this is the honest picture, not a rigged one: subgradient descent is a legitimate but ill-suited choice here.'
+#| fig-cap: 'Coordinate descent (red) vs. a subgradient method (grey) on the same lasso objective ($n=120$, $p=200$). The $x$-axis is full passes over the data (one coordinate sweep $\approx$ one subgradient step in data touched). Coordinate descent drives the objective down fast and converges; the subgradient method, lacking an exact 1-D solve and forced to a decaying step size by the kink, crawls and never produces exact zeros. On a *separable* non-smooth problem with a closed-form coordinate update, coordinate descent is the right tool — this is the honest picture, not a rigged one: subgradient descent is a legitimate but ill-suited choice here.'
 def subgradient_lasso(X, y, lam, n_steps=30, eta0=0.02):
     n, p = X.shape
     beta = np.zeros(p)
@@ -888,7 +888,7 @@ the sweeps to convergence.
 
 ```{python}
 #| label: fig-edge
-#| fig-cap: 'The edge of applicability: coupling kills coordinate descent''s speed. For the quadratic $\\tfrac12\\mathbf{x}^\\top A\\mathbf{x}$ with $A$ having unit diagonal and off-diagonal $c$ (so $A=[[1,c],[c,1]]$), the condition number is $(1+c)/(1-c)$, which blows up as the coupling $c\\to 1$. The plot shows sweeps needed to reach $\\|\\mathbf{x}\\|<10^{-4}$ versus condition number (log-log). The count grows steeply with the condition number — the same ill-conditioning dependence that plagues gradient descent ([OPTM-07]). When your variables are highly correlated, neither axis-aligned nor steepest-descent steps help; you need curvature (Newton, [OPTM-09]) or a change of coordinates.'
+#| fig-cap: 'The edge of applicability: coupling kills coordinate descent''s speed. For the quadratic $\tfrac12\mathbf{x}^\top A\mathbf{x}$ with $A$ having unit diagonal and off-diagonal $c$ (so $A=[[1,c],[c,1]]$), the condition number is $(1+c)/(1-c)$, which blows up as the coupling $c\to 1$. The plot shows sweeps needed to reach $\|\mathbf{x}\|<10^{-4}$ versus condition number (log-log). The count grows steeply with the condition number — the same ill-conditioning dependence that plagues gradient descent ([OPTM-07]). When your variables are highly correlated, neither axis-aligned nor steepest-descent steps help; you need curvature (Newton, [OPTM-09]) or a change of coordinates.'
 def sweeps_to_converge(c, tol=1e-4, max_sweeps=200000):
     A = np.array([[1.0, c], [c, 1.0]])
     b = np.zeros(2)

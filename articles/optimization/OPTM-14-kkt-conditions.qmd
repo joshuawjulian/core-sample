@@ -159,7 +159,7 @@ where the unconstrained minimum sits relative to the feasible region.
 
 ```{python}
 #| label: fig-active-inactive
-#| fig-cap: 'The one new phenomenon. We minimize $f(\\mathbf{x})=\\|\\mathbf{x}-\\mathbf{a}\\|^2$ (concentric blue level circles centered at the open marker $\\mathbf{a}$, the *unconstrained* minimum) over the feasible disk $g(\\mathbf{x})=\\|\\mathbf{x}\\|^2-1\\le0$ (shaded, red boundary). **Left:** $\\mathbf{a}$ is *inside* the disk, so the constrained optimum is $\\mathbf{a}$ itself — the constraint is **inactive** ($g<0$), and $\\nabla f=\\mathbf{0}$ there. **Right:** $\\mathbf{a}$ is *outside*, so the optimum is pushed onto the boundary (green) — the constraint is **active** ($g=0$), and $\\nabla f$ points straight out, opposed by the constraint''s inward push.'
+#| fig-cap: 'The one new phenomenon. We minimize $f(\mathbf{x})=\|\mathbf{x}-\mathbf{a}\|^2$ (concentric blue level circles centered at the open marker $\mathbf{a}$, the *unconstrained* minimum) over the feasible disk $g(\mathbf{x})=\|\mathbf{x}\|^2-1\le0$ (shaded, red boundary). **Left:** $\mathbf{a}$ is *inside* the disk, so the constrained optimum is $\mathbf{a}$ itself — the constraint is **inactive** ($g<0$), and $\nabla f=\mathbf{0}$ there. **Right:** $\mathbf{a}$ is *outside*, so the optimum is pushed onto the boundary (green) — the constraint is **active** ($g=0$), and $\nabla f$ points straight out, opposed by the constraint''s inward push.'
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.7))
 
 def draw(ax, a, title):
@@ -253,7 +253,7 @@ inside the cone of forbidden directions.
 
 ```{python}
 #| label: fig-cone
-#| fig-cap: 'Why $\\mu\\ge0$: at an active optimum, $-\\nabla f$ (the downhill direction, green) must lie *inside the cone* spanned by the outward constraint normals $\\nabla g_i$ (gold). Two active constraints are shown; their normals point out of the feasible wedge (shaded). Because $-\\nabla f$ is a **nonnegative** combination of them, $\\nabla f=-\\mu_1\\nabla g_1-\\mu_2\\nabla g_2$ with both $\\mu_i\\ge0$. If $-\\nabla f$ pointed *outside* the cone, some feasible downhill step would remain and we would not be optimal. This cone picture is the geometric content of stationarity-plus-dual-feasibility.'
+#| fig-cap: 'Why $\mu\ge0$: at an active optimum, $-\nabla f$ (the downhill direction, green) must lie *inside the cone* spanned by the outward constraint normals $\nabla g_i$ (gold). Two active constraints are shown; their normals point out of the feasible wedge (shaded). Because $-\nabla f$ is a **nonnegative** combination of them, $\nabla f=-\mu_1\nabla g_1-\mu_2\nabla g_2$ with both $\mu_i\ge0$. If $-\nabla f$ pointed *outside* the cone, some feasible downhill step would remain and we would not be optimal. This cone picture is the geometric content of stationarity-plus-dual-feasibility.'
 fig, ax = plt.subplots(figsize=(5.8, 5.2))
 # Feasible wedge at origin bounded by two constraint boundaries.
 # Outward normals n1, n2; feasible region is where g_i<=0, i.e. inside the wedge.
@@ -638,7 +638,7 @@ slackness encodes. @fig-ridge-toggle shows the toggle as we shrink the budget $t
 
 ```{python}
 #| label: fig-ridge-toggle
-#| fig-cap: 'Complementary slackness in ridge, as the budget $t$ shrinks. **Top:** the solution norm $\\|\\boldsymbol\\beta(t)\\|$. For large $t$ (right of the dashed line) the OLS solution already fits: the constraint is **inactive**, $\\mu=0$, and the norm is flat at $\\|\\hat\\beta_{OLS}\\|$. Once $t$ drops below $\\|\\hat\\beta_{OLS}\\|^2$ the constraint **activates**: the norm tracks the budget exactly ($\\|\\beta\\|^2=t$), and **bottom**, the multiplier $\\mu>0$ switches on and grows as the budget tightens. The kink is the moment complementary slackness flips which case holds.'
+#| fig-cap: 'Complementary slackness in ridge, as the budget $t$ shrinks. **Top:** the solution norm $\|\boldsymbol\beta(t)\|$. For large $t$ (right of the dashed line) the OLS solution already fits: the constraint is **inactive**, $\mu=0$, and the norm is flat at $\|\hat\beta_{OLS}\|$. Once $t$ drops below $\|\hat\beta_{OLS}\|^2$ the constraint **activates**: the norm tracks the budget exactly ($\|\beta\|^2=t$), and **bottom**, the multiplier $\mu>0$ switches on and grows as the budget tightens. The kink is the moment complementary slackness flips which case holds.'
 rng = np.random.default_rng(1)
 n, p = 60, 4
 Xd = rng.normal(size=(n, p))
@@ -746,7 +746,7 @@ trained margin and marks exactly the support vectors (the nonzero-$\mu$ points).
 
 ```{python}
 #| label: fig-svm
-#| fig-cap: 'The SVM and its KKT structure. A maximum-margin separator (red) with its margin boundaries (dashed). The points with nonzero multiplier $\\mu_i>0$ — the **support vectors** — are circled; they lie exactly on the margin boundary, where their constraint is active ($g_i=0$). Every other point has $\\mu_i=0$ by complementary slackness and contributes nothing to $\\mathbf{w}=\\sum_i\\mu_i y_i\\mathbf{x}_i$. Deleting all the non-support points would leave the boundary unchanged. KKT *is* the SVM''s defining structure.'
+#| fig-cap: 'The SVM and its KKT structure. A maximum-margin separator (red) with its margin boundaries (dashed). The points with nonzero multiplier $\mu_i>0$ — the **support vectors** — are circled; they lie exactly on the margin boundary, where their constraint is active ($g_i=0$). Every other point has $\mu_i=0$ by complementary slackness and contributes nothing to $\mathbf{w}=\sum_i\mu_i y_i\mathbf{x}_i$. Deleting all the non-support points would leave the boundary unchanged. KKT *is* the SVM''s defining structure.'
 from scipy.optimize import minimize
 
 rng = np.random.default_rng(4)
@@ -890,7 +890,7 @@ silently misses it.
 
 ```{python}
 #| label: fig-cq-fail
-#| fig-cap: 'A constraint-qualification failure. The feasible region (shaded) is pinched between $y\\ge0$ and $y\\le(1-x)^3$, meeting in a **cusp** at $(1,0)$ — the true minimizer of $f(x,y)=x$ (green). At the cusp the two active constraint normals are linearly dependent (the cone collapses), so no valid $\\mu_1,\\mu_2\\ge0$ satisfy stationarity. The lesson mirrors the equality case of [OPTM-13]: always check a constraint qualification (linear independence of active gradients, or Slater''s condition) before trusting the multiplier system.'
+#| fig-cap: 'A constraint-qualification failure. The feasible region (shaded) is pinched between $y\ge0$ and $y\le(1-x)^3$, meeting in a **cusp** at $(1,0)$ — the true minimizer of $f(x,y)=x$ (green). At the cusp the two active constraint normals are linearly dependent (the cone collapses), so no valid $\mu_1,\mu_2\ge0$ satisfy stationarity. The lesson mirrors the equality case of [OPTM-13]: always check a constraint qualification (linear independence of active gradients, or Slater''s condition) before trusting the multiplier system.'
 xv = np.linspace(-0.4, 1.3, 400)
 upper = (1 - xv)**3
 fig, ax = plt.subplots(figsize=(6.0, 4.6))

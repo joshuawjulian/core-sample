@@ -167,7 +167,7 @@ catastrophe. @fig-ellipse draws both.
 
 ```{python}
 #| label: fig-ellipse
-#| fig-cap: 'Conditioning is the shape of the ellipse. Each panel shows the unit circle (grey) and its image $A(\\text{circle})$ (an ellipse). **Left:** a well-conditioned matrix ($\\kappa \\approx 1.5$) — a nearly round ellipse; the longest and shortest semi-axes (red and green, the singular directions scaled by $\\sigma_{\\max},\\sigma_{\\min}$) are comparable, so $A$ stretches every direction by roughly the same amount. **Right:** an ill-conditioned matrix ($\\kappa \\approx 40$) — a thin cigar; the flat direction is squashed by $\\sigma_{\\min}$, so *inverting* (solving $Ax=b$) must blow that direction back up by $1/\\sigma_{\\min}$, magnifying any error that points along it.'
+#| fig-cap: 'Conditioning is the shape of the ellipse. Each panel shows the unit circle (grey) and its image $A(\text{circle})$ (an ellipse). **Left:** a well-conditioned matrix ($\kappa \approx 1.5$) — a nearly round ellipse; the longest and shortest semi-axes (red and green, the singular directions scaled by $\sigma_{\max},\sigma_{\min}$) are comparable, so $A$ stretches every direction by roughly the same amount. **Right:** an ill-conditioned matrix ($\kappa \approx 40$) — a thin cigar; the flat direction is squashed by $\sigma_{\min}$, so *inverting* (solving $Ax=b$) must blow that direction back up by $1/\sigma_{\min}$, magnifying any error that points along it.'
 theta = np.linspace(0, 2*np.pi, 240)
 circle = np.vstack([np.cos(theta), np.sin(theta)])
 
@@ -482,7 +482,7 @@ actually results — then compare it to the bound $\kappa\,\|\delta b\|/\|b\|$.
 
 ```{python}
 #| label: fig-amplify
-#| fig-cap: 'The amplification bound in action. For each target condition number $\\kappa$ (horizontal axis), we solve $Ax=b$, then re-solve with $b$ perturbed by a relative $10^{-12}$ in many random directions, and record the *largest* relative error in $x$ that results (red points). The grey line is the theoretical worst case $\\kappa \\times 10^{-12}$ from @thm-cond. The observed errors hug the bound from below and reach it for the worst-aligned perturbations — confirming both that $\\kappa$ is an upper bound and that it is *sharp*. The lesson: error grows linearly with $\\kappa$, decade for decade.'
+#| fig-cap: 'The amplification bound in action. For each target condition number $\kappa$ (horizontal axis), we solve $Ax=b$, then re-solve with $b$ perturbed by a relative $10^{-12}$ in many random directions, and record the *largest* relative error in $x$ that results (red points). The grey line is the theoretical worst case $\kappa \times 10^{-12}$ from @thm-cond. The observed errors hug the bound from below and reach it for the worst-aligned perturbations — confirming both that $\kappa$ is an upper bound and that it is *sharp*. The lesson: error grows linearly with $\kappa$, decade for decade.'
 rng = np.random.default_rng(3)
 kappas = np.logspace(1, 12, 12)
 rel_input = 1e-12
@@ -537,7 +537,7 @@ condition number explodes with size.
 
 ```{python}
 #| label: fig-hilbert
-#| fig-cap: 'The Hilbert matrix $H_n$ (the Gram matrix of monomials, hence what you get fitting a polynomial in raw powers of $t$). **Left:** the condition number $\\kappa(H_n)=\\lambda_{\\max}/\\lambda_{\\min}$ grows *exponentially* with the size $n$ — note the log scale; by $n=12$ it exceeds $10^{16}$, the precision floor of double arithmetic, so $H_{12}$ is numerically singular though mathematically invertible. **Right:** solving $H_n x = b$ for a known $x$ (all ones), the number of *correct digits* in the computed answer collapses as $n$ grows, tracking the $16-\\log_{10}\\kappa$ rule (grey) almost exactly.'
+#| fig-cap: 'The Hilbert matrix $H_n$ (the Gram matrix of monomials, hence what you get fitting a polynomial in raw powers of $t$). **Left:** the condition number $\kappa(H_n)=\lambda_{\max}/\lambda_{\min}$ grows *exponentially* with the size $n$ — note the log scale; by $n=12$ it exceeds $10^{16}$, the precision floor of double arithmetic, so $H_{12}$ is numerically singular though mathematically invertible. **Right:** solving $H_n x = b$ for a known $x$ (all ones), the number of *correct digits* in the computed answer collapses as $n$ grows, tracking the $16-\log_{10}\kappa$ rule (grey) almost exactly.'
 def hilbert(n):
     i = np.arange(1, n+1)
     return 1.0 / (i[:, None] + i[None, :] - 1.0)
@@ -598,7 +598,7 @@ swing.
 
 ```{python}
 #| label: fig-collinear
-#| fig-cap: 'Multicollinearity is ill-conditioning. We regress an outcome on three features, where features 1 and 2 are nearly identical (correlation $\\approx 0.999$). **Left:** the design''s near-collinear columns make $X^\\top X$ ill-conditioned ($\\kappa$ shown). **Right:** refitting on 200 bootstrap resamples of the data, the estimated coefficients for the two collinear features (red, gold) scatter wildly — and in mirror image, one large-positive whenever the other is large-negative — while the clean feature''s coefficient (green) stays put. The model cannot tell the two near-duplicates apart, so it trades enormous coefficients back and forth between them; tiny data wiggles swing the answer, exactly as $\\kappa$ predicts.'
+#| fig-cap: 'Multicollinearity is ill-conditioning. We regress an outcome on three features, where features 1 and 2 are nearly identical (correlation $\approx 0.999$). **Left:** the design''s near-collinear columns make $X^\top X$ ill-conditioned ($\kappa$ shown). **Right:** refitting on 200 bootstrap resamples of the data, the estimated coefficients for the two collinear features (red, gold) scatter wildly — and in mirror image, one large-positive whenever the other is large-negative — while the clean feature''s coefficient (green) stays put. The model cannot tell the two near-duplicates apart, so it trades enormous coefficients back and forth between them; tiny data wiggles swing the answer, exactly as $\kappa$ predicts.'
 rng = np.random.default_rng(11)
 n = 120
 f1 = rng.normal(0, 1, n)
@@ -708,7 +708,7 @@ and even harder to see).
 
 ```{python}
 #| label: fig-edge
-#| fig-cap: 'Estimating $\\kappa$ is itself ill-conditioned. We build matrices with a *known* condition number (horizontal axis) and estimate it two ways. The SVD of $A$ directly (green) stays accurate far longer. Routing through $A^\\top A$ (red) — i.e. estimating $\\kappa(A) = \\sqrt{\\kappa(A^\\top A)}$ — squares the condition number internally, so its estimate of $\\sigma_{\\min}$ drowns in roundoff and the reported $\\kappa$ saturates and then collapses to garbage once $\\kappa^2$ pierces the precision floor near $\\kappa \\approx 10^8$. The diagnostic inherits the disease: when a matrix is badly conditioned, even *measuring how badly* is hard, and you must never square the problem to do it.'
+#| fig-cap: 'Estimating $\kappa$ is itself ill-conditioned. We build matrices with a *known* condition number (horizontal axis) and estimate it two ways. The SVD of $A$ directly (green) stays accurate far longer. Routing through $A^\top A$ (red) — i.e. estimating $\kappa(A) = \sqrt{\kappa(A^\top A)}$ — squares the condition number internally, so its estimate of $\sigma_{\min}$ drowns in roundoff and the reported $\kappa$ saturates and then collapses to garbage once $\kappa^2$ pierces the precision floor near $\kappa \approx 10^8$. The diagnostic inherits the disease: when a matrix is badly conditioned, even *measuring how badly* is hard, and you must never square the problem to do it.'
 true_kappas = np.logspace(1, 15, 22)
 est_svd, est_gram = [], []
 rng = np.random.default_rng(0)
@@ -789,7 +789,7 @@ $A$ and solving. Library calls like `numpy.linalg.solve(A, b)` perform an LU fac
 
 ```{python}
 #| label: fig-solve-vs-invert
-#| fig-cap: 'Solve, don''t invert. For random matrices across a range of condition numbers, we solve $Ax=b$ two ways and measure the relative error against a high-precision reference: `solve(A,b)` (green) versus forming `inv(A) @ b` (red). Both degrade as $\\kappa$ grows — neither can beat the conditioning floor — but explicit inversion is consistently worse by a modest factor, having spent extra arithmetic (and extra rounding) to produce a full inverse it then mostly discards. Same answer in theory; fewer correct digits in practice.'
+#| fig-cap: 'Solve, don''t invert. For random matrices across a range of condition numbers, we solve $Ax=b$ two ways and measure the relative error against a high-precision reference: `solve(A,b)` (green) versus forming `inv(A) @ b` (red). Both degrade as $\kappa$ grows — neither can beat the conditioning floor — but explicit inversion is consistently worse by a modest factor, having spent extra arithmetic (and extra rounding) to produce a full inverse it then mostly discards. Same answer in theory; fewer correct digits in practice.'
 rng = np.random.default_rng(7)
 kappas = np.logspace(1, 13, 13)
 err_solve, err_inv = [], []
@@ -846,7 +846,7 @@ the single small one that conditioning hangs on.
 
 ```{python}
 #| label: fig-det-bad
-#| fig-cap: 'The determinant lies about conditioning. Diagonal matrices $cI_{10}$ for a range of scales $c$: the determinant $c^{10}$ (red) sweeps across 100 orders of magnitude and crosses zero-to-the-eye, while the condition number (green) is *exactly $1$ for every one of them* — these are all perfectly conditioned. A near-zero determinant signals smallness of scale, not closeness to singularity. Use $\\sigma_{\\min}$ (or $\\kappa$, or the rank from the SVD), never $\\det$.'
+#| fig-cap: 'The determinant lies about conditioning. Diagonal matrices $cI_{10}$ for a range of scales $c$: the determinant $c^{10}$ (red) sweeps across 100 orders of magnitude and crosses zero-to-the-eye, while the condition number (green) is *exactly $1$ for every one of them* — these are all perfectly conditioned. A near-zero determinant signals smallness of scale, not closeness to singularity. Use $\sigma_{\min}$ (or $\kappa$, or the rank from the SVD), never $\det$.'
 scales = np.logspace(-3, 1.5, 30)
 dets = scales ** 10
 conds = np.ones_like(scales)   # cI has all singular values = c, so kappa = 1
@@ -911,7 +911,7 @@ $\kappa(X)$.
 
 ```{python}
 #| label: fig-normal-vs-qr
-#| fig-cap: 'Normal equations square the condition number. We solve the *same* least-squares problems three ways across designs of increasing $\\kappa(X)$: the normal equations $X^\\top X\\beta = X^\\top y$ (red), QR ($R\\beta = Q^\\top y$, green), and the SVD/pseudoinverse (blue). QR and SVD track the $\\kappa(X)\\cdot u$ floor (grey); the normal equations track $\\kappa(X)^2\\cdot u$ — they fail roughly when $\\kappa(X)$ reaches $10^8$ (so $\\kappa(X)^2$ hits the precision floor), losing the answer while QR and SVD still have half their digits. This is *the* reason production least-squares solvers use QR or SVD, never the normal equations, despite the latter''s textbook prominence.'
+#| fig-cap: 'Normal equations square the condition number. We solve the *same* least-squares problems three ways across designs of increasing $\kappa(X)$: the normal equations $X^\top X\beta = X^\top y$ (red), QR ($R\beta = Q^\top y$, green), and the SVD/pseudoinverse (blue). QR and SVD track the $\kappa(X)\cdot u$ floor (grey); the normal equations track $\kappa(X)^2\cdot u$ — they fail roughly when $\kappa(X)$ reaches $10^8$ (so $\kappa(X)^2$ hits the precision floor), losing the answer while QR and SVD still have half their digits. This is *the* reason production least-squares solvers use QR or SVD, never the normal equations, despite the latter''s textbook prominence.'
 rng = np.random.default_rng(5)
 kappas = np.logspace(1, 12, 12)
 err_ne, err_qr, err_svd = [], [], []

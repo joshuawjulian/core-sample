@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Make Quarto cell options (#| fig-cap: "...", etc.) safe for LaTeX.
+r"""Convert double-quoted Quarto cell options (#| fig-cap: "...") to SINGLE-quoted YAML,
+which is the safe home for literal LaTeX (single quotes do no escape processing).
 
-A double-quoted YAML scalar processes backslash escapes: '\g' (\\ge) is an *invalid*
-escape -> hard render failure; '\b'/'\f'/'\t' are *valid* escapes -> the caption is
-silently corrupted. LaTeX in a caption needs literal backslashes, so the right
-representation is a SINGLE-quoted YAML scalar (no escape processing).
-
-This rewrites any '#| key: "<value containing a backslash>"' to single-quoted form,
-un-escaping \\" -> " and doubling internal single quotes per YAML rules. Lines without a
-backslash, and non-#| lines, are left untouched.
+The tricky part is recovering the author's intended literal from the double-quoted source:
+  - "\\{"  (escaped backslash) means a literal  \{   -> collapse \\ to \
+  - "\""   (escaped quote)      means a literal   "
+  - "\ge"  (a lone backslash, an *invalid* double-quote escape that the author meant
+            literally) stays  \ge
+So: protect "\\" -> sentinel, turn "\"" -> ", restore sentinel -> "\", then single-quote
+(doubling any internal single quote). Lines without a backslash, and already single-quoted
+or non-#| lines, are left untouched.
 
 Usage:  python3 tools/fix_caption_quotes.py <file.qmd> [...]
 """
@@ -22,9 +23,11 @@ def fix_line(line):
         return line, 0
     prefix, val = m.group(1), m.group(2)
     if '\\' not in val:
-        return line, 0                       # nothing risky
-    inner = val.replace('\\"', '"')          # a literal " had to be escaped in dquotes
-    single = inner.replace("'", "''")        # YAML single-quote escaping
+        return line, 0
+    literal = val.replace('\\\\', '\x00')   # protect escaped backslashes
+    literal = literal.replace('\\"', '"')    # escaped double-quote -> literal "
+    literal = literal.replace('\x00', '\\')  # escaped backslash -> a single backslash
+    single = literal.replace("'", "''")      # YAML single-quote escaping
     return f"{prefix}'{single}'\n", 1
 
 def fix_file(p):
@@ -33,14 +36,11 @@ def fix_file(p):
     for i, ln in enumerate(lines):
         new, k = fix_line(ln)
         if k:
-            lines[i] = new
-            n += k
+            lines[i] = new; n += k
     if n:
         p.write_text("".join(lines))
     return n
 
 if __name__ == '__main__':
-    total = 0
-    for a in sys.argv[1:]:
-        total += fix_file(pathlib.Path(a))
+    total = sum(fix_file(pathlib.Path(a)) for a in sys.argv[1:])
     print(f"converted {total} cell-option line(s) to single-quoted")

@@ -177,7 +177,7 @@ sketches the two routes.
 
 ```{python}
 #| label: fig-adjoint-picture
-#| fig-cap: 'The two ways to measure how $A\\mathbf{x}$ aligns with $\\mathbf{y}$. Top route: send $\\mathbf{x}$ forward through $A$ into the output space, then dot with $\\mathbf{y}$ there. Bottom route: pull $\\mathbf{y}$ backward through $A^\\top$ into the input space, then dot with $\\mathbf{x}$ there. The adjoint relation says the two numbers are identical — the transpose is exactly the backward machine that makes them agree.'
+#| fig-cap: 'The two ways to measure how $A\mathbf{x}$ aligns with $\mathbf{y}$. Top route: send $\mathbf{x}$ forward through $A$ into the output space, then dot with $\mathbf{y}$ there. Bottom route: pull $\mathbf{y}$ backward through $A^\top$ into the input space, then dot with $\mathbf{x}$ there. The adjoint relation says the two numbers are identical — the transpose is exactly the backward machine that makes them agree.'
 fig, ax = plt.subplots(figsize=(7.6, 3.6))
 ax.axis("off")
 ax.set_xlim(0, 10); ax.set_ylim(0, 6)
@@ -549,7 +549,7 @@ generality": the antisymmetric part contributes nothing to $\mathbf{x}^\top A\ma
 
 ```{python}
 #| label: fig-symmetric
-#| fig-cap: 'Three matrices as heatmaps with their transposes. **Left:** a general matrix — transposing reflects it across the main diagonal (dashed) and changes it. **Middle:** a symmetric matrix $S=S^\\top$ — reflection leaves it unchanged; the pattern is mirror-image about the diagonal. **Right:** $A^\\top A$ formed from the general matrix on the left — guaranteed symmetric by the corollary, visibly mirror-symmetric about its diagonal.'
+#| fig-cap: 'Three matrices as heatmaps with their transposes. **Left:** a general matrix — transposing reflects it across the main diagonal (dashed) and changes it. **Middle:** a symmetric matrix $S=S^\top$ — reflection leaves it unchanged; the pattern is mirror-image about the diagonal. **Right:** $A^\top A$ formed from the general matrix on the left — guaranteed symmetric by the corollary, visibly mirror-symmetric about its diagonal.'
 rng = np.random.default_rng(3)
 A = rng.integers(-4, 5, size=(4, 4)).astype(float)
 S = np.round((A + A.T) / 2, 1)          # a symmetric matrix
@@ -628,7 +628,7 @@ dot products is automatically a mirror image about its diagonal.
 
 ```{python}
 #| label: fig-gram
-#| fig-cap: 'The Gram matrix as a table of pairwise column dot products. **Left:** three column vectors $\\mathbf{a}_1,\\mathbf{a}_2,\\mathbf{a}_3$ in the plane. **Right:** their Gram matrix $A^\\top A$; each cell $(i,j)$ is $\\mathbf{a}_i^\\top\\mathbf{a}_j$. The diagonal holds squared lengths $\\|\\mathbf{a}_i\\|^2$; off-diagonals hold alignments. $\\mathbf{a}_1\\perp\\mathbf{a}_2$ here, so the $(1,2)$ and $(2,1)$ entries are zero. The whole grid is mirror-symmetric about its diagonal.'
+#| fig-cap: 'The Gram matrix as a table of pairwise column dot products. **Left:** three column vectors $\mathbf{a}_1,\mathbf{a}_2,\mathbf{a}_3$ in the plane. **Right:** their Gram matrix $A^\top A$; each cell $(i,j)$ is $\mathbf{a}_i^\top\mathbf{a}_j$. The diagonal holds squared lengths $\|\mathbf{a}_i\|^2$; off-diagonals hold alignments. $\mathbf{a}_1\perp\mathbf{a}_2$ here, so the $(1,2)$ and $(2,1)$ entries are zero. The whole grid is mirror-symmetric about its diagonal.'
 a1 = np.array([2.0, 0.0])
 a2 = np.array([0.0, 1.5])     # orthogonal to a1
 a3 = np.array([1.6, 1.2])     # general direction
@@ -763,7 +763,7 @@ exactly. We also show the "wrong" identity $(AB)^\top \ne A^\top B^\top$ by shap
 
 ```{python}
 #| label: fig-adjoint-check
-#| fig-cap: 'The adjoint relation verified numerically. For a random $4\\times 3$ matrix $A$ and 200 random pairs $(\\mathbf{x},\\mathbf{y})$, we plot $\\langle A\\mathbf{x},\\mathbf{y}\\rangle$ against $\\langle\\mathbf{x},A^\\top\\mathbf{y}\\rangle$. Every point lands on the identity line $y=x$ to machine precision — the two ways of measuring agree, always, exactly as @thm-adjoint proves.'
+#| fig-cap: 'The adjoint relation verified numerically. For a random $4\times 3$ matrix $A$ and 200 random pairs $(\mathbf{x},\mathbf{y})$, we plot $\langle A\mathbf{x},\mathbf{y}\rangle$ against $\langle\mathbf{x},A^\top\mathbf{y}\rangle$. Every point lands on the identity line $y=x$ to machine precision — the two ways of measuring agree, always, exactly as @thm-adjoint proves.'
 rng = np.random.default_rng(42)
 A = rng.normal(size=(4, 3))          # maps R^3 -> R^4
 lhs, rhs = [], []
@@ -810,7 +810,7 @@ normal equations." Watch what actually happens.
 
 ```{python}
 #| label: fig-conditioning
-#| fig-cap: 'The edge of applicability. Two columns of $A$ are nearly parallel (a tiny angle $\\varepsilon$ apart), as on the left. Forming $A^\\top A$ **squares** the disparity between the columns'' independent and shared parts — the right panel shows the condition number (a measure of numerical fragility, [GEOM-26]) of $A^\\top A$ exploding as the columns align, far faster than that of $A$ itself. Solving via $A^\\top A$ throws away half your significant digits; this is why practitioners reach for QR or SVD instead.'
+#| fig-cap: 'The edge of applicability. Two columns of $A$ are nearly parallel (a tiny angle $\varepsilon$ apart), as on the left. Forming $A^\top A$ **squares** the disparity between the columns'' independent and shared parts — the right panel shows the condition number (a measure of numerical fragility, [GEOM-26]) of $A^\top A$ exploding as the columns align, far faster than that of $A$ itself. Solving via $A^\top A$ throws away half your significant digits; this is why practitioners reach for QR or SVD instead.'
 # Two unit columns separated by a shrinking angle eps.
 eps_vals = np.logspace(-1, -7, 25)
 cond_A, cond_AtA = [], []

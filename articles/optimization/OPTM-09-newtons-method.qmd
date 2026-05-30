@@ -185,7 +185,7 @@ parabola's bottom."
 
 ```{python}
 #| label: fig-parabola
-#| fig-cap: 'One step, two philosophies, same start. The objective (navy) is $f(x)=\\tfrac14 x^4 - x^2 + x + 3$. From $x_k=2.1$, **gradient descent** (grey) takes a small step against the slope $f''(x_k)$ and barely moves. **Newton''s method** (red) fits the matching parabola $m(x)=f(x_k)+f''(x_k)(x-x_k)+\\tfrac12 f''''(x_k)(x-x_k)^2$ — matching $f$ in value, slope, *and* curvature at $x_k$ — and jumps to that parabola''s vertex $x_{k+1}=x_k-f''(x_k)/f''''(x_k)$, landing far closer to the true minimum (green). The parabola, not the line, is what lets Newton choose a step length.'
+#| fig-cap: 'One step, two philosophies, same start. The objective (navy) is $f(x)=\tfrac14 x^4 - x^2 + x + 3$. From $x_k=2.1$, **gradient descent** (grey) takes a small step against the slope $f''(x_k)$ and barely moves. **Newton''s method** (red) fits the matching parabola $m(x)=f(x_k)+f''(x_k)(x-x_k)+\tfrac12 f''''(x_k)(x-x_k)^2$ — matching $f$ in value, slope, *and* curvature at $x_k$ — and jumps to that parabola''s vertex $x_{k+1}=x_k-f''(x_k)/f''''(x_k)$, landing far closer to the true minimum (green). The parabola, not the line, is what lets Newton choose a step length.'
 f   = lambda x: 0.25*x**4 - x**2 + x + 3
 fp  = lambda x: x**3 - 2*x + 1
 fpp = lambda x: 3*x**2 - 2
@@ -265,7 +265,7 @@ square-root unit performs.
 
 ```{python}
 #| label: fig-rootfinding
-#| fig-cap: 'Newton''s root-finder solving $x^2-2=0$ (so the root is $\\sqrt 2\\approx 1.4142$). From $x_0=2$, each step replaces the curve (navy) by its tangent (red dashed) and jumps to where the tangent crosses zero (red dots on the axis). Two steps already give $1.41421\\ldots$ — the number of correct digits roughly doubles each iteration. This is the same arithmetic inside a hardware square-root.'
+#| fig-cap: 'Newton''s root-finder solving $x^2-2=0$ (so the root is $\sqrt 2\approx 1.4142$). From $x_0=2$, each step replaces the curve (navy) by its tangent (red dashed) and jumps to where the tangent crosses zero (red dots on the axis). Two steps already give $1.41421\ldots$ — the number of correct digits roughly doubles each iteration. This is the same arithmetic inside a hardware square-root.'
 f   = lambda x: x**2 - 2
 fp  = lambda x: 2*x
 xs = np.linspace(0.8, 2.2, 300)
@@ -527,7 +527,7 @@ of digits per step. @fig-rates shows the two on the same plot.
 
 ```{python}
 #| label: fig-rates
-#| fig-cap: 'Linear versus quadratic convergence, on a log scale, minimizing $f(x,y)=\\tfrac12(x^2 + 25 y^2)$ — an ill-conditioned bowl with $\\kappa=25$. Gradient descent (grey) descends in a straight line on the log plot, gaining a fixed number of digits per step at a rate set by $\\kappa$. Newton''s method (red) needs *one* step: the objective is exactly quadratic, so its quadratic model is exact and the vertex is the true minimum. On a non-quadratic objective Newton would curve downward ever more steeply — the error squaring each step — but here it is immediate.'
+#| fig-cap: 'Linear versus quadratic convergence, on a log scale, minimizing $f(x,y)=\tfrac12(x^2 + 25 y^2)$ — an ill-conditioned bowl with $\kappa=25$. Gradient descent (grey) descends in a straight line on the log plot, gaining a fixed number of digits per step at a rate set by $\kappa$. Newton''s method (red) needs *one* step: the objective is exactly quadratic, so its quadratic model is exact and the vertex is the true minimum. On a non-quadratic objective Newton would curve downward ever more steeply — the error squaring each step — but here it is immediate.'
 A = np.array([[1.0, 0.0],[0.0, 25.0]])   # Hessian, kappa = 25
 grad = lambda x: A @ x
 xstar = np.zeros(2)
@@ -709,7 +709,7 @@ minimum), yet the *raw* step diverges from a perfectly reasonable start. Damping
 
 ```{python}
 #| label: fig-divergence
-#| fig-cap: 'Raw Newton can diverge on a perfectly nice function. Minimizing $f(x)=\\sqrt{x^2+1}$ — smooth, strictly convex, single minimum at $x^\\star=0$ — from $x_0=1.1$. The Newton step here is exactly $x_{k+1}=-x_k^3$, so any start with $|x_0|>1$ explodes while flipping sign. **Left (grey):** the *undamped* iterates $1.1\\to-1.33\\to2.36\\to\\cdots$ race outward (the magnitude is plotted on a log axis; the alternating sign is annotated). **Right (red):** the *damped* step $x+t\\,(-f''/f'''')$ with a backtracking line search on $t$ shortens the overlong steps, stays a descent method, and converges to $0$. Damping is what makes Newton safe far from the optimum.'
+#| fig-cap: 'Raw Newton can diverge on a perfectly nice function. Minimizing $f(x)=\sqrt{x^2+1}$ — smooth, strictly convex, single minimum at $x^\star=0$ — from $x_0=1.1$. The Newton step here is exactly $x_{k+1}=-x_k^3$, so any start with $|x_0|>1$ explodes while flipping sign. **Left (grey):** the *undamped* iterates $1.1\to-1.33\to2.36\to\cdots$ race outward (the magnitude is plotted on a log axis; the alternating sign is annotated). **Right (red):** the *damped* step $x+t\,(-f''/f'''')$ with a backtracking line search on $t$ shortens the overlong steps, stays a descent method, and converges to $0$. Damping is what makes Newton safe far from the optimum.'
 def f(x):   return np.sqrt(x**2 + 1.0)
 def fp(x):  return x/np.sqrt(x**2 + 1.0)
 def fpp(x): return (x**2 + 1.0)**(-1.5)
@@ -856,7 +856,7 @@ both fast and numerically clean.
 
 ```{python}
 #| label: fig-gaussnewton
-#| fig-cap: 'Gauss–Newton fitting a nonlinear model $\\hat y = a\\,e^{bx}$ to noisy exponential-decay data ($n=40$) — a genuine nonlinear least-squares problem with no closed form. **Left:** the converged fit (red) through the data (navy). **Right:** the objective $\\tfrac12\\|\\mathbf r\\|^2$ versus iteration on a log scale; Gauss–Newton reaches the minimum in a handful of steps, far faster than the gradient-descent baseline (grey).'
+#| fig-cap: 'Gauss–Newton fitting a nonlinear model $\hat y = a\,e^{bx}$ to noisy exponential-decay data ($n=40$) — a genuine nonlinear least-squares problem with no closed form. **Left:** the converged fit (red) through the data (navy). **Right:** the objective $\tfrac12\|\mathbf r\|^2$ versus iteration on a log scale; Gauss–Newton reaches the minimum in a handful of steps, far faster than the gradient-descent baseline (grey).'
 rng = np.random.default_rng(3)
 x = np.linspace(0, 4, 40)
 a_true, b_true = 5.0, -0.8
@@ -951,7 +951,7 @@ The logistic example below shows the engine running.
 
 ```{python}
 #| label: fig-irls
-#| fig-cap: 'Logistic regression fit by Newton''s method (IRLS). The data are $n=120$ points with a binary outcome whose probability rises with $x$; the model is $P(y=1\\mid x)=\\sigma(\\beta_0+\\beta_1 x)$. **Left:** the fitted probability curve (red) through the 0/1 data (navy), with the decision boundary $\\hat P=0.5$ marked. **Right:** the negative log-likelihood versus Newton iteration — it reaches the minimum in 5–6 steps, the quadratic convergence of @thm-quadratic on a real statistical objective.'
+#| fig-cap: 'Logistic regression fit by Newton''s method (IRLS). The data are $n=120$ points with a binary outcome whose probability rises with $x$; the model is $P(y=1\mid x)=\sigma(\beta_0+\beta_1 x)$. **Left:** the fitted probability curve (red) through the 0/1 data (navy), with the decision boundary $\hat P=0.5$ marked. **Right:** the negative log-likelihood versus Newton iteration — it reaches the minimum in 5–6 steps, the quadratic convergence of @thm-quadratic on a real statistical objective.'
 rng = np.random.default_rng(11)
 n = 120
 x = rng.uniform(-3, 3, n)

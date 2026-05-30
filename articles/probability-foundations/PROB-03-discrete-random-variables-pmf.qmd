@@ -179,7 +179,7 @@ before we prove it.
 
 ```{python}
 #| label: fig-pmf-cdf
-#| fig-cap: 'Two views of one discrete variable. **Left:** the probability mass function — a lump of probability "clay" on each value, heights summing to $1$. **Right:** the cumulative distribution function $F(x)=P(X\\le x)$, the running total of that mass. It is a right-continuous step function: flat between values, jumping up by exactly $p(x)$ at each value (jumps marked with the dashed arrows). The pmf is the height of the jumps; the CDF is the running sum of the heights. Filled dots mark the value the step actually takes; open dots mark the limit from the left.'
+#| fig-cap: 'Two views of one discrete variable. **Left:** the probability mass function — a lump of probability "clay" on each value, heights summing to $1$. **Right:** the cumulative distribution function $F(x)=P(X\le x)$, the running total of that mass. It is a right-continuous step function: flat between values, jumping up by exactly $p(x)$ at each value (jumps marked with the dashed arrows). The pmf is the height of the jumps; the CDF is the running sum of the heights. Filled dots mark the value the step actually takes; open dots mark the limit from the left.'
 vals = np.array([0, 1, 2, 3, 4])
 pmf  = np.array([0.10, 0.25, 0.30, 0.20, 0.15])
 cdf  = np.cumsum(pmf)
@@ -507,7 +507,7 @@ event shaded.
 
 ```{python}
 #| label: fig-die
-#| fig-cap: 'The loaded die. **Left:** the pmf, with the event $\\{X\\ge 5\\}$ shaded — its total height ($0.20+0.30=0.50$) is $P(X\\ge 5)$ by @eq-event-sum. **Right:** the CDF as a staircase; each jump height equals the corresponding mass (@lem-jump), and the total rise is exactly $1$. The fair-die mass $1/6\\approx0.167$ is drawn as a dashed reference — the die''s mass is clearly tilted toward the high faces.'
+#| fig-cap: 'The loaded die. **Left:** the pmf, with the event $\{X\ge 5\}$ shaded — its total height ($0.20+0.30=0.50$) is $P(X\ge 5)$ by @eq-event-sum. **Right:** the CDF as a staircase; each jump height equals the corresponding mass (@lem-jump), and the total rise is exactly $1$. The fair-die mass $1/6\approx0.167$ is drawn as a dashed reference — the die''s mass is clearly tilted toward the high faces.'
 cdf_die = np.cumsum(p_die)
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
 
@@ -577,7 +577,7 @@ the mass* of the outcomes that land on each new value. @fig-payout draws it.
 
 ```{python}
 #| label: fig-payout
-#| fig-cap: 'The casino game''s net-profit pmf. Each bar''s height is the pooled mass of the die faces that produce that profit: four faces collapse onto a \\$1 loss (mass $2/3$), one face each onto break-even and a \\$4 win (mass $1/6$). The heavy mass on the loss is the house edge made visible — turning this picture into a single "is it worth it?" number is the job of expectation in [PROB-05].'
+#| fig-cap: 'The casino game''s net-profit pmf. Each bar''s height is the pooled mass of the die faces that produce that profit: four faces collapse onto a \$1 loss (mass $2/3$), one face each onto break-even and a \$4 win (mass $1/6$). The heavy mass on the loss is the house edge made visible — turning this picture into a single "is it worth it?" number is the job of expectation in [PROB-05].'
 fig, ax = plt.subplots(figsize=(6.0, 3.8))
 bars = ax.bar(prof, p_prof, width=0.4, color=[LINE, GREY, ACCENT])
 for v, p in zip(prof, p_prof):
@@ -710,7 +710,7 @@ variable they differ by exactly the endpoint mass $p(k)$, which is generally not
 
 ```{python}
 #| label: fig-offbyone
-#| fig-cap: 'Why the inequality direction matters for a discrete variable. Using the loaded die: $P(X\\le 4)=0.50$ (shaded, *includes* the mass at $4$) versus $P(X<4)=0.35$ (excludes it). The two differ by exactly $p(4)=0.15$ — the boxed mass. For a continuous variable this gap vanishes; here it does not, and treating $\\le$ and $<$ as the same is the classic off-by-one bug.'
+#| fig-cap: 'Why the inequality direction matters for a discrete variable. Using the loaded die: $P(X\le 4)=0.50$ (shaded, *includes* the mass at $4$) versus $P(X<4)=0.35$ (excludes it). The two differ by exactly $p(4)=0.15$ — the boxed mass. For a continuous variable this gap vanishes; here it does not, and treating $\le$ and $<$ as the same is the classic off-by-one bug.'
 F4   = p_die[:4].sum()    # P(X <= 4)
 Flt4 = p_die[:3].sum()    # P(X <  4)
 fig, ax = plt.subplots(figsize=(6.4, 3.8))

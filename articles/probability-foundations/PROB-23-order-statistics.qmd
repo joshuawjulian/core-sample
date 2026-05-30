@@ -136,7 +136,7 @@ drew." @fig-sorting shows one sample, raw and sorted, so the relabelling is conc
 
 ```{python}
 #| label: fig-sorting
-#| fig-cap: 'Sorting relabels a sample by rank. **Top:** five i.i.d. draws in the order they arrived, $X_1,\\dots,X_5$. **Bottom:** the same five values placed on the axis; reading left to right gives the order statistics $X_{(1)}\\le\\cdots\\le X_{(5)}$. The minimum $X_{(1)}$ (green) and maximum $X_{(5)}$ (red) are the extremes; $X_{(3)}$ is the sample median. Which *original* draw lands in which slot is itself random.'
+#| fig-cap: 'Sorting relabels a sample by rank. **Top:** five i.i.d. draws in the order they arrived, $X_1,\dots,X_5$. **Bottom:** the same five values placed on the axis; reading left to right gives the order statistics $X_{(1)}\le\cdots\le X_{(5)}$. The minimum $X_{(1)}$ (green) and maximum $X_{(5)}$ (red) are the extremes; $X_{(3)}$ is the sample median. Which *original* draw lands in which slot is itself random.'
 rng = np.random.default_rng(3)
 draws = rng.normal(5, 1.6, size=5)
 order = np.argsort(draws)
@@ -447,7 +447,7 @@ normal sample, making the "extremes flee to the tails, the median concentrates" 
 
 ```{python}
 #| label: fig-order-densities
-#| fig-cap: 'Densities of selected order statistics for $n=9$ i.i.d. standard-normal draws, from @eq-orderstat-density with $F=\\Phi$, $f=\\varphi$. The minimum $X_{(1)}$ (green) sits in the left tail and the maximum $X_{(9)}$ (red) in the right; both are skewed. The median $X_{(5)}$ (dark) is tight and symmetric around $0$. A single raw draw''s density (grey dashed) is shown for scale. Sorting manufactures a whole family of distributions from one parent.'
+#| fig-cap: 'Densities of selected order statistics for $n=9$ i.i.d. standard-normal draws, from @eq-orderstat-density with $F=\Phi$, $f=\varphi$. The minimum $X_{(1)}$ (green) sits in the left tail and the maximum $X_{(9)}$ (red) in the right; both are skewed. The median $X_{(5)}$ (dark) is tight and symmetric around $0$. A single raw draw''s density (grey dashed) is shown for scale. Sorting manufactures a whole family of distributions from one parent.'
 from scipy.stats import norm
 
 n = 9
@@ -655,7 +655,7 @@ continuous order-statistics problem is a Beta variable pushed through a quantile
 
 ```{python}
 #| label: fig-uniform-beta
-#| fig-cap: 'The Beta law of uniform order statistics, @thm-uniform-beta. For $n=10$ uniform draws we simulate $200{,}000$ replications and histogram three order statistics. Overlaid (red) are the exact $\\mathrm{Beta}(k,\\,n-k+1)$ densities: $U_{(1)}\\sim\\mathrm{Beta}(1,10)$, $U_{(5)}\\sim\\mathrm{Beta}(5,6)$, $U_{(10)}\\sim\\mathrm{Beta}(10,1)$. The simulated histograms sit right on top of the exact Beta curves. Vertical ticks mark the means $k/(n+1)$ from @eq-uniform-moments.'
+#| fig-cap: 'The Beta law of uniform order statistics, @thm-uniform-beta. For $n=10$ uniform draws we simulate $200{,}000$ replications and histogram three order statistics. Overlaid (red) are the exact $\mathrm{Beta}(k,\,n-k+1)$ densities: $U_{(1)}\sim\mathrm{Beta}(1,10)$, $U_{(5)}\sim\mathrm{Beta}(5,6)$, $U_{(10)}\sim\mathrm{Beta}(10,1)$. The simulated histograms sit right on top of the exact Beta curves. Vertical ticks mark the means $k/(n+1)$ from @eq-uniform-moments.'
 from scipy.stats import beta as beta_dist
 
 rng = np.random.default_rng(7)
@@ -760,7 +760,7 @@ exhausts.* That is the unification the Core promised.
 
 ```{python}
 #| label: fig-uniform-pvalues
-#| fig-cap: 'Null p-values are uniform — @thm-uniform-pvalue, simulated. We generate $50{,}000$ datasets under a *true* null (two groups of $n=20$ standard normals, no real difference) and run a two-sample $t$-test on each. **Left:** the histogram of the resulting p-values is flat across $(0,1)$, so each value is equally likely. **Right:** their empirical CDF lies on the diagonal $P(P\\le\\alpha)=\\alpha$ (red), confirming a level-$\\alpha$ test rejects exactly an $\\alpha$ fraction of true nulls. The dashed line marks $\\alpha=0.05$.'
+#| fig-cap: 'Null p-values are uniform — @thm-uniform-pvalue, simulated. We generate $50{,}000$ datasets under a *true* null (two groups of $n=20$ standard normals, no real difference) and run a two-sample $t$-test on each. **Left:** the histogram of the resulting p-values is flat across $(0,1)$, so each value is equally likely. **Right:** their empirical CDF lies on the diagonal $P(P\le\alpha)=\alpha$ (red), confirming a level-$\alpha$ test rejects exactly an $\alpha$ fraction of true nulls. The dashed line marks $\alpha=0.05$.'
 rng = np.random.default_rng(2024)
 reps = 50_000
 ngrp = 20
@@ -806,7 +806,7 @@ yardstick. @fig-bh shows the picture.
 
 ```{python}
 #| label: fig-bh
-#| fig-cap: 'The bridge that powers multiple testing. Sorted p-values from $m=50$ tests, plotted against rank $k$. **Grey:** all nulls true — the points hug the diagonal $E[p_{(k)}]=k/(m+1)$ (dashed) exactly as the Beta law predicts, and stay above the Benjamini–Hochberg threshold line $\\alpha k/m$ (red, $\\alpha=0.1$), so nothing is (correctly) flagged. **Blue:** the same with 8 genuine effects injected — their small p-values peel below the threshold at the left, which is how a false-discovery-rate procedure detects them. Knowing the *null* order-statistic positions is what makes the detection possible.'
+#| fig-cap: 'The bridge that powers multiple testing. Sorted p-values from $m=50$ tests, plotted against rank $k$. **Grey:** all nulls true — the points hug the diagonal $E[p_{(k)}]=k/(m+1)$ (dashed) exactly as the Beta law predicts, and stay above the Benjamini–Hochberg threshold line $\alpha k/m$ (red, $\alpha=0.1$), so nothing is (correctly) flagged. **Blue:** the same with 8 genuine effects injected — their small p-values peel below the threshold at the left, which is how a false-discovery-rate procedure detects them. Knowing the *null* order-statistic positions is what makes the detection possible.'
 rng = np.random.default_rng(5)
 m = 50
 alpha = 0.10
@@ -949,7 +949,7 @@ larger than uniform), meaning the true Type I error is *below* the nominal $\alp
 
 ```{python}
 #| label: fig-discrete
-#| fig-cap: 'The edge of applicability: discrete tests do NOT give uniform null p-values. $30{,}000$ binomial tests of $H_0: p=0.5$ with $n=20$ Bernoulli trials, simulated under the *true* null. **Left:** the p-value distribution is a staircase, not flat — it can only take the discrete values the binomial tail allows. **Right:** its empirical CDF lies *below* the diagonal, so $P(p\\le 0.05)<0.05$: the test is conservative, rejecting *less* often than advertised. The continuity hypothesis of @thm-uniform-pvalue is not a technicality — drop it and uniformity is gone.'
+#| fig-cap: 'The edge of applicability: discrete tests do NOT give uniform null p-values. $30{,}000$ binomial tests of $H_0: p=0.5$ with $n=20$ Bernoulli trials, simulated under the *true* null. **Left:** the p-value distribution is a staircase, not flat — it can only take the discrete values the binomial tail allows. **Right:** its empirical CDF lies *below* the diagonal, so $P(p\le 0.05)<0.05$: the test is conservative, rejecting *less* often than advertised. The continuity hypothesis of @thm-uniform-pvalue is not a technicality — drop it and uniformity is gone.'
 from scipy.stats import binomtest
 
 rng = np.random.default_rng(7)

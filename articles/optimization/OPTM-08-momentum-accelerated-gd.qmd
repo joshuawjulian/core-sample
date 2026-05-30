@@ -129,7 +129,7 @@ we know precisely what we are trying to heal.
 
 ```{python}
 #| label: fig-the-wound
-#| fig-cap: 'The wound momentum heals. Plain gradient descent on an ill-conditioned quadratic ($\\kappa=25$), run with the step-size-optimal constant $\\eta$. The negative gradient points perpendicular to the elliptical contours, so the path slams back and forth across the narrow valley (the steep direction) while inching along its floor (the gentle direction). Sixty steps and it is still far from the minimum. The information loss is total between steps: each step has *forgotten* that the last one already over-corrected the same way.'
+#| fig-cap: 'The wound momentum heals. Plain gradient descent on an ill-conditioned quadratic ($\kappa=25$), run with the step-size-optimal constant $\eta$. The negative gradient points perpendicular to the elliptical contours, so the path slams back and forth across the narrow valley (the steep direction) while inching along its floor (the gentle direction). Sixty steps and it is still far from the minimum. The information loss is total between steps: each step has *forgotten* that the last one already over-corrected the same way.'
 def gd_quad_diag(curv, x0, eta, n):
     """Plain GD on f(x)=sum_i 0.5*curv_i*x_i^2; gradient = curv*x."""
     curv = np.asarray(curv, float)
@@ -188,7 +188,7 @@ bowl, plain GD versus momentum, side by side.
 
 ```{python}
 #| label: fig-roadmap
-#| fig-cap: 'The whole article on one slide. **Left:** plain gradient descent on the $\\kappa=25$ bowl zig-zags (reproduced from @fig-the-wound). **Right:** heavy-ball momentum on the *same* bowl, *same* start, with a tuned momentum coefficient. The oscillation across the steep walls is damped by inertia while speed builds along the gentle floor, so the path sweeps almost directly to the minimum in a fraction of the steps. Same gradients, same cost per step — the only difference is that momentum remembers.'
+#| fig-cap: 'The whole article on one slide. **Left:** plain gradient descent on the $\kappa=25$ bowl zig-zags (reproduced from @fig-the-wound). **Right:** heavy-ball momentum on the *same* bowl, *same* start, with a tuned momentum coefficient. The oscillation across the steep walls is damped by inertia while speed builds along the gentle floor, so the path sweeps almost directly to the minimum in a fraction of the steps. Same gradients, same cost per step — the only difference is that momentum remembers.'
 def heavy_ball_diag(curv, x0, eta, beta, n):
     """Heavy-ball momentum on f(x)=sum_i 0.5*curv_i*x_i^2."""
     curv = np.asarray(curv, float)
@@ -258,7 +258,7 @@ GD's zero toward the over-heavy regime where inertia makes it overshoot and ring
 
 ```{python}
 #| label: fig-friction
-#| fig-cap: 'Dialing the mass. Heavy-ball momentum on the $\\kappa=25$ bowl for three momentum coefficients, all with the same step size. $\\beta=0$ (navy) is plain gradient descent — full friction, no memory, the familiar zig-zag. A moderate $\\beta=0.7$ (green) damps the oscillation and builds speed down the floor: the sweet spot. Too much, $\\beta=0.95$ (red), and the ball is so heavy it overshoots the minimum and *rings* — inertia is now a liability. Momentum is a tuned quantity, not a free lunch.'
+#| fig-cap: 'Dialing the mass. Heavy-ball momentum on the $\kappa=25$ bowl for three momentum coefficients, all with the same step size. $\beta=0$ (navy) is plain gradient descent — full friction, no memory, the familiar zig-zag. A moderate $\beta=0.7$ (green) damps the oscillation and builds speed down the floor: the sweet spot. Too much, $\beta=0.95$ (red), and the ball is so heavy it overshoots the minimum and *rings* — inertia is now a liability. Momentum is a tuned quantity, not a free lunch.'
 mu, kap = 1.0, 25.0
 L = mu * kap
 eta = 1.0 / L
@@ -573,7 +573,7 @@ like $\kappa$ for GD and $\sqrt\kappa$ for momentum.
 
 ```{python}
 #| label: fig-rate-compare
-#| fig-cap: 'The square-root law, measured. For each condition number $\\kappa$ we build the 2-D quadratic with curvatures $\\{1,\\kappa\\}$, run plain GD at its optimal step and heavy-ball momentum at the optimal $(\\eta,\\beta)$ from @eq-beta-opt, and count iterations to reach suboptimality $10^{-8}$. **Left:** iterations vs. $\\kappa$ on log-log axes — GD''s curve has slope $\\approx 1$ (iterations $\\propto\\kappa$), momentum''s slope $\\approx 1/2$ (iterations $\\propto\\sqrt\\kappa$). **Right:** the predicted per-step contraction factors $1-2/\\kappa$ (GD) and $1-2/\\sqrt\\kappa$ (momentum) — momentum stays far below 1 even when GD''s factor is pinned against it.'
+#| fig-cap: 'The square-root law, measured. For each condition number $\kappa$ we build the 2-D quadratic with curvatures $\{1,\kappa\}$, run plain GD at its optimal step and heavy-ball momentum at the optimal $(\eta,\beta)$ from @eq-beta-opt, and count iterations to reach suboptimality $10^{-8}$. **Left:** iterations vs. $\kappa$ on log-log axes — GD''s curve has slope $\approx 1$ (iterations $\propto\kappa$), momentum''s slope $\approx 1/2$ (iterations $\propto\sqrt\kappa$). **Right:** the predicted per-step contraction factors $1-2/\kappa$ (GD) and $1-2/\sqrt\kappa$ (momentum) — momentum stays far below 1 even when GD''s factor is pinned against it.'
 def iters_to_tol(curv, eta, beta, tol=1e-8, max_it=200000):
     curv = np.asarray(curv, float)
     x = np.array([1.0, 1.0]); v = np.zeros(2)
@@ -658,7 +658,7 @@ gradient evaluation points on a single step.
 
 ```{python}
 #| label: fig-lookahead
-#| fig-cap: 'Heavy-ball versus Nesterov on a single step, in a 1-D valley near the minimum. Both start at $x_k$ (navy) with the same momentum-carried jump $\\beta v_k$ (grey arrow) toward the look-ahead point $y_k$ (green). **Heavy-ball** measures the gradient *at* $x_k$ (navy arrow) — where the slope still says ''keep going,'' so it overshoots past the minimum. **Nesterov** measures the gradient at the look-ahead $y_k$ (red arrow) — which has already crossed the minimum and points *back*, braking the step. The look-ahead gradient is the anticipatory correction that prevents the overshoot.'
+#| fig-cap: 'Heavy-ball versus Nesterov on a single step, in a 1-D valley near the minimum. Both start at $x_k$ (navy) with the same momentum-carried jump $\beta v_k$ (grey arrow) toward the look-ahead point $y_k$ (green). **Heavy-ball** measures the gradient *at* $x_k$ (navy arrow) — where the slope still says ''keep going,'' so it overshoots past the minimum. **Nesterov** measures the gradient at the look-ahead $y_k$ (red arrow) — which has already crossed the minimum and points *back*, braking the step. The look-ahead gradient is the anticipatory correction that prevents the overshoot.'
 def f1(x): return 0.5 * x**2
 def g1(x): return x
 xk = -2.0
@@ -829,7 +829,7 @@ We build a deliberately ill-conditioned design, then race the three methods.
 
 ```{python}
 #| label: fig-ridge-race
-#| fig-cap: 'Three optimizers on ridge least squares ($\\kappa\\approx 160$). Suboptimality $f(\\beta_k)-f^\\star$ on a log scale. **Plain GD** (navy) descends linearly but slowly — its slope is the $1-2/\\kappa$ rate. **Heavy-ball** (red) and **Nesterov** (green) both descend with the far steeper $1-2/\\sqrt\\kappa$ slope, reaching machine-accuracy in a small fraction of the iterations. Nesterov''s slight ripple early on is the non-monotone behavior the look-ahead permits — note the objective is allowed to tick *up* — yet it still wins decisively. The dashed lines are the predicted contraction envelopes from @eq-hb-rate.'
+#| fig-cap: 'Three optimizers on ridge least squares ($\kappa\approx 160$). Suboptimality $f(\beta_k)-f^\star$ on a log scale. **Plain GD** (navy) descends linearly but slowly — its slope is the $1-2/\kappa$ rate. **Heavy-ball** (red) and **Nesterov** (green) both descend with the far steeper $1-2/\sqrt\kappa$ slope, reaching machine-accuracy in a small fraction of the iterations. Nesterov''s slight ripple early on is the non-monotone behavior the look-ahead permits — note the objective is allowed to tick *up* — yet it still wins decisively. The dashed lines are the predicted contraction envelopes from @eq-hb-rate.'
 rng = np.random.default_rng(0)
 n, p = 300, 12
 Q, _ = np.linalg.qr(rng.standard_normal((p, p)))
@@ -908,7 +908,7 @@ momentum's promise survives contact with a real, non-quadratic objective — and
 
 ```{python}
 #| label: fig-logistic-race
-#| fig-cap: 'Momentum on a non-quadratic objective: regularized logistic regression ($n=600$, $p=20$). Even though the curvature varies with $\\beta$ (so there is no single matrix to read $\\kappa$ off), heavy-ball and Nesterov momentum sharply outpace plain gradient descent — the local-quadratic intuition holds globally enough to matter. Nesterov is smoothest; heavy-ball shows its characteristic mild overshoot ripple but still converges fast. The same memory trick that helped on the clean quadratic helps here.'
+#| fig-cap: 'Momentum on a non-quadratic objective: regularized logistic regression ($n=600$, $p=20$). Even though the curvature varies with $\beta$ (so there is no single matrix to read $\kappa$ off), heavy-ball and Nesterov momentum sharply outpace plain gradient descent — the local-quadratic intuition holds globally enough to matter. Nesterov is smoothest; heavy-ball shows its characteristic mild overshoot ripple but still converges fast. The same memory trick that helped on the clean quadratic helps here.'
 rng = np.random.default_rng(4)
 n, p = 600, 20
 Xl = rng.standard_normal((n, p))
@@ -972,7 +972,7 @@ failure modes on purpose.
 
 ```{python}
 #| label: fig-overshoot
-#| fig-cap: 'When momentum is the wrong instinct. **Left:** heavy-ball on a well-conditioned 1-D quadratic with an over-large $\\beta=0.95$ — the iterate blows past the minimum and oscillates with slowly decaying amplitude (ringing). For an *easy* problem ($\\kappa\\approx 1$), plain GD (navy) just walks straight in while momentum (red) wastes dozens of steps ringing: momentum can be strictly *worse* when there is no ill-conditioning to fix. **Right:** with *stochastic* gradients (each gradient corrupted by noise), high momentum (red, $\\beta=0.95$) amplifies the noise into a wide, wandering band, while low/zero momentum (navy) settles into a tighter region around the optimum. Inertia integrates noise — the reason practical SGD ([OPTM-11], [OPTM-12]) uses *moderate*, damped momentum.'
+#| fig-cap: 'When momentum is the wrong instinct. **Left:** heavy-ball on a well-conditioned 1-D quadratic with an over-large $\beta=0.95$ — the iterate blows past the minimum and oscillates with slowly decaying amplitude (ringing). For an *easy* problem ($\kappa\approx 1$), plain GD (navy) just walks straight in while momentum (red) wastes dozens of steps ringing: momentum can be strictly *worse* when there is no ill-conditioning to fix. **Right:** with *stochastic* gradients (each gradient corrupted by noise), high momentum (red, $\beta=0.95$) amplifies the noise into a wide, wandering band, while low/zero momentum (navy) settles into a tighter region around the optimum. Inertia integrates noise — the reason practical SGD ([OPTM-11], [OPTM-12]) uses *moderate*, damped momentum.'
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
 
 # Left: ringing on an easy quadratic.

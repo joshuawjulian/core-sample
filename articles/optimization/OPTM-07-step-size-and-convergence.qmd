@@ -143,7 +143,7 @@ step rule.
 
 ```{python}
 #| label: fig-roadmap
-#| fig-cap: 'The whole story on one slide. Gradient descent on two quadratic bowls, same starting point, each run with its own optimal constant step size. **Left:** a well-conditioned (nearly round) bowl, $\\kappa=1.5$ — the iterates walk almost straight to the bottom. **Right:** an ill-conditioned (stretched) bowl, $\\kappa=20$ — the steepest direction dominates, so the path zig-zags across the narrow valley and creeps along its floor. Same algorithm; the *condition number* $\\kappa$ alone decides the difference. The rest of the article makes this precise.'
+#| fig-cap: 'The whole story on one slide. Gradient descent on two quadratic bowls, same starting point, each run with its own optimal constant step size. **Left:** a well-conditioned (nearly round) bowl, $\kappa=1.5$ — the iterates walk almost straight to the bottom. **Right:** an ill-conditioned (stretched) bowl, $\kappa=20$ — the steepest direction dominates, so the path zig-zags across the narrow valley and creeps along its floor. Same algorithm; the *condition number* $\kappa$ alone decides the difference. The rest of the article makes this precise.'
 def gd_quadratic(a, b, x0, eta, n_steps):
     """GD on f(x,y) = (a/2) x^2 + (b/2) y^2; gradient = (a x, b y)."""
     xs = [np.array(x0, dtype=float)]
@@ -210,7 +210,7 @@ $m$ down drives $f$ down with it. @fig-quadratic-trap shows the trap in one dime
 
 ```{python}
 #| label: fig-quadratic-trap
-#| fig-cap: 'Smoothness as a trap. The true objective $f$ (navy) is $L$-smooth, so at the point $x_k$ it lies *entirely below* the upper parabola $m(x)=f(x_k)+f''(x_k)(x-x_k)+\\tfrac{L}{2}(x-x_k)^2$ (red), which matches $f$''s height and slope at $x_k$ but bends at the steepest rate $f$ is permitted. Minimizing the visible parabola lands at $x_{k+1}=x_k-\\tfrac{1}{L}f''(x_k)$ (the gradient-descent step with $\\eta=1/L$). Because $f\\le m$, the guaranteed drop in $m$ is a guaranteed drop in $f$ — this is the descent lemma, drawn.'
+#| fig-cap: 'Smoothness as a trap. The true objective $f$ (navy) is $L$-smooth, so at the point $x_k$ it lies *entirely below* the upper parabola $m(x)=f(x_k)+f''(x_k)(x-x_k)+\tfrac{L}{2}(x-x_k)^2$ (red), which matches $f$''s height and slope at $x_k$ but bends at the steepest rate $f$ is permitted. Minimizing the visible parabola lands at $x_{k+1}=x_k-\tfrac{1}{L}f''(x_k)$ (the gradient-descent step with $\eta=1/L$). Because $f\le m$, the guaranteed drop in $m$ is a guaranteed drop in $f$ — this is the descent lemma, drawn.'
 def f(x):
     return 0.35 * x**2 + 0.6 * np.sin(1.5 * x) + 0.2 * x
 def fp(x):
@@ -449,7 +449,7 @@ $2/L$ (divergence).
 
 ```{python}
 #| label: fig-eta-sweep
-#| fig-cap: 'The step-size thresholds, confirmed. Gradient descent on the 1-D quadratic $f(x)=\\tfrac{L}{2}x^2$ (here $L=4$, minimum at $0$), started at $x_0=1$, run for each step size. The curve shows $|x_k|$ after 30 steps versus $\\eta$. Below $\\eta=1/L=0.25$ convergence is monotone but slow; *at* $\\eta=1/L$ it is instant (one step lands exactly at $0$, the parabola''s true bottom); between $1/L$ and $2/L=0.5$ it overshoots but still converges; at $\\eta=2/L$ it cycles forever ($\\pm1$); above $2/L$ it diverges. The dashed lines mark the two thresholds the descent lemma predicts.'
+#| fig-cap: 'The step-size thresholds, confirmed. Gradient descent on the 1-D quadratic $f(x)=\tfrac{L}{2}x^2$ (here $L=4$, minimum at $0$), started at $x_0=1$, run for each step size. The curve shows $|x_k|$ after 30 steps versus $\eta$. Below $\eta=1/L=0.25$ convergence is monotone but slow; *at* $\eta=1/L$ it is instant (one step lands exactly at $0$, the parabola''s true bottom); between $1/L$ and $2/L=0.5$ it overshoots but still converges; at $\eta=2/L$ it cycles forever ($\pm1$); above $2/L$ it diverges. The dashed lines mark the two thresholds the descent lemma predicts.'
 L = 4.0
 x0 = 1.0
 etas = np.linspace(0.01, 0.62, 400)
@@ -818,7 +818,7 @@ bowl and shows convergence collapsing as $\kappa$ grows.
 
 ```{python}
 #| label: fig-zigzag
-#| fig-cap: 'How the condition number throttles gradient descent. **Left:** the iterate path on an ill-conditioned quadratic ($\\kappa=30$) with the step-size-optimal constant $\\eta$; the path is forced into a slow zig-zag down the narrow valley because $\\eta$ is capped by the steep walls while progress must be made along the gentle floor. **Right:** measured suboptimality $f(x_k)-f^\\star$ (log scale) versus iteration for three condition numbers. All three are straight lines (linear convergence), but the slope flattens as $\\kappa$ grows — the predicted $\\rho=1-1/\\kappa$ getting closer to $1$.'
+#| fig-cap: 'How the condition number throttles gradient descent. **Left:** the iterate path on an ill-conditioned quadratic ($\kappa=30$) with the step-size-optimal constant $\eta$; the path is forced into a slow zig-zag down the narrow valley because $\eta$ is capped by the steep walls while progress must be made along the gentle floor. **Right:** measured suboptimality $f(x_k)-f^\star$ (log scale) versus iteration for three condition numbers. All three are straight lines (linear convergence), but the slope flattens as $\kappa$ grows — the predicted $\rho=1-1/\kappa$ getting closer to $1$.'
 def gd_quad_diag(curv, x0, eta, n):
     """f(x) = sum_i 0.5*curv_i*x_i^2 ; returns iterate array and f-values."""
     curv = np.asarray(curv, float)
@@ -943,7 +943,7 @@ knowing $L$*. @fig-linesearch shows it in action and its effect on the trajector
 
 ```{python}
 #| label: fig-linesearch
-#| fig-cap: 'Backtracking line search, made visible. **Left:** the 1-D slice $\\phi(\\eta)=f(x_k-\\eta g_k)$ along the descent direction (navy), the Armijo sufficient-decrease line (red), and the candidate step sizes backtracking tries (shrinking by $\\beta=0.5$ from an optimistic start) — it accepts the first that lands on or below the red line. **Right:** gradient descent with backtracking on an ill-conditioned bowl, which finds a safe step every iteration *without being told $L$*, converging cleanly where a guessed constant $\\eta$ might diverge or crawl.'
+#| fig-cap: 'Backtracking line search, made visible. **Left:** the 1-D slice $\phi(\eta)=f(x_k-\eta g_k)$ along the descent direction (navy), the Armijo sufficient-decrease line (red), and the candidate step sizes backtracking tries (shrinking by $\beta=0.5$ from an optimistic start) — it accepts the first that lands on or below the red line. **Right:** gradient descent with backtracking on an ill-conditioned bowl, which finds a safe step every iteration *without being told $L$*, converging cleanly where a guessed constant $\eta$ might diverge or crawl.'
 # Left panel: one line-search slice on a 1-D quadratic-ish objective.
 def fobj(x):  # 1-D illustrative objective
     return 0.5 * 6.0 * x**2
@@ -1109,7 +1109,7 @@ backtracking, which can never overshoot the cliff. @fig-divergence shows the bou
 
 ```{python}
 #| label: fig-divergence
-#| fig-cap: 'Stepping off the cliff. Gradient descent on $f(x)=\\tfrac{L}{2}x^2$ ($L=4$, so $2/L=0.5$) from $x_0=1$, for four step sizes. $\\eta=0.2$ ($<1/L$) crawls down monotonically; $\\eta=1/L=0.25$ lands at the bottom in one step; $\\eta=0.45$ ($\\in(1/L,2/L)$) overshoots and oscillates inward; $\\eta=0.55$ ($>2/L$) oscillates *outward* and diverges. The threshold at $2/L$ is exactly the descent lemma''s prediction.'
+#| fig-cap: 'Stepping off the cliff. Gradient descent on $f(x)=\tfrac{L}{2}x^2$ ($L=4$, so $2/L=0.5$) from $x_0=1$, for four step sizes. $\eta=0.2$ ($<1/L$) crawls down monotonically; $\eta=1/L=0.25$ lands at the bottom in one step; $\eta=0.45$ ($\in(1/L,2/L)$) overshoots and oscillates inward; $\eta=0.55$ ($>2/L$) oscillates *outward* and diverges. The threshold at $2/L$ is exactly the descent lemma''s prediction.'
 L = 4.0
 fig, ax = plt.subplots(figsize=(6.8, 4.2))
 for eta, col, ls in [(0.20, ACCENT, "-"), (0.25, CURVE, "-"),
@@ -1176,7 +1176,7 @@ eigenvalues alone, and overlay the prediction on the measured suboptimality.
 
 ```{python}
 #| label: fig-ls-rate
-#| fig-cap: 'Theory meets measurement on least squares. We build a design matrix whose $X^\\top X$ has condition number $\\kappa\\approx 40$, compute $L=\\lambda_{\\max}$ and $\\mu=\\lambda_{\\min}$, and run gradient descent with $\\eta=1/L$. The measured suboptimality $f(\\beta_k)-f^\\star$ (navy) tracks the *predicted* linear-rate envelope $(1-\\mu/L)^k(f(\\beta_0)-f^\\star)$ (dashed red) closely — the bound is honest, and for a quadratic the actual rate is governed by exactly the eigenvalues the theory names.'
+#| fig-cap: 'Theory meets measurement on least squares. We build a design matrix whose $X^\top X$ has condition number $\kappa\approx 40$, compute $L=\lambda_{\max}$ and $\mu=\lambda_{\min}$, and run gradient descent with $\eta=1/L$. The measured suboptimality $f(\beta_k)-f^\star$ (navy) tracks the *predicted* linear-rate envelope $(1-\mu/L)^k(f(\beta_0)-f^\star)$ (dashed red) closely — the bound is honest, and for a quadratic the actual rate is governed by exactly the eigenvalues the theory names.'
 rng = np.random.default_rng(0)
 n, p = 200, 8
 # Construct features with a deliberately spread eigen-spectrum.
@@ -1247,7 +1247,7 @@ constant step against backtracking line search.
 
 ```{python}
 #| label: fig-logistic-rate
-#| fig-cap: 'Logistic regression: a non-quadratic but smooth, strongly-convex objective. Because curvature varies with $\\beta$, a single ''right'' constant step is hard to guess. **Backtracking line search** (green) needs no $L$ and converges fast and monotonically; a hand-picked constant step that is slightly too large (red) overshoots early and is unstable, while a safe-but-small constant (grey) crawls. This is the practical case where line search is the honest default — and the linear rate from strong convexity still holds, visible as the eventual straight-line descent on the log scale.'
+#| fig-cap: 'Logistic regression: a non-quadratic but smooth, strongly-convex objective. Because curvature varies with $\beta$, a single ''right'' constant step is hard to guess. **Backtracking line search** (green) needs no $L$ and converges fast and monotonically; a hand-picked constant step that is slightly too large (red) overshoots early and is unstable, while a safe-but-small constant (grey) crawls. This is the practical case where line search is the honest default — and the linear rate from strong convexity still holds, visible as the eventual straight-line descent on the log scale.'
 rng = np.random.default_rng(3)
 n, p = 400, 6
 Xl = rng.standard_normal((n, p))
