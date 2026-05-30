@@ -11,8 +11,8 @@ truth for what's done.
 |---|---|---|---:|---|
 | — | Pilots | regression | 2 (REGR-00,1) | ✅ committed |
 | 1 | Probability Foundations | probability-foundations | 24 | ✅ committed |
-| 2 | Geometry of Data | geometry-of-data | 28 | 🔄 in progress |
-| 3 | Optimization | optimization | 18 | ⬜ pending |
+| 2 | Geometry of Data | geometry-of-data | 28 | ✅ committed |
+| 3 | Optimization | optimization | 18 | 🔄 in progress |
 | 4 | Statistical Inference | statistical-inference | 18 | ⬜ pending |
 | 5 | Regression (REGR-02…26) | regression | 25 | ⬜ pending |
 | 6 | Classification | classification | 21 | ⬜ pending |

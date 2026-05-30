@@ -56,11 +56,11 @@ def gram_schmidt(A, modified=False):
 
 > **Where this sits in the track.** This is the seventh article in the **Geometry of
 > Data** track and the immediate sequel to the keystone. It assumes
-> [GEOM-5 *Orthogonality and Orthonormal Bases*] — the dot product as a right-angle test
+> [GEOM-05 *Orthogonality and Orthonormal Bases*] — the dot product as a right-angle test
 > $\mathbf x^\top\mathbf y = 0$, the **orthonormal basis** in which a coordinate is just a
 > dot product $c_i = \mathbf q_i^\top\mathbf x$, and the **orthogonal decomposition**
 > $\mathbf x = (\text{part in the subspace}) + (\text{part perpendicular to it})$ — and
-> above all [GEOM-6 *Orthogonal Projection onto a Subspace*], which built the single move
+> above all [GEOM-06 *Orthogonal Projection onto a Subspace*], which built the single move
 > we repeat over and over here: the projection of a vector onto a direction, and the
 > guarantee that the **residual is orthogonal** to what we projected onto. This article
 > turns that one move into a *machine*: feed it any basis, and it manufactures an
@@ -70,18 +70,18 @@ def gram_schmidt(A, modified=False):
 > solve least squares), and [GEOM-26 *Condition Number and Numerical Stability*] (where
 > the "orthogonality decays" warning we raise here is paid off in full). It is the route
 > Regression is handed for a stable least-squares solve — the honest alternative to the
-> normal equations of [REGR-1].
+> normal equations of [REGR-01].
 
 ## Abstract {.unnumbered}
 
 Orthonormal bases are the most pleasant coordinate systems in linear algebra — in one,
 every coordinate is a single dot product and projection collapses to a sum of those dot
-products (GEOM-5, GEOM-6). But data never arrives orthonormal; it arrives as whatever
+products (GEOM-05, GEOM-06). But data never arrives orthonormal; it arrives as whatever
 columns we happened to measure. **Gram–Schmidt** is the constructive bridge: given any
 linearly independent list $\mathbf a_1,\dots,\mathbf a_n$, it produces an orthonormal list
 $\mathbf q_1,\dots,\mathbf q_n$ spanning exactly the same subspaces, one vector at a time,
 by the single rule *subtract off the part that already lies in the span so far, then
-normalize*. We derive that rule from the projection of GEOM-6, prove at every step that it
+normalize*. We derive that rule from the projection of GEOM-06, prove at every step that it
 does what it claims, and then notice that the arithmetic we did was secretly a matrix
 factorization: $A = QR$, with $Q$ holding the orthonormal vectors and $R$ upper-triangular
 holding the bookkeeping. The single claim this article defends is that **$QR$ is not a
@@ -105,7 +105,7 @@ $A = QR$ — the **QR decomposition**, the orthonormal basis and the recipe that
 packaged together.
 :::
 
-Everything below orbits that box. The whole process is one move from GEOM-6 — *project,
+Everything below orbits that box. The whole process is one move from GEOM-06 — *project,
 then keep the residual* — applied in a disciplined order. The bookkeeping that turns a
 sequence of these moves into the clean equation $A=QR$ will look like an accounting trick
 at first, but by the end you should see it as inevitable: the upper-triangular shape of
@@ -115,12 +115,12 @@ $\mathbf a_1,\dots,\mathbf a_k$, never from later columns."*
 # Why we are doing this: the problem that forced the process {#sec-why}
 
 Keep one question in view for the entire article: **we know orthonormal bases are golden
-(GEOM-5) — so how do we actually get one, starting from the un-special vectors data hands
+(GEOM-05) — so how do we actually get one, starting from the un-special vectors data hands
 us?** Every step below is an answer to a piece of that question.
 
-## What GEOM-5 promised, and the bill it left unpaid
+## What GEOM-05 promised, and the bill it left unpaid
 
-In [GEOM-5] we established why an **orthonormal basis** — a set of mutually perpendicular
+In [GEOM-05] we established why an **orthonormal basis** — a set of mutually perpendicular
 unit vectors $\mathbf q_1,\dots,\mathbf q_n$ with
 
 $$
@@ -134,12 +134,12 @@ bases that deliver them:
 
 1. **Coordinates are free.** To write a vector $\mathbf x$ in an orthonormal basis you do
    not solve a linear system; each coordinate is a single dot product, $c_i = \mathbf
-   q_i^\top\mathbf x$. (Derived in GEOM-5: dot $\mathbf x = \sum_j c_j\mathbf q_j$ with
+   q_i^\top\mathbf x$. (Derived in GEOM-05: dot $\mathbf x = \sum_j c_j\mathbf q_j$ with
    $\mathbf q_i$ and all cross-terms vanish by @eq-orthonormal.)
 2. **Projection collapses.** Projecting a vector onto the span of orthonormal vectors is
    just adding up those coordinate pieces — no matrix inverse, no normal equations.
 
-But GEOM-5 never told us where such a basis *comes from*. Real data does not arrive
+But GEOM-05 never told us where such a basis *comes from*. Real data does not arrive
 orthonormal. A design matrix's columns are whatever predictors you measured — height,
 weight, age — and they are correlated, of different lengths, and generally at oblique
 angles to one another. The standard basis $\mathbf e_1,\dots,\mathbf e_n$ is orthonormal,
@@ -151,7 +151,7 @@ unpaid bill is exactly this:
 
 ## Why "the same subspace" is the whole point
 
-We could trivially produce an orthonormal set — just hand back $\mathbf e_1,\dots,\mathbf
+We could produce an orthonormal set with no work at all — just hand back $\mathbf e_1,\dots,\mathbf
 e_n$. The constraint that makes the problem real is that the new basis must span the
 **same space** as the old one, and more than that, must build it up in the same order: the
 first $k$ new vectors must span exactly what the first $k$ old ones spanned. That order-
@@ -181,7 +181,7 @@ iterations, and the SVD ([GEOM-20]) all cash it.
 *"Why bother orthogonalizing at all — why not just solve in the original basis?"* Because
 in an oblique basis the coordinates of a vector are **coupled**: changing how much of
 $\mathbf a_1$ you use changes the best amount of $\mathbf a_2$, because they overlap. You
-must solve a full linear system (the normal equations of GEOM-6) to untangle them. In an
+must solve a full linear system (the normal equations of GEOM-06) to untangle them. In an
 orthonormal basis the coordinates are **decoupled** — each is its own independent dot
 product — so the system becomes trivial. Orthogonalizing *up front* trades one hard
 coupled solve for a sequence of easy independent ones, and (the payoff of @sec-solving)
@@ -199,16 +199,16 @@ oblique angle. You want two *perpendicular* arrows spanning the same plane.
 - Keep the first direction: let $\mathbf q_1$ point along $\mathbf a_1$ (just shrink it to
   length one).
 - Now look at $\mathbf a_2$. Part of it lies along $\mathbf q_1$ — that is the *shadow* of
-  $\mathbf a_2$ on the $\mathbf q_1$ line, the projection from GEOM-6. The rest of
+  $\mathbf a_2$ on the $\mathbf q_1$ line, the projection from GEOM-06. The rest of
   $\mathbf a_2$ sticks out perpendicular to $\mathbf q_1$. **Throw away the shadow, keep
-  what sticks out.** What remains is, by the residual-is-orthogonal guarantee of GEOM-6,
+  what sticks out.** What remains is, by the residual-is-orthogonal guarantee of GEOM-06,
   exactly perpendicular to $\mathbf q_1$. Shrink it to length one; that is $\mathbf q_2$.
 
 Two perpendicular unit arrows, same plane. @fig-gs-2d shows precisely this subtraction.
 
 ```{python}
 #| label: fig-gs-2d
-#| fig-cap: "Gram–Schmidt on two vectors in the plane. We keep $\\mathbf a_1$'s direction as $\\mathbf q_1$. The projection of $\\mathbf a_2$ onto $\\mathbf q_1$ (the dashed grey shadow) is the part of $\\mathbf a_2$ that is *redundant* — it points in a direction we already have. Subtracting it leaves the residual $\\mathbf v_2$ (purple), which the GEOM-6 guarantee makes exactly perpendicular to $\\mathbf q_1$. Normalizing $\\mathbf v_2$ gives $\\mathbf q_2$. The right angle between $\\mathbf q_1$ and $\\mathbf q_2$ is marked."
+#| fig-cap: "Gram–Schmidt on two vectors in the plane. We keep $\\mathbf a_1$'s direction as $\\mathbf q_1$. The projection of $\\mathbf a_2$ onto $\\mathbf q_1$ (the dashed grey shadow) is the part of $\\mathbf a_2$ that is *redundant* — it points in a direction we already have. Subtracting it leaves the residual $\\mathbf v_2$ (purple), which the GEOM-06 guarantee makes exactly perpendicular to $\\mathbf q_1$. Normalizing $\\mathbf v_2$ gives $\\mathbf q_2$. The right angle between $\\mathbf q_1$ and $\\mathbf q_2$ is marked."
 a1 = np.array([3.0, 1.0])
 a2 = np.array([1.5, 2.6])
 q1 = a1 / np.linalg.norm(a1)
@@ -285,7 +285,7 @@ plt.tight_layout()
 
 ::: {.callout-tip title="You might be asked"}
 *"In one sentence, what is Gram–Schmidt doing geometrically?"* It is repeatedly applying
-the orthogonal decomposition of GEOM-6 — split each new vector into *the part I already
+the orthogonal decomposition of GEOM-06 — split each new vector into *the part I already
 have* plus *the part that is new* — and keeping only the new part. The "part I already
 have" is a projection onto the span built so far; the "new part" is the residual, which is
 orthogonal to that span by construction. That is the entire algorithm; everything below is
@@ -295,11 +295,11 @@ making "the part I already have" precise and tallying the receipts.
 # The formal development {#sec-formal}
 
 We now make the picture exact. We will need exactly one imported ingredient, the
-projection of GEOM-6, so we restate it precisely before using it.
+projection of GEOM-06, so we restate it precisely before using it.
 
 ## The one tool we import: projection onto a unit vector {#sec-import}
 
-From [GEOM-6], the **orthogonal projection** of a vector $\mathbf v$ onto the line spanned
+From [GEOM-06], the **orthogonal projection** of a vector $\mathbf v$ onto the line spanned
 by a nonzero vector $\mathbf a$ is
 
 $$
@@ -405,7 +405,7 @@ $\operatorname{span}\{\mathbf q_1,\dots,\mathbf q_{k-1}\} = \operatorname{span}\
 a_1,\dots,\mathbf a_{k-1}\}$. To bring in $\mathbf a_k$, subtract its projection onto each
 $\mathbf q_i$ already built. Because the $\mathbf q_i$ are *mutually* orthogonal, the
 projection of $\mathbf a_k$ onto their whole span is just the **sum** of the one-
-dimensional projections (this is the orthonormal-basis collapse from GEOM-5; we re-derive
+dimensional projections (this is the orthonormal-basis collapse from GEOM-05; we re-derive
 its orthogonality below). Define the projection coefficients
 
 $$
@@ -521,7 +521,7 @@ as the columns of $Q = [\,\mathbf q_1 \mid \dots \mid \mathbf q_n\,]$ ($m\times 
 the coefficients as the entries of $R$ ($n\times n$) with $R_{ik} = r_{ik}$. The rule "the
 $k$-th column of $A$ is the combination of $Q$'s columns weighted by the $k$-th column of
 $R$" is precisely the definition of matrix multiplication $A = QR$ (the column view of
-$Ax$ from [GEOM-8], applied column by column). The condition $r_{ik} = 0$ for $i > k$ means
+$Ax$ from [GEOM-08], applied column by column). The condition $r_{ik} = 0$ for $i > k$ means
 **$R$ is upper-triangular**.
 
 ::: {#thm-qr}
@@ -571,7 +571,7 @@ information; the thin form is what least squares needs and what this article bui
 
 ## Why $Q$ makes projection trivial: $P = QQ^\top$ {#sec-projection}
 
-Here is the immediate payoff that connects straight back to the keystone. In [GEOM-6] the
+Here is the immediate payoff that connects straight back to the keystone. In [GEOM-06] the
 projection matrix onto the column space of a general $A$ was
 
 $$
@@ -594,7 +594,7 @@ $$
 \boxed{\,P = QQ^\top\,.}
 $$ {#eq-PQQt}
 
-Read what $P\mathbf x = QQ^\top\mathbf x$ does, right to left, to see why this is the GEOM-5
+Read what $P\mathbf x = QQ^\top\mathbf x$ does, right to left, to see why this is the GEOM-05
 coordinate collapse in disguise. The vector $Q^\top\mathbf x$ stacks the dot products
 $\mathbf q_i^\top\mathbf x$ — the *coordinates of $\mathbf x$ along each orthonormal
 direction*. Multiplying by $Q$ rebuilds the vector $\sum_i (\mathbf q_i^\top\mathbf
@@ -737,13 +737,13 @@ This is the application that earns QR its place in the track. We fit a line to a
 physical dataset — **car stopping distance vs. speed**, from the classic 1920s `cars`
 measurements (50 cars, speed in mph, stopping distance in feet) — and solve the least-
 squares problem *two* ways: by forming and inverting $X^\top X$ (the normal equations of
-[REGR-1]), and by QR. The point is not the line itself but *why QR is the better road to
+[REGR-01]), and by QR. The point is not the line itself but *why QR is the better road to
 it*.
 
 The least-squares problem is: find $\boldsymbol\beta$ minimizing $\lVert\mathbf y -
 X\boldsymbol\beta\rVert^2$, where $X = [\,\mathbf 1 \mid \text{speed}\,]$ is the design
 matrix (a column of ones for the intercept, a column of speeds for the slope). From
-[GEOM-6]/[REGR-1] the solution satisfies the normal equations $X^\top X\boldsymbol\beta =
+[GEOM-06]/[REGR-01] the solution satisfies the normal equations $X^\top X\boldsymbol\beta =
 X^\top\mathbf y$. Substitute $X = QR$ and simplify:
 
 $$
@@ -977,7 +977,7 @@ dependence, the case of @sec-ex-edge. Here $r_{kk}$ is small but nonzero, so the
 normalization succeeds and returns a $\mathbf q_k$, but that $\mathbf q_k$ was computed by
 dividing a noise-dominated residual by a tiny number, so it is essentially random. The
 process gives an answer; the answer is wrong; nothing warns you. This is the numerical
-fingerprint of **multicollinearity** in regression ([REGR-7]) and precisely what the
+fingerprint of **multicollinearity** in regression ([REGR-07]) and precisely what the
 **condition number** ([GEOM-26]) quantifies. The defense is the same as above: modified
 Gram–Schmidt buys you headroom, Householder buys more, column pivoting reveals the problem,
 and the SVD handles it most gracefully.
@@ -1015,12 +1015,12 @@ Householder-based library QR.
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from the keystone **[GEOM-6 *Orthogonal Projection onto a Subspace*]**, whose
+You arrived from the keystone **[GEOM-06 *Orthogonal Projection onto a Subspace*]**, whose
 single move — project, keep the residual — this article ran in a disciplined loop to
-manufacture orthonormal bases, and from **[GEOM-5 *Orthogonality and Orthonormal Bases*]**,
+manufacture orthonormal bases, and from **[GEOM-05 *Orthogonality and Orthonormal Bases*]**,
 whose promise of "golden coordinate systems" we made constructive. From here:
 
-- **[GEOM-8 *Matrices as Linear Maps*]** — the next trunk article; it makes precise the
+- **[GEOM-08 *Matrices as Linear Maps*]** — the next trunk article; it makes precise the
   "columns of $A$ are a combination of $Q$'s columns" reading of $A=QR$ we used in
   @sec-qr, and the geometry of what $Q$ (an orthogonal map: a rotation/reflection) does to
   space.
@@ -1033,8 +1033,8 @@ whose promise of "golden coordinate systems" we made constructive. From here:
   loss story of @sec-ex-edge in full, proves why the normal equations square the
   conditioning, and ranks Gram–Schmidt against Householder.
 - **Out to Regression:** this is the numerically sound least-squares route offered to
-  **[REGR-1]** and the multicollinearity-aware tooling of **[REGR-7]** — QR is how a real
-  regression library computes the line that REGR-1 derives by hand.
+  **[REGR-01]** and the multicollinearity-aware tooling of **[REGR-07]** — QR is how a real
+  regression library computes the line that REGR-01 derives by hand.
 :::
 
 # Going deeper {#sec-deeper}

@@ -1,0 +1,1121 @@
+---
+title: "SVD in Action: Low-Rank Approximation and the Pseudoinverse"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / data
+HILITE = "#c1121f"   # leading singular direction / truncation
+ACCENT = "#0a7d4d"   # second direction / highlights / minimum-norm solution
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the second summit of Movement V and the place
+> the **singular value decomposition** finally earns its keep. It assumes the SVD itself
+> from [GEOM-20]: every real $m \times n$ matrix factors as $A = U\Sigma V^\top$, with
+> $U$ ($m\times m$) and $V$ ($n\times n$) **orthogonal** ($U^\top U = I$, $V^\top V = I$)
+> and $\Sigma$ ($m\times n$) holding the **singular values**
+> $\sigma_1 \ge \sigma_2 \ge \dots \ge \sigma_r > 0$ on its diagonal, where $r$ is the
+> rank; equivalently $A = \sum_{i=1}^r \sigma_i u_i v_i^\top$, a sum of rank-one pieces.
+> It leans on **orthogonal projection** and the closest-point property ([GEOM-06]), on
+> **solving $Ax=b$** and what "no solution" / "infinitely many solutions" mean ([GEOM-11]),
+> on **rank and the four subspaces** ([GEOM-12]), on the **transpose** algebra
+> ([GEOM-10]), and on the **dot product / norm** $\|x\|^2 = x^\top x$ ([GEOM-04]). The one
+> question: *once we have the SVD, how do we get the best low-rank approximation of a
+> matrix, and a "solve" for systems that have no inverse?* It hands the **PCA machinery**
+> to Unsupervised Learning (which owns the *statistics*; we own the algebra) and the
+> **pseudoinverse** to Regression for rank-deficient designs ([REGR-05], [REGR-14]).
+
+## Abstract {.unnumbered}
+
+The SVD writes any matrix as an ordered sum of rank-one pieces,
+$A = \sum_{i=1}^{r}\sigma_i u_i v_i^\top$, each weighted by a singular value
+$\sigma_i$. This article defends a single claim with two faces. **Keep the top $k$
+pieces and you get the best rank-$k$ approximation of $A$ there is** — provably best, in
+both the Frobenius and spectral norms — with the error equal to the singular values you
+threw away. That is the **Eckart–Young** theorem, and it is why "truncate the SVD" is
+the right move for compression, denoising, and latent-structure discovery. **Invert the
+pieces you keep and you get the Moore–Penrose pseudoinverse** $A^+ = V\Sigma^+U^\top$,
+the one object that "solves" $Ax=b$ for *every* $A$ — square or rectangular, full-rank or
+deficient — returning the least-squares fit when there is no exact solution and the
+minimum-norm choice when there are infinitely many. Both faces are the same act of
+reading a matrix one singular value at a time.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Order a matrix's action by importance — the SVD does exactly this, ranking it as a sum of
+rank-one layers $\sigma_1 u_1 v_1^\top \succ \sigma_2 u_2 v_2^\top \succ \dots$, biggest
+first. **Truncate** the sum after $k$ layers and you have the best rank-$k$ approximation
+of the matrix that exists; the error you incur is precisely the singular values you
+dropped. **Invert** each kept layer (replace $\sigma_i$ by $1/\sigma_i$) and you have the
+**pseudoinverse**, which returns the smallest least-squares solution to $Ax=b$ no matter
+how degenerate $A$ is. One decomposition, two indispensable tools, both just "use the big
+singular values, discard the small ones."
+:::
+
+Everything in this article is the working-out of that box. The two halves —
+approximation and inversion — look unrelated at first, but they are mirror images. To
+*approximate* you keep the large $\sigma_i$ and zero the small ones; to *invert* you keep
+the large $\sigma_i$ (as $1/\sigma_i$) and zero the small ones. The same dividing line
+between "big enough to trust" and "too small to matter" runs through both, and that line
+is where this article spends its judgment.
+
+# Why we are here: two problems the inverse could not solve {#sec-why}
+
+The SVD was completed as a piece of pure linear algebra by Eugenio Beltrami (1873) and
+Camille Jordan (1874), then rediscovered and extended over the following decades. But the
+two uses we build here were forced into existence by concrete failures of the ordinary
+inverse — and keeping those failures in view is what makes every step below feel
+inevitable rather than clever.
+
+## The first failure: there is too much matrix {#sec-why-toobig}
+
+A matrix is often a *table of measurements*: rows are objects (images, documents, users),
+columns are features (pixels, words, items). Such tables are huge and, crucially,
+**redundant** — columns are correlated, rows repeat patterns, the "real" information lives
+in far fewer dimensions than the raw shape suggests. We would like to *compress* the table
+to its essential content: replace the full $m \times n$ matrix with a much smaller object
+that captures almost all of it. The honest question is **which** small object — of all the
+rank-$k$ matrices (matrices whose action only spans $k$ directions), which one is closest
+to $A$? The inverse says nothing about this; it is the wrong tool. The SVD answers it
+exactly, and that answer is Eckart–Young (@sec-eckart-young).
+
+## The second failure: there is no inverse {#sec-why-noinverse}
+
+Photogrammetry, geodesy, statistics — the same over-determined predicament that birthed
+least squares (the Regression track's [REGR-00]) — repeatedly hands us a system $Ax = b$
+where $A$ is **not square**, or is square but **singular**. There is no $A^{-1}$. Three
+distinct things can go wrong, and a usable tool must handle all three at once:
+
+- **Tall and thin** ($m > n$, more equations than unknowns): usually *no* exact solution,
+  because $b$ does not lie in the reach of $A$. We want the $x$ that comes *closest* —
+  least squares.
+- **Short and wide** ($m < n$, more unknowns than equations): usually *infinitely many*
+  exact solutions, a whole subspace of them. We want a principled way to pick *one*.
+- **Rank-deficient** (columns redundant, the multicollinearity of [REGR-07]): the matrix
+  $A^\top A$ that the normal equations of [GEOM-06] rely on is itself singular, so the
+  classic formula $\hat x = (A^\top A)^{-1}A^\top b$ blows up.
+
+E. H. Moore (1920) and, independently, Roger Penrose (1955) defined a single object — the
+**pseudoinverse** $A^+$ — that does the right thing in *every* one of these cases:
+returns the least-squares solution when there is no exact one, the minimum-norm solution
+when there are many, and the ordinary $A^{-1}$ when $A$ is invertible. Penrose's
+construction is exactly "invert the SVD layer by layer," which is why this object belongs
+here, right after the SVD. We build it from scratch in @sec-pinv.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just always use the normal-equations formula $(A^\top A)^{-1}A^\top b$ from the
+projection article?"* Because $A^\top A$ is invertible **only when $A$ has full column
+rank** — no redundant columns. The moment two predictors are collinear (or you have more
+features than data points), $A^\top A$ is singular and that formula is undefined. The
+pseudoinverse is the repair: it agrees with $(A^\top A)^{-1}A^\top$ exactly when that
+exists, and keeps working — by picking the minimum-norm solution — when it does not. So
+the pseudoinverse is not an alternative to least-squares projection; it is its completion
+to the degenerate cases [GEOM-06] could not reach.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Recall the one-line geometry of the SVD from [GEOM-20]: a matrix $A$ acts on the unit
+sphere by **rotating** (via $V^\top$), **stretching** along orthogonal axes by the
+factors $\sigma_1 \ge \sigma_2 \ge \dots$ (via $\Sigma$), then **rotating again** (via
+$U$). The image of the sphere is an ellipsoid whose axis *lengths* are exactly the
+singular values. The longest axis is $\sigma_1$, the next $\sigma_2$, and so on.
+
+That picture makes both halves of this article visual before they are algebraic.
+
+- **Low-rank approximation** is *flattening the thin axes of the ellipsoid*. A direction
+  with a tiny singular value barely contributes to where $A$ sends things; collapse it to
+  zero and the ellipsoid hardly changes. Keep only the $k$ longest axes and you have the
+  best $k$-dimensional shadow of the full transformation. The error is governed by the
+  axes you flattened — the small $\sigma$'s.
+- **The pseudoinverse** is *running the ellipsoid backward*. To undo $A$ you un-rotate,
+  un-stretch (divide by each $\sigma_i$), and un-rotate. Dividing by a long axis is fine.
+  Dividing by a near-zero axis is catastrophic — it amplifies noise without bound — so the
+  honest "inverse" *refuses* to invert the collapsed directions and leaves them alone. The
+  pseudoinverse is the inverse that knows which directions it is allowed to touch.
+
+@fig-ellipse makes this concrete: one matrix, its singular-axis ellipse, the rank-1
+flattening, and the directions the pseudoinverse can and cannot undo.
+
+```{python}
+#| label: fig-ellipse
+#| fig-cap: "One $2\\times 2$ matrix read through its SVD. **Left:** $A$ sends the unit circle (grey) to an ellipse (blue) whose semi-axes are the singular vectors $u_1,u_2$ scaled by $\\sigma_1 > \\sigma_2$. **Center:** the best rank-1 approximation $A_1=\\sigma_1 u_1 v_1^\\top$ collapses the short axis entirely — the circle maps onto a *line segment* along $u_1$. The dropped axis had length $\\sigma_2$, exactly the approximation error. **Right:** to invert, the pseudoinverse divides by each axis length; the long axis ($\\div\\sigma_1$) is safe, the short axis ($\\div\\sigma_2$) is the fragile one that amplifies error — and would be *refused* outright if $\\sigma_2$ were zero."
+
+A = np.array([[2.0, 1.1],
+              [0.4, 1.7]])
+U, s, Vt = np.linalg.svd(A)
+theta = np.linspace(0, 2*np.pi, 240)
+circle = np.vstack([np.cos(theta), np.sin(theta)])
+ellipse = A @ circle
+A1 = s[0] * np.outer(U[:, 0], Vt[0, :])   # best rank-1
+seg = A1 @ circle
+
+fig, (a0, a1, a2) = plt.subplots(1, 3, figsize=(9.2, 3.3))
+
+a0.plot(circle[0], circle[1], color=GREY, lw=1.4, label="unit circle")
+a0.plot(ellipse[0], ellipse[1], color=VEC, lw=2.2, label="$A(\\mathrm{circle})$")
+draw_vec(a0, (0, 0), tuple(s[0]*U[:, 0]), color=HILITE, label="$\\sigma_1 u_1$", label_offset=(0.3, 0.25))
+draw_vec(a0, (0, 0), tuple(s[1]*U[:, 1]), color=ACCENT, label="$\\sigma_2 u_2$", label_offset=(-0.45, 0.1))
+a0.set_title("$A$: circle $\\to$ ellipse"); a0.set_aspect("equal"); a0.legend(fontsize=8, loc="lower right")
+
+a1.plot(ellipse[0], ellipse[1], color=PALE, lw=1.2, ls="--", label="full $A$")
+a1.plot(seg[0], seg[1], color=HILITE, lw=3.0, label="rank-1 $A_1$")
+a1.set_title("Best rank-1: short axis flattened"); a1.set_aspect("equal"); a1.legend(fontsize=8, loc="lower right")
+
+a2.plot(circle[0], circle[1], color=GREY, lw=1.4)
+draw_vec(a2, (0, 0), tuple(U[:, 0]/s[0]), color=HILITE, label="$u_1/\\sigma_1$ (safe)", label_offset=(0.15, 0.28))
+draw_vec(a2, (0, 0), tuple(U[:, 1]/s[1]), color=ACCENT, label="$u_2/\\sigma_2$ (fragile)", label_offset=(-0.1, 0.32))
+a2.set_title("Inverting: $\\div\\sigma_i$ per axis"); a2.set_aspect("equal"); a2.legend(fontsize=8, loc="lower left")
+
+for ax in (a0, a1, a2):
+    ax.set_xlim(-3, 3); ax.set_ylim(-3, 3)
+plt.tight_layout()
+print(f"singular values: sigma_1 = {s[0]:.4f},  sigma_2 = {s[1]:.4f}")
+```
+
+# Part I — Low-Rank Approximation {#sec-lowrank}
+
+## The rank-one layers, and what "rank $k$" buys {#sec-layers}
+
+Start from the outer-product form of the SVD established in [GEOM-20]. With orthonormal
+left singular vectors $u_1,\dots,u_r$ (columns of $U$), orthonormal right singular vectors
+$v_1,\dots,v_r$ (columns of $V$), and singular values
+$\sigma_1 \ge \sigma_2 \ge \dots \ge \sigma_r > 0$,
+
+$$
+A \;=\; U\Sigma V^\top \;=\; \sum_{i=1}^{r}\sigma_i\, u_i v_i^\top .
+$$ {#eq-svd-outer}
+
+Each term $u_i v_i^\top$ is an **outer product**: $u_i$ is $m\times 1$, $v_i^\top$ is
+$1\times n$, so $u_i v_i^\top$ is a full $m \times n$ matrix — but a very thin one. Every
+column of $u_i v_i^\top$ is a scalar multiple of the single vector $u_i$ (the column $j$
+is $(v_i)_j\, u_i$), so its column space is the *one* line spanned by $u_i$: it has
+**rank one**. Equation @eq-svd-outer therefore writes $A$ as a weighted sum of $r$
+rank-one matrices, ordered so the heaviest weight $\sigma_1$ comes first.
+
+The **rank-$k$ truncation** keeps the first $k$ of these layers:
+
+$$
+A_k \;=\; \sum_{i=1}^{k}\sigma_i\, u_i v_i^\top
+\;=\; U\,\Sigma_k\,V^\top,
+\qquad k \le r,
+$$ {#eq-Ak}
+
+where $\Sigma_k$ is $\Sigma$ with all but its top $k$ singular values set to zero. Because
+$A_k$ is a sum of $k$ rank-one pieces built on the *orthonormal* vectors $u_1,\dots,u_k$,
+its column space is exactly $\operatorname{span}\{u_1,\dots,u_k\}$ — a $k$-dimensional
+space — so $A_k$ has rank exactly $k$ (assuming $\sigma_k > 0$). It is a genuine rank-$k$
+matrix, and the claim of Part I is that **no rank-$k$ matrix is closer to $A$ than this
+one.**
+
+::: {.callout-tip title="You might be asked"}
+*"How much storage does $A_k$ save?"* The full matrix $A$ costs $mn$ numbers. The
+truncation $A_k$ is determined entirely by the kept pieces: $k$ left vectors ($mk$
+numbers), $k$ right vectors ($nk$ numbers), and $k$ singular values, for a total of
+$k(m + n + 1)$. When $k \ll \min(m,n)$ this is dramatically smaller — a
+$1000\times1000$ image ($10^6$ numbers) approximated at rank $50$ needs about
+$50\cdot 2001 \approx 10^5$, a tenfold saving — *and* it is the **best** such
+compression at that budget, not merely *a* compression. That "best" is the whole point;
+without it, low-rank truncation would just be one lossy scheme among many.
+:::
+
+## Measuring the error: the Frobenius norm {#sec-frob}
+
+To say "$A_k$ is closest to $A$" we need a way to measure the distance between two
+matrices. The natural one treats a matrix as a long list of $mn$ numbers and uses ordinary
+Euclidean length. This is the **Frobenius norm**.
+
+::: {#def-frob}
+**Definition (Frobenius norm).** For an $m\times n$ matrix $M$ with entries $M_{ij}$,
+$$
+\|M\|_F \;=\; \sqrt{\sum_{i=1}^{m}\sum_{j=1}^{n} M_{ij}^2}\, .
+$$
+The squared norm $\|M\|_F^2 = \sum_{i,j}M_{ij}^2$ is just "the sum of the squares of all
+the entries" — Pythagoras applied to the matrix flattened into one vector.
+:::
+
+We need one identity about this norm: it can be computed from the **trace** (the sum of
+the diagonal entries) of $M^\top M$, and that lets us connect it to the singular values.
+
+::: {#lem-frob-trace}
+**Lemma (Frobenius norm via the trace).** For any matrix $M$,
+$\|M\|_F^2 = \operatorname{tr}(M^\top M) = \sum_j \|m_j\|^2$, where $m_j$ is the $j$-th
+column of $M$.
+:::
+
+::: {.proof}
+The $(j,j)$ diagonal entry of $M^\top M$ is the dot product of the $j$-th column of $M$
+with itself: $(M^\top M)_{jj} = \sum_{i} M_{ij}M_{ij} = \sum_i M_{ij}^2$. Summing these
+diagonal entries over $j$ — which is exactly the trace — gives
+$\operatorname{tr}(M^\top M) = \sum_{j}\sum_{i}M_{ij}^2$, the sum of the squares of *all*
+entries, which is $\|M\|_F^2$ by @def-frob. The middle expression
+$\sum_i M_{ij}^2 = \|m_j\|^2$ is the squared length of column $j$, giving the last form.
+$\qquad\blacksquare$
+:::
+
+We also need the single most useful property of the Frobenius norm: it is **unchanged by
+multiplying with an orthogonal matrix.** This is what makes the SVD and the Frobenius norm
+fit together perfectly.
+
+::: {#lem-frob-orth}
+**Lemma (orthogonal invariance).** If $Q$ is orthogonal ($Q^\top Q = I$) and the product
+is defined, then $\|QM\|_F = \|M\|_F$ and $\|MQ\|_F = \|M\|_F$.
+:::
+
+::: {.proof}
+Use @lem-frob-trace and the cyclic/transpose rules for the trace and transpose from
+[GEOM-10]. For left multiplication,
+$$
+\|QM\|_F^2 = \operatorname{tr}\big((QM)^\top(QM)\big)
+= \operatorname{tr}(M^\top Q^\top Q\, M)
+= \operatorname{tr}(M^\top I\, M)
+= \operatorname{tr}(M^\top M) = \|M\|_F^2 ,
+$$
+where the third equality is $Q^\top Q = I$ by orthogonality. Taking square roots gives
+$\|QM\|_F = \|M\|_F$. For right multiplication, transpose first:
+$\|MQ\|_F = \|(MQ)^\top\|_F = \|Q^\top M^\top\|_F$ — using that the Frobenius norm is
+unchanged by transposing, since transposing only relabels the entries — and $Q^\top$ is
+orthogonal too ($(Q^\top)^\top Q^\top = QQ^\top = I$ for square orthogonal $Q$), so the
+left-multiplication result applies and gives $\|M^\top\|_F = \|M\|_F$.
+$\qquad\blacksquare$
+:::
+
+Now the payoff. Apply @lem-frob-orth to the SVD itself. Because $U$ and $V$ are
+orthogonal,
+
+$$
+\|A\|_F = \|U\Sigma V^\top\|_F = \|\Sigma V^\top\|_F = \|\Sigma\|_F ,
+$$
+
+(strip $U$ from the left, then $V^\top$ from the right — each is orthogonal). And $\Sigma$
+is diagonal with the singular values on it, so by @def-frob,
+
+$$
+\|A\|_F^2 \;=\; \|\Sigma\|_F^2 \;=\; \sum_{i=1}^{r}\sigma_i^2 .
+$$ {#eq-frob-sing}
+
+The total "energy" of a matrix — the sum of squares of all its entries — equals the sum
+of the squares of its singular values. This single fact, @eq-frob-sing, drives the entire
+approximation story: the energy is partitioned, cleanly and additively, among the
+rank-one layers.
+
+::: {.callout-tip title="You might be asked"}
+*"Where does the phrase 'variance captured' come from?"* When $A$ is a centered data
+matrix (each column mean-subtracted), $\|A\|_F^2$ is proportional to the total variance in
+the data, and @eq-frob-sing splits that total into per-component pieces $\sigma_i^2$. The
+fraction $\sigma_k^2 / \sum_i \sigma_i^2$ is then "the share of variance the $k$-th
+direction explains" — the quantity a scree plot displays. We are deriving the *algebra*
+here; the *statistical* reading (centering, variance maximization, choosing $k$) is
+**Unsupervised Learning's** to own, and it links back to this equation rather than
+re-deriving it.
+:::
+
+## The error of a truncation, computed exactly {#sec-trunc-error}
+
+Subtract the truncation @eq-Ak from the full sum @eq-svd-outer. The first $k$ layers
+cancel, leaving exactly the *dropped* layers:
+
+$$
+A - A_k \;=\; \sum_{i=k+1}^{r}\sigma_i\, u_i v_i^\top \;=\; U\,(\Sigma - \Sigma_k)\,V^\top.
+$$ {#eq-residual-matrix}
+
+The middle matrix $\Sigma - \Sigma_k$ is diagonal with the *tail* singular values
+$\sigma_{k+1},\dots,\sigma_r$ on it and zeros where the kept ones were. By the same
+orthogonal-invariance argument that produced @eq-frob-sing,
+
+$$
+\|A - A_k\|_F^2 \;=\; \|\Sigma - \Sigma_k\|_F^2 \;=\; \sum_{i=k+1}^{r}\sigma_i^2 .
+$$ {#eq-trunc-error}
+
+So the squared Frobenius error of the rank-$k$ truncation is *precisely the sum of the
+squares of the singular values you discarded* — nothing more, nothing approximate. If the
+tail $\sigma_{k+1},\dots$ are tiny, the truncation is nearly perfect; if they are
+comparable to the leaders, no rank-$k$ matrix can do well. This is already a complete,
+quantitative answer for *this particular* approximation. The remaining question is whether
+any *other* rank-$k$ matrix could beat it. The answer — no — is Eckart–Young.
+
+## Eckart–Young: the truncation is optimal {#sec-eckart-young}
+
+::: {#thm-eckart-young}
+**Theorem (Eckart–Young, Frobenius norm).** Among all matrices $B$ of rank at most $k$,
+the truncated SVD $A_k = \sum_{i=1}^{k}\sigma_i u_i v_i^\top$ minimizes $\|A - B\|_F$, and
+the minimum value is
+$$
+\min_{\operatorname{rank}(B)\le k}\|A - B\|_F \;=\; \|A - A_k\|_F
+\;=\; \sqrt{\sum_{i=k+1}^{r}\sigma_i^2}\, .
+$$
+:::
+
+We prove it in full. The strategy is the standard one: show that *any* rank-$\le k$
+competitor $B$ must leave behind at least the tail energy. The one outside ingredient is a
+fact about how singular values behave under rank constraints, which we state and use
+carefully; everything else is on the page.
+
+::: {.proof}
+Let $B$ be any matrix with $\operatorname{rank}(B) \le k$. Because $B$ has rank at most
+$k$, its **null space** — the set of vectors $x$ with $Bx = 0$ — has dimension at least
+$n - k$. This is the rank–nullity theorem of [GEOM-12]: for an $m\times n$ matrix,
+$\dim(\text{null space}) = n - \operatorname{rank} \ge n - k$.
+
+Now consider the subspace
+$W = \operatorname{span}\{v_1, v_2, \dots, v_{k+1}\}$ spanned by the **first $k+1$ right
+singular vectors** of $A$. It has dimension $k+1$ (the $v_i$ are orthonormal, hence
+independent). We have two subspaces of $\mathbb{R}^n$:
+$\operatorname{null}(B)$ with dimension $\ge n-k$, and $W$ with dimension $k+1$. The sum
+of these dimensions is at least $(n-k) + (k+1) = n+1 > n$. A standard
+dimension-counting fact (the dimension of a sum of two subspaces, [GEOM-03]) is that two
+subspaces of $\mathbb{R}^n$ whose dimensions add to more than $n$ must **intersect in a
+nonzero vector**. So there exists a unit vector $w$ ($\|w\|=1$) lying in *both*:
+
+$$
+w \in W = \operatorname{span}\{v_1,\dots,v_{k+1}\}
+\qquad\text{and}\qquad
+Bw = 0 .
+$$
+
+Because $w \in W$, write it in the orthonormal $v$-basis as
+$w = \sum_{i=1}^{k+1} c_i v_i$ with $\sum_i c_i^2 = \|w\|^2 = 1$ (coordinates in an
+orthonormal basis are the dot products $c_i = v_i^\top w$, and Pythagoras gives the unit
+sum — [GEOM-05]). Apply $A$ to $w$ using the action of the SVD on a right singular vector,
+$A v_i = \sigma_i u_i$ (this is the defining relation derived in [GEOM-20]; for $i > r$
+take $\sigma_i = 0$):
+
+$$
+A w \;=\; A\sum_{i=1}^{k+1} c_i v_i \;=\; \sum_{i=1}^{k+1} c_i\, A v_i
+\;=\; \sum_{i=1}^{k+1} c_i\,\sigma_i\, u_i .
+$$
+
+The $u_i$ are orthonormal, so the squared length of this combination is the sum of squared
+coefficients (Pythagoras again):
+
+$$
+\|Aw\|^2 \;=\; \sum_{i=1}^{k+1} c_i^2\,\sigma_i^2 .
+$$
+
+Now use the *ordering* $\sigma_1 \ge \dots \ge \sigma_{k+1}$: every $\sigma_i$ in this sum
+is at least $\sigma_{k+1}$, so
+
+$$
+\|Aw\|^2 \;=\; \sum_{i=1}^{k+1} c_i^2\,\sigma_i^2
+\;\ge\; \sigma_{k+1}^2 \sum_{i=1}^{k+1} c_i^2
+\;=\; \sigma_{k+1}^2 \cdot 1 \;=\; \sigma_{k+1}^2 .
+$$
+
+We have found a unit vector $w$ on which $A$ acts with length at least $\sigma_{k+1}$,
+while $B$ kills it ($Bw = 0$). Therefore the difference $A - B$ does at least that much to
+$w$:
+
+$$
+\|(A - B)w\| \;=\; \|Aw - Bw\| \;=\; \|Aw - 0\| \;=\; \|Aw\| \;\ge\; \sigma_{k+1} .
+$$ {#eq-ey-spectral-lb}
+
+This already proves the **spectral-norm** half of the theorem (@sec-spectral-ey below).
+The spectral norm $\|M\|_2 = \max_{\|x\|=1}\|Mx\|$ is the *largest* stretch $M$ applies to
+any unit vector (we use this definition in full in @sec-spectral-ey). Since a maximum over
+all unit vectors is at least the value at the *particular* unit vector $w$ we just built,
+@eq-ey-spectral-lb gives $\|A - B\|_2 \ge \|(A-B)w\| \ge \sigma_{k+1}$ — so the largest
+stretch of $A - B$ is at least $\sigma_{k+1}$, and no rank-$k$ $B$ beats $A_k$, whose
+largest leftover stretch is exactly $\sigma_{k+1}$.
+
+For the **Frobenius** statement we need the stronger fact that $B$ cannot beat $A_k$ on
+the *sum* of squared leftover singular values, not just the single largest. The clean way
+is the following inequality on singular values of a sum, **Weyl's inequality**, which we
+state as the imported ingredient and then apply:
+
+> For any matrices $X, Y$ and indices $i, j \ge 1$ with $i + j - 1 \le \min(m,n)$,
+> $\sigma_{i+j-1}(X + Y) \le \sigma_i(X) + \sigma_j(Y)$, where $\sigma_\ell(\cdot)$ denotes
+> the $\ell$-th largest singular value. (This follows from the min–max characterization of
+> singular values; it is the singular-value analogue of the eigenvalue interlacing used in
+> [GEOM-16], and we flag it as the one fact carried in rather than rebuilt here.)
+
+Apply it with $X = A - B$, $Y = B$, $j = k+1$, and any $i \ge 1$. Since
+$\operatorname{rank}(B)\le k$, its $(k+1)$-th singular value is zero:
+$\sigma_{k+1}(B) = 0$. Weyl gives
+
+$$
+\sigma_{i + k}(\underbrace{(A-B) + B}_{=\,A})
+\;\le\; \sigma_i(A - B) + \sigma_{k+1}(B)
+\;=\; \sigma_i(A - B) + 0 ,
+$$
+
+that is, $\sigma_i(A - B) \ge \sigma_{i+k}(A) = \sigma_{i+k}$ for every $i \ge 1$. Summing
+the squares over $i = 1, 2, \dots$ and reindexing with $\ell = i + k$,
+
+$$
+\|A - B\|_F^2 \;=\; \sum_{i\ge 1}\sigma_i(A-B)^2
+\;\ge\; \sum_{i\ge 1}\sigma_{i+k}^2
+\;=\; \sum_{\ell = k+1}^{r}\sigma_\ell^2
+\;=\; \|A - A_k\|_F^2 ,
+$$
+
+where the first equality is the Frobenius-norm-from-singular-values identity
+@eq-frob-sing applied to $A - B$, and the last equality is the exact truncation error
+@eq-trunc-error. Thus $\|A - B\|_F \ge \|A - A_k\|_F$ for every rank-$\le k$ matrix $B$,
+and $A_k$ itself attains the bound. The minimizer is $A_k$ and the minimum is
+$\sqrt{\sum_{i>k}\sigma_i^2}$. $\qquad\blacksquare$
+:::
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+This proof imported two facts and flagged each. The **rank–nullity** dimension count and
+the **two-subspaces-must-intersect** lemma are built in [GEOM-12] and [GEOM-03]
+respectively. **Weyl's inequality** for singular values is the one genuinely new
+ingredient; it is the singular-value cousin of the eigenvalue min–max / interlacing
+results that the spectral theorem development ([GEOM-16]) sets up. We used it as a stated
+tool so the Frobenius argument could run end to end without a multi-page detour into the
+min–max theory. The *spectral-norm* half, by contrast, we proved completely from scratch
+in @eq-ey-spectral-lb.
+:::
+
+## The spectral-norm version, and why both norms agree on the answer {#sec-spectral-ey}
+
+The **spectral norm** (or operator 2-norm) measures the *largest stretch* a matrix
+applies to any unit vector:
+$\|M\|_2 = \max_{\|x\|=1}\|Mx\|$. As [GEOM-20] established, this maximum is achieved along
+the top right singular vector and equals the largest singular value: $\|M\|_2 = \sigma_1(M)$.
+
+The leftover matrix $A - A_k = \sum_{i>k}\sigma_i u_i v_i^\top$ is itself an SVD (its
+singular values are $\sigma_{k+1}\ge\sigma_{k+2}\ge\dots$), so its largest is
+$\sigma_{k+1}$:
+
+$$
+\|A - A_k\|_2 \;=\; \sigma_{k+1} .
+$$
+
+And @eq-ey-spectral-lb showed every rank-$\le k$ competitor has
+$\|A - B\|_2 \ge \sigma_{k+1}$. Hence:
+
+::: {#thm-eckart-young-2}
+**Theorem (Eckart–Young, spectral norm).** Among all matrices $B$ of rank at most $k$,
+$A_k$ minimizes $\|A - B\|_2$, with minimum value $\sigma_{k+1}$.
+:::
+
+The remarkable thing — and a favorite exam point — is that the **same** matrix $A_k$ is
+optimal for *both* norms at once. The Frobenius norm cares about total leftover energy
+$\sqrt{\sum_{i>k}\sigma_i^2}$; the spectral norm cares only about the largest leftover
+stretch $\sigma_{k+1}$; and the truncated SVD minimizes both simultaneously. That is not a
+coincidence — it is because both norms are *unitarily invariant* functions of the singular
+values, and truncation is the unique way to make the leftover singular values as small as
+possible in the strong, term-by-term sense the proof exposed.
+
+## Worked example 1 — image compression (an honest one) {#sec-image}
+
+The cleanest demonstration of Eckart–Young is image compression, because the "matrix" is
+literally a picture you can look at. A grayscale image *is* a matrix: entry $(i,j)$ is the
+brightness of pixel $(i,j)$. We build a synthetic but realistic image with genuine
+low-rank structure (smooth gradients plus a few sharp features) and watch the rank-$k$
+truncations sharpen as $k$ grows, alongside the exact error predicted by
+@eq-trunc-error.
+
+```{python}
+#| label: fig-image
+#| fig-cap: "Eckart–Young on a $200\\times 200$ grayscale image. The original (top-left) is reconstructed at ranks $k = 2, 5, 20, 60$. The rank-2 version captures the gross light/dark layout; by rank 20 the structure is essentially recovered; rank 60 is visually indistinguishable. Each panel's title reports the *measured* relative Frobenius error and — in parentheses — the value $\\sqrt{\\sum_{i>k}\\sigma_i^2}/\\|A\\|_F$ predicted by @eq-trunc-error. They match to plotting precision: the theorem is exact, not approximate."
+
+rng = np.random.default_rng(3)
+N = 200
+xx, yy = np.meshgrid(np.linspace(-3, 3, N), np.linspace(-3, 3, N))
+# smooth low-rank-ish structure + a couple of sharp blobs + faint noise
+img = (np.exp(-(xx**2 + yy**2)/4)
+       + 0.6*np.sin(0.8*xx)*np.cos(0.6*yy)
+       + 0.4*np.exp(-((xx-1.5)**2 + (yy+1.0)**2)*3)
+       + 0.02*rng.standard_normal((N, N)))
+img = (img - img.min())/(img.max() - img.min())
+
+U, s, Vt = np.linalg.svd(img, full_matrices=False)
+total_energy = np.sum(s**2)
+
+def rank_k(k):
+    return (U[:, :k] * s[:k]) @ Vt[:k, :]
+
+ks = [2, 5, 20, 60]
+fig, axes = plt.subplots(1, 5, figsize=(10.5, 2.6))
+axes[0].imshow(img, cmap="gray", vmin=0, vmax=1)
+axes[0].set_title(f"original\nrank {len(s)}", fontsize=9)
+for ax, k in zip(axes[1:], ks):
+    Ak = rank_k(k)
+    measured = np.linalg.norm(img - Ak, 'fro')/np.linalg.norm(img, 'fro')
+    predicted = np.sqrt(np.sum(s[k:]**2))/np.sqrt(total_energy)
+    ax.imshow(Ak, cmap="gray", vmin=0, vmax=1)
+    ax.set_title(f"k={k}\nerr {measured:.3f}\n({predicted:.3f})", fontsize=9)
+for ax in axes:
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+```{python}
+#| label: fig-scree
+#| fig-cap: "The singular-value spectrum of the same image (left, log scale) and the cumulative energy fraction $\\sum_{i\\le k}\\sigma_i^2 / \\sum_i \\sigma_i^2$ (right). The spectrum falls off fast — the image's information is concentrated in the first dozen-or-so directions — which is *why* low-rank approximation works here. The horizontal line marks $99\\%$ of the energy; reaching it takes only a small fraction of the full rank. A flat spectrum (no such decay) would mean truncation buys nothing — the honest precondition for this whole technique."
+
+cum = np.cumsum(s**2)/total_energy
+k99 = int(np.searchsorted(cum, 0.99)) + 1
+
+fig, (a0, a1) = plt.subplots(1, 2, figsize=(8.8, 3.4))
+a0.semilogy(np.arange(1, len(s)+1), s, color=VEC, marker=".", ms=4, lw=1.2)
+a0.set_xlabel("index $i$"); a0.set_ylabel("$\\sigma_i$ (log)")
+a0.set_title("Singular-value spectrum")
+a0.set_xlim(0, 60)
+
+a1.plot(np.arange(1, len(s)+1), cum, color=VEC, lw=2.0)
+a1.axhline(0.99, color=HILITE, ls="--", lw=1.4, label="99% energy")
+a1.axvline(k99, color=ACCENT, ls=":", lw=1.4, label=f"k={k99}")
+a1.set_xlabel("rank $k$"); a1.set_ylabel("cumulative energy fraction")
+a1.set_title("Energy captured vs. rank"); a1.set_xlim(0, 60)
+a1.legend(fontsize=9, loc="lower right")
+plt.tight_layout()
+print(f"reaching 99% of the energy takes rank k = {k99} out of {len(s)}")
+```
+
+The parenthesized prediction and the measured error agree in @fig-image because
+@eq-trunc-error is an identity, not a heuristic. And @fig-scree shows the precondition for
+the whole enterprise: the singular values must *decay*. When they do — as in natural
+images, correlated feature tables, and recommendation matrices — a low rank captures
+nearly everything. When they do not, there is no good low-rank approximation to be had,
+and Eckart–Young honestly tells you so by reporting a large leftover energy. We meet such
+a case next.
+
+## Worked example 2 — the edge of applicability: a near-full-rank matrix {#sec-edge}
+
+The danger with low-rank approximation is assuming every matrix *has* useful low-rank
+structure. It does not. A matrix whose singular values are all comparable — for instance,
+nearly isotropic noise, or a permutation-like structure with no dominant directions —
+cannot be compressed without serious loss, and truncation will *throw away real signal*.
+This is the honest boundary. @fig-edge contrasts a low-rank-friendly matrix with a
+near-full-rank one and shows what rank-$k$ truncation costs in each.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "When low-rank approximation fails. **Left:** singular-value spectra of two $80\\times 80$ matrices — one with fast decay (blue, compressible) and one that is essentially full-rank random noise (red, flat). **Right:** relative Frobenius error of the rank-$k$ truncation versus $k$. For the compressible matrix the error plunges; for the flat-spectrum matrix it falls only as fast as $\\sqrt{1 - k/r}$ — you must keep almost every component to lose little, so truncation buys nothing. The flat spectrum is the precise signature of a matrix you should *not* try to compress."
+
+n = 80
+rng = np.random.default_rng(11)
+
+# compressible: a few strong directions + tiny noise
+Lc = rng.standard_normal((n, 4)); Rc = rng.standard_normal((4, n))
+M_good = Lc @ Rc + 0.01*rng.standard_normal((n, n))
+
+# near-full-rank: isotropic noise, all singular values comparable
+M_bad = rng.standard_normal((n, n))
+
+sg = np.linalg.svd(M_good, compute_uv=False)
+sb = np.linalg.svd(M_bad, compute_uv=False)
+
+def err_curve(s):
+    total = np.sum(s**2)
+    out = []
+    for k in range(len(s)+1):
+        out.append(np.sqrt(np.sum(s[k:]**2)/total))
+    return np.array(out)
+
+eg, eb = err_curve(sg), err_curve(sb)
+
+fig, (a0, a1) = plt.subplots(1, 2, figsize=(8.8, 3.4))
+a0.semilogy(np.arange(1, n+1), sg/sg[0], color=VEC, lw=1.8, label="compressible")
+a0.semilogy(np.arange(1, n+1), sb/sb[0], color=HILITE, lw=1.8, label="full-rank noise")
+a0.set_xlabel("index $i$"); a0.set_ylabel("$\\sigma_i/\\sigma_1$ (log)")
+a0.set_title("Spectra: decaying vs. flat"); a0.legend(fontsize=9)
+
+a1.plot(np.arange(n+1), eg, color=VEC, lw=2.0, label="compressible")
+a1.plot(np.arange(n+1), eb, color=HILITE, lw=2.0, label="full-rank noise")
+a1.set_xlabel("rank $k$"); a1.set_ylabel("relative Frobenius error")
+a1.set_title("Truncation error vs. rank"); a1.legend(fontsize=9)
+plt.tight_layout()
+print(f"rank-10 error  compressible: {eg[10]:.3f}   full-rank noise: {eb[10]:.3f}")
+```
+
+::: {.callout-warning title="Pitfall"}
+**A low-rank approximation is only as good as the singular-value decay.** Eckart–Young
+guarantees you the *best* rank-$k$ matrix — it does **not** guarantee that the best
+rank-$k$ matrix is any good. Always look at the spectrum (the scree plot) before
+truncating. If the singular values plateau, there is no low-dimensional structure to find;
+truncating then discards genuine signal and the "compression" is just damage. The right
+reaction to a flat spectrum is to *not* use low-rank approximation, or to question whether
+the matrix is the right representation of your problem at all.
+:::
+
+# Part II — The Pseudoinverse {#sec-pinv}
+
+We turn to the second face of the Core. The goal is a single object $A^+$ that "solves"
+$Ax = b$ in every case — tall, wide, or rank-deficient — and reduces to $A^{-1}$ when the
+ordinary inverse exists. The SVD builds it almost mechanically.
+
+## Building $A^+$ by inverting the layers {#sec-build-pinv}
+
+Start from $A = U\Sigma V^\top$. If $A$ were square and invertible, every singular value
+would be positive and we could invert each factor: since $U,V$ are orthogonal their
+inverses are their transposes ($U^{-1}=U^\top$, $V^{-1}=V^\top$, from [GEOM-05]), and
+$\Sigma$ is diagonal so its inverse just reciprocates the diagonal. Using
+$(XYZ)^{-1} = Z^{-1}Y^{-1}X^{-1}$ from [GEOM-11],
+
+$$
+A^{-1} = (U\Sigma V^\top)^{-1} = (V^\top)^{-1}\Sigma^{-1}U^{-1} = V\,\Sigma^{-1}U^\top .
+$$
+
+The obstruction in the general case is only $\Sigma^{-1}$: when $A$ is rectangular or
+rank-deficient, some diagonal entries of $\Sigma$ are zero (or $\Sigma$ is not even
+square), and we cannot reciprocate a zero. The pseudoinverse makes exactly *one* edit —
+the only sensible one — and leaves the orthogonal factors alone.
+
+::: {#def-pinv}
+**Definition (Moore–Penrose pseudoinverse).** Let $A = U\Sigma V^\top$ be the SVD of an
+$m\times n$ matrix of rank $r$. Define the $n\times m$ diagonal matrix $\Sigma^+$ by
+**reciprocating the nonzero singular values and transposing the shape**:
+$$
+(\Sigma^+)_{ii} = \begin{cases} 1/\sigma_i, & \sigma_i > 0,\\[2pt] 0, & \sigma_i = 0,\end{cases}
+\qquad i = 1,\dots,r, \quad\text{rest } = 0 .
+$$
+Then the **pseudoinverse** is
+$$
+A^+ \;=\; V\,\Sigma^+\,U^\top \;=\; \sum_{i=1}^{r}\frac{1}{\sigma_i}\,v_i u_i^\top .
+$$
+:::
+
+The defining choice is the second line of the case split: **a zero singular value maps to
+zero, not to infinity.** That is the whole content of "the inverse that knows which
+directions it is allowed to touch" from the intuition. On the directions $A$ actually
+stretches ($\sigma_i > 0$), $A^+$ un-stretches by $1/\sigma_i$; on the directions $A$
+collapses ($\sigma_i = 0$), $A^+$ does nothing rather than blowing up.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the pseudoinverse really a generalization of the inverse — does it agree when $A$ is
+invertible?"* Yes, and it falls right out. If $A$ is square with full rank $r = n$, every
+$\sigma_i > 0$, so $\Sigma^+ = \Sigma^{-1}$ exactly, and
+$A^+ = V\Sigma^{-1}U^\top = A^{-1}$ by the inversion above. The case split never fires.
+So $A^+$ is a strict extension: identical to $A^{-1}$ where the latter exists, and defined
+everywhere else too. Penrose's original 1955 paper defines $A^+$ axiomatically by four
+equations ($AA^+A = A$, $A^+AA^+ = A^+$, and $(AA^+)$, $(A^+A)$ symmetric) and proves it
+unique; the SVD construction here is the same object, and you can verify all four
+properties directly from the definition.
+:::
+
+## What $A^+ b$ actually does: the geometry {#sec-pinv-geometry}
+
+The payoff is understanding $\hat x = A^+ b$ geometrically. Decompose using the SVD pieces.
+Write $b$ in the orthonormal $u$-basis of $\mathbb{R}^m$: $b = \sum_i (u_i^\top b)\,u_i$.
+Then
+
+$$
+A^+ b \;=\; \Big(\sum_{i=1}^{r}\frac{1}{\sigma_i}v_i u_i^\top\Big) b
+\;=\; \sum_{i=1}^{r}\frac{u_i^\top b}{\sigma_i}\,v_i .
+$$ {#eq-pinv-action}
+
+Read this carefully against the two failure cases from @sec-why-noinverse.
+
+**The over-determined / least-squares face.** The sum in @eq-pinv-action runs only to
+$r$, the rank. Any component of $b$ along $u_{r+1},\dots,u_m$ — directions *outside* the
+column space of $A$, the part of $b$ that $A$ can never reach — is simply ignored
+($u_i^\top b$ for $i>r$ never appears). That is exactly the orthogonal projection of
+[GEOM-06]: $A\hat x = AA^+b$ is the projection of $b$ onto the column space of $A$, the
+closest reachable point, and $\hat x$ is the least-squares solution. The pseudoinverse
+*automatically* discards the unreachable part of $b$.
+
+**The under-determined / minimum-norm face.** When there are many exact solutions, they
+differ by anything in the null space of $A$ (add a null-space vector to a solution and
+$A$ maps it to the same $b$). The output @eq-pinv-action is built purely from
+$v_1,\dots,v_r$ — the **row space** of $A$, which is orthogonal to the null space
+([GEOM-12]). So $A^+b$ contains **no** null-space component. Among all exact solutions, the
+one with no null-space part is the **shortest** (any added null-space piece only lengthens
+it, by Pythagoras). The pseudoinverse *automatically* picks the minimum-norm solution.
+
+We now prove the least-squares-and-minimum-norm claim as a theorem, every step shown.
+
+::: {#thm-pinv-mn}
+**Theorem (pseudoinverse = minimum-norm least squares).** For any $A$ ($m\times n$, rank
+$r$) and any $b\in\mathbb{R}^m$, the vector $\hat x = A^+ b$ is the unique solution of
+$$
+\min_{x}\ \|Ax - b\|^2 ,
+$$
+and among all minimizers it is the one of **smallest norm** $\|x\|$.
+:::
+
+::: {.proof}
+**Step 1 — change to the singular coordinate systems.** Because $U$ and $V$ are
+orthogonal, multiplying by them does not change lengths (orthogonal maps preserve norm,
+[GEOM-05]): $\|U^\top z\| = \|z\|$ for any $z$. So rewrite the residual norm using
+$A = U\Sigma V^\top$ and insert $U U^\top = I$:
+
+$$
+\|Ax - b\|
+= \|U\Sigma V^\top x - b\|
+= \|U(\Sigma V^\top x - U^\top b)\|
+= \|\Sigma V^\top x - U^\top b\| ,
+$$
+
+where the last equality strips the orthogonal $U$. Introduce new coordinates
+$z = V^\top x$ (so $x = Vz$, and $\|x\| = \|z\|$ since $V$ is orthogonal) and the
+transformed target $c = U^\top b$. The problem becomes, transparently,
+
+$$
+\min_{z}\ \|\Sigma z - c\|^2 ,
+$$
+
+with $\Sigma$ diagonal. We have turned a coupled least-squares problem into a
+**decoupled, scalar** one — the entire reason the SVD makes this clean.
+
+**Step 2 — solve the decoupled problem coordinate by coordinate.** Because $\Sigma$ is
+diagonal, $\Sigma z$ has $i$-th entry $\sigma_i z_i$ for $i \le r$ and $0$ for the rest
+(those rows of $\Sigma$ are zero, since $\sigma_i = 0$ there). So
+
+$$
+\|\Sigma z - c\|^2
+= \sum_{i=1}^{r}\big(\sigma_i z_i - c_i\big)^2
+\;+\; \sum_{i=r+1}^{m} c_i^2 .
+$$
+
+The second sum, $\sum_{i>r}c_i^2$, contains **no $z$** at all — it is the squared length
+of the part of $b$ outside the column space, an *irreducible* error we cannot touch by any
+choice of $x$. (This is precisely the unreachable component from @sec-pinv-geometry.) The
+first sum is minimized term by term: each $(\sigma_i z_i - c_i)^2$ with $\sigma_i > 0$ is
+driven to **zero** by the unique choice
+
+$$
+z_i = \frac{c_i}{\sigma_i}, \qquad i = 1,\dots,r .
+$$
+
+For indices $i > r$ within $z$ (the directions $A$ collapses, $v_{r+1},\dots,v_n$), the
+variable $z_i$ does **not appear** in the residual at all — it is free. So the residual is
+minimized by *any* choice of those free coordinates; the least-squares fit does not pin
+them down. This is the multiplicity of solutions in the rank-deficient / wide case, seen
+in coordinates.
+
+**Step 3 — among all minimizers, choose the shortest.** The minimizing $z$ has its first
+$r$ coordinates fixed at $c_i/\sigma_i$ and its remaining coordinates $z_{r+1},\dots,z_n$
+free. Its squared length is
+
+$$
+\|z\|^2 = \sum_{i=1}^{r}\Big(\frac{c_i}{\sigma_i}\Big)^2
+\;+\; \sum_{i=r+1}^{n} z_i^2 .
+$$
+
+The first sum is fixed; the second is a sum of squares we are free to choose, and it is
+minimized — to zero — by setting every free coordinate to zero. So the **minimum-norm**
+minimizer is
+
+$$
+z_i = \begin{cases} c_i/\sigma_i, & i \le r,\\ 0, & i > r.\end{cases}
+$$
+
+**Step 4 — translate back.** This is exactly $z = \Sigma^+ c$ by @def-pinv (reciprocate
+the nonzero $\sigma$'s, zero elsewhere). Undo the coordinate change with $x = Vz$ and
+$c = U^\top b$:
+
+$$
+\hat x = V z = V\Sigma^+ c = V\Sigma^+ U^\top b = A^+ b .
+$$
+
+So $A^+ b$ minimizes the residual (Step 2) and, among all such minimizers, has the
+smallest norm (Step 3) — and it is unique because the fixed coordinates are forced and the
+free ones are pinned to zero. $\qquad\blacksquare$
+:::
+
+This proof is the heart of Part II. Every claim made loosely in @sec-pinv-geometry —
+"ignores the unreachable part of $b$," "picks the shortest solution," "reduces to least
+squares" — fell out as a labeled step. @fig-pinv-cases draws the two regimes.
+
+```{python}
+#| label: fig-pinv-cases
+#| fig-cap: "The two regimes the pseudoinverse handles, in the plane. **Left (over-determined):** three noisy points constrain a line through the origin, $y = x\\,\\theta$, with no exact fit; $\\hat\\theta = A^+ y$ is the least-squares slope, and $A\\hat\\theta$ is the orthogonal projection of $y$ onto the column space (the reachable line). **Right (under-determined):** a single equation $a^\\top x = c$ in two unknowns has a whole line of exact solutions (grey); $A^+ c$ (green) is the one closest to the origin — the foot of the perpendicular from the origin to that solution line, the minimum-norm choice."
+
+# Left: over-determined least squares (1 unknown slope, 3 equations)
+A_over = np.array([[1.0], [2.0], [3.0]])
+y_over = np.array([1.1, 1.7, 3.4])
+theta = float((np.linalg.pinv(A_over) @ y_over)[0])
+
+# Right: under-determined, a^T x = c, line of solutions
+a = np.array([1.0, 2.0]); c = 2.0
+x_mn = np.linalg.pinv(a.reshape(1, -1)) @ np.array([c])  # minimum-norm
+# parametrize the solution line: x_mn + t * (null direction)
+nulldir = np.array([-a[1], a[0]]); nulldir = nulldir/np.linalg.norm(nulldir)
+ts = np.linspace(-2.2, 2.2, 50)
+sol_line = x_mn[:, None] + nulldir[:, None]*ts
+
+fig, (a0, a1) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+
+xs = np.linspace(0, 3.4, 50)
+a0.scatter(A_over.ravel(), y_over, color=VEC, s=45, zorder=3, label="data")
+a0.plot(xs, theta*xs, color=HILITE, lw=2.0, label=f"LS fit  $\\hat\\theta={theta:.3f}$")
+for xi, yi in zip(A_over.ravel(), y_over):
+    a0.plot([xi, xi], [yi, theta*xi], color=GREY, lw=1.2)
+a0.set_title("Over-determined: least squares")
+a0.set_xlabel("$x$"); a0.set_ylabel("$y$"); a0.legend(fontsize=8, loc="upper left")
+
+a1.plot(sol_line[0], sol_line[1], color=GREY, lw=2.0, label="all solutions $a^\\top x=c$")
+draw_vec(a1, (0, 0), tuple(x_mn), color=ACCENT, label="$A^+c$ (min-norm)", label_offset=(0.15, -0.35))
+a1.scatter([0], [0], color=VEC, s=40, zorder=4); a1.text(0.05, 0.12, "origin", fontsize=9, color=VEC)
+a1.set_title("Under-determined: minimum norm")
+a1.set_xlabel("$x_1$"); a1.set_ylabel("$x_2$"); a1.set_aspect("equal")
+a1.legend(fontsize=8, loc="upper right"); a1.set_xlim(-1.5, 2.0); a1.set_ylim(-1.0, 2.2)
+plt.tight_layout()
+print(f"over-determined LS slope  = {theta:.4f}")
+print(f"under-determined min-norm = ({x_mn[0]:.4f}, {x_mn[1]:.4f}),  |x| = {np.linalg.norm(x_mn):.4f}")
+```
+
+## Worked example — rank-deficient regression, where the inverse dies {#sec-rankdef}
+
+Now the case that motivated the whole construction: a regression design where two
+predictors are perfectly collinear, so $A^\top A$ is singular and the textbook
+$(A^\top A)^{-1}A^\top y$ is undefined. The pseudoinverse sails through, returning the
+minimum-norm coefficient vector. This is the linear-algebra service Geometry hands to
+Regression for [REGR-05] and [REGR-14].
+
+```{python}
+#| label: tbl-rankdef
+#| echo: false
+rng = np.random.default_rng(0)
+n_obs = 40
+x1 = rng.uniform(0, 10, n_obs)
+x2 = 3.0 + 2.0*x1                      # x2 is an EXACT linear function of x1
+x3 = rng.uniform(0, 5, n_obs)         # a genuinely independent predictor
+A = np.column_stack([np.ones(n_obs), x1, x2, x3])  # design with intercept
+beta_true = np.array([1.0, 0.5, 0.0, -0.8])
+y = A @ beta_true + rng.normal(0, 0.4, n_obs)
+
+AtA = A.T @ A
+rank_A = np.linalg.matrix_rank(A)
+print(f"design A is {A.shape[0]} x {A.shape[1]},  rank = {rank_A}  (deficient: x2 = 3 + 2*x1)")
+print(f"A^T A is {AtA.shape[0]} x {AtA.shape[1]},  its rank = {np.linalg.matrix_rank(AtA)}  -> SINGULAR")
+print(f"condition number of A^T A = {np.linalg.cond(AtA):.3e}  (effectively infinite)")
+
+# the normal-equations formula is undefined: A^T A has no true inverse, so
+# np.linalg.inv returns an arbitrary, unstable answer instead of refusing.
+beta_ne = np.linalg.inv(AtA) @ A.T @ y
+print(f"\n(A^T A)^-1 A^T y returns:        {np.round(beta_ne, 3)}")
+print(f"  it does not even fit as well:   residual = {np.linalg.norm(A @ beta_ne - y):.4f}")
+# perturb A^T A by a numerically negligible amount and the answer changes completely:
+beta_ne2 = np.linalg.inv(AtA + 1e-10*np.eye(4)) @ A.T @ y
+print(f"  perturb A^T A by 1e-10:          {np.round(beta_ne2, 3)}   <- totally different")
+
+# pseudoinverse succeeds, returns the minimum-norm least-squares fit:
+beta_pinv = np.linalg.pinv(A) @ y
+print(f"\npseudoinverse (min-norm LS):     {np.round(beta_pinv, 3)}")
+print(f"  best possible fit:              residual = {np.linalg.norm(A @ beta_pinv - y):.4f}")
+print(f"  smallest norm among LS fits:    ||beta|| = {np.linalg.norm(beta_pinv):.4f}")
+```
+
+The matrix $A^\top A$ is singular — its condition number is effectively infinite — because
+the collinear columns $x_1$ and $x_2$ give the design rank $3$ instead of $4$. The
+textbook formula $(A^\top A)^{-1}A^\top y$ does not refuse outright; worse, it silently
+returns an *arbitrary* answer — one that does not even achieve the smallest residual, and
+that swings to a completely different vector when $A^\top A$ is perturbed by a numerically
+negligible $10^{-10}$. That instability is the floating-point face of "the inverse does not
+exist." The pseudoinverse instead returns the genuine best-fitting line (smallest residual)
+while distributing the coefficient between the two collinear predictors in the unique
+**minimum-norm** way. @fig-rankdef makes the indeterminacy visible: the
+*fit* is unique even though the *coefficients* are not.
+
+```{python}
+#| label: fig-rankdef
+#| fig-cap: "Rank-deficient regression. **Left:** fitted vs. observed $y$ — the pseudoinverse fit is excellent ($45^\\circ$ line), because the *predictions* are well-determined even when the coefficients are not. **Right:** the coefficient indeterminacy. Any split of the combined effect between the collinear $x_1$ and $x_2$ along the grey line gives the *same* fit; the pseudoinverse picks the green point, the one closest to the origin (minimum norm). This is the geometric meaning of 'the pseudoinverse chooses for you' — and a warning that the individual collinear coefficients are not interpretable."
+
+fitted = A @ beta_pinv
+fig, (a0, a1) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+
+lim = [y.min()-0.5, y.max()+0.5]
+a0.scatter(y, fitted, color=VEC, s=30, zorder=3)
+a0.plot(lim, lim, color=HILITE, lw=1.6, ls="--", label="perfect fit")
+a0.set_xlabel("observed $y$"); a0.set_ylabel("fitted $\\hat y$")
+a0.set_title("Predictions are well-determined"); a0.legend(fontsize=9, loc="upper left")
+a0.set_xlim(lim); a0.set_ylim(lim)
+
+# the family of equivalent (beta1, beta2) splits: beta1 + 2*beta2 = const
+b1p, b2p = beta_pinv[1], beta_pinv[2]
+combined = b1p + 2.0*b2p
+b2_grid = np.linspace(-1.5, 1.5, 50)
+b1_grid = combined - 2.0*b2_grid
+a1.plot(b1_grid, b2_grid, color=GREY, lw=2.0, label="all equivalent splits")
+a1.scatter([b1p], [b2p], color=ACCENT, s=80, zorder=4, edgecolor="white", label="pseudoinverse (min-norm)")
+a1.scatter([0], [0], color=VEC, s=30, zorder=3); a1.text(0.05, 0.08, "origin", fontsize=9, color=VEC)
+a1.set_xlabel("$\\beta_1$ (coef of $x_1$)"); a1.set_ylabel("$\\beta_2$ (coef of $x_2$)")
+a1.set_title("Coefficients are NOT"); a1.legend(fontsize=8, loc="upper right"); a1.set_aspect("equal")
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**A small singular value is a loaded gun.** The pseudoinverse divides by each kept
+$\sigma_i$, so a singular value that is *nonzero but tiny* contributes a factor
+$1/\sigma_i$ that is *huge*. In exact arithmetic $\sigma_i > 0$ means "invert it," but in
+floating point a $\sigma_i$ near the noise floor is indistinguishable from zero and
+dividing by it amplifies measurement noise catastrophically — the very instability the
+condition number $\kappa = \sigma_{\max}/\sigma_{\min}$ measures ([GEOM-26]). The practical
+fix is the **truncated** pseudoinverse: treat singular values below a tolerance as zero
+(NumPy's `pinv` does this via its `rcond` argument), trading a little bias for a lot of
+stability. This is the exact same dividing line as Part I — and it is *also* what ridge
+regression ([REGR-14]) does smoothly, by replacing $1/\sigma_i$ with
+$\sigma_i/(\sigma_i^2 + \lambda)$, which stays bounded as $\sigma_i \to 0$.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When should I reach for the pseudoinverse, and when for something else?"* The honest
+decision tree:
+
+- **Full column rank, well-conditioned, tall $A$:** you want plain least squares. Use a
+  **QR factorization** ([GEOM-07]) — it is faster than the SVD and numerically sound. The
+  pseudoinverse gives the same answer but does more work.
+- **Rank-deficient or genuinely ill-conditioned $A$:** use the **SVD/pseudoinverse**, and
+  truncate the small singular values. This is its home turf — it is the only method that
+  degrades gracefully instead of exploding.
+- **You want to *regularize* rather than truncate:** use **ridge** ([REGR-14]). It is the
+  smooth cousin of pseudoinverse truncation and usually predicts better when collinearity
+  is a matter of degree rather than exact redundancy.
+- **Never** form $A^\top A$ and invert it when $A$ is ill-conditioned: that *squares* the
+  condition number ([GEOM-26]) and destroys precision. The whole reason QR and SVD exist
+  in numerical practice is to avoid that squaring.
+
+And the conceptual catch an interviewer will probe: *the pseudoinverse makes the
+prediction unique, not the coefficients.* In the collinear case the individual
+coefficients are an arbitrary (minimum-norm) choice and must not be interpreted as
+"effects."
+:::
+
+# How these two halves are one idea {#sec-unity}
+
+It is worth pausing on why Parts I and II belong in the same article. Both are "use the
+big singular values, discard the small ones," and the picture in @fig-summary makes the
+symmetry exact.
+
+- **Low-rank approximation** replaces the singular value map $\sigma_i \mapsto \sigma_i$
+  with the truncation $\sigma_i \mapsto \sigma_i\cdot\mathbf{1}[i\le k]$: keep the big ones
+  at full strength, zero the small ones. The result is $A_k$.
+- **The pseudoinverse** replaces $\sigma_i \mapsto 1/\sigma_i$ with the truncated reciprocal
+  $\sigma_i \mapsto (1/\sigma_i)\cdot\mathbf{1}[\sigma_i > \tau]$: invert the big ones, zero
+  the small ones. The result is $A^+$ (truncated).
+
+In both, the SVD has done the essential work of *diagonalizing the matrix into independent
+directions ranked by importance*, so that we can make a clean per-direction decision —
+keep or discard — that would be hopeless on the entangled entries of $A$ itself. That is
+the deepest reason the SVD is called the master decomposition: it turns every hard matrix
+question into an easy decision, one singular value at a time.
+
+```{python}
+#| label: fig-summary
+#| fig-cap: "The two operations as transformations of the singular values, on a shared spectrum. **Top:** the raw singular values $\\sigma_i$ (blue), with the cutoff $k$ marked. **Bottom-left:** low-rank approximation keeps $\\sigma_i$ for $i\\le k$ and zeros the rest. **Bottom-right:** the pseudoinverse maps each kept $\\sigma_i$ to $1/\\sigma_i$ and zeros the rest — note how the *smallest* kept singular value becomes the *largest* reciprocal, which is why a small surviving $\\sigma$ is dangerous. Same cutoff, two mirror-image edits."
+
+s_demo = np.array([8.0, 5.5, 3.2, 2.0, 1.1, 0.6, 0.25, 0.08])
+k = 4
+idx = np.arange(1, len(s_demo)+1)
+
+fig, axes = plt.subplots(1, 3, figsize=(10.2, 3.2))
+a0, a1, a2 = axes
+a0.bar(idx, s_demo, color=VEC)
+a0.axvline(k+0.5, color=HILITE, ls="--", lw=1.4)
+a0.set_title("raw $\\sigma_i$"); a0.set_xlabel("index $i$")
+
+trunc = s_demo.copy(); trunc[k:] = 0
+a1.bar(idx, trunc, color=ACCENT)
+a1.axvline(k+0.5, color=HILITE, ls="--", lw=1.4)
+a1.set_title("low-rank: keep big, zero small"); a1.set_xlabel("index $i$")
+
+inv = np.where(idx <= k, 1.0/s_demo, 0.0)
+a2.bar(idx, inv, color=HILITE)
+a2.axvline(k+0.5, color=HILITE, ls="--", lw=1.4)
+a2.set_title("pseudoinverse: $1/\\sigma_i$ on kept"); a2.set_xlabel("index $i$")
+plt.tight_layout()
+```
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Collecting the honest boundaries scattered above, plus one more:
+
+- **Low rank only helps if the spectrum decays.** A flat singular-value spectrum
+  (@sec-edge) means there is no low-dimensional structure; truncation then destroys signal.
+  *Reach for:* nothing — accept the full rank, or change the representation.
+- **The pseudoinverse is unstable near rank-deficiency.** Tiny nonzero singular values
+  produce enormous $1/\sigma_i$ factors that amplify noise (@sec-rankdef pitfall).
+  *Reach for:* truncated SVD (set a tolerance) or ridge regularization ([REGR-14]).
+- **Both norms in Eckart–Young assume you measure error the natural way.** If your problem
+  weights entries unequally (some matrix entries matter more, or are missing), plain
+  Frobenius/spectral optimality no longer applies. *Reach for:* weighted or masked
+  low-rank methods — matrix completion, weighted PCA — which the unconstrained SVD does
+  *not* solve. (This is exactly why Netflix-style recommendation, with most entries
+  missing, needs more than a raw SVD truncation.)
+- **The SVD costs $O(mn\min(m,n))$.** For very large sparse matrices, a full SVD is
+  infeasible; you compute only the top $k$ singular triples (randomized or Krylov methods).
+  The *theory* here is unchanged — Eckart–Young still names the optimum — but the
+  *computation* must be truncated from the start.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the truncated SVD the same as PCA?"* They are intimately related but not identical,
+and the distinction is the Geometry/Unsupervised-Learning seam. PCA is the SVD applied to
+a **centered** data matrix (each feature mean-subtracted); its principal components are the
+right singular vectors $v_i$, and the variance along component $i$ is $\sigma_i^2/(n-1)$.
+The truncated SVD is the *algebra* — best rank-$k$ approximation of *whatever* matrix you
+hand it. PCA is the *statistics* — best low-dimensional summary of *centered data*, with
+the variance interpretation. If you forget to center, you are doing truncated SVD, not
+PCA, and the leading component will partly capture the mean rather than the variation. The
+centering, the covariance interpretation, scree plots, and choosing $k$ are **Unsupervised
+Learning's** to own; this article supplies the $A = U\Sigma V^\top$ machinery they build
+on.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-20 *The Singular Value Decomposition*]**, which proved that every
+matrix factors as $A = U\Sigma V^\top$ and read its geometry as rotate–stretch–rotate.
+This article cashed that factorization into the two tools the rest of the series leans on:
+
+- **Eckart–Young low-rank approximation** — handed forward as the linear-algebra core of
+  **PCA** in **Unsupervised Learning**, which adds the centering and variance story and
+  links back to @thm-eckart-young rather than re-deriving it.
+- **The Moore–Penrose pseudoinverse** — handed to **Regression** for **rank-deficient and
+  high-dimensional designs** ([REGR-05] multiple regression, [REGR-14] ridge), completing
+  the least-squares-as-projection picture of [GEOM-06] to the cases where $A^\top A$ is
+  singular.
+
+The trunk of Geometry now turns to **calculus on vectors**: [GEOM-22] builds vector and
+matrix differentiation from the Calc-1 floor, and the stability theme touched here — small
+singular values, the danger of dividing by them — gets its own article in **[GEOM-26
+*Condition Number and Numerical Stability*]**, where $\kappa = \sigma_{\max}/\sigma_{\min}$
+is derived as the worst-case error amplification and ties this article's pitfalls to
+multicollinearity ([REGR-07]).
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** C. Eckart and G. Young, "The approximation of one matrix by another
+  of lower rank," *Psychometrika* 1 (1936) — the optimality theorem of @sec-eckart-young,
+  proved in the Frobenius norm; L. Mirsky (1960) extended it to all unitarily invariant
+  norms (including the spectral norm of @sec-spectral-ey). R. Penrose, "A generalized
+  inverse for matrices," *Proc. Cambridge Phil. Soc.* 51 (1955) — the four-axiom definition
+  of $A^+$ and its uniqueness; E. H. Moore announced the same object in 1920.
+- **The numerical companion.** G. H. Golub and C. F. Van Loan, *Matrix Computations* — the
+  standard reference for *computing* the SVD stably and for the truncation tolerances the
+  pitfalls here gesture at.
+- **Open threads this article deliberately deferred.** *How do you pick $k$?* — a
+  statistical question (scree plots, cross-validation) owned by Unsupervised Learning.
+  *What is the smooth alternative to hard truncation?* — Tikhonov/ridge regularization,
+  [REGR-14], which replaces $1/\sigma_i$ by $\sigma_i/(\sigma_i^2+\lambda)$. *What happens
+  when most matrix entries are missing?* — matrix completion, a non-convex relative of
+  Eckart–Young where the clean SVD optimum no longer applies.

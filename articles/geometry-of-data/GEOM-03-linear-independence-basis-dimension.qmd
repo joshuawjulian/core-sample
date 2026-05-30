@@ -31,13 +31,13 @@ GREY   = "#6c757d"
 
 > **Where this sits in the track.** This is the fourth article in the **Geometry of
 > Data** track and the capstone of its first movement. It assumes
-> [GEOM-0 *What Is a Vector, Really?*] (a vector is a point, an arrow, and a row of data),
-> [GEOM-1 *Adding and Scaling*] (the linear combination $c_1\mathbf v_1 + \dots + c_k\mathbf v_k$
-> is the one move from which everything is built), and [GEOM-2 *Span and Subspaces*] (the
+> [GEOM-00 *What Is a Vector, Really?*] (a vector is a point, an arrow, and a row of data),
+> [GEOM-01 *Adding and Scaling*] (the linear combination $c_1\mathbf v_1 + \dots + c_k\mathbf v_k$
+> is the one move from which everything is built), and [GEOM-02 *Span and Subspaces*] (the
 > set of all linear combinations of some vectors is the subspace they reach). Here we ask
 > the question those three articles set up but did not answer: *which of the spanning
 > vectors are actually pulling weight, and how few do we really need?* It sets up
-> [GEOM-5 *Orthogonality and Orthonormal Bases*] (the nicest bases), [GEOM-12 *Rank and
+> [GEOM-05 *Orthogonality and Orthonormal Bases*] (the nicest bases), [GEOM-12 *Rank and
 > the Four Fundamental Subspaces*] (rank is the dimension of the column space), and
 > [GEOM-14 *Eigenvalues and Eigenvectors*] (an eigenbasis is a basis chosen to make a map
 > transparent).
@@ -87,9 +87,9 @@ Keep one question in view for the whole article: **when does a collection of vec
 redundant information, and what is the leanest collection that loses nothing?** Every
 definition and every proof below answers a piece of that.
 
-## What GEOM-2 left open
+## What GEOM-02 left open
 
-[GEOM-2] handed us the *span*: given vectors $\mathbf v_1, \dots, \mathbf v_k$, the set of
+[GEOM-02] handed us the *span*: given vectors $\mathbf v_1, \dots, \mathbf v_k$, the set of
 all linear combinations $c_1\mathbf v_1 + \dots + c_k\mathbf v_k$ is a subspace — a line, a
 plane, or some flat through the origin. But it also showed, in its closing edge case,
 something unsettling: **the number of vectors you start with need not match the dimension
@@ -105,7 +105,7 @@ scientist meets constantly:
 - **A redundant feature.** You record a person's height in centimeters *and* in inches.
   The second column is $2.54$ times the first — it adds a vector to your table but not a
   direction to your data. Any model that tries to use both will choke (this is exact
-  multicollinearity, the failure mode [REGR-7] is built around).
+  multicollinearity, the failure mode [REGR-07] is built around).
 - **A constraint you did not notice.** Your features are the fractions of a budget spent on
   food, rent, and "everything else." They sum to $1$ by construction, so the third is
   $1$ minus the first two: one fewer independent direction than you have columns.
@@ -191,10 +191,10 @@ ss, tt = np.meshgrid(np.linspace(-0.2, 1.1, 6), np.linspace(-0.2, 1.1, 6))
 PX = ss*v1[0] + tt*v2[0]; PY = ss*v1[1] + tt*v2[1]; PZ = ss*v1[2] + tt*v2[2]
 axL.plot_surface(PX, PY, PZ, color=GREY, alpha=0.18, linewidth=0)
 v3a = np.array([0.4, 0.4, 1.6])
-draw_vec(axL, v1, ACCENT, r"$\mathbf v_1$")
-draw_vec(axL, v2, ACCENT, r"$\mathbf v_2$")
-draw_vec(axL, v3a, ARROW, r"$\mathbf v_3$")
-axL.set_title("Independent: $\\mathbf v_3$ lifts off the plane")
+draw_vec(axL, v1, ACCENT, r"$\mathbf{v}_1$")
+draw_vec(axL, v2, ACCENT, r"$\mathbf{v}_2$")
+draw_vec(axL, v3a, ARROW, r"$\mathbf{v}_3$")
+axL.set_title(r"Independent: $\mathbf{v}_3$ lifts off the plane")
 axL.set_xlim(0, 1.8); axL.set_ylim(0, 1.8); axL.set_zlim(0, 1.8)
 axL.set_xticks([]); axL.set_yticks([]); axL.set_zticks([])
 axL.view_init(elev=22, azim=-60)
@@ -203,10 +203,10 @@ axL.view_init(elev=22, azim=-60)
 axR = fig.add_subplot(1, 2, 2, projection="3d")
 axR.plot_surface(PX, PY, PZ, color=GREY, alpha=0.18, linewidth=0)
 v3b = 2*v1 - v2   # lies in the plane
-draw_vec(axR, v1, ACCENT, r"$\mathbf v_1$")
-draw_vec(axR, v2, ACCENT, r"$\mathbf v_2$")
-draw_vec(axR, v3b, ARROW, r"$\mathbf v_3$")
-axR.set_title("Dependent: $\\mathbf v_3$ lies in the plane")
+draw_vec(axR, v1, ACCENT, r"$\mathbf{v}_1$")
+draw_vec(axR, v2, ACCENT, r"$\mathbf{v}_2$")
+draw_vec(axR, v3b, ARROW, r"$\mathbf{v}_3$")
+axR.set_title(r"Dependent: $\mathbf{v}_3$ lies in the plane")
 axR.set_xlim(0, 3.4); axR.set_ylim(-1.4, 1.8); axR.set_zlim(0, 1.8)
 axR.set_xticks([]); axR.set_yticks([]); axR.set_zticks([])
 axR.view_init(elev=22, azim=-60)
@@ -223,7 +223,7 @@ formula are the same statement.
 ## Linear independence, defined {#sec-li-def}
 
 We work inside $\mathbb R^n$ throughout, with vectors written in bold and scalars (ordinary
-real numbers) in plain type. Recall from [GEOM-1] that a **linear combination** of
+real numbers) in plain type. Recall from [GEOM-01] that a **linear combination** of
 $\mathbf v_1, \dots, \mathbf v_k$ is any vector of the form $c_1\mathbf v_1 + \dots +
 c_k\mathbf v_k$, where the $c_i$ are scalars called the **coefficients** or **weights**.
 Recall too the **zero vector** $\mathbf 0 = (0, 0, \dots, 0)$, the origin, which every
@@ -254,7 +254,7 @@ the only combination that lands on the origin?* "Yes, only the trivial one" is i
 dependence, and that very combination is the evidence.
 
 ::: {.callout-important title="The pivot: the coefficients are the unknowns"}
-As in the least-squares pivot of [REGR-1], notice *what is variable here*. The vectors
+As in the least-squares pivot of [REGR-01], notice *what is variable here*. The vectors
 $\mathbf v_1, \dots, \mathbf v_k$ are fixed, given. The unknowns we solve @eq-li *for* are
 the coefficients $c_1, \dots, c_k$. Independence is a statement about the **solution set
 of this homogeneous equation** — does it contain only the origin of coefficient-space, or
@@ -351,7 +351,7 @@ $$ {#eq-Ac-zero}
 
 (That $A\mathbf c$ equals the combination $c_1\mathbf v_1 + \dots + c_k\mathbf v_k$ — a
 matrix times a vector is a weighted sum of the matrix's columns — is the central reading of
-matrix–vector multiplication, built in full in [GEOM-8]. We use only that fact here; the
+matrix–vector multiplication, built in full in [GEOM-08]. We use only that fact here; the
 rest of matrix algebra is not needed yet.) So:
 
 > **The vectors are independent if and only if $A\mathbf c = \mathbf 0$ has only the
@@ -391,7 +391,7 @@ of the dimension bound we make exact in @sec-invariance.
 
 ## Basis: spanning *and* independent {#sec-basis}
 
-We now have the two pressures from the Core, made precise. *Spanning* (from [GEOM-2]) is
+We now have the two pressures from the Core, made precise. *Spanning* (from [GEOM-02]) is
 the demand that the vectors reach every point of the subspace: their span is all of it.
 *Independence* (@def-independence) is the demand that none is wasted. A basis is the set
 that does both.
@@ -484,9 +484,17 @@ the data. The geometry never changes; only the description does.
 
 We can now reach the article's hardest and most important result. A subspace can have many
 different bases — the standard basis of $\mathbb R^2$ is $\{(1,0), (0,1)\}$, but $\{(1,1),
-(1,-1)\}$ is *also* a basis (independent, since neither is a multiple of the other, and
-spanning, as a short check confirms). They look nothing alike. Yet both have **two**
-vectors. Is that a coincidence, or a law?
+(1,-1)\}$ is *also* a basis. It is **independent** because neither vector is a multiple of
+the other (no scalar $a$ has $a(1,1) = (1,-1)$, since matching the first coordinate forces
+$a = 1$ but then the second coordinate gives $1 \ne -1$), so by the two-vector test of
+@sec-li-geometry they are independent. It also **spans** $\mathbb R^2$: given any target
+$(x, y)$, we must find scalars $c_1, c_2$ with $c_1(1,1) + c_2(1,-1) = (x, y)$, i.e. the
+two scalar equations $c_1 + c_2 = x$ and $c_1 - c_2 = y$. Adding them gives $2c_1 = x + y$,
+so $c_1 = \tfrac{x+y}{2}$; subtracting the second from the first gives $2c_2 = x - y$, so
+$c_2 = \tfrac{x-y}{2}$. Those coefficients exist for *every* $(x, y)$, so the pair reaches
+every point of $\mathbb R^2$ — it spans. Independent and spanning: a basis. So $\{(1,0),
+(0,1)\}$ and $\{(1,1), (1,-1)\}$ look nothing alike, yet both have **two** vectors. Is that
+a coincidence, or a law?
 
 It is a law, and proving it is what makes "dimension" a legitimate word. The engine is the
 following lemma, the single most important counting fact in linear algebra.
@@ -698,7 +706,7 @@ The practitioner lesson, which the rest of the series leans on hard: **the numbe
 columns in your table is not the dimensionality of your data.** Here you have three columns
 but two directions. Feeding both area columns into a linear model is exact
 multicollinearity — the design matrix $X^\top X$ becomes singular and the fit has no unique
-solution, the disaster [REGR-7] is built around. The cure is to recognize the dependence
+solution, the disaster [REGR-07] is built around. The cure is to recognize the dependence
 and drop the redundant column, restoring an independent — hence basis-like — set of
 features.
 
@@ -879,17 +887,17 @@ The honest summary:
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[GEOM-2 *Span and Subspaces*]**, which built the set of places a handful
+You arrived from **[GEOM-02 *Span and Subspaces*]**, which built the set of places a handful
 of vectors can reach and flagged that the count of vectors need not match the size of that
 set. This article closed that gap: **independence** says which vectors pull their weight,
 a **basis** is the leanest full description, and **dimension** is the forced count of
 independent directions — the first genuinely *invariant* number the track has produced.
 With Movement I (vectors, combinations, span, independence) complete, the trunk forks:
 
-- **[GEOM-4 *The Dot Product*]** and **[GEOM-5 *Orthogonality and Orthonormal Bases*]** —
+- **[GEOM-04 *The Dot Product*]** and **[GEOM-05 *Orthogonality and Orthonormal Bases*]** —
   among all bases, the *orthonormal* ones (mutually perpendicular, unit length) are the
   nicest, because then the coordinates of @thm-unique-coords are just dot products. This
-  article said *a* basis exists and is efficient; GEOM-5 builds the *best* kind.
+  article said *a* basis exists and is efficient; GEOM-05 builds the *best* kind.
 - **[GEOM-12 *Rank and the Four Fundamental Subspaces*]** — the rank we computed in the
   worked examples is *defined* as the dimension of the column space, and the rank–nullity
   theorem is dimension-counting (@lem-steinitz, @thm-invariance) made into the master
@@ -897,7 +905,7 @@ With Movement I (vectors, combinations, span, independence) complete, the trunk 
 - **[GEOM-14 *Eigenvalues and Eigenvectors*]** — eigenvectors, when there are enough of
   them, form a basis (@def-basis) chosen so a matrix acts by simple scaling along each
   basis direction; whether such a basis *exists* is exactly an independence question.
-- **Downstream, into [REGR-7]:** exact linear dependence among predictors is perfect
+- **Downstream, into [REGR-07]:** exact linear dependence among predictors is perfect
   multicollinearity (Example 1, Example 2); the near-dependence dial of @sec-near-dependence
   is the practical version that ridge regression and the condition number tame.
 :::
@@ -913,8 +921,8 @@ With Movement I (vectors, combinations, span, independence) complete, the trunk 
   linear algebra's counting — flows. Worth knowing by name.
 - **Open threads this article deliberately deferred.** *How do we actually compute a basis
   and rank reliably?* — via QR or the SVD, not naive elimination, for the numerical reasons
-  of @sec-rank-lies; built in [GEOM-7] and [GEOM-20]. *What is the cleanest possible basis?*
-  — an orthonormal one, [GEOM-5]. *How does dimension partition a matrix's input and output
+  of @sec-rank-lies; built in [GEOM-07] and [GEOM-20]. *What is the cleanest possible basis?*
+  — an orthonormal one, [GEOM-05]. *How does dimension partition a matrix's input and output
   space?* — the four fundamental subspaces and rank–nullity, [GEOM-12]. *And the question
   underneath dimension reduction:* given data that only *nearly* lives in a low-dimensional
   flat, what is its *effective* dimension? — the SVD's singular values answer it ([GEOM-20]),

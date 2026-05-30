@@ -44,21 +44,21 @@ def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5):
 
 > **Where this sits in the track.** This is the third article in the **Geometry of
 > Data** track and the first to ask a question about *whole sets* of vectors rather
-> than one at a time. It assumes [GEOM-0 *What Is a Vector, Really?*] — that a vector
+> than one at a time. It assumes [GEOM-00 *What Is a Vector, Really?*] — that a vector
 > is simultaneously an arrow, a list of numbers in $\mathbb{R}^n$, and one row of a
-> dataset — and [GEOM-1 *Adding and Scaling: The Linear Combination*], which gave us
+> dataset — and [GEOM-01 *Adding and Scaling: The Linear Combination*], which gave us
 > the only two operations linear algebra permits and packaged them into the **linear
 > combination** $c_1\mathbf{v}_1 + \cdots + c_k\mathbf{v}_k$. Here we ask what happens
 > when we turn those coefficients loose and let them range over *every* real number.
 > The reachable set we get is the **span**, and the shape it always forms is a
-> **subspace**. This sets up [GEOM-3 *Linear Independence, Basis, and Dimension*]
-> (which spanning sets carry no redundancy), [GEOM-6 *Orthogonal Projection*] (we
+> **subspace**. This sets up [GEOM-03 *Linear Independence, Basis, and Dimension*]
+> (which spanning sets carry no redundancy), [GEOM-06 *Orthogonal Projection*] (we
 > always project onto a subspace), and [GEOM-12 *The Four Fundamental Subspaces*] (the
 > column space and null space are spans and subspaces by construction).
 
 ## Abstract {.unnumbered}
 
-Hand someone a few vectors and the two operations from [GEOM-1] — add, and scale by any
+Hand someone a few vectors and the two operations from [GEOM-01] — add, and scale by any
 real number — and ask: *exactly which points can they now reach?* The answer is the
 **span**, the set of all linear combinations of the given vectors. This article shows
 that the span is never an arbitrary blob: it is always a flat sheet through the origin —
@@ -123,7 +123,7 @@ a rigid, predictable shape, and naming that shape is most of the battle.
 
 ## Why this matters for data, right now
 
-In [GEOM-0] we committed to reading a data table geometrically: each of the $p$ feature
+In [GEOM-00] we committed to reading a data table geometrically: each of the $p$ feature
 columns is a direction in space, and each of the $n$ rows is a point. The span question is
 then immediate and unavoidable. The columns of a data matrix are vectors; **the set of all
 their linear combinations is the set of every outcome a linear model could ever predict.**
@@ -140,7 +140,7 @@ Because the span of your feature columns is the entire universe of predictions a
 model can make, and the *dimension* of that span is how much non-redundant information your
 features actually carry. When two features are (nearly) linear combinations of others, the
 span does not grow, the model has fewer real degrees of freedom than columns, and
-coefficients become unstable — that is **multicollinearity** ([REGR-7]), and it *is* the
+coefficients become unstable — that is **multicollinearity** ([REGR-07]), and it *is* the
 span collapsing. Everything geometric about why a design matrix is "rank-deficient" is in
 this article.
 :::
@@ -149,7 +149,7 @@ this article.
 
 Before any formal definitions, build the picture with your hands. We are in the plane
 $\mathbb{R}^2$ or in space $\mathbb{R}^3$, and we have a small handful of arrows planted at
-the origin. The rule from [GEOM-1] lets us do exactly two things to them: **stretch or flip
+the origin. The rule from [GEOM-01] lets us do exactly two things to them: **stretch or flip
 any arrow by a real factor** (scalar multiplication) and **lay arrows tip-to-tail and read
 off the resulting arrow** (addition). The span is the answer to "sweep every dial": let
 every scaling factor run over all real numbers, add the results in every combination, and
@@ -236,7 +236,7 @@ meet as multicollinearity.
 
 ## Linear combinations, recalled precisely {#sec-recall}
 
-We lean on one object from [GEOM-1], restated here so nothing is implicit. Throughout,
+We lean on one object from [GEOM-01], restated here so nothing is implicit. Throughout,
 **vectors are columns in $\mathbb{R}^n$** (an ordered list of $n$ real numbers, written
 vertically), boldface denotes a vector, and lowercase italics denote real-number scalars.
 
@@ -255,7 +255,7 @@ the result is $\sum_{j=1}^k c_j (\mathbf{v}_j)_i$, where $(\mathbf{v}_j)_i$ is t
 entry of $\mathbf{v}_j$.
 :::
 
-Two facts about @eq-lincomb, both established in [GEOM-1], are the only algebra we need and
+Two facts about @eq-lincomb, both established in [GEOM-01], are the only algebra we need and
 we will invoke them by name:
 
 - **Closure of the combination form.** Adding two linear combinations of the same vectors,
@@ -296,7 +296,7 @@ out by components, $\mathbf{w} = \sum_j c_j\mathbf{v}_j$ is $n$ scalar equations
 entry) in the $k$ unknowns $c_1,\dots,c_k$. The vector $\mathbf{w}$ is reachable precisely
 when those equations are *consistent* — when some assignment of weights solves them. This
 is the bridge from the geometric word *span* to the computational world of solving
-$A\mathbf{c} = \mathbf{w}$, which the track makes fully explicit in [GEOM-8] (a matrix
+$A\mathbf{c} = \mathbf{w}$, which the track makes fully explicit in [GEOM-08] (a matrix
 times a vector *is* a linear combination of the matrix's columns) and [GEOM-11] (when that
 system has a solution). We will use this reading in @sec-membership to *test* membership by
 hand.
@@ -400,7 +400,7 @@ $$
 
 Add them, and group the two sums term by term — legal because vector addition is done
 componentwise and real addition is associative and commutative (the vector-space rules from
-[GEOM-1]):
+[GEOM-01]):
 
 $$
 \mathbf{u} + \mathbf{w}
@@ -410,7 +410,7 @@ $$
 $$
 
 The last equality factors $\mathbf{v}_j$ out of each pair using the distributive rule
-$a_j\mathbf{v}_j + b_j\mathbf{v}_j = (a_j+b_j)\mathbf{v}_j$ (again from [GEOM-1]). Now define
+$a_j\mathbf{v}_j + b_j\mathbf{v}_j = (a_j+b_j)\mathbf{v}_j$ (again from [GEOM-01]). Now define
 $c_j = a_j + b_j$. Each $c_j$ is a sum of two real numbers, hence a real number. So
 
 $$
@@ -432,7 +432,7 @@ $$
 
 The first equality pulls the scalar $c$ inside the sum (scalar multiplication distributes
 over vector addition); the second regroups $c(a_j\mathbf{v}_j) = (ca_j)\mathbf{v}_j$ by the
-associativity of scalar multiplication — both [GEOM-1] rules. Each new coefficient $ca_j$
+associativity of scalar multiplication — both [GEOM-01] rules. Each new coefficient $ca_j$
 is a product of two reals, hence real. So $c\mathbf{u}$ is again a linear combination of the
 $\mathbf{v}_j$, meaning $c\mathbf{u} \in V$.
 
@@ -475,11 +475,11 @@ there is a vector in $V$ outside that span, and we adjoin it.
 
 **Why it stops.** Each adjoined vector lies *outside* the span of the previous ones, so it
 is not a linear combination of them — it is a genuinely new direction. We will prove in
-[GEOM-3] that in $\mathbb{R}^n$ you cannot have more than $n$ vectors that are each outside
+[GEOM-03] that in $\mathbb{R}^n$ you cannot have more than $n$ vectors that are each outside
 the span of the rest (any $n+1$ vectors in $\mathbb{R}^n$ are linearly dependent — at least
 one is a combination of the others). We flag that fact here as imported from the next
 article rather than assumed silently: it is the **dimension bound**, and its full proof is
-[GEOM-3]'s job. Granting it, the greedy process cannot adjoin more than $n$ vectors, so it
+[GEOM-03]'s job. Granting it, the greedy process cannot adjoin more than $n$ vectors, so it
 must halt after some $k \le n$ steps with
 
 $$
@@ -496,7 +496,7 @@ $\qquad\blacksquare$
 ::: {.callout-note title="What we borrowed, and where it is built"}
 This proof leaned on one fact from the next article: *in $\mathbb{R}^n$ you cannot keep
 finding vectors each outside the span of the previous ones beyond $n$ of them.* That is the
-**dimension bound**, proved in full in [GEOM-3 *Linear Independence, Basis, and
+**dimension bound**, proved in full in [GEOM-03 *Linear Independence, Basis, and
 Dimension*]. We imported only its statement so the loop "span $\Leftrightarrow$ subspace"
 could close here. Nothing else in the present article depends on it — every other result is
 self-contained.
@@ -630,10 +630,35 @@ directly from @def-span without the full theory:
 - **Adding a vector already in the span never grows it.** If $\mathbf{v}_{k+1} \in
   \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$, then
   $\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k,\mathbf{v}_{k+1}\} =
-  \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$. *Proof:* any combination using
-  $\mathbf{v}_{k+1}$ can rewrite $\mathbf{v}_{k+1}$ as a combination of the first $k$ and
-  fold the coefficients in, by the closure we proved in @thm-span-is-subspace. So the larger
-  span is contained in the smaller; the reverse containment is obvious. Equal.
+  \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$. *Proof.* Write $S =
+  \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$ (the smaller set) and $T =
+  \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k,\mathbf{v}_{k+1}\}$ (the larger). We
+  show $T \subseteq S$ and $S \subseteq T$, which forces $T = S$.
+
+  *$S \subseteq T$ (the easy inclusion, done explicitly so nothing is waved through).*
+  Any $\mathbf{x} \in S$ is $\mathbf{x} = \sum_{j=1}^k a_j\mathbf{v}_j$ for some reals
+  $a_j$. That very same expression is a combination of the longer list
+  $\mathbf{v}_1,\dots,\mathbf{v}_{k+1}$ in which the coefficient on $\mathbf{v}_{k+1}$ is
+  taken to be $0$: $\mathbf{x} = \sum_{j=1}^k a_j\mathbf{v}_j + 0\cdot\mathbf{v}_{k+1}$.
+  Hence $\mathbf{x} \in T$. (This inclusion holds for *any* extra vector, related or not —
+  appending a vector can only ever enlarge or preserve a span, never shrink it.)
+
+  *$T \subseteq S$ (the inclusion the hypothesis buys us).* By assumption $\mathbf{v}_{k+1}
+  \in S$, so there are reals $d_1,\dots,d_k$ with $\mathbf{v}_{k+1} = \sum_{j=1}^k
+  d_j\mathbf{v}_j$. Take any $\mathbf{y} \in T$, say $\mathbf{y} = \sum_{j=1}^k
+  b_j\mathbf{v}_j + b_{k+1}\mathbf{v}_{k+1}$. Substitute the expression for
+  $\mathbf{v}_{k+1}$ and collect terms in each $\mathbf{v}_j$:
+
+  $$
+  \mathbf{y}
+  = \sum_{j=1}^k b_j\mathbf{v}_j + b_{k+1}\sum_{j=1}^k d_j\mathbf{v}_j
+  = \sum_{j=1}^k \bigl(b_j + b_{k+1}d_j\bigr)\mathbf{v}_j .
+  $$
+
+  Each coefficient $b_j + b_{k+1}d_j$ is a real number, so $\mathbf{y}$ is a combination of
+  $\mathbf{v}_1,\dots,\mathbf{v}_k$ alone — that is, $\mathbf{y} \in S$. This "fold the
+  coefficients in" step is exactly the closure of $S$ under combination that we proved in
+  @thm-span-is-subspace. Both inclusions hold, so $T = S$. $\blacksquare$
 - **The span of $k$ vectors has dimension at most $k$, and at most $n$.** At most $k$
   because there are only $k$ dials; at most $n$ because the whole thing lives inside
   $\mathbb{R}^n$, which is $n$-dimensional.
@@ -674,7 +699,7 @@ an illusion.
 
 ```{python}
 #| label: fig-collinear
-#| fig-cap: "Collinearity collapses a span. **Left:** two feature vectors that point in nearly the same direction (correlation $\\approx 0.997$) — like square meters vs. square feet with a little measurement noise. Their span is *almost* a line: the shaded reachable region is a razor-thin sliver, not a fat plane, so to reach an off-sliver target you need enormous, near-cancelling coefficients. **Right:** the same two directions pulled apart to be genuinely distinct; now the span is a healthy, wide plane and every direction is cheaply reachable. The width of the sliver is what the *condition number* (GEOM-26) measures."
+#| fig-cap: "Collinearity collapses a span. **Left:** two feature vectors that point in nearly the same direction (cosine of the angle between them $\\approx 0.9996$, printed below) — like square meters vs. square feet with a little measurement noise. Their span is *almost* a line: the shaded reachable region is a razor-thin sliver, not a fat plane, so to reach an off-sliver target you need enormous, near-cancelling coefficients. **Right:** the same two directions pulled apart to be genuinely distinct; now the span is a healthy, wide plane and every direction is cheaply reachable. The width of the sliver is what the *condition number* (GEOM-26) measures."
 rng = np.random.default_rng(3)
 
 fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.8))
@@ -708,9 +733,12 @@ for ax in axes:
     ax.set_aspect("equal"); ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
 plt.tight_layout()
 
-# Report the correlation of the near-collinear pair as a concrete number.
-corr = np.corrcoef(u1, u2)[0, 1]
-print(f"left panel: cos-angle between x1 and x2 = {u1@u2/(np.linalg.norm(u1)*np.linalg.norm(u2)):.4f}")
+# Report how nearly parallel the left-panel pair is, as a concrete number. The cosine of
+# the angle between two vectors is their dot product over the product of their lengths
+# (this is GEOM-04's job to derive; here we only use it to put a number on "near-collinear").
+# A cosine near 1 means the arrows point almost the same way -> the span is a thin sliver.
+cos_angle = u1 @ u2 / (np.linalg.norm(u1) * np.linalg.norm(u2))
+print(f"left panel: cos-angle between x1 and x2 = {cos_angle:.4f} (1.0 would be exactly collinear)")
 ```
 
 ## Why "almost collinear" is the dangerous case {#sec-almost}
@@ -723,7 +751,7 @@ that the span is technically the full plane, but so nearly aligned that the plan
 razor-thin wedge in the directions that matter.
 
 Here is the geometric mechanism, stated without yet having the dot product (that is
-[GEOM-4]). To reach a target that lies slightly *off* the near-parallel direction, you must
+[GEOM-04]). To reach a target that lies slightly *off* the near-parallel direction, you must
 take a large positive multiple of one vector and a large *negative* multiple of the other,
 so that the bulk cancels and only the small perpendicular sliver survives. The coefficients
 $c_1, c_2$ become enormous and nearly opposite. In a data setting those coefficients are
@@ -735,7 +763,7 @@ that solving inside it is numerically miserable.
 This is the geometric seed of three things the track and the series develop in full, and we
 name them so the reader sees the throughline:
 
-- **Multicollinearity in regression** ([REGR-7]): the design matrix's columns nearly span a
+- **Multicollinearity in regression** ([REGR-07]): the design matrix's columns nearly span a
   lower-dimensional subspace, so $X^\top X$ is nearly singular and the coefficient estimates
   have huge variance.
 - **The condition number** ([GEOM-26]): the precise number measuring how thin the wedge is —
@@ -778,8 +806,11 @@ reach *everything*?" — the most practically loaded version of the span questio
 solution.
 
 **Reaching everything in $\mathbb{R}^2$.** The two vectors $\mathbf{e}_1 = (1,0)^\top$ and
-$\mathbf{e}_2 = (0,1)^\top$ — the standard axes — span all of $\mathbb{R}^2$, because any
-$(a,b)^\top = a\mathbf{e}_1 + b\mathbf{e}_2$ trivially. But the axes are not special: *any*
+$\mathbf{e}_2 = (0,1)^\top$ — the standard axes — span all of $\mathbb{R}^2$: given any
+target $(a,b)^\top$, the combination $a\mathbf{e}_1 + b\mathbf{e}_2 = a(1,0)^\top +
+b(0,1)^\top = (a,0)^\top + (0,b)^\top = (a,b)^\top$ reproduces it exactly, with the
+coefficients $(a,b)$ simply read off the target's own entries. But the axes are not
+special: *any*
 two vectors pointing in different directions do it. Take $\mathbf{u}_1 = (2,1)^\top$ and
 $\mathbf{u}_2 = (1,3)^\top$. To reach an arbitrary $(a,b)^\top$ we solve $c_1\mathbf{u}_1 +
 c_2\mathbf{u}_2 = (a,b)^\top$, i.e. the two equations $2c_1 + c_2 = a$ and $c_1 + 3c_2 = b$.
@@ -835,7 +866,7 @@ The contrast is the whole lesson of the article in one figure: the same *count* 
 (two) produces either the full plane or a mere line, decided entirely by whether the second
 vector pointed somewhere genuinely new. Reaching "everything" in $\mathbb{R}^n$ requires the
 span to fill all $n$ dimensions, which requires $n$ vectors *that each add a new direction*
-— the precise condition (a **basis**) that [GEOM-3] is built to deliver.
+— the precise condition (a **basis**) that [GEOM-03] is built to deliver.
 
 # Failure modes and the edge of applicability {#sec-failure}
 
@@ -868,7 +899,7 @@ or any exact linear combination of the others, adds no reach (the first bullet o
 @sec-howbig). These are the exact-collinearity cases. They are not errors — the span is
 perfectly well-defined — but they are the situations where "I have $k$ vectors" badly
 overstates "my span is $k$-dimensional." The honest dimension is the count of
-non-redundant directions, the rank, which [GEOM-3] and [GEOM-12] compute.
+non-redundant directions, the rank, which [GEOM-03] and [GEOM-12] compute.
 
 ## The numerical edge: when "in the span" becomes "almost" {#sec-numerical}
 
@@ -902,27 +933,27 @@ think it is.
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[GEOM-1 *Adding and Scaling*]**, which gave you the linear combination as
+You arrived from **[GEOM-01 *Adding and Scaling*]**, which gave you the linear combination as
 the one move linear algebra permits. This article turned that single move loose — letting
 its coefficients range over all of $\mathbb{R}$ — and named the reachable set (**span**) and
 its shape (**subspace**), proving they are one object. From here the build continues:
 
-- **[GEOM-3 *Linear Independence, Basis, and Dimension*]** — the immediate sequel. We
-  asked "how big is the span?" and could only answer "at most $k$." GEOM-3 answers it
+- **[GEOM-03 *Linear Independence, Basis, and Dimension*]** — the immediate sequel. We
+  asked "how big is the span?" and could only answer "at most $k$." GEOM-03 answers it
   exactly: a span's dimension is the number of *independent* directions in it, a basis is a
   minimal spanning set, and the dimension bound we borrowed in @thm-subspace-is-span is
   proved there in full.
-- **[GEOM-6 *Orthogonal Projection onto a Subspace*]** — the keystone. Once we know a span
+- **[GEOM-06 *Orthogonal Projection onto a Subspace*]** — the keystone. Once we know a span
   is a subspace, the central operation of the whole series is *projecting a point onto it* —
   finding the closest reachable point to an unreachable target, exactly the situation of
   $\mathbf{w}'$ in @sec-membership. That is least squares.
-- **[GEOM-8 *Matrices as Linear Maps*]** and **[GEOM-11 *Solving $Ax=b$*]** — make the
+- **[GEOM-08 *Matrices as Linear Maps*]** and **[GEOM-11 *Solving $Ax=b$*]** — make the
   membership test fully algebraic: $A\mathbf{c}=\mathbf{w}$ is solvable exactly when
   $\mathbf{w}$ is in the span of $A$'s columns (the **column space**).
 - **[GEOM-12 *Rank and the Four Fundamental Subspaces*]** — the column space is a span and a
   subspace; its dimension is the rank; and the collinearity collapse of @sec-collinear
   becomes rank deficiency.
-- **Across to [REGR-7 *Multicollinearity*]** — the data-science payoff: when feature columns
+- **Across to [REGR-07 *Multicollinearity*]** — the data-science payoff: when feature columns
   nearly fail to add reach, coefficients become unstable. That article links straight back
   here for the geometry.
 :::
@@ -940,9 +971,9 @@ its shape (**subspace**), proving they are one object. From here the build conti
   Right* gives the cleanest axiomatic account of subspaces and spanning, at a slightly more
   abstract pitch than we need here.
 - **Open threads this article deliberately deferred.** *Exactly how big is a span, and is
-  the count well-defined?* — dimension and its invariance, [GEOM-3]. *What is the closest
-  reachable point to an unreachable target?* — orthogonal projection, [GEOM-6], which needs
-  the dot product of [GEOM-4] first. *How do I read the dimension of a span off a matrix
+  the count well-defined?* — dimension and its invariance, [GEOM-03]. *What is the closest
+  reachable point to an unreachable target?* — orthogonal projection, [GEOM-06], which needs
+  the dot product of [GEOM-04] first. *How do I read the dimension of a span off a matrix
   reliably, even numerically?* — rank ([GEOM-12]) and the singular values ([GEOM-20]). Each
   is a later chapter of the same story you started here: *what can I reach, and how much room
   is there to reach it in?*

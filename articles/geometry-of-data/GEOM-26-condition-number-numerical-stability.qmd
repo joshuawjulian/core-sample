@@ -1,0 +1,1081 @@
+---
+title: "Condition Number and Numerical Stability"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # data / inputs / true answers
+HILITE = "#c1121f"   # perturbed answers / the amplified error
+ACCENT = "#0a7d4d"   # highlights, exact references
+GOLD   = "#d4a017"   # secondary curves
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def cond2(A):
+    """2-norm condition number via the singular values, the definition this
+    article derives — used here only to draw and label the pictures."""
+    s = np.linalg.svd(A, compute_uv=False)
+    return s.max() / s.min()
+```
+
+> **Where this sits in the track.** This is the **numerical-reality** article that closes
+> the conceptual build of the Geometry-of-Data track, just before the bridge
+> [GEOM-27]. Everything in it is a *consequence* of machinery already on the table. It
+> assumes you can read **eigenvalues and eigenvectors** as the directions a map only
+> stretches, $Av = \lambda v$ ([GEOM-14]); that you know the **singular value
+> decomposition** $A = U\Sigma V^\top$ — every matrix is *rotate, scale along orthogonal
+> axes, rotate* — and that $\|A\|_2 = \sigma_{\max}$ ([GEOM-20]); and that you recognize a
+> **positive-definite** matrix as one with all-positive eigenvalues whose quadratic form is
+> a bowl ([GEOM-18]). The one question here: *why do some perfectly invertible problems give
+> garbage answers on a computer, and what single number predicts it?* The answer — the
+> **condition number** $\kappa(A) = \sigma_{\max}/\sigma_{\min}$ — discharges
+> **[REGR-07]**'s eigenvalue/condition-number prerequisite, explains why ridge regression
+> and QR/SVD solves exist, and hands Optimization the quantity that governs how slowly
+> gradient descent crawls across an elongated bowl.
+
+## Abstract {.unnumbered}
+
+A linear system $Ax = b$ can be perfectly solvable in exact arithmetic — $A$ invertible,
+one clean answer — and still return nonsense on a real computer, because the data $b$ and
+every intermediate number carry tiny errors, and some matrices *amplify* those errors
+ferociously. This article derives the number that measures the amplification: the
+**condition number**
+
+$$
+\kappa(A) = \|A\|\,\|A^{-1}\| = \frac{\sigma_{\max}}{\sigma_{\min}},
+$$
+
+the ratio of the largest to the smallest singular value. We prove it is the worst-case
+factor by which a *relative* error in $b$ can be magnified in the solution $x$, read it
+geometrically as the elongation of the ellipse $A$ makes from a sphere, and tie it
+directly to **multicollinearity** in regression. The single claim defended throughout:
+$\kappa$ is a property of the *problem*, not the algorithm — no clever code rescues an
+ill-conditioned system, but a good algorithm refuses to make a well-conditioned one
+worse, which is exactly why we **solve rather than invert**, prefer **QR/SVD** to the
+normal equations, and never test singularity with the determinant.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **condition number** $\kappa(A) = \sigma_{\max}/\sigma_{\min}$ is the worst-case
+factor by which solving $Ax = b$ can blow up a *relative* error. If your data carry a
+relative error of $\varepsilon$ (and on a computer they always carry at least the
+machine-precision floor $\varepsilon \approx 10^{-16}$), the answer can be wrong by a
+relative amount up to $\kappa(A)\,\varepsilon$. A matrix with $\kappa = 10^{8}$ shreds
+about half your significant digits *before any algorithm runs*. Geometrically, $\kappa$ is
+how stretched-out an ellipse $A$ turns the unit sphere into — and a near-flat ellipse is
+exactly what near-collinear columns (multicollinearity) look like.
+:::
+
+Everything below orbits that box. The headline equation $\kappa = \sigma_{\max}/\sigma_{\min}$
+will look like it falls out of a norm inequality, but by the end you should see it as
+inevitable: $A$ stretches the most-amplified input direction by $\sigma_{\max}$ and the
+least by $\sigma_{\min}$, so when we *invert* the map the roles swap, and the gap between
+those two extremes is the whole story. Conditioning is geometry — the geometry of an
+ellipse — wearing a number.
+
+# Why we are here: a solvable problem that lies {#sec-why}
+
+Keep one question in view for the entire article: **why does invertibility — the textbook
+guarantee of a unique answer — fail to guarantee a *usable* answer on a computer?** Every
+step below answers some piece of that.
+
+## The original problem
+
+The story begins with the gap between *mathematics* and *arithmetic on a machine*. In the
+1940s the first electronic computers were put to work solving large linear systems — for
+ballistics, for structural engineering, for the emerging field of numerical weather
+prediction. John von Neumann and Herman Goldstine, analyzing Gaussian elimination on these
+machines in 1947, ran into a disquieting fact: a system could be perfectly nonsingular and
+yet the computed solution could be wildly wrong, with the error growing with the *size* and
+the *shape* of the matrix in a way that pure linear algebra had never needed to name.
+
+The trouble is that a computer does not store real numbers. It stores **floating-point**
+approximations — a fixed budget of significant digits (about 16 decimal digits in the
+standard `double` format) — so almost every number, including the entries of $b$ and every
+sum and product formed along the way, is rounded. The question von Neumann forced into the
+open is: *given that the inputs are slightly wrong, how wrong can the output be?* For some
+matrices the answer is "about as wrong as the inputs"; for others it is "catastrophically
+more wrong." Alan Turing, in 1948, named the multiplier — he introduced **condition
+numbers** for matrices and showed they govern exactly this amplification. The number we
+derive below is his.
+
+This is the *why* we hold onto: a problem can be theoretically solvable and numerically
+hopeless, and the two facts live in different worlds. Invertibility is a yes/no question
+about exact arithmetic. Conditioning is a *how-much* question about the inevitable errors
+of finite-precision arithmetic, and it is the one that decides whether you can trust the
+answer your computer printed.
+
+::: {.callout-tip title="You might be asked"}
+*"Isn't 'invertible' enough? If $A^{-1}$ exists, can't I always recover $x$?"* In exact
+arithmetic, yes — $x = A^{-1}b$ is the unique answer. But you never have exact arithmetic,
+and you rarely have an exact $b$. The right mental model is that you are handed not $b$ but
+$b + \delta b$ for some small unknown perturbation $\delta b$, and you compute not with
+$A^{-1}$ but with a rounded version of it. Invertibility says the *map* $b \mapsto x$ is
+well-defined; conditioning says how violently that map magnifies the uncertainty you could
+not avoid. A matrix can be invertible and still have $\kappa(A) = 10^{15}$ — invertible in
+name, useless in practice.
+:::
+
+# Intuition before symbols: the ellipse {#sec-intuition}
+
+Before any norms, picture what a matrix *does* to error. From [GEOM-20] we know the single
+cleanest fact about any matrix: it sends the **unit sphere to an ellipse** (an ellipsoid in
+higher dimensions). The SVD spells out how — $A = U\Sigma V^\top$ takes a unit input,
+rotates it ($V^\top$), stretches it along orthogonal axes by the singular values
+$\sigma_1 \ge \sigma_2 \ge \dots > 0$ ($\Sigma$), and rotates again ($U$). The longest
+semi-axis of the resulting ellipse has length $\sigma_{\max}$; the shortest has length
+$\sigma_{\min}$.
+
+Now overlay the two questions conditioning cares about.
+
+- **Forward:** if I wiggle the input $x$ by a tiny vector, how much can $Ax$ wiggle? At
+  most by $\sigma_{\max}$ times the wiggle — the most $A$ can stretch any direction.
+- **Backward (the one we want):** I am solving $Ax = b$, so I am applying $A^{-1}$ to $b$.
+  And $A^{-1}$ sends the ellipse *back* to the sphere — it stretches the flat direction of
+  the ellipse (the $\sigma_{\min}$ axis) by a factor of $1/\sigma_{\min}$, which is **huge**
+  when $\sigma_{\min}$ is tiny.
+
+So a wiggle in $b$ that happens to land along the *flat* direction of $A$'s ellipse gets
+blown up by $1/\sigma_{\min}$ when we solve. A wiggle along the *long* direction barely
+moves. The ratio between the worst case and the best case — between the most stretched and
+the least stretched — is $\sigma_{\max}/\sigma_{\min} = \kappa(A)$. A round ellipse
+($\kappa \approx 1$) treats every direction fairly: error in, comparable error out. A
+cigar-thin ellipse (huge $\kappa$) has a direction along which solving is a precision
+catastrophe. @fig-ellipse draws both.
+
+```{python}
+#| label: fig-ellipse
+#| fig-cap: "Conditioning is the shape of the ellipse. Each panel shows the unit circle (grey) and its image $A(\\text{circle})$ (an ellipse). **Left:** a well-conditioned matrix ($\\kappa \\approx 1.5$) — a nearly round ellipse; the longest and shortest semi-axes (red and green, the singular directions scaled by $\\sigma_{\\max},\\sigma_{\\min}$) are comparable, so $A$ stretches every direction by roughly the same amount. **Right:** an ill-conditioned matrix ($\\kappa \\approx 40$) — a thin cigar; the flat direction is squashed by $\\sigma_{\\min}$, so *inverting* (solving $Ax=b$) must blow that direction back up by $1/\\sigma_{\\min}$, magnifying any error that points along it."
+theta = np.linspace(0, 2*np.pi, 240)
+circle = np.vstack([np.cos(theta), np.sin(theta)])
+
+# Build two matrices with prescribed singular values via U Sigma V^T.
+def make(s1, s2, ang_v=25, ang_u=15):
+    cv, sv = np.cos(np.deg2rad(ang_v)), np.sin(np.deg2rad(ang_v))
+    cu, su = np.cos(np.deg2rad(ang_u)), np.sin(np.deg2rad(ang_u))
+    V = np.array([[cv, -sv], [sv, cv]])
+    U = np.array([[cu, -su], [su, cu]])
+    return U @ np.diag([s1, s2]) @ V.T
+
+A_good = make(1.5, 1.0)
+A_bad  = make(4.0, 0.1)
+
+fig, axes = plt.subplots(1, 2, figsize=(8.8, 4.2))
+for ax, A, ttl in [(axes[0], A_good, "well-conditioned"),
+                   (axes[1], A_bad,  "ill-conditioned")]:
+    img = A @ circle
+    ax.plot(circle[0], circle[1], color=GREY, lw=1.4, ls="--", label="unit circle")
+    ax.plot(img[0], img[1], color=VEC, lw=2.4, label="image ellipse $A\\cdot$circle")
+    U, s, Vt = np.linalg.svd(A)
+    # long and short semi-axes of the ellipse: columns of U scaled by sigma
+    long_ax = U[:, 0] * s[0]
+    short_ax = U[:, 1] * s[1]
+    ax.annotate("", xy=long_ax, xytext=(0, 0),
+                arrowprops=dict(arrowstyle="-|>", color=HILITE, lw=2.6))
+    ax.annotate("", xy=short_ax, xytext=(0, 0),
+                arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.6))
+    ax.text(*(long_ax*1.08), r"$\sigma_{\max}$", color=HILITE, fontsize=12)
+    ax.text(*(short_ax*1.25 + np.array([0.05, 0.05])), r"$\sigma_{\min}$",
+            color=ACCENT, fontsize=12)
+    ax.set_aspect("equal")
+    ax.set_title(f"{ttl}:  $\\kappa = {cond2(A):.1f}$")
+    ax.set_xlim(-4.6, 4.6); ax.set_ylim(-2.6, 2.6)
+axes[0].legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Is the condition number a property of the matrix or of the algorithm?"* Of the **matrix
+— the problem itself.** It measures how sensitive the *true* answer is to perturbations in
+the *true* data, with no computer in sight. This is the single most important conceptual
+point in the article: $\kappa$ is the **conditioning** of the problem; how much *extra*
+error a particular algorithm piles on top is the separate notion of **stability** (which we
+get to in @sec-stability). No algorithm, however clever, can make an ill-conditioned
+problem well-conditioned — the sensitivity is baked into $A$. The most a good algorithm can
+promise is to not make things *worse* than $\kappa$ already forces.
+:::
+
+# The formal development {#sec-formal}
+
+To turn the ellipse picture into a theorem we need one tool — a way to measure the "size" of
+a vector and the "size" of a matrix — and we build it from the floor.
+
+## A two-minute refresher on norms {#sec-norms}
+
+The length of a vector $x = (x_1,\dots,x_n)$ is the **Euclidean norm**, the
+$n$-dimensional Pythagoras built in [GEOM-04]:
+
+$$
+\|x\| = \sqrt{x_1^2 + \dots + x_n^2} = \sqrt{x^\top x}.
+$$ {#eq-vecnorm}
+
+We will measure errors *relative*, as $\|\delta x\| / \|x\|$ — "what fraction of the
+answer's length is error" — because that is the dimensionless quantity that compares fairly
+across problems of different scales (an absolute error of $0.01$ is tiny if $\|x\| = 10^6$
+and catastrophic if $\|x\| = 10^{-6}$).
+
+To say how much a matrix can stretch a vector we need a matrix size, and the right one for
+this job is the **(induced) 2-norm** — the largest factor by which $A$ can lengthen any
+nonzero vector:
+
+::: {#def-matnorm}
+**Definition (matrix 2-norm).** For a matrix $A$,
+
+$$
+\|A\| = \max_{x \neq 0} \frac{\|Ax\|}{\|x\|}.
+$$ {#eq-matnorm}
+:::
+
+Read @eq-matnorm literally: over every input direction, find the one $A$ stretches most,
+and report that stretch factor. Two consequences fall out immediately, and we use both
+constantly.
+
+First, **the defining inequality**. Since $\|A\|$ is the *maximum* of $\|Ax\|/\|x\|$ over
+all $x$, every individual ratio is at most $\|A\|$, which rearranges to
+
+$$
+\|Ax\| \le \|A\|\,\|x\| \qquad \text{for all } x.
+$$ {#eq-submult}
+
+This is just "no direction is stretched by more than the maximum stretch" — true by the
+definition of maximum, nothing deeper.
+
+Second, **the 2-norm is the largest singular value**. We imported this from [GEOM-20], but
+here is the complete chain so nothing is assumed. Write the SVD $A = U\Sigma V^\top$ with
+$U, V$ orthonormal and $\Sigma = \operatorname{diag}(\sigma_1,\dots,\sigma_n)$,
+$\sigma_1 \ge \dots \ge \sigma_n \ge 0$. Orthonormal matrices preserve length — for any
+$z$, $\|Uz\|^2 = (Uz)^\top(Uz) = z^\top U^\top U z = z^\top z = \|z\|^2$, since
+$U^\top U = I$. So lengthening happens *only* in the $\Sigma$ step:
+
+$$
+\|Ax\| = \|U\Sigma V^\top x\| = \|\Sigma V^\top x\|.
+$$
+
+Substitute $z = V^\top x$; because $V^\top$ is orthonormal, $\|z\| = \|x\|$, and as $x$
+ranges over all nonzero vectors so does $z$. Then
+
+$$
+\frac{\|Ax\|}{\|x\|} = \frac{\|\Sigma z\|}{\|z\|}
+= \frac{\sqrt{\sigma_1^2 z_1^2 + \dots + \sigma_n^2 z_n^2}}{\sqrt{z_1^2 + \dots + z_n^2}}.
+$$
+
+The numerator is a weighted length with weights $\sigma_i^2$. It is largest, relative to
+the denominator, when all the "weight" of $z$ sits on the largest $\sigma_i$ — i.e. when
+$z$ points along the first coordinate, $z = (1,0,\dots,0)$, giving the ratio $\sigma_1$. No
+$z$ can beat it because every $\sigma_i^2 \le \sigma_1^2$. Therefore
+
+$$
+\|A\| = \sigma_{\max}.
+$$ {#eq-norm-is-sigmax}
+
+The same machinery gives $\|A^{-1}\|$, but first we need the SVD of $A^{-1}$ itself — and it
+falls right out of the SVD of $A$. Inverting $A = U\Sigma V^\top$ reverses the three factors
+and inverts each (using $(BC)^{-1} = C^{-1}B^{-1}$, and that for orthonormal $U$,
+$U^{-1} = U^\top$):
+
+$$
+A^{-1} = (U\Sigma V^\top)^{-1} = (V^\top)^{-1}\Sigma^{-1}U^{-1} = V\,\Sigma^{-1}U^\top,
+$$
+
+where $\Sigma^{-1} = \operatorname{diag}(1/\sigma_1,\dots,1/\sigma_n)$ because inverting a
+diagonal matrix just inverts each diagonal entry. Now $V\Sigma^{-1}U^\top$ is *almost* in SVD
+form — $V$ and $U^\top$ are orthonormal — except the diagonal entries $1/\sigma_1 \le \dots
+\le 1/\sigma_n$ are in *increasing* order, whereas singular values must be listed largest
+first. So the singular values of $A^{-1}$ are exactly the reciprocals $1/\sigma_i$ reordered
+largest-first, i.e. $1/\sigma_n \ge \dots \ge 1/\sigma_1$, and the largest of them is the
+reciprocal of the *smallest* $\sigma_i$. Applying @eq-norm-is-sigmax to $A^{-1}$ — its 2-norm
+is its largest singular value — gives
+
+$$
+\|A^{-1}\| = \frac{1}{\sigma_{\min}}.
+$$ {#eq-invnorm-is-sigmin}
+
+## Defining the condition number {#sec-define}
+
+::: {#def-cond}
+**Definition (condition number).** For an invertible matrix $A$, the (2-norm) **condition
+number** is
+
+$$
+\kappa(A) = \|A\|\,\|A^{-1}\|.
+$$ {#eq-cond-def}
+:::
+
+Combining the definition with @eq-norm-is-sigmax and @eq-invnorm-is-sigmin gives the form
+in the Core, with every step shown:
+
+$$
+\kappa(A) = \|A\|\,\|A^{-1}\| = \sigma_{\max}\cdot\frac{1}{\sigma_{\min}}
+= \frac{\sigma_{\max}}{\sigma_{\min}}.
+$$ {#eq-cond-sv}
+
+Three facts follow directly, and each earns its keep later.
+
+- **$\kappa(A) \ge 1$ always.** Since $\sigma_{\max} \ge \sigma_{\min}$, the ratio is at
+  least $1$. The floor $\kappa = 1$ is achieved exactly by orthonormal matrices (rotations
+  and reflections), where every singular value equals $1$ — they stretch nothing, so they
+  amplify no error. These are the *perfectly conditioned* maps.
+- **$\kappa$ is scale-invariant.** Multiplying $A$ by a constant $c$ multiplies every
+  singular value by $|c|$, so the ratio is unchanged: $\kappa(cA) = \kappa(A)$. Conditioning
+  is about the *shape* of the ellipse, not its overall size — exactly right, since a uniform
+  rescaling of a problem should not change how trustworthy its answer is.
+- **$\kappa \to \infty$ as $A \to$ singular.** A singular matrix has $\sigma_{\min} = 0$
+  (its ellipse is flattened completely onto a lower-dimensional subspace), so $\kappa$
+  diverges. **Near-singular** matrices have a tiny-but-nonzero $\sigma_{\min}$ and a
+  correspondingly enormous $\kappa$. This is the precise sense in which $\kappa$ is a
+  *continuous* measure of "how close to singular," where the determinant (@sec-det) is not.
+
+::: {#def-cond-spd}
+**Definition (condition number, symmetric positive-definite case).** If $A$ is symmetric
+positive-definite, its singular values *are* its eigenvalues (both equal the absolute
+values of the eigenvalues, and PD eigenvalues are positive — see below), so
+
+$$
+\kappa(A) = \frac{\lambda_{\max}}{\lambda_{\min}},
+$$ {#eq-cond-eig}
+
+the ratio of the largest to the smallest eigenvalue.
+:::
+
+Why the singular values equal the eigenvalues for symmetric PD $A$: by the spectral theorem
+([GEOM-16]) such an $A$ factors as $A = Q\Lambda Q^\top$ with $Q$ orthonormal and $\Lambda$
+the diagonal of positive eigenvalues $\lambda_i > 0$ ([GEOM-18]). That is *already* an SVD —
+$U = V = Q$ and $\Sigma = \Lambda$ — because the $\lambda_i$ are nonnegative, which is what
+singular values must be. Hence $\sigma_i = \lambda_i$, and the ratio in @eq-cond-sv becomes
+the ratio in @eq-cond-eig. This is the form that appears for covariance matrices, Gram
+matrices $A^\top A$, and Hessians — all symmetric PSD — so it is the one most often used in
+practice.
+
+## The main theorem: how error is amplified {#sec-main-theorem}
+
+Now we prove the claim in the Core. Suppose we solve $Ax = b$, but the right-hand side is
+perturbed to $b + \delta b$ (the rounding in $b$, or measurement noise, or both). The
+computed answer is then $x + \delta x$, where $A(x + \delta x) = b + \delta b$. We want to
+bound the *relative* error in the answer, $\|\delta x\|/\|x\|$, in terms of the relative
+error in the data, $\|\delta b\|/\|b\|$.
+
+::: {#thm-cond}
+**Theorem (condition number bounds the amplification).** Let $A$ be invertible, let
+$Ax = b$ with $b \neq 0$, and let $A(x+\delta x) = b + \delta b$. Then
+
+$$
+\frac{\|\delta x\|}{\|x\|} \;\le\; \kappa(A)\,\frac{\|\delta b\|}{\|b\|},
+$$ {#eq-cond-bound}
+
+and the bound is **sharp**: there exist perturbations $\delta b$ (and right-hand sides $b$)
+for which equality holds.
+:::
+
+::: {.proof}
+**Step 1 — isolate the error.** Subtract the exact system $Ax = b$ from the perturbed
+system $A(x+\delta x) = b + \delta b$. The matrix is the same, so linearity ($A(x+\delta x)
+= Ax + A\,\delta x$) gives
+
+$$
+A\,\delta x = \delta b
+\qquad\Longrightarrow\qquad
+\delta x = A^{-1}\,\delta b.
+$$
+
+The error in the answer is the *inverse* map applied to the error in the data — exactly the
+"solving = applying $A^{-1}$" reading from @sec-intuition.
+
+**Step 2 — bound the error from above.** Apply the defining inequality @eq-submult to the
+matrix $A^{-1}$:
+
+$$
+\|\delta x\| = \|A^{-1}\,\delta b\| \le \|A^{-1}\|\,\|\delta b\|.
+$$ {#eq-step2}
+
+**Step 3 — bound the answer's size from below.** We are dividing by $\|x\|$, so we need
+$\|x\|$ to be *at least* something, i.e. a lower bound. Start from $b = Ax$ and apply
+@eq-submult again, this time to $A$:
+
+$$
+\|b\| = \|Ax\| \le \|A\|\,\|x\|
+\qquad\Longrightarrow\qquad
+\|x\| \ge \frac{\|b\|}{\|A\|},
+$$ {#eq-step3}
+
+where the rearrangement divides both sides by the positive number $\|A\|$ (which is
+positive because $A$ is invertible, so $\sigma_{\max} > 0$).
+
+**Step 4 — assemble.** Take the ratio $\|\delta x\|/\|x\|$ and substitute the upper bound
+@eq-step2 for the numerator and the lower bound @eq-step3 for the denominator. Replacing the
+numerator by something larger and the denominator by something smaller can only *increase*
+the fraction, so the inequality runs the right way:
+
+$$
+\frac{\|\delta x\|}{\|x\|}
+\;\le\; \frac{\|A^{-1}\|\,\|\delta b\|}{\;\|b\|/\|A\|\;}
+= \|A\|\,\|A^{-1}\|\;\frac{\|\delta b\|}{\|b\|}
+= \kappa(A)\,\frac{\|\delta b\|}{\|b\|},
+$$
+
+using $\kappa(A) = \|A\|\,\|A^{-1}\|$ from @eq-cond-def. That is @eq-cond-bound.
+
+**Step 5 — sharpness.** The two inequalities we used each become equality for a *specific*
+choice of vectors, and we can satisfy both at once. Inequality @eq-step3 is tight when
+$\|Ax\| = \|A\|\,\|x\|$, i.e. when $x$ points along the most-stretched singular direction
+$v_{\max}$ (the right singular vector for $\sigma_{\max}$), so that $b = Ax$ points along
+$u_{\max}$. Inequality @eq-step2 is tight when $\|A^{-1}\delta b\| = \|A^{-1}\|\,\|\delta b\|$,
+i.e. when $\delta b$ points along the direction $A^{-1}$ stretches most — which is
+$u_{\min}$, the left singular vector for $\sigma_{\min}$ (recall $A^{-1}$'s largest stretch
+is $1/\sigma_{\min}$, along that axis). Choosing $b \parallel u_{\max}$ and
+$\delta b \parallel u_{\min}$ makes both steps exact, so the overall bound is attained:
+$\|\delta x\|/\|x\| = \kappa(A)\,\|\delta b\|/\|b\|$. Hence $\kappa$ is not a loose
+overestimate — it is the genuine worst case. $\qquad\blacksquare$
+:::
+
+Read the theorem in plain words: **relative error in the answer can be as large as $\kappa$
+times the relative error in the data.** If your data are good to a relative $10^{-16}$ (the
+best a `double` can do) and $\kappa = 10^{10}$, your answer is only guaranteed good to
+$10^{-6}$ — you have lost ten of your sixteen digits, purely to the shape of $A$, before
+worrying about how the solving algorithm itself behaves. The sharpness clause is what makes
+this a warning and not a curiosity: there really is a direction of perturbation that
+achieves the worst case, and on a computer the rounding errors do not politely avoid it.
+
+::: {.callout-tip title="You might be asked"}
+*"There's a famous rule of thumb — 'you lose $\log_{10}\kappa$ digits.' Where does it come
+from?"* Directly from @thm-cond. Floating-point arithmetic introduces relative errors of
+size about the unit roundoff $u \approx 1.1 \times 10^{-16}$ (for `double`). The theorem
+says these can be amplified to a relative error of about $\kappa\,u$ in the solution. The
+number of correct decimal digits is roughly $-\log_{10}(\text{relative error})$, so you
+start with about $16$ digits and the amplification costs you $\log_{10}\kappa$ of them:
+
+$$
+\text{correct digits} \;\approx\; 16 - \log_{10}\kappa(A).
+$$
+
+A condition number of $10^{8}$ costs $8$ digits — half your precision. A condition number
+of $10^{16}$ costs all of them: the answer can be pure noise even though $A$ is, on paper,
+invertible. This one line is the most useful thing to remember from the whole article.
+:::
+
+## Watching the bound bite {#sec-watch-bound}
+
+The theorem is abstract; let us see it happen. We take a $2\times 2$ system with a chosen
+condition number, perturb $b$ by a tiny random amount, and measure the relative error that
+actually results — then compare it to the bound $\kappa\,\|\delta b\|/\|b\|$.
+
+```{python}
+#| label: fig-amplify
+#| fig-cap: "The amplification bound in action. For each target condition number $\\kappa$ (horizontal axis), we solve $Ax=b$, then re-solve with $b$ perturbed by a relative $10^{-12}$ in many random directions, and record the *largest* relative error in $x$ that results (red points). The grey line is the theoretical worst case $\\kappa \\times 10^{-12}$ from @thm-cond. The observed errors hug the bound from below and reach it for the worst-aligned perturbations — confirming both that $\\kappa$ is an upper bound and that it is *sharp*. The lesson: error grows linearly with $\\kappa$, decade for decade."
+rng = np.random.default_rng(3)
+kappas = np.logspace(1, 12, 12)
+rel_input = 1e-12
+worst_observed = []
+for k in kappas:
+    # Build a 2x2 with singular values 1 and 1/k via random orthonormal U, V.
+    Qu, _ = np.linalg.qr(rng.standard_normal((2, 2)))
+    Qv, _ = np.linalg.qr(rng.standard_normal((2, 2)))
+    A = Qu @ np.diag([1.0, 1.0/k]) @ Qv.T
+    x_true = rng.standard_normal(2)
+    b = A @ x_true
+    worst = 0.0
+    for _ in range(400):
+        d = rng.standard_normal(2)
+        db = rel_input * np.linalg.norm(b) * d / np.linalg.norm(d)
+        x_pert = np.linalg.solve(A, b + db)
+        rel_err = np.linalg.norm(x_pert - x_true) / np.linalg.norm(x_true)
+        worst = max(worst, rel_err)
+    worst_observed.append(worst)
+
+fig, ax = plt.subplots()
+ax.loglog(kappas, kappas * rel_input, color=GREY, lw=2.0,
+          label=r"bound  $\kappa \times 10^{-12}$")
+ax.loglog(kappas, worst_observed, "o", color=HILITE, ms=7,
+          label="worst observed relative error")
+ax.set_xlabel(r"condition number $\kappa(A)$")
+ax.set_ylabel("relative error in solution")
+ax.set_title("Error in the answer scales with $\\kappa$")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+```
+
+The observed worst-case error tracks the line $\kappa\times 10^{-12}$ across eleven orders
+of magnitude. A relative input error of $10^{-12}$ produces a relative *output* error near
+$10^{-2}$ when $\kappa = 10^{10}$: two-thirds of the answer's significant figures are gone,
+exactly as the digit-loss rule predicts.
+
+# Worked examples {#sec-examples}
+
+We now run conditioning on real, honest data — including a case at the edge where the
+diagnosis itself becomes delicate.
+
+## Example 1 — the Hilbert matrix: ill-conditioned by construction {#sec-hilbert}
+
+The Hilbert matrix $H_n$ with entries $H_{ij} = 1/(i+j-1)$ is the textbook villain of
+numerical linear algebra. It arises genuinely — it is the Gram matrix of the monomials
+$1, t, t^2, \dots$ on $[0,1]$ under the integral inner product
+$\langle f,g\rangle = \int_0^1 f g\,dt$, so it is exactly the matrix you hit if you try to
+fit a polynomial by least squares using the raw powers of $t$ as features (a real and
+common mistake). It is symmetric positive-definite, perfectly invertible — and its
+condition number explodes with size.
+
+```{python}
+#| label: fig-hilbert
+#| fig-cap: "The Hilbert matrix $H_n$ (the Gram matrix of monomials, hence what you get fitting a polynomial in raw powers of $t$). **Left:** the condition number $\\kappa(H_n)=\\lambda_{\\max}/\\lambda_{\\min}$ grows *exponentially* with the size $n$ — note the log scale; by $n=12$ it exceeds $10^{16}$, the precision floor of double arithmetic, so $H_{12}$ is numerically singular though mathematically invertible. **Right:** solving $H_n x = b$ for a known $x$ (all ones), the number of *correct digits* in the computed answer collapses as $n$ grows, tracking the $16-\\log_{10}\\kappa$ rule (grey) almost exactly."
+def hilbert(n):
+    i = np.arange(1, n+1)
+    return 1.0 / (i[:, None] + i[None, :] - 1.0)
+
+ns = np.arange(2, 14)
+conds, digits = [], []
+pred_digits = []
+for n in ns:
+    H = hilbert(n)
+    k = cond2(H)
+    conds.append(k)
+    x_true = np.ones(n)
+    b = H @ x_true
+    x_hat = np.linalg.solve(H, b)
+    rel_err = np.linalg.norm(x_hat - x_true) / np.linalg.norm(x_true)
+    digits.append(-np.log10(max(rel_err, 1e-17)))
+    pred_digits.append(max(16 - np.log10(k), 0))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.9))
+axL.semilogy(ns, conds, "o-", color=VEC)
+axL.axhline(1e16, color=HILITE, ls="--", lw=1.5)
+axL.text(2.2, 2e16, "double-precision floor $\\sim 10^{16}$", color=HILITE, fontsize=9)
+axL.set_xlabel("matrix size $n$"); axL.set_ylabel(r"$\kappa(H_n)$")
+axL.set_title("Condition number explodes")
+
+axR.plot(ns, digits, "o-", color=VEC, label="correct digits (observed)")
+axR.plot(ns, pred_digits, color=GREY, lw=2.0, label=r"$16 - \log_{10}\kappa$")
+axR.set_xlabel("matrix size $n$"); axR.set_ylabel("correct digits in solution")
+axR.set_title("Precision collapses with size")
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+By $n = 10$ the condition number is around $10^{13}$, and the computed solution to
+$H_{10}x = b$ — a system whose true answer we *know* is the all-ones vector — is correct to
+only two or three digits. Nothing went wrong with the algorithm; `numpy.linalg.solve` uses a
+backward-stable LU factorization. The problem is hopeless before the solver starts, and the
+digit-loss rule called it exactly. **The practical lesson is not "avoid Hilbert matrices" —
+it is "never fit a polynomial in raw powers."** Use an orthogonal basis (Chebyshev or
+Legendre polynomials), whose Gram matrix is the identity or nearly so, $\kappa \approx 1$.
+Same fit, conditioning fixed at the source.
+
+## Example 2 — multicollinearity: the same disease in regression {#sec-collinearity}
+
+This is the example the rest of the series cares about most. In regression we solve the
+**normal equations** $X^\top X\,\hat\beta = X^\top y$ (built in [REGR-05]; geometrically,
+least squares is projection — [GEOM-06]). The matrix is the Gram matrix $X^\top X$, and its
+condition number is what decides whether the fitted coefficients are trustworthy. When two
+predictor columns are nearly **collinear** — one is almost a linear combination of others —
+the columns of $X$ point in nearly the same direction, the smallest singular value of $X$
+is tiny, and $\kappa(X^\top X)$ is enormous. That is **multicollinearity**, and conditioning
+is its exact mathematical content.
+
+We build a small honest design: two features that are *almost* the same (say, height in
+centimeters and height in centimeters-plus-tiny-noise — the kind of accidental near-duplicate
+that creeps into real feature sets), plus a clean third feature, and watch the coefficients
+swing.
+
+```{python}
+#| label: fig-collinear
+#| fig-cap: "Multicollinearity is ill-conditioning. We regress an outcome on three features, where features 1 and 2 are nearly identical (correlation $\\approx 0.999$). **Left:** the design's near-collinear columns make $X^\\top X$ ill-conditioned ($\\kappa$ shown). **Right:** refitting on 200 bootstrap resamples of the data, the estimated coefficients for the two collinear features (red, gold) scatter wildly — and in mirror image, one large-positive whenever the other is large-negative — while the clean feature's coefficient (green) stays put. The model cannot tell the two near-duplicates apart, so it trades enormous coefficients back and forth between them; tiny data wiggles swing the answer, exactly as $\\kappa$ predicts."
+rng = np.random.default_rng(11)
+n = 120
+f1 = rng.normal(0, 1, n)
+f2 = f1 + rng.normal(0, 0.03, n)        # near-duplicate of f1
+f3 = rng.normal(0, 1, n)               # clean, independent feature
+X = np.column_stack([np.ones(n), f1, f2, f3])
+beta_true = np.array([1.0, 2.0, -1.0, 3.0])
+y = X @ beta_true + rng.normal(0, 0.5, n)
+
+kappa_XtX = cond2(X.T @ X)
+
+# Bootstrap the fit.
+B = 200
+coefs = np.zeros((B, 4))
+for bdx in range(B):
+    idx = rng.integers(0, n, n)
+    Xb, yb = X[idx], y[idx]
+    coefs[bdx] = np.linalg.lstsq(Xb, yb, rcond=None)[0]
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.9))
+# correlation heat between the three features
+C = np.corrcoef(np.column_stack([f1, f2, f3]).T)
+im = axL.imshow(C, cmap="RdBu_r", vmin=-1, vmax=1)
+axL.set_xticks([0,1,2]); axL.set_yticks([0,1,2])
+axL.set_xticklabels(["f1","f2","f3"]); axL.set_yticklabels(["f1","f2","f3"])
+for i in range(3):
+    for j in range(3):
+        axL.text(j, i, f"{C[i,j]:.2f}", ha="center", va="center",
+                 color="white" if abs(C[i,j])>0.5 else "black", fontsize=10)
+axL.set_title(f"feature correlations\n$\\kappa(X^\\top X)={kappa_XtX:.1e}$")
+axL.grid(False)
+
+axR.scatter(coefs[:, 1], coefs[:, 2], color=HILITE, s=18, alpha=0.6,
+            label="(f1 coef, f2 coef)")
+axR.scatter(coefs[:, 3], np.zeros(B), color=ACCENT, s=18, alpha=0.6,
+            label="f3 coef (on axis)")
+axR.axvline(beta_true[1], color=GREY, ls=":", lw=1.2)
+axR.axhline(beta_true[2], color=GREY, ls=":", lw=1.2)
+axR.set_xlabel("coefficient value (f1, or f3)")
+axR.set_ylabel("f2 coefficient")
+axR.set_title("Collinear coefs swing wildly\n(clean coef is stable)")
+axR.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"kappa(X)      = {cond2(X):.3e}")
+print(f"kappa(X^T X)  = {kappa_XtX:.3e}   (note: roughly the square of kappa(X))")
+print(f"f1 coef: mean {coefs[:,1].mean():6.2f}  sd {coefs[:,1].std():6.2f}  (true {beta_true[1]})")
+print(f"f2 coef: mean {coefs[:,2].mean():6.2f}  sd {coefs[:,2].std():6.2f}  (true {beta_true[2]})")
+print(f"f3 coef: mean {coefs[:,3].mean():6.2f}  sd {coefs[:,3].std():6.2f}  (true {beta_true[3]})")
+```
+
+The clean feature's coefficient is estimated tightly around its true value; the two
+near-duplicate features' coefficients have enormous standard deviations and are
+anti-correlated — the fit shovels weight from one to the other because the data cannot
+distinguish them. This is not a bug in least squares; it is conditioning. The cure is not a
+better solver but a better *problem*: drop one of the duplicates, combine them, or **add a
+ridge penalty**, which we explain next as a conditioning fix.
+
+::: {.callout-tip title="You might be asked"}
+*"How does ridge regression help, in conditioning terms?"* Ridge solves
+$(X^\top X + \lambda I)\hat\beta = X^\top y$ instead of $X^\top X\hat\beta = X^\top y$. The
+eigenvalues of $X^\top X$ are the $\sigma_i(X)^2$ (shown in @sec-normal-eqs-squaring), with
+some orthonormal eigenvectors $v_i$, so $X^\top X\,v_i = \sigma_i^2\,v_i$. Adding $\lambda I$
+shifts *every* eigenvalue up by $\lambda$ while keeping the *same* eigenvectors — apply the
+shifted matrix to the same $v_i$:
+
+$$
+(X^\top X + \lambda I)\,v_i = X^\top X\,v_i + \lambda v_i
+= \sigma_i^2\,v_i + \lambda v_i = (\sigma_i^2 + \lambda)\,v_i,
+$$
+
+so $v_i$ is still an eigenvector, now with eigenvalue $\sigma_i^2 + \lambda$. The shifted
+matrix is still symmetric PD (its eigenvalues $\sigma_i^2 + \lambda > 0$), so the SPD form
+@eq-cond-eig applies and its condition number is the ratio of the largest to the smallest of
+these shifted eigenvalues:
+
+$$
+\kappa(X^\top X + \lambda I) = \frac{\sigma_{\max}^2 + \lambda}{\sigma_{\min}^2 + \lambda}.
+$$
+
+This is *smaller* than the unregularized $\sigma_{\max}^2/\sigma_{\min}^2$ for any
+$\lambda > 0$. To see it, cross-multiply the two positive fractions: the claim
+$\frac{\sigma_{\max}^2 + \lambda}{\sigma_{\min}^2 + \lambda} < \frac{\sigma_{\max}^2}{\sigma_{\min}^2}$
+is equivalent to $\sigma_{\min}^2(\sigma_{\max}^2 + \lambda) < \sigma_{\max}^2(\sigma_{\min}^2 + \lambda)$,
+i.e. $\sigma_{\min}^2\sigma_{\max}^2 + \lambda\sigma_{\min}^2 < \sigma_{\min}^2\sigma_{\max}^2 + \lambda\sigma_{\max}^2$,
+i.e. $\lambda\sigma_{\min}^2 < \lambda\sigma_{\max}^2$ — true whenever $\lambda > 0$ and
+$\sigma_{\min} < \sigma_{\max}$. As $\lambda \to \infty$ both shifted eigenvalues are
+dominated by $\lambda$ and the ratio tends to $1$. The tiny $\sigma_{\min}^2$ that was wrecking the conditioning is
+lifted off the floor. That is the linear-algebra reason ridge stabilizes the swinging
+coefficients of @fig-collinear — bought at the price of a small bias. The statistical
+bias–variance side of that trade is owned by [REGR-14]; the *conditioning* side is this
+article's.
+:::
+
+## Example 3 — the edge: estimating $\kappa$ when you can't see $\sigma_{\min}$ {#sec-edge}
+
+Here is the honest edge case. The bound is clean and the cure is clear — *when you know
+$\kappa$*. But on a genuinely ill-conditioned matrix, computing $\kappa$ itself is delicate,
+because $\sigma_{\min}$ is exactly the quantity that floating-point arithmetic struggles to
+pin down: it is a small number obtained by subtracting nearly-equal large numbers, the
+classic recipe for **catastrophic cancellation**. So the diagnostic shares the disease it
+diagnoses.
+
+We demonstrate by forming a matrix with a *known* tiny smallest singular value, then asking
+two routines for $\kappa$: a direct SVD of $A$, versus the tempting shortcut of going
+through $A^\top A$ (whose condition number is $\kappa^2$, so its $\sigma_{\min}$ is squared
+and even harder to see).
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "Estimating $\\kappa$ is itself ill-conditioned. We build matrices with a *known* condition number (horizontal axis) and estimate it two ways. The SVD of $A$ directly (green) stays accurate far longer. Routing through $A^\\top A$ (red) — i.e. estimating $\\kappa(A) = \\sqrt{\\kappa(A^\\top A)}$ — squares the condition number internally, so its estimate of $\\sigma_{\\min}$ drowns in roundoff and the reported $\\kappa$ saturates and then collapses to garbage once $\\kappa^2$ pierces the precision floor near $\\kappa \\approx 10^8$. The diagnostic inherits the disease: when a matrix is badly conditioned, even *measuring how badly* is hard, and you must never square the problem to do it."
+true_kappas = np.logspace(1, 15, 22)
+est_svd, est_gram = [], []
+rng = np.random.default_rng(0)
+for k in true_kappas:
+    Qu, _ = np.linalg.qr(rng.standard_normal((6, 6)))
+    Qv, _ = np.linalg.qr(rng.standard_normal((6, 6)))
+    s = np.logspace(0, -np.log10(k), 6)   # singular values from 1 down to 1/k
+    A = Qu @ np.diag(s) @ Qv.T
+    est_svd.append(cond2(A))
+    # via the Gram matrix: kappa(A) = sqrt(kappa(A^T A))
+    est_gram.append(np.sqrt(cond2(A.T @ A)))
+
+fig, ax = plt.subplots()
+ax.loglog(true_kappas, true_kappas, color=GREY, lw=1.6, ls="--",
+          label="perfect estimate (y = x)")
+ax.loglog(true_kappas, est_svd, "o-", color=ACCENT, ms=5,
+          label=r"SVD of $A$ directly")
+ax.loglog(true_kappas, est_gram, "s-", color=HILITE, ms=5,
+          label=r"via $A^\top A$ (squares $\kappa$)")
+ax.set_xlabel(r"true condition number $\kappa(A)$")
+ax.set_ylabel(r"estimated $\kappa(A)$")
+ax.set_title("Even measuring $\\kappa$ is ill-conditioned")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+```
+
+The direct SVD estimate stays on the diagonal up to about $\kappa = 10^{15}$; the
+through-the-Gram-matrix estimate departs near $\kappa = 10^{8}$, because squaring the
+condition number internally pushes its effective $\sigma_{\min}$ below the precision floor.
+This is the same phenomenon — *squaring $\kappa$ doubles the digit loss* — that makes the
+normal equations a poor way to solve least squares (@sec-normal-eqs-squaring), now seen in
+the act of *measuring* the condition number. The edge-of-applicability message: $\kappa$ is
+the right diagnostic, but compute it from the SVD of $A$, never from $A^\top A$, and treat a
+reported $\kappa$ near $10^{16}$ as "numerically singular — I cannot even tell you how
+singular."
+
+# Conditioning versus stability, and the floating-point rules {#sec-stability}
+
+We have a number for the *problem*. The remaining honest content is about *algorithms*: how
+not to make a well-conditioned problem worse, and three rules that follow.
+
+## The two separate notions {#sec-two-notions}
+
+::: {.callout-important title="Conditioning is the problem; stability is the algorithm"}
+**Conditioning** ($\kappa$) measures how sensitive the *true* answer is to perturbations in
+the *true* data — a property of $A$ alone. **Stability** measures how much *extra* error a
+particular algorithm introduces beyond what conditioning forces. The gold standard is
+**backward stability**: a backward-stable algorithm returns the exact answer to a slightly
+perturbed problem (one within relative $\sim u$ of the original). For such an algorithm the
+total error is bounded by (roughly) $\kappa \cdot u$ — conditioning times machine precision
+— and *nothing more*. The full error budget is therefore:
+
+$$
+\underbrace{\text{computed-answer error}}_{\text{what you see}}
+\;\approx\;
+\underbrace{\kappa(A)}_{\text{conditioning (problem)}}
+\;\times\;
+\underbrace{u}_{\text{precision (}\sim 10^{-16}\text{)}}
+\;\times\;
+\underbrace{(\text{stability constant})}_{\text{algorithm}}.
+$$
+
+You cannot beat $\kappa \cdot u$ — that is forced by the problem. A *good* algorithm keeps
+the stability constant modest (a small polynomial in the matrix size); a *bad* algorithm
+inflates it, throwing away accuracy a well-conditioned problem did not have to lose.
+:::
+
+The three practical rules below are all instances of "do not let the algorithm inflate the
+error beyond $\kappa u$."
+
+## Rule 1 — solve, don't invert {#sec-solve-dont-invert}
+
+The instinct on seeing $Ax = b$ is to write $x = A^{-1}b$ and compute $A^{-1}$ explicitly.
+**Don't.** Forming $A^{-1}$ and then multiplying is both slower (it does more arithmetic
+than necessary) and less accurate (it accumulates more rounding) than directly factoring
+$A$ and solving. Library calls like `numpy.linalg.solve(A, b)` perform an LU factorization
+($A = PLU$) and two triangular solves — backward-stable, and it never forms $A^{-1}$.
+
+```{python}
+#| label: fig-solve-vs-invert
+#| fig-cap: "Solve, don't invert. For random matrices across a range of condition numbers, we solve $Ax=b$ two ways and measure the relative error against a high-precision reference: `solve(A,b)` (green) versus forming `inv(A) @ b` (red). Both degrade as $\\kappa$ grows — neither can beat the conditioning floor — but explicit inversion is consistently worse by a modest factor, having spent extra arithmetic (and extra rounding) to produce a full inverse it then mostly discards. Same answer in theory; fewer correct digits in practice."
+rng = np.random.default_rng(7)
+kappas = np.logspace(1, 13, 13)
+err_solve, err_inv = [], []
+for k in kappas:
+    Qu, _ = np.linalg.qr(rng.standard_normal((8, 8)))
+    Qv, _ = np.linalg.qr(rng.standard_normal((8, 8)))
+    s = np.logspace(0, -np.log10(k), 8)
+    A = Qu @ np.diag(s) @ Qv.T
+    x_true = rng.standard_normal(8)
+    b = A @ x_true
+    x_solve = np.linalg.solve(A, b)
+    x_inv = np.linalg.inv(A) @ b
+    err_solve.append(np.linalg.norm(x_solve - x_true) / np.linalg.norm(x_true))
+    err_inv.append(np.linalg.norm(x_inv - x_true) / np.linalg.norm(x_true))
+
+fig, ax = plt.subplots()
+ax.loglog(kappas, err_solve, "o-", color=ACCENT, label="solve(A, b)")
+ax.loglog(kappas, err_inv, "s-", color=HILITE, label="inv(A) @ b")
+ax.loglog(kappas, kappas * 1e-16, color=GREY, ls="--", lw=1.4,
+          label=r"$\kappa \cdot u$ floor")
+ax.set_xlabel(r"condition number $\kappa(A)$")
+ax.set_ylabel("relative error")
+ax.set_title("Solving beats inverting")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+```
+
+The deeper reason to never form $A^{-1}$: you almost never actually *want* the inverse. You
+want $A^{-1}b$ (a solve), or $A^{-1}B$ (several solves), or a quadratic form $b^\top A^{-1}b$
+(a solve then a dot product). Every one of these is computed more accurately and more
+cheaply by factoring once and solving, than by building the inverse. The explicit $A^{-1}$
+is a tool you reach for far less often than the notation suggests.
+
+## Rule 2 — the determinant is a terrible singularity test {#sec-det}
+
+It is tempting to test "is $A$ singular / ill-conditioned?" by checking whether
+$\det A \approx 0$. This is wrong, and the reason is scale. The determinant is the *product*
+of the singular values (up to sign), $|\det A| = \sigma_1\sigma_2\cdots\sigma_n =
+\prod_i \sigma_i$ — it measures the *volume* scaling of $A$ ([GEOM-13]), not its *shape*.
+Two failures follow.
+
+First, **a perfectly conditioned matrix can have a tiny determinant.** Take
+$A = 0.01\, I_{100}$ — a hundred-dimensional identity scaled by $1/100$. Every singular value
+is $0.01$, so $\kappa = 0.01/0.01 = 1$, perfectly conditioned. But its determinant is
+$0.01^{100} = 10^{-200}$, underflowing to exactly zero in floating point. By the determinant
+test it is "singular"; by conditioning it is the *best-behaved matrix there is*. The
+determinant was fooled by overall scale, which conditioning correctly ignores
+(@sec-define, scale-invariance).
+
+Second, **a nearly singular matrix can have a large determinant** — pile up many singular
+values around $10$ but let one be $10^{-6}$, and the product is still large while $\kappa$ is
+huge. The determinant mixes all $n$ singular values into one product and so cannot isolate
+the single small one that conditioning hangs on.
+
+```{python}
+#| label: fig-det-bad
+#| fig-cap: "The determinant lies about conditioning. Diagonal matrices $cI_{10}$ for a range of scales $c$: the determinant $c^{10}$ (red) sweeps across 100 orders of magnitude and crosses zero-to-the-eye, while the condition number (green) is *exactly $1$ for every one of them* — these are all perfectly conditioned. A near-zero determinant signals smallness of scale, not closeness to singularity. Use $\\sigma_{\\min}$ (or $\\kappa$, or the rank from the SVD), never $\\det$."
+scales = np.logspace(-3, 1.5, 30)
+dets = scales ** 10
+conds = np.ones_like(scales)   # cI has all singular values = c, so kappa = 1
+fig, ax = plt.subplots()
+ax.loglog(scales, np.maximum(dets, 1e-40), "o-", color=HILITE,
+          label=r"$|\det(cI_{10})| = c^{10}$")
+ax.loglog(scales, conds, "s-", color=ACCENT, label=r"$\kappa(cI_{10}) = 1$ (always)")
+ax.set_xlabel("scale $c$"); ax.set_ylabel("value (log scale)")
+ax.set_title("Determinant tracks scale, not conditioning")
+ax.legend(loc="center left", framealpha=0.9)
+plt.tight_layout()
+```
+
+The right tests are: the **smallest singular value** $\sigma_{\min}$ (zero $\Rightarrow$
+singular, tiny $\Rightarrow$ ill-conditioned), the **condition number** $\kappa$, or the
+**numerical rank** (count of singular values above a tolerance) — all read straight off the
+SVD. The determinant answers a different question (volume) and should never be drafted for
+this one.
+
+::: {.callout-warning title="Pitfall"}
+**Never test for singularity or ill-conditioning with `det(A) ≈ 0`.** The determinant is
+the product of the singular values, so it conflates *scale* with *near-degeneracy*: a
+well-conditioned matrix can have a determinant of $10^{-200}$ (and underflow to zero), and a
+badly-conditioned matrix can have a healthy-looking determinant. Worse, computing $\det$ of
+a large matrix is itself error-prone. Ask the SVD for $\sigma_{\min}$ or $\kappa$, or ask
+for the numerical rank — those measure the thing you actually care about.
+:::
+
+## Rule 3 — the normal equations square the condition number {#sec-normal-eqs-squaring}
+
+The most consequential rule for the regression track. To solve least squares
+$\min_\beta \|X\beta - y\|^2$, the textbook route forms the normal equations
+$X^\top X\,\beta = X^\top y$ and solves that square system. It works in exact arithmetic.
+But on a computer it can lose *twice* as many digits as necessary, because forming
+$X^\top X$ **squares the condition number**.
+
+Here is the complete reason, every step shown. The singular values of $X$ are
+$\sigma_1 \ge \dots \ge \sigma_n$, so $\kappa(X) = \sigma_{\max}/\sigma_{\min}$. The Gram
+matrix $X^\top X$ is symmetric PSD; its eigenvalues are the *squares* of $X$'s singular
+values. (Why: write $X = U\Sigma V^\top$; then
+$X^\top X = V\Sigma^\top U^\top U\Sigma V^\top = V\Sigma^\top\Sigma V^\top = V\Sigma^2 V^\top$,
+since $U^\top U = I$. That is a spectral decomposition of $X^\top X$ with eigenvalues the
+diagonal of $\Sigma^2$, namely the $\sigma_i^2$.) So, using the SPD form @eq-cond-eig,
+
+$$
+\kappa(X^\top X) = \frac{\sigma_{\max}^2}{\sigma_{\min}^2}
+= \left(\frac{\sigma_{\max}}{\sigma_{\min}}\right)^{\!2}
+= \kappa(X)^2.
+$$ {#eq-square}
+
+By the digit-loss rule, this **doubles the digits lost**: if $X$ has $\kappa(X) = 10^{6}$ —
+a moderately collinear design that, solved well, would cost six digits — then forming
+$X^\top X$ gives $\kappa = 10^{12}$ and costs twelve. You can erase six good digits purely
+by choosing the squaring algorithm.
+
+The fix is to **never form $X^\top X$**. Factor $X$ directly with **QR** ([GEOM-07]:
+$X = QR$, $Q$ orthonormal, $R$ upper-triangular) and solve $R\beta = Q^\top y$, which has
+condition number $\kappa(R) = \kappa(X)$ — the original, not its square. Or use the **SVD**
+([GEOM-20]) and the pseudoinverse ([GEOM-21]), which is the most robust of all and degrades
+most gracefully on rank-deficient designs. Both work directly with $X$ and inherit only
+$\kappa(X)$.
+
+```{python}
+#| label: fig-normal-vs-qr
+#| fig-cap: "Normal equations square the condition number. We solve the *same* least-squares problems three ways across designs of increasing $\\kappa(X)$: the normal equations $X^\\top X\\beta = X^\\top y$ (red), QR ($R\\beta = Q^\\top y$, green), and the SVD/pseudoinverse (blue). QR and SVD track the $\\kappa(X)\\cdot u$ floor (grey); the normal equations track $\\kappa(X)^2\\cdot u$ — they fail roughly when $\\kappa(X)$ reaches $10^8$ (so $\\kappa(X)^2$ hits the precision floor), losing the answer while QR and SVD still have half their digits. This is *the* reason production least-squares solvers use QR or SVD, never the normal equations, despite the latter's textbook prominence."
+rng = np.random.default_rng(5)
+kappas = np.logspace(1, 12, 12)
+err_ne, err_qr, err_svd = [], [], []
+m = 40
+for k in kappas:
+    # Build a 40x6 design with prescribed kappa(X).
+    Qu, _ = np.linalg.qr(rng.standard_normal((m, 6)))
+    Qv, _ = np.linalg.qr(rng.standard_normal((6, 6)))
+    s = np.logspace(0, -np.log10(k), 6)
+    X = Qu @ np.diag(s) @ Qv.T
+    beta_true = rng.standard_normal(6)
+    y = X @ beta_true                      # exact, so the only error is numerical
+    # normal equations
+    b_ne = np.linalg.solve(X.T @ X, X.T @ y)
+    # QR
+    Q, R = np.linalg.qr(X)
+    b_qr = np.linalg.solve(R, Q.T @ y)
+    # SVD / pseudoinverse
+    b_svd = np.linalg.pinv(X) @ y
+    err_ne.append(np.linalg.norm(b_ne - beta_true) / np.linalg.norm(beta_true))
+    err_qr.append(np.linalg.norm(b_qr - beta_true) / np.linalg.norm(beta_true))
+    err_svd.append(np.linalg.norm(b_svd - beta_true) / np.linalg.norm(beta_true))
+
+fig, ax = plt.subplots()
+ax.loglog(kappas, np.maximum(err_ne, 1e-18), "s-", color=HILITE,
+          label=r"normal equations ($\kappa^2$)")
+ax.loglog(kappas, np.maximum(err_qr, 1e-18), "o-", color=ACCENT, label="QR")
+ax.loglog(kappas, np.maximum(err_svd, 1e-18), "^-", color=VEC, label="SVD / pinv")
+ax.loglog(kappas, kappas * 1e-16, color=GREY, ls="--", lw=1.3, label=r"$\kappa \cdot u$")
+ax.loglog(kappas, (kappas**2) * 1e-16, color=GOLD, ls=":", lw=1.6, label=r"$\kappa^2 \cdot u$")
+ax.set_xlabel(r"condition number $\kappa(X)$")
+ax.set_ylabel("relative error in $\\hat\\beta$")
+ax.set_title("QR/SVD beat the normal equations")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+The normal-equations error rides the $\kappa^2$ line and falls off the precision cliff a
+full square-root sooner than QR and SVD, which ride the $\kappa$ line. The two summit
+factorizations of this track ([GEOM-07]'s QR and [GEOM-20]'s SVD) are not academic
+ornaments; they are the *reason* a well-built least-squares solver keeps its digits.
+
+::: {.callout-tip title="You might be asked"}
+*"If the normal equations are so bad, why are they in every textbook?"* Because they are the
+cleanest *mathematical* statement of least squares — $X^\top X\beta = X^\top y$ falls
+straight out of setting the gradient of $\|X\beta - y\|^2$ to zero ([GEOM-25]), and the
+geometry (residual orthogonal to the column space, [GEOM-06]) lives there. They are the right
+object for *deriving* and *understanding* least squares. They are the wrong object for
+*computing* it in finite precision, precisely because of @eq-square. The mature view: derive
+with the normal equations, compute with QR or SVD. Knowing *both* — and why they differ — is
+exactly what an interviewer is probing.
+:::
+
+# Where conditioning bites elsewhere {#sec-elsewhere}
+
+The condition number is not a regression-only concern; it is the universal currency of
+numerical trustworthiness, and three quick connections show its reach.
+
+- **Optimization.** For gradient descent on a quadratic bowl $f(x) = \tfrac12 x^\top A x -
+  b^\top x$ ([GEOM-25]), the number of iterations to converge scales with $\kappa(A)$ — the
+  ratio of the steepest to the flattest curvature, the eigenvalue ratio of the Hessian
+  ([GEOM-24]). A round bowl ($\kappa = 1$) is solved in one step; an elongated valley (huge
+  $\kappa$) makes gradient descent zig-zag agonizingly down a near-flat trough. *The same
+  ellipse, now governing a different cost.* This is why **preconditioning** — left-multiplying
+  to reduce $\kappa$ — and why Newton's method (which rescales by $A^{-1}$ and so sees
+  $\kappa = 1$) exist. Optimization owns the algorithms; it consumes this conditioning story.
+
+- **Eigenvalue problems** have their own conditioning, distinct from the linear-solve
+  $\kappa$: a single eigenvalue's sensitivity depends on how nearly *parallel* the
+  eigenvectors are (how far the matrix is from being normal), not on $\sigma_{\max}/\sigma_{\min}$.
+  We flag this so you do not over-extend the linear-solve $\kappa$ to a problem it does not
+  govern — a common interview trap.
+
+- **Polynomial and Vandermonde systems**, signal-processing inverse problems, and PDE
+  discretizations are all routinely ill-conditioned, and all are diagnosed and treated with
+  the same toolkit: estimate $\sigma_{\min}$, refuse to invert, factor stably, and if the
+  problem itself is hopeless, *regularize* (the ridge move of @sec-collinearity, generalized).
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The honest boundary of conditioning analysis itself.
+
+- **$\kappa$ is a worst case, not a typical case.** @thm-cond bounds the worst alignment of
+  the perturbation; a *random* perturbation usually lands partly along benign directions and
+  amplifies less. So a large $\kappa$ is a warning, not a verdict — your particular $b$ might
+  be fine. The discipline is to treat $\kappa$ as the safe upper bound, because on a computer
+  the rounding errors *do* eventually find the worst direction across many operations.
+
+- **$\kappa$ depends on scaling, and bad scaling can be fixed.** If one column of $X$ is in
+  meters and another in nanometers, the raw $\kappa$ can be huge for a reason that is pure
+  unit choice, not genuine collinearity. **Equilibration** — rescaling rows/columns to
+  comparable size (e.g. standardizing features to unit variance, the routine first step in
+  regression) — can collapse a spurious $\kappa$ dramatically. Always rule out a scaling
+  artifact before declaring a problem intrinsically ill-conditioned.
+
+- **When conditioning analysis does not apply.** The whole framework assumes a *linear* map
+  and a meaningful norm. For combinatorial problems, integer programs, or highly nonlinear
+  maps, "condition number" must be redefined (the relevant object is the Jacobian's
+  conditioning, locally) or abandoned. And for a genuinely rank-deficient problem — a true
+  zero singular value, not a small one — there is no unique solution to condition; you have
+  left the world of $\kappa$ and entered the world of the **pseudoinverse and minimum-norm
+  solutions** ([GEOM-21]), which is the right tool there.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the condition number the right diagnostic, and when is it the wrong one?"* The
+honest summary:
+
+- **Use it** to (a) decide whether a linear solve or least-squares fit can be trusted in
+  finite precision, (b) explain multicollinearity quantitatively, (c) anticipate
+  gradient-descent convergence on a quadratic, and (d) justify regularization. It is the
+  single number that turns "this feels unstable" into a prediction with a digit count.
+- **Do not lean on it** when the real issue is scaling (equilibrate first), when the problem
+  is rank-deficient (use the pseudoinverse — there is no finite $\kappa$), when the map is
+  nonlinear (condition the Jacobian, locally), or for eigenvalue sensitivity (a different
+  conditioning theory). And never compute it through $\det$ or through $A^\top A$.
+- **The deepest point to land:** $\kappa$ describes the *problem*, stability describes the
+  *algorithm*, and precision is the *hardware floor*. Total error $\approx \kappa \cdot u
+  \cdot (\text{stability})$. You fix conditioning by changing the problem (regularize,
+  rescale, reparametrize), and stability by changing the algorithm (QR/SVD, solve-don't-invert)
+  — and you cannot fix either with the other.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived with the full geometric toolbox — **eigenstructure** ([GEOM-14]), the **SVD**
+([GEOM-20]) and its $\|A\|_2 = \sigma_{\max}$ reading, **positive-definiteness** ([GEOM-18]),
+and the **quadratic-form/Hessian** picture ([GEOM-24], [GEOM-25]). This article cashed them
+in for the one number — $\kappa = \sigma_{\max}/\sigma_{\min}$ — that says whether the
+beautiful exact answers survive a real computer. From here:
+
+- **[GEOM-27] — How These Tools Power Data Science (the bridge).** The terminal article maps
+  every tool, including this one, to its downstream consumers, and chains several together on
+  real data with the honest "where does the geometry break" discussion. Conditioning is the
+  reality check that runs underneath all of it.
+- **[REGR-07] — Multicollinearity.** This article *discharges* that one: the eigenvalues and
+  condition number of $X^\top X$, the swinging coefficients of @fig-collinear, and the ridge
+  fix are exactly its content, supplied here as geometry. REGR-07 builds the statistical
+  interpretation (variance inflation, confidence-interval blowup) on top and links back.
+- **[REGR-14] — Ridge Regression.** Owns the bias–variance trade of the
+  $\kappa(X^\top X + \lambda I)$ shrinkage we previewed; the conditioning half is here.
+- **Optimization.** Consumes $\kappa$ as the convergence-rate driver for gradient descent and
+  the motivation for preconditioning and Newton's method, linking back rather than
+  re-deriving the eigenvalue-ratio story.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding analysis.** A. M. Turing, "Rounding-off errors in matrix processes,"
+  *Quarterly Journal of Mechanics and Applied Mathematics* 1 (1948) — where condition numbers
+  for matrices are introduced. John von Neumann and H. H. Goldstine, "Numerical inverting of
+  matrices of high order," *Bulletin of the AMS* 53 (1947), is the companion that forced the
+  question into the open.
+- **The modern standard reference.** Nick Higham, *Accuracy and Stability of Numerical
+  Algorithms* (2nd ed., SIAM 2002) — the definitive treatment of conditioning, backward
+  stability, and the error analysis of essentially every algorithm in this article. Lloyd N.
+  Trefethen and David Bau, *Numerical Linear Algebra* (SIAM 1997), Lectures 12–18, give the
+  cleanest conceptual development of conditioning, stability, and the SVD's role.
+- **Open threads deliberately deferred.** *How exactly does $\kappa$ set the convergence rate
+  of gradient descent and conjugate gradients?* — the Optimization track (the rate is
+  $(\sqrt{\kappa}-1)/(\sqrt{\kappa}+1)$ for conjugate gradients, a $\sqrt{\kappa}$ improvement
+  worth its own derivation). *What is the minimum-norm solution when $A$ is rank-deficient and
+  $\kappa$ is infinite?* — [GEOM-21], via the pseudoinverse. *How do we estimate $\kappa$
+  cheaply for huge matrices without a full SVD?* — condition-number *estimators* (the
+  LAPACK `*con` routines), a practical rabbit hole one level below this article. *What is the
+  conditioning of the eigenvalue problem, as opposed to the linear solve?* — a separate theory
+  keyed to eigenvector non-orthogonality, flagged in @sec-elsewhere.

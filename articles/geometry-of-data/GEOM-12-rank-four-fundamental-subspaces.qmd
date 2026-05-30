@@ -1,0 +1,974 @@
+---
+title: "Rank and the Four Fundamental Subspaces"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / data
+HILITE = "#c1121f"   # the highlighted vector / image / column space
+ACCENT = "#0a7d4d"   # null space / orthogonality / residual highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the capstone of **Movement III — Matrices as
+> Maps**. It assumes [GEOM-02 *Span and Subspaces*] (a subspace is the set of all linear
+> combinations of some vectors — a line or plane through the origin, always containing
+> $\mathbf{0}$), [GEOM-03 *Linear Independence, Basis, and Dimension*] (a basis is a
+> minimal spanning set, *dimension* is the provably invariant count of basis vectors, and
+> "independent columns" means no redundancy), [GEOM-04 *The Dot Product*] (the dot product
+> $\mathbf{x}^\top\mathbf{y}$, its linearity, and perpendicularity as $\mathbf{x}^\top\mathbf{y}=0$),
+> [GEOM-06 *Orthogonal Projection*] (in
+> particular the **orthogonal complement** — every vector splits uniquely into a part in a
+> subspace and a part perpendicular to it), [GEOM-08 *Matrices as Linear Maps*]
+> ($A\mathbf{x}$ is a linear combination of $A$'s columns), and [GEOM-11 *Solving
+> $A\mathbf{x}=\mathbf{b}$*] (when the system has a unique solution, no solution, or
+> infinitely many). It leans on the transpose $A^\top$ from [GEOM-10]. Its job is to
+> answer one question — *how much real dimensionality does a matrix carry?* — by naming the
+> single number, the **rank**, and the four subspaces that organize everything a matrix
+> does. It sets up [GEOM-14]–[GEOM-15] (eigenstructure), is read off effortlessly from the
+> **SVD** in [GEOM-20], and is the geometry behind the **condition number** of [GEOM-26].
+> Most directly, *near*-rank-deficiency is **multicollinearity**, and this article is the
+> linear-algebra core that **Regression R5/R7** stand on.
+
+## Abstract {.unnumbered}
+
+A matrix $A$ has as many columns as it has, and as many rows — but those counts lie about
+how much it actually *does*. A $3\times 3$ matrix whose three columns all point along one
+line moves space onto a line: it has the reach of a single vector, not three. The honest
+measure of that reach is the **rank**: the dimension of the space the columns can build.
+This article defines rank, proves the fact that makes it a single well-defined number —
+**row rank equals column rank** — and then lays out the four subspaces every matrix
+$A\in\mathbb{R}^{m\times n}$ carries: the **column space** and **left null space** living
+in the output space $\mathbb{R}^m$, the **row space** and **null space** living in the
+input space $\mathbb{R}^n$. We derive the **rank–nullity theorem** — that the dimensions
+of the null space and the column space must add up to $n$ — and we prove the
+orthogonality that pins the four subspaces into two perpendicular pairs. The single claim
+this article defends is that **these four subspaces are not four facts to memorize but
+one picture**: a matrix takes its $n$-dimensional input space, collapses a null-space
+slab to zero, and maps what survives one-to-one onto its column space — and *rank* is the
+dimension of what survives.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **rank** of a matrix is the dimension of the space its columns can reach — the number
+of genuinely independent directions among them. It equals the dimension of the space its
+*rows* span, so there is just one number. A matrix $A\in\mathbb{R}^{m\times n}$ then sorts
+all of space into **four subspaces**: in the input $\mathbb{R}^n$, the **row space** (what
+the matrix "sees" and acts on, dimension $r$) and the **null space** (what it crushes to
+zero, dimension $n-r$), and these two are *orthogonal complements*; in the output
+$\mathbb{R}^m$, the **column space** (everything reachable, dimension $r$) and the **left
+null space** (everything missed, dimension $m-r$), again orthogonal complements. The whole
+story is one sentence: *a matrix maps its row space one-to-one onto its column space and
+sends everything perpendicular to the row space to zero.*
+:::
+
+Everything below orbits that box. The two equalities it asserts — that the column space
+and row space have the *same* dimension $r$, and that the null space takes up exactly the
+$n-r$ dimensions the row space leaves behind — look like coincidences. We will see they
+are forced: there is exactly $n$ dimensions of input, the matrix can only act
+nontrivially along $r$ of them, and whatever is left over has nowhere to go but zero.
+
+# Why we are doing this: the problem of phantom dimensionality {#sec-why}
+
+Keep one question in view for the whole article: **a matrix announces a size — $m$ rows,
+$n$ columns — but how much does it actually do, and where does the rest go?** Every
+definition and proof below is an answer to some piece of that.
+
+## The over-counting problem
+
+By [GEOM-08], a matrix $A\in\mathbb{R}^{m\times n}$ is a map $\mathbf{x}\mapsto A\mathbf{x}$
+from $\mathbb{R}^n$ to $\mathbb{R}^m$, and $A\mathbf{x}$ is a **linear combination of the
+columns of $A$**, with the entries of $\mathbf{x}$ as the weights. Write the columns as
+$\mathbf{a}_1,\dots,\mathbf{a}_n\in\mathbb{R}^m$; then
+
+$$
+A\mathbf{x}
+= x_1\mathbf{a}_1 + x_2\mathbf{a}_2 + \dots + x_n\mathbf{a}_n .
+$$ {#eq-Ax-as-combo}
+
+The set of *all* outputs $A\mathbf{x}$ as $\mathbf{x}$ ranges over $\mathbb{R}^n$ is
+therefore the set of all linear combinations of the columns — their **span** (from
+[GEOM-02]). Now the danger. The matrix carries $n$ columns, but the columns may carry
+*less* information than their count suggests. Suppose
+
+$$
+A = \begin{bmatrix} 1 & 2 & 3 \\ 2 & 4 & 6 \\ -1 & -2 & -3 \end{bmatrix}.
+$$
+
+Three columns, three rows — it *looks* three-dimensional. But the second column is
+$2\times$ the first and the third is $3\times$ the first: all three point along the single
+direction $(1,2,-1)$. No matter what $\mathbf{x}$ you feed in, $A\mathbf{x}$ lands
+somewhere on the line through $(1,2,-1)$. This $3\times3$ matrix has the reach of *one*
+vector. Its nine numbers are mostly redundant; its true dimensionality is $1$.
+
+This is not a contrived pathology. In data, columns are features and rows are
+observations. If "height in centimeters" and "height in inches" are both in your design
+matrix, one column is a scalar multiple of the other and the matrix is rank-deficient — it
+*looks* like it carries two features' worth of information but carries one. More subtly, if
+"total income" is the sum of "wage income" and "investment income," that exact linear
+dependence makes the design matrix rank-deficient, and the consequences ripple straight
+into regression: $X^\top X$ becomes non-invertible and the coefficients are no longer
+determined (the multicollinearity story of **Regression R7**). The honest measure of "how
+many features' worth of independent information is really here" is the rank.
+
+## Why four subspaces, and not just one
+
+If a matrix's reach is smaller than its size, two questions immediately follow, and they
+are the questions the four subspaces answer:
+
+1. **What can it reach?** The outputs $A\mathbf{x}$ fill out a subspace of
+   $\mathbb{R}^m$ — the **column space**. Equally important is its complement: which target
+   vectors $\mathbf{b}$ are *unreachable*, so that $A\mathbf{x}=\mathbf{b}$ has no solution
+   (the "no solution" case of [GEOM-11])? That unreachable direction is governed by the
+   **left null space**.
+2. **What does it lose?** If the columns are redundant, different inputs $\mathbf{x}$
+   produce the *same* output, so information is destroyed. The inputs that get crushed all
+   the way to $\mathbf{0}$ form the **null space**; the inputs the matrix faithfully
+   distinguishes form the **row space**.
+
+These four — column space, null space, row space, left null space — are Gilbert Strang's
+"four fundamental subspaces," and his insistence on teaching them as *one diagram* rather
+than four definitions is the spirit of this article. Once you see the picture (@fig-bigpic
+at the end), the rank–nullity theorem stops being a formula to recall and becomes
+something you can read off the diagram.
+
+::: {.callout-tip title="You might be asked"}
+*"What does the rank of a data matrix tell you, in one sentence?"* It tells you the number
+of genuinely independent directions of variation among your columns (features) — or
+equivalently among your rows (observations), since the two counts are equal. A rank far
+below the number of columns means your features are partly redundant; the data lives in a
+lower-dimensional flat than the column count advertises. That single observation is the
+seed of dimensionality reduction (PCA, owned by Unsupervised Learning, built on the SVD of
+[GEOM-20]) and the diagnosis of multicollinearity in regression.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any proofs, fix the picture of what a matrix *does*, because all four subspaces are
+just features of that one picture.
+
+A matrix $A\in\mathbb{R}^{m\times n}$ takes an arrow $\mathbf{x}$ living in the input room
+$\mathbb{R}^n$ and produces an arrow $A\mathbf{x}$ in the output room $\mathbb{R}^m$. Watch
+what happens as $\mathbf{x}$ roams over the *entire* input room. Two things occur at once.
+
+**Some input directions get flattened to nothing.** If the columns are redundant, there are
+directions $\mathbf{x}\neq\mathbf{0}$ with $A\mathbf{x}=\mathbf{0}$ — the matrix sends them
+to the origin, erasing them. Gather every such direction and you get a flat slab through
+the origin of the input room: the **null space**. The matrix is blind to it; any movement
+along that slab produces no movement at all in the output.
+
+**What survives lands inside a smaller-or-equal flat in the output room.** The reachable
+outputs cannot fill more of $\mathbb{R}^m$ than the columns can build. They fill a flat
+through the origin — the **column space**. Its dimension is the rank: the number of
+independent directions that made it through.
+
+@fig-collapse shows the cleanest case to hold in your head: a $2\times2$ matrix of rank
+$1$. The whole plane is squashed onto a single line (the column space), and a whole line of
+inputs (the null space) is crushed to the origin.
+
+```{python}
+#| label: fig-collapse
+#| fig-cap: "A rank-1 map (the matrix with rows $(1,2)$ and $(2,4)$) acting on the plane. **Left:** the input room $\\mathbb{R}^2$; the green line is the null space (every input on it maps to $\\mathbf{0}$). **Right:** the output room $\\mathbb{R}^2$; the entire plane collapses onto the red line — the column space, spanned by $(1,2)$. Two genuinely different inputs (blue arrows) land on the *same* output if they differ by a null-space vector. Rank is the dimension of the surviving line: $1$."
+A = np.array([[1.0, 2.0], [2.0, 4.0]])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
+
+# Left: input room with null space.
+# Null space of [[1,2],[2,4]]: x1 + 2 x2 = 0  => direction (2,-1) (since 2 - 2 = 0).
+t = np.linspace(-2.4, 2.4, 50)
+nulldir = np.array([2.0, -1.0]) / np.sqrt(5)
+axL.plot(t * nulldir[0] * 2.2, t * nulldir[1] * 2.2, color=ACCENT, lw=2.5,
+         label="null space")
+for v, c in [((2.0, 0.5), VEC), ((-1.0, 1.5), PALE)]:
+    draw_vec(axL, (0, 0), v, color=c)
+axL.scatter([0], [0], color="k", s=18, zorder=6)
+axL.set_xlim(-3, 3); axL.set_ylim(-3, 3); axL.set_aspect("equal")
+axL.set_title("Input room $\\mathbb{R}^2$"); axL.legend(loc="upper left", fontsize=9)
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$")
+
+# Right: output room with column space (line through (1,2)).
+coldir = np.array([1.0, 2.0]) / np.sqrt(5)
+axR.plot(t * coldir[0] * 2.6, t * coldir[1] * 2.6, color=HILITE, lw=2.5,
+         label="column space")
+for v, c in [((2.0, 0.5), VEC), ((-1.0, 1.5), PALE)]:
+    Av = A @ np.array(v)
+    draw_vec(axR, (0, 0), tuple(Av), color=c)
+axR.scatter([0], [0], color="k", s=18, zorder=6)
+axR.set_xlim(-7, 7); axR.set_ylim(-7, 7); axR.set_aspect("equal")
+axR.set_title("Output room $\\mathbb{R}^2$"); axR.legend(loc="upper left", fontsize=9)
+axR.set_xlabel("$y_1$"); axR.set_ylabel("$y_2$")
+plt.tight_layout()
+```
+
+The two remaining subspaces are the perpendicular partners of these two. The **row space**
+is what is left in the input room *after* you remove the null slab — it is the part of the
+input the matrix genuinely responds to, and (we will prove) it sits exactly perpendicular
+to the null space. The **left null space** is what is left in the output room after you
+remove the column space — the directions in $\mathbb{R}^m$ the matrix can never reach, sitting
+perpendicular to the column space. Hold this single image — *crush a slab, map the rest
+faithfully onto a flat* — and the formal development is bookkeeping on top of it.
+
+# The formal development {#sec-formal}
+
+We build in four moves: define the spaces (@sec-defs), prove rank is one number
+(@sec-rank-equal), prove rank–nullity (@sec-ranknullity), and prove the orthogonality that
+pairs the subspaces (@sec-ortho).
+
+## The four subspaces, defined {#sec-defs}
+
+Throughout, $A\in\mathbb{R}^{m\times n}$ has columns $\mathbf{a}_1,\dots,\mathbf{a}_n\in
+\mathbb{R}^m$ and rows $\mathbf{r}_1^\top,\dots,\mathbf{r}_m^\top$, where each
+$\mathbf{r}_i\in\mathbb{R}^n$ is the $i$-th row written as a column vector.
+
+::: {#def-colspace}
+**Definition (column space).** The **column space** of $A$, written $C(A)$, is the span of
+its columns:
+$$
+C(A) = \{A\mathbf{x} : \mathbf{x}\in\mathbb{R}^n\}
+     = \operatorname{span}\{\mathbf{a}_1,\dots,\mathbf{a}_n\} \subseteq \mathbb{R}^m .
+$$
+:::
+
+The two expressions are the same set by @eq-Ax-as-combo: the outputs $A\mathbf{x}$ are
+exactly the linear combinations of the columns. $C(A)$ is a genuine subspace of
+$\mathbb{R}^m$ — it is a span, and a span is closed under addition and scaling and contains
+$\mathbf{0}$ (the empty/zero combination), the defining properties of a subspace from
+[GEOM-02]. The column space is **the set of reachable outputs**: $A\mathbf{x}=\mathbf{b}$ has
+a solution if and only if $\mathbf{b}\in C(A)$.
+
+::: {#def-nullspace}
+**Definition (null space).** The **null space** of $A$, written $N(A)$, is the set of inputs
+the matrix sends to zero:
+$$
+N(A) = \{\mathbf{x}\in\mathbb{R}^n : A\mathbf{x}=\mathbf{0}\} \subseteq \mathbb{R}^n .
+$$
+:::
+
+That $N(A)$ is a subspace needs one line, and we give it rather than assert it. Suppose
+$\mathbf{u},\mathbf{v}\in N(A)$ and $c$ is a scalar. Then by linearity of the map
+(proved in [GEOM-08]: $A(\mathbf{u}+\mathbf{v})=A\mathbf{u}+A\mathbf{v}$ and
+$A(c\mathbf{u})=cA\mathbf{u}$),
+$$
+A(\mathbf{u}+c\mathbf{v}) = A\mathbf{u} + cA\mathbf{v} = \mathbf{0} + c\mathbf{0}
+= \mathbf{0},
+$$
+so $\mathbf{u}+c\mathbf{v}\in N(A)$. Closed under addition and scaling, and it contains
+$\mathbf{0}$ (since $A\mathbf{0}=\mathbf{0}$) — a subspace. The null space is **the inputs
+the matrix is blind to**: it is exactly the directions you can add to any solution of
+$A\mathbf{x}=\mathbf{b}$ without changing the output, which is why a nontrivial null space
+means *infinitely many* solutions (the third case of [GEOM-11]).
+
+The remaining two subspaces are the same constructions applied to the transpose $A^\top$,
+whose columns are the rows of $A$ (the transpose flips rows and columns — [GEOM-10]).
+
+::: {#def-rowspace}
+**Definition (row space).** The **row space** of $A$ is the span of its rows — equivalently,
+the column space of $A^\top$:
+$$
+C(A^\top) = \operatorname{span}\{\mathbf{r}_1,\dots,\mathbf{r}_m\} \subseteq \mathbb{R}^n .
+$$
+:::
+
+::: {#def-leftnull}
+**Definition (left null space).** The **left null space** of $A$ is the null space of
+$A^\top$:
+$$
+N(A^\top) = \{\mathbf{y}\in\mathbb{R}^m : A^\top\mathbf{y}=\mathbf{0}\} \subseteq \mathbb{R}^m .
+$$
+The name comes from transposing the condition: $A^\top\mathbf{y}=\mathbf{0}$ is the same as
+$\mathbf{y}^\top A=\mathbf{0}^\top$ (transpose both sides, using $(A^\top\mathbf{y})^\top
+=\mathbf{y}^\top A$ from [GEOM-10]), i.e. $\mathbf{y}$ multiplies $A$ *from the left* to
+give zero.
+:::
+
+Notice where each lives. $C(A)$ and $N(A^\top)$ live in the **output** room $\mathbb{R}^m$
+(they are about $m$-vectors). $N(A)$ and $C(A^\top)$ live in the **input** room
+$\mathbb{R}^n$. Two subspaces per room — and within each room they will turn out to be
+perpendicular complements.
+
+## Rank: column rank equals row rank {#sec-rank-equal}
+
+The rank ought to be "the number of independent directions in $A$." But there are two
+honest candidates — the dimension of the column space and the dimension of the row space —
+and it is not obvious they agree. We define rank and then prove they do, so that "the rank"
+is unambiguous.
+
+::: {#def-rank}
+**Definition (rank).** The **column rank** of $A$ is $\dim C(A)$, the number of vectors in a
+basis of the column space. The **row rank** is $\dim C(A^\top)$, the dimension of the row
+space. We call the common value (once proved equal) the **rank**, written $\operatorname{rank}(A)$ or $r$.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why isn't the rank just the number of columns, or the number of rows?"* Because columns
+can be redundant. The rank counts only the *independent* columns — the size of the largest
+set of columns with no nontrivial linear combination equal to zero (the independence
+condition of [GEOM-03]). For the matrix in @sec-why with all columns parallel, that largest
+independent set has size $1$, so the rank is $1$ even though there are $3$ columns. Rank is
+always at most $\min(m,n)$: you cannot have more independent columns than there are columns,
+nor more than the dimension of the room $\mathbb{R}^m$ they live in.
+:::
+
+Now the theorem that makes "the rank" a single number. We prove it with a clean,
+self-contained argument — a factorization that exhibits the same number $r$ on both sides.
+
+::: {#thm-rank-equal}
+**Theorem (row rank = column rank).** For every $A\in\mathbb{R}^{m\times n}$,
+$$
+\dim C(A) = \dim C(A^\top).
+$$
+:::
+
+::: {.proof}
+Let $r=\dim C(A)$ be the column rank. Pick a basis $\mathbf{c}_1,\dots,\mathbf{c}_r$ of the
+column space $C(A)$ — that is $r$ vectors in $\mathbb{R}^m$ that are independent and span
+every column of $A$ (such a basis exists and has $r$ elements by the definition of
+dimension, [GEOM-03]). Collect them as the columns of a matrix
+$$
+C = [\,\mathbf{c}_1 \;\; \mathbf{c}_2 \;\; \cdots \;\; \mathbf{c}_r\,]
+\in \mathbb{R}^{m\times r}.
+$$
+
+Every column $\mathbf{a}_j$ of $A$ lives in $C(A)$, so it is some linear combination of the
+basis vectors:
+$$
+\mathbf{a}_j = f_{1j}\mathbf{c}_1 + f_{2j}\mathbf{c}_2 + \dots + f_{rj}\mathbf{c}_r,
+\qquad j=1,\dots,n,
+$$
+for scalars $f_{ij}$. Stack the coefficients of column $j$ into a vector
+$\mathbf{f}_j=(f_{1j},\dots,f_{rj})^\top\in\mathbb{R}^r$. By @eq-Ax-as-combo read in
+reverse, $\mathbf{a}_j = C\mathbf{f}_j$ (the combination of $C$'s columns with weights
+$\mathbf{f}_j$). Assembling all $n$ columns side by side, with $F\in\mathbb{R}^{r\times n}$
+the matrix whose $j$-th column is $\mathbf{f}_j$,
+$$
+A = C F . \tag{$\ast$}
+$$
+This is the key step: **every rank-$r$ matrix factors as (something $m\times r$) times
+(something $r\times n$).** We have produced such a factorization with the column-space
+basis.
+
+Now read $(\ast)$ a second time, by **rows**. The transpose of a product reverses the order
+(from [GEOM-10], $(CF)^\top = F^\top C^\top$), so $A^\top = F^\top C^\top$. Apply
+@eq-Ax-as-combo's column-combination reading to $A^\top = F^\top C^\top$: each column of
+$A^\top$ — that is, each *row of $A$* — is a linear combination of the columns of $F^\top$.
+There are $r$ columns in $F^\top$ (since $F^\top\in\mathbb{R}^{n\times r}$). So the row
+space of $A$, $C(A^\top)$, is spanned by $r$ vectors, which means
+$$
+\dim C(A^\top) \le r = \dim C(A).
+$$
+Every spanning set has at least as many vectors as the dimension ([GEOM-03]), so $r$
+spanning vectors cannot force the dimension above $r$.
+
+We have shown row rank $\le$ column rank for *every* matrix. Apply that very inequality to
+$A^\top$ in place of $A$: its column rank is $\dim C(A^\top)$ and its row rank is
+$\dim C\!\bigl((A^\top)^\top\bigr)=\dim C(A)$ (using $(A^\top)^\top=A$ from [GEOM-10]). The
+inequality "row rank $\le$ column rank" applied to $A^\top$ reads
+$$
+\dim C(A) \le \dim C(A^\top).
+$$
+The two inequalities together force equality, $\dim C(A)=\dim C(A^\top)$. $\qquad\blacksquare$
+:::
+
+So there is one rank $r$, and it is simultaneously the number of independent columns and
+the number of independent rows. This is genuinely surprising the first time: the columns
+live in $\mathbb{R}^m$ and the rows live in $\mathbb{R}^n$ — different rooms entirely — yet
+they carry the same count of independent directions. The factorization $A=CF$ is the
+reason, and it will reappear, in its most polished form, as the SVD ([GEOM-20]).
+
+::: {.callout-tip title="You might be asked"}
+*"Give me a quick way to see why row rank equals column rank without the factorization."*
+The factorization *is* the quick way once you have it, but here is the row-reduction view
+many courses use, stated so you can recognize it. Row operations (the moves of Gaussian
+elimination, [GEOM-11]) never change the row space — each new row is a combination of old
+rows — so they preserve row rank; and they never change which *combinations of columns* are
+zero, so they preserve column rank too. Reduce $A$ to row-echelon form: the nonzero rows are
+independent (row rank = number of pivots) and the pivot columns are independent and span the
+rest (column rank = number of pivots). Same pivots, same count. The factorization proof
+above is cleaner because it never mentions a particular elimination procedure — but if an
+interviewer wants "the elimination argument," it is the pivot count.
+:::
+
+## The rank–nullity theorem {#sec-ranknullity}
+
+We now connect the input-room subspaces. The matrix's $n$-dimensional input room splits
+its dimensions between "directions the matrix crushes" (the null space) and "directions it
+acts on faithfully" (which will turn out to be the row space). The accounting is exact.
+
+::: {#thm-ranknullity}
+**Theorem (rank–nullity).** For $A\in\mathbb{R}^{m\times n}$,
+$$
+\dim C(A) + \dim N(A) = n .
+$$
+Writing $r=\operatorname{rank}(A)=\dim C(A)$ and calling $\dim N(A)$ the **nullity**, this
+says
+$$
+\operatorname{rank}(A) + \operatorname{nullity}(A) = n
+\qquad\Longleftrightarrow\qquad
+\dim N(A) = n - r .
+$$
+:::
+
+The statement is "the dimensions of the surviving part and the crushed part add up to the
+whole input room." We prove it by building an explicit basis of $\mathbb{R}^n$ that is
+split cleanly into a null-space piece and a piece the matrix maps onto a column-space basis.
+
+::: {.proof}
+Let $k=\dim N(A)$ be the nullity. Choose a basis
+$\mathbf{z}_1,\dots,\mathbf{z}_k$ of the null space $N(A)\subseteq\mathbb{R}^n$ (these are
+$k$ independent input directions, each crushed to zero). By the basis-extension fact from
+[GEOM-03] — any independent set in a space can be enlarged to a basis of the whole space —
+extend them to a basis of all of $\mathbb{R}^n$ by adjoining further vectors
+$$
+\mathbf{z}_1,\dots,\mathbf{z}_k,\ \mathbf{w}_1,\dots,\mathbf{w}_p ,
+\qquad k + p = n,
+$$
+so $p = n-k$ is the number of "extra" directions we needed. We will show $p$ equals the
+rank $r$, which gives $r + k = n$ — the theorem.
+
+The plan: show that the images $A\mathbf{w}_1,\dots,A\mathbf{w}_p$ form a **basis of the
+column space** $C(A)$. If they do, then $\dim C(A)=p$, i.e. $r=p$, and we are done.
+
+**Step 1 — they span $C(A)$.** Take any output $\mathbf{b}\in C(A)$; then
+$\mathbf{b}=A\mathbf{x}$ for some input $\mathbf{x}\in\mathbb{R}^n$. Write $\mathbf{x}$ in
+our basis:
+$$
+\mathbf{x} = c_1\mathbf{z}_1 + \dots + c_k\mathbf{z}_k
+           + d_1\mathbf{w}_1 + \dots + d_p\mathbf{w}_p .
+$$
+Apply $A$, using linearity ($A$ distributes over the sum and pulls out scalars, [GEOM-08]):
+$$
+\mathbf{b} = A\mathbf{x}
+= \underbrace{c_1 A\mathbf{z}_1 + \dots + c_k A\mathbf{z}_k}_{\text{each }A\mathbf{z}_i=\mathbf{0}}
++ d_1 A\mathbf{w}_1 + \dots + d_p A\mathbf{w}_p .
+$$
+The $\mathbf{z}_i$ are in the null space, so every $A\mathbf{z}_i=\mathbf{0}$ and those
+terms vanish. Hence $\mathbf{b}= d_1 A\mathbf{w}_1 + \dots + d_p A\mathbf{w}_p$ — a linear
+combination of the $A\mathbf{w}_j$. So they span $C(A)$.
+
+**Step 2 — they are independent.** Suppose some combination of them is zero:
+$$
+d_1 A\mathbf{w}_1 + \dots + d_p A\mathbf{w}_p = \mathbf{0}.
+$$
+Pull $A$ out front by linearity: $A\bigl(d_1\mathbf{w}_1+\dots+d_p\mathbf{w}_p\bigr)
+=\mathbf{0}$. That says the vector $\mathbf{w}:=d_1\mathbf{w}_1+\dots+d_p\mathbf{w}_p$ is in
+the null space $N(A)$. But $N(A)$ is spanned by the $\mathbf{z}_i$, so $\mathbf{w}$ is also
+some combination of them:
+$$
+d_1\mathbf{w}_1+\dots+d_p\mathbf{w}_p = e_1\mathbf{z}_1+\dots+e_k\mathbf{z}_k
+$$
+for scalars $e_i$. Move everything to one side:
+$$
+d_1\mathbf{w}_1+\dots+d_p\mathbf{w}_p - e_1\mathbf{z}_1-\dots-e_k\mathbf{z}_k = \mathbf{0}.
+$$
+But $\mathbf{w}_1,\dots,\mathbf{w}_p,\mathbf{z}_1,\dots,\mathbf{z}_k$ are a *basis* of
+$\mathbb{R}^n$, hence independent — the only combination equal to zero is the all-zeros one
+(the independence condition of [GEOM-03]). Therefore every coefficient is zero; in
+particular $d_1=\dots=d_p=0$. So the only way to combine the $A\mathbf{w}_j$ to zero is
+trivially: they are independent.
+
+Spanning (Step 1) and independent (Step 2) make $A\mathbf{w}_1,\dots,A\mathbf{w}_p$ a basis
+of $C(A)$, so $\dim C(A)=p$. Combined with $k+p=n$ this gives
+$\dim N(A)+\dim C(A)=k+p=n$. $\qquad\blacksquare$
+:::
+
+Read the proof's engine in plain words: the matrix maps the $p$ "extra" input directions
+*one-to-one* onto a basis of its column space, while crushing the $k$ null directions to
+nothing. So the column space's dimension $r$ is *literally* the number of input directions
+that survive, and the null space's dimension $n-r$ is the number that die — they must add to
+$n$ because every input direction does exactly one of the two. The theorem is conservation
+of dimension: input dimensions are neither created nor destroyed, only sorted into
+"survives" and "crushed."
+
+::: {.callout-tip title="You might be asked"}
+*"A matrix is $5\times 8$ with rank $3$. Describe all four subspaces' dimensions."* Here
+$m=5$, $n=8$, $r=3$. Column space: $\dim = r = 3$, inside $\mathbb{R}^5$. Null space:
+$\dim = n-r = 8-3 = 5$, inside $\mathbb{R}^8$ (huge — five free directions, so
+$A\mathbf{x}=\mathbf{b}$ has a $5$-dimensional family of solutions whenever it has any).
+Row space: $\dim = r = 3$, inside $\mathbb{R}^8$. Left null space: $\dim = m-r = 5-3 = 2$,
+inside $\mathbb{R}^5$ (two output directions are unreachable). Note the two dimensions in
+the input room sum to $8=n$ (rank–nullity) and the two in the output room sum to $5=m$
+(rank–nullity applied to $A^\top$). Being able to fill in this table on demand is the most
+common exam question on this topic.
+:::
+
+Applying @thm-ranknullity to $A^\top$ (which is $n\times m$) gives the output-room
+accounting: $\dim C(A^\top)+\dim N(A^\top)=m$. Since $\dim C(A^\top)=\dim C(A)=r$ by
+@thm-rank-equal, the left null space has dimension $\dim N(A^\top)=m-r$. So all four
+dimensions are determined by the three numbers $m,n,r$:
+
+$$
+\begin{array}{llll}
+\dim C(A) = r, & \dim N(A^\top) = m - r & \quad(\text{output room } \mathbb{R}^m,\ \text{sum } m),\\[3pt]
+\dim C(A^\top) = r, & \dim N(A) = n - r & \quad(\text{input room } \mathbb{R}^n,\ \text{sum } n).
+\end{array}
+$$ {#eq-four-dims}
+
+## The orthogonality that pairs them {#sec-ortho}
+
+The four dimensions in @eq-four-dims already pair up by room and sum to the room's
+dimension. The final structural fact says the two subspaces in each room are not just
+complementary in dimension but **perpendicular**: each is the *orthogonal complement* of
+the other (the orthogonal complement $S^\perp$ of a subspace $S$ — every vector
+perpendicular to all of $S$ — was introduced in [GEOM-06], where we proved every vector
+splits uniquely into a part in $S$ and a part in $S^\perp$).
+
+::: {#thm-ortho}
+**Theorem (orthogonality of the subspaces).** For $A\in\mathbb{R}^{m\times n}$:
+$$
+N(A) = C(A^\top)^\perp \quad\text{in } \mathbb{R}^n,
+\qquad\qquad
+N(A^\top) = C(A)^\perp \quad\text{in } \mathbb{R}^m.
+$$
+In words: the **null space is perpendicular to the row space**, and the **left null space is
+perpendicular to the column space**.
+:::
+
+::: {.proof}
+We prove the first; the second is the same statement applied to $A^\top$.
+
+The whole proof hinges on one reading of matrix–vector multiplication, which we make
+explicit. By the row-by-row view of $A\mathbf{x}$ (the second reading from [GEOM-08]: the
+$i$-th entry of $A\mathbf{x}$ is the dot product of row $i$ with $\mathbf{x}$),
+$$
+A\mathbf{x} =
+\begin{bmatrix} \mathbf{r}_1^\top\mathbf{x} \\ \mathbf{r}_2^\top\mathbf{x} \\ \vdots \\
+\mathbf{r}_m^\top\mathbf{x} \end{bmatrix},
+$$
+where $\mathbf{r}_i$ is the $i$-th row of $A$ written as a column vector. So **$A\mathbf{x}
+=\mathbf{0}$ means every row's dot product with $\mathbf{x}$ is zero**:
+$$
+A\mathbf{x}=\mathbf{0}
+\quad\Longleftrightarrow\quad
+\mathbf{r}_i^\top\mathbf{x}=0 \ \text{ for all } i=1,\dots,m.
+$$ {#eq-null-rows}
+
+Now we show the two sets $N(A)$ and $C(A^\top)^\perp$ are equal by showing each contains the
+other.
+
+*($N(A)\subseteq C(A^\top)^\perp$.)* Suppose $\mathbf{x}\in N(A)$. By @eq-null-rows,
+$\mathbf{x}$ is perpendicular to every row $\mathbf{r}_i$. The row space $C(A^\top)$ is
+spanned by the rows, so any element of it is a combination
+$\mathbf{v}=\sum_i \alpha_i\mathbf{r}_i$. Then, using that the dot product distributes over
+sums and pulls out scalars (linearity of the dot product, [GEOM-04]),
+$$
+\mathbf{v}^\top\mathbf{x}
+= \Bigl(\sum_i \alpha_i\mathbf{r}_i\Bigr)^{\!\top}\mathbf{x}
+= \sum_i \alpha_i\,\mathbf{r}_i^\top\mathbf{x}
+= \sum_i \alpha_i\cdot 0 = 0 .
+$$
+So $\mathbf{x}$ is perpendicular to *every* vector in the row space, i.e.
+$\mathbf{x}\in C(A^\top)^\perp$.
+
+*($C(A^\top)^\perp\subseteq N(A)$.)* Conversely suppose $\mathbf{x}\in C(A^\top)^\perp$, so
+$\mathbf{x}$ is perpendicular to everything in the row space. In particular it is
+perpendicular to each row $\mathbf{r}_i$ (each row *is* in the row space), so
+$\mathbf{r}_i^\top\mathbf{x}=0$ for all $i$. By @eq-null-rows that is exactly
+$A\mathbf{x}=\mathbf{0}$, i.e. $\mathbf{x}\in N(A)$.
+
+Each set contains the other, so $N(A)=C(A^\top)^\perp$. Replacing $A$ by $A^\top$ (whose
+rows are the columns of $A$) gives $N(A^\top)=C(A)^\perp$. $\qquad\blacksquare$
+:::
+
+This is the deep payoff and it deserves a beat. The null space and the row space are not
+two random subspaces of $\mathbb{R}^n$ that happen to have dimensions $n-r$ and $r$. They
+are *perpendicular complements*: together they fill the whole input room with no overlap
+except the origin, meeting at exactly $90^\circ$ (the complement decomposition of [GEOM-06]
+guarantees $\dim C(A^\top)+\dim C(A^\top)^\perp = n$, which independently re-confirms
+rank–nullity). Every input vector $\mathbf{x}$ therefore splits uniquely,
+$$
+\mathbf{x} = \mathbf{x}_{\text{row}} + \mathbf{x}_{\text{null}},
+\qquad \mathbf{x}_{\text{row}}\in C(A^\top),\ \ \mathbf{x}_{\text{null}}\in N(A),
+$$
+and the matrix ignores the null part entirely: $A\mathbf{x}=A\mathbf{x}_{\text{row}}+
+A\mathbf{x}_{\text{null}}=A\mathbf{x}_{\text{row}}$. **The matrix only ever sees the
+row-space part of its input.** That is the precise sense in which the row space is "what the
+matrix acts on" and the null space is "what it is blind to" — and it is why the row space
+maps one-to-one onto the column space (two inputs with the same row-space part give the same
+output; two inputs with different row-space parts give different outputs, since their
+difference is not in the null space). @fig-bigpic assembles the entire picture.
+
+```{python}
+#| label: fig-bigpic
+#| fig-cap: "The four fundamental subspaces, the way Strang draws them. **Left:** the input room $\\mathbb{R}^n$, split into the row space (dim $r$) and the null space (dim $n-r$), which are perpendicular complements. **Right:** the output room $\\mathbb{R}^m$, split into the column space (dim $r$) and the left null space (dim $m-r$), also perpendicular complements. The matrix $A$ maps the row space *one-to-one onto* the column space (solid arrow), and crushes the entire null space to the single point $\\mathbf{0}$ (dashed arrow). Nothing ever lands in the left null space."
+fig, ax = plt.subplots(figsize=(8.8, 5.0))
+ax.set_xlim(0, 10); ax.set_ylim(0, 8); ax.axis("off")
+
+def box(cx, cy, w, h, color, label, sub):
+    rect = plt.Rectangle((cx - w/2, cy - h/2), w, h, facecolor=color,
+                         edgecolor="k", alpha=0.18, lw=1.4)
+    ax.add_patch(rect)
+    ax.text(cx, cy + 0.18, label, ha="center", va="center", fontsize=12,
+            color=color, weight="bold")
+    ax.text(cx, cy - 0.42, sub, ha="center", va="center", fontsize=9.5, color="k")
+
+# Input room (left).
+ax.text(2.2, 7.5, r"input room  $\mathbb{R}^n$", ha="center", fontsize=12, weight="bold")
+box(2.2, 5.6, 3.0, 1.4, HILITE, "row space", r"dim $= r$")
+box(2.2, 2.4, 3.0, 1.4, ACCENT, "null space", r"dim $= n-r$")
+ax.text(2.2, 4.0, r"$\perp$", ha="center", fontsize=15, color=GREY)
+
+# Output room (right).
+ax.text(7.8, 7.5, r"output room  $\mathbb{R}^m$", ha="center", fontsize=12, weight="bold")
+box(7.8, 5.6, 3.0, 1.4, HILITE, "column space", r"dim $= r$")
+box(7.8, 2.4, 3.0, 1.4, ACCENT, "left null space", r"dim $= m-r$")
+ax.text(7.8, 4.0, r"$\perp$", ha="center", fontsize=15, color=GREY)
+
+# The map.
+ax.annotate("", xy=(6.3, 5.6), xytext=(3.7, 5.6),
+            arrowprops=dict(arrowstyle="-|>", color=VEC, lw=2.6))
+ax.text(5.0, 6.0, r"$A$: one-to-one onto", ha="center", fontsize=10.5, color=VEC)
+ax.annotate("", xy=(7.8, 1.0), xytext=(3.7, 2.4),
+            arrowprops=dict(arrowstyle="-|>", color=GREY, lw=1.8, linestyle="--"))
+ax.scatter([7.8], [1.0], color="k", s=40, zorder=6)
+ax.text(6.1, 1.35, r"$A$: crush to $\mathbf{0}$", ha="center", fontsize=10, color=GREY)
+plt.tight_layout()
+```
+
+# Worked examples {#sec-examples}
+
+We run the four-subspace machinery on real, honest data and matrices — never a toy rigged
+to flatter. The first we carry through by hand; the others show the data meaning and the
+edge of applicability.
+
+## Example 1 — a rank-deficient matrix by hand {#sec-ex-byhand}
+
+Take the matrix that motivated us, padded with one genuinely new direction so it is not
+*entirely* degenerate:
+$$
+A = \begin{bmatrix} 1 & 2 & 0 \\ 2 & 4 & 1 \\ -1 & -2 & 3 \end{bmatrix}.
+$$
+The first two columns are parallel ($\mathbf{a}_2 = 2\mathbf{a}_1$), but the third,
+$(0,1,3)$, points somewhere new. Let us find all four subspaces by hand and then verify
+numerically.
+
+**Column space and rank.** The columns are $\mathbf{a}_1=(1,2,-1)$,
+$\mathbf{a}_2=(2,4,-2)$, $\mathbf{a}_3=(0,1,3)$. Since $\mathbf{a}_2=2\mathbf{a}_1$, the
+column space is spanned by just $\mathbf{a}_1$ and $\mathbf{a}_3$. Are those two
+independent? A combination $c_1\mathbf{a}_1+c_3\mathbf{a}_3=\mathbf{0}$ reads, in the first
+coordinate, $c_1=0$; then the second gives $2(0)+c_3=0$ so $c_3=0$. Only the trivial
+combination vanishes, so $\mathbf{a}_1,\mathbf{a}_3$ are independent. Hence
+$$
+\operatorname{rank}(A) = 2, \qquad C(A)=\operatorname{span}\{(1,2,-1),\,(0,1,3)\}
+\subseteq \mathbb{R}^3 ,
+$$
+a plane through the origin. The rank is $2$, not $3$: the matrix flattens 3-D space onto a
+plane.
+
+**Null space.** By rank–nullity (@thm-ranknullity), $\dim N(A)=n-r=3-2=1$ — a line. To find
+it, solve $A\mathbf{x}=\mathbf{0}$. The three scalar equations are
+$$
+x_1 + 2x_2 = 0,\qquad 2x_1 + 4x_2 + x_3 = 0,\qquad -x_1 - 2x_2 + 3x_3 = 0 .
+$$
+The first gives $x_1=-2x_2$. Substitute into the second:
+$2(-2x_2)+4x_2+x_3 = -4x_2+4x_2+x_3 = x_3 = 0$, so $x_3=0$. Check the third with $x_3=0$:
+$-(-2x_2)-2x_2+0 = 2x_2-2x_2 = 0$, satisfied for any $x_2$. So $x_2$ is free, $x_1=-2x_2$,
+$x_3=0$, giving
+$$
+N(A) = \operatorname{span}\{(-2,\,1,\,0)\} \subseteq \mathbb{R}^3 .
+$$
+Notice $(-2,1,0)$ records exactly the column dependence $\mathbf{a}_2=2\mathbf{a}_1$:
+feeding in $(-2,1,0)$ computes $-2\mathbf{a}_1+1\cdot\mathbf{a}_2+0\cdot\mathbf{a}_3 =
+-2\mathbf{a}_1+2\mathbf{a}_1=\mathbf{0}$. **A null-space vector is a recipe for a vanishing
+combination of columns** — that is what "the matrix is blind to this direction" means
+concretely.
+
+**Row space.** By @thm-rank-equal it also has dimension $2$. The rows are
+$(1,2,0),(2,4,1),(-1,-2,3)$. Rows $1$ and $2$ are
+independent (their third coordinates $0$ and $1$ cannot match by scaling row $1$), so
+$$
+C(A^\top) = \operatorname{span}\{(1,2,0),\,(2,4,1)\} \subseteq \mathbb{R}^3 .
+$$
+The orthogonality check of @thm-ortho must hold: $N(A)$'s generator $(-2,1,0)$ should be
+perpendicular to both row-space basis vectors. Indeed $(-2,1,0)\cdot(1,2,0)=-2+2+0=0$ and
+$(-2,1,0)\cdot(2,4,1)=-4+4+0=0$. The null line is exactly perpendicular to the row plane, as
+the theorem promised.
+
+**Left null space.** $\dim N(A^\top)=m-r=3-2=1$. It records the dependence among the
+*rows*: a vector $\mathbf{y}=(y_1,y_2,y_3)$ with $A^\top\mathbf{y}=\mathbf{0}$ is exactly a
+recipe $y_1\mathbf{r}_1+y_2\mathbf{r}_2+y_3\mathbf{r}_3=\mathbf{0}$ for a vanishing
+combination of the rows $\mathbf{r}_1=(1,2,0)$, $\mathbf{r}_2=(2,4,1)$,
+$\mathbf{r}_3=(-1,-2,3)$ (the row analogue of what the null space did for columns). We solve
+it by hand. The transpose is
+$$
+A^\top = \begin{bmatrix} 1 & 2 & -1 \\ 2 & 4 & -2 \\ 0 & 1 & 3 \end{bmatrix},
+$$
+so $A^\top\mathbf{y}=\mathbf{0}$ is the three scalar equations
+$$
+y_1 + 2y_2 - y_3 = 0, \qquad 2y_1 + 4y_2 - 2y_3 = 0, \qquad y_2 + 3y_3 = 0 .
+$$
+The second equation is twice the first, so it carries no new information (the rows of
+$A^\top$ are themselves dependent — its rank is $2$, as it must be). The third gives
+$y_2=-3y_3$. Substitute into the first: $y_1 = -2y_2 + y_3 = -2(-3y_3)+y_3 = 7y_3$. So $y_3$
+is free, and taking $y_3=1$,
+$$
+N(A^\top) = \operatorname{span}\{(7,\,-3,\,1)\} \subseteq \mathbb{R}^3 .
+$$
+Check that this combination of rows really vanishes:
+$7(1,2,0)-3(2,4,1)+1(-1,-2,3) = (7-6-1,\ 14-12-2,\ 0-3+3) = (0,0,0)$, as promised. (The
+numerical block below reports this same vector rescaled so its largest entry is $1$, i.e.
+$(1,-\tfrac{3}{7},\tfrac{1}{7})\approx(1,-0.429,0.143)$.)
+
+```{python}
+#| label: tbl-ex1-check
+#| echo: true
+import numpy as np
+
+A = np.array([[1, 2, 0],
+              [2, 4, 1],
+              [-1, -2, 3]], dtype=float)
+
+r = np.linalg.matrix_rank(A)
+print("rank(A)            =", r)                          # expect 2
+# SVD: U columns span the output room, Vt rows span the input room.
+U, s, Vt = np.linalg.svd(A)
+tol = 1e-10
+print("singular values    =", np.round(s, 6))
+
+# Null space: right-singular vectors (rows of Vt) past the r-th -> basis of N(A).
+nvec = Vt[r:].T[:, 0]
+nvec = nvec / nvec[np.argmax(np.abs(nvec))]               # normalize for readability
+print("null space basis   =", np.round(nvec, 3))
+print("A @ (null vector)  =", np.round(A @ nvec, 12), " (should be 0)")
+
+# Left null space: left-singular vectors (columns of U) past the r-th -> basis of N(A^T).
+lvec = U[:, r:][:, 0]
+lvec = lvec / lvec[np.argmax(np.abs(lvec))]
+print("left null basis    =", np.round(lvec, 3))
+print("(left null)^T @ A  =", np.round(lvec @ A, 12), " (should be 0)")
+```
+
+The computed null-space basis is a scalar multiple of $(-2,1,0)$ — matching our hand
+calculation — and `A @ (null vector)` is zero to machine precision. The left null vector,
+dotted into $A$ from the left, gives the all-zero row, confirming it records a row
+dependence. (We used the SVD of [GEOM-20] only as a numerical microscope to *read off* the
+subspaces; the math was done by hand above. The SVD is the tool that turns "find the four
+subspaces" into a one-line computation, which is one reason it is the master decomposition.)
+
+## Example 2 — a real data matrix with a redundant feature {#sec-ex-data}
+
+Now the data reading, with realistic messiness. We build a design matrix of $n=200$ houses
+with three features — *living area* (sq ft), *number of bedrooms*, and a third column that a
+careless analyst added: *living area in square meters*. That third column is, up to
+floating-point noise, $0.0929\times$ the first. The matrix *looks* like it carries three
+features; it carries two.
+
+```{python}
+#| label: fig-data-rank
+#| fig-cap: "A design matrix with a phantom feature. **Left:** the singular-value spectrum (from the SVD) of the centered, standardized $200\\times 3$ feature matrix. Three features, but the third singular value is essentially zero — the matrix is *numerically* rank 2. **Right:** the offending pair of columns; 'area in m$^2$' is an exact rescaling of 'area in ft$^2$', so they fall on a perfect line. The rank counts independent features: two, not three."
+rng = np.random.default_rng(2024)
+n = 200
+area_ft = rng.uniform(800, 3500, size=n)
+bedrooms = np.clip(np.round(area_ft / 700 + rng.normal(0, 0.7, n)), 1, 6)
+area_m2 = 0.092903 * area_ft            # the phantom feature: exact rescaling
+X = np.column_stack([area_ft, bedrooms, area_m2])
+
+# Standardize columns (zero mean, unit variance) so scales are comparable.
+Xs = (X - X.mean(0)) / X.std(0)
+U, s, Vt = np.linalg.svd(Xs, full_matrices=False)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.bar(["$\\sigma_1$", "$\\sigma_2$", "$\\sigma_3$"], s, color=[VEC, VEC, HILITE])
+axL.set_title("Singular values of the feature matrix")
+axL.set_ylabel("singular value")
+for i, v in enumerate(s):
+    axL.text(i, v + 0.4, f"{v:.2f}", ha="center", fontsize=9)
+
+axR.scatter(area_ft, area_m2, color=VEC, s=14, alpha=0.7)
+axR.set_xlabel("living area (ft$^2$)"); axR.set_ylabel("living area (m$^2$)")
+axR.set_title("Two columns, one direction")
+plt.tight_layout()
+print("numerical rank of standardized X =", np.linalg.matrix_rank(Xs))
+print("singular values                  =", np.round(s, 4))
+```
+
+The third singular value is essentially zero, so the numerical rank is $2$: the matrix has
+two features' worth of independent variation. The data lives in a $2$-dimensional flat
+inside $\mathbb{R}^3$, and the third column adds nothing the first does not already carry.
+This is the honest, common way rank-deficiency shows up — not as a designed example but as a
+units mistake, a derived column, or a perfectly collinear pair. For a regression on this
+$X$, the matrix $X^\top X$ is singular (its rank is also $2$, less than the $3$ coefficients
+we want), and there is **no unique least-squares coefficient vector**: the null space of $X$
+gives a whole line of coefficient vectors with identical fitted values. That is exactly the
+breakdown the rank predicts, and it is the bridge to **Regression R5/R7**.
+
+## Example 3 — the edge of applicability: *near*-rank-deficiency {#sec-ex-edge}
+
+The sharpest, most honest case is not exact rank-deficiency — which a computer detects
+cleanly — but the *near* case, where columns are *almost* dependent. Here the rank is
+mathematically full, yet the matrix behaves almost like a rank-deficient one, and "the
+rank" stops being the right diagnostic. This is the edge where the rank concept strains and
+you must reach for the **condition number** instead ([GEOM-26]).
+
+```{python}
+#| label: fig-near-rank
+#| fig-cap: "Where exact rank fails as a diagnostic. We tilt the phantom column away from exact collinearity by an angle $\\theta$ and watch the smallest singular value $\\sigma_{\\min}$ (red, left axis) and the condition number $\\kappa=\\sigma_{\\max}/\\sigma_{\\min}$ (blue, right axis, log scale). The rank is *exactly 3* for every $\\theta>0$ — the integer rank cannot see the difference between $\\theta=10^{-4}$ and $\\theta=1$. But $\\kappa$ explodes as the columns near-align, and *that* is what predicts numerical disaster. Rank is a yes/no question; conditioning is the honest continuous one."
+rng = np.random.default_rng(7)
+n = 200
+angles = np.logspace(-4, 0, 40)   # radians from near-collinear to well-separated
+v1 = rng.normal(size=n); v1 /= np.linalg.norm(v1)
+w  = rng.normal(size=n); w -= (w @ v1) * v1; w /= np.linalg.norm(w)  # orthonormal to v1
+
+ranks, smin, kappa = [], [], []
+for th in angles:
+    v2 = np.cos(th) * v1 + np.sin(th) * w   # column 2 at angle th from column 1
+    third = rng.normal(size=n)              # a genuine third direction
+    M = np.column_stack([v1, v2, third])
+    s = np.linalg.svd(M, compute_uv=False)
+    ranks.append(np.linalg.matrix_rank(M))
+    smin.append(s[-1]); kappa.append(s[0] / s[-1])
+
+fig, axL = plt.subplots()
+axL.plot(angles, smin, color=HILITE, marker="o", ms=3, label=r"$\sigma_{\min}$")
+axL.set_xscale("log"); axL.set_xlabel(r"separation angle $\theta$ (rad)")
+axL.set_ylabel(r"$\sigma_{\min}$", color=HILITE)
+axL.tick_params(axis="y", labelcolor=HILITE)
+axR = axL.twinx()
+axR.plot(angles, kappa, color=VEC, marker="s", ms=3, label=r"$\kappa$")
+axR.set_yscale("log"); axR.set_ylabel(r"condition number $\kappa$", color=VEC)
+axR.tick_params(axis="y", labelcolor=VEC); axR.grid(False)
+axL.set_title(f"Exact rank is always {max(ranks)} here; conditioning tells the real story")
+plt.tight_layout()
+print("rank is constantly:", set(ranks), " across all angles")
+```
+
+The lesson the figure delivers — and the most important applicability judgement in this
+article — is that **rank is an all-or-nothing integer, and real data almost never sits
+exactly on the boundary.** Two columns that are $99.99\%$ aligned give a matrix of *full*
+rank: the integer rank reports "all independent, nothing wrong," while the matrix is, for
+every practical purpose, rank-deficient. The honest, continuous measure is the smallest
+singular value $\sigma_{\min}$ (how close to dependent the columns are) and the condition
+number $\kappa=\sigma_{\max}/\sigma_{\min}$ (how much the near-dependence amplifies error).
+This is precisely multicollinearity, and it is why **you never test for rank-deficiency by
+computing a rank** on noisy data — you inspect the singular-value spectrum. We develop that
+fully in [GEOM-26]; flag it now as the boundary where this article's clean integer gives
+way to a number with a decimal point.
+
+# Failure modes and what to reach for instead {#sec-failure}
+
+::: {.callout-warning title="Pitfall"}
+**Numerical rank is not exact rank.** `numpy.linalg.matrix_rank` does *not* compute the true
+algebraic rank — it counts singular values above a tolerance. On data with any noise, an
+"almost dependent" column produces a tiny-but-nonzero singular value, and whether it counts
+toward the rank depends entirely on the tolerance you (implicitly) chose. Two consequences:
+(1) the reported rank of a real data matrix is a *thresholding decision*, not a fact about
+the data; (2) the right question is almost never "what is the rank?" but "how small is the
+smallest singular value, relative to the largest?" — i.e. the condition number ([GEOM-26]).
+Treating the integer rank as ground truth on noisy data is the single most common mistake
+this material invites.
+:::
+
+A few more honest boundaries:
+
+- **Rank does not tell you *which* columns are redundant.** It is a single number. To find
+  the offending dependence you need the null space (a null-space vector lists the
+  coefficients of a vanishing column combination, as in @sec-ex-byhand) or, in practice, the
+  SVD's right-singular vectors. If your goal is to *drop* a redundant feature, rank alone is
+  the alarm, not the diagnosis.
+- **Don't test invertibility with the determinant.** A square matrix is invertible iff it
+  has full rank iff $\det\neq 0$ ([GEOM-11], [GEOM-13]) — true in exact arithmetic. But
+  $\det$ is a terrible numerical singularity test: it scales like $\sigma_1\sigma_2\cdots
+  \sigma_n$, so it can be tiny for a perfectly well-conditioned matrix (just small entries)
+  or not-that-tiny for a nearly singular one. Use the smallest singular value / condition
+  number, not $\det\approx 0$.
+- **When the four subspaces are the wrong frame.** If you only need to *solve*
+  $A\mathbf{x}=\mathbf{b}$ for a well-conditioned square $A$, you don't enumerate subspaces —
+  you factor and back-substitute ([GEOM-11], and Cholesky in [GEOM-19] for the
+  positive-definite case). The four-subspace picture earns its keep precisely when the matrix
+  is rectangular or rank-deficient: it tells you *whether* a solution exists ($\mathbf{b}\in
+  C(A)$?), *how many* there are (the size of $N(A)$), and — via the pseudoinverse of
+  [GEOM-21] — which one to pick.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the rank the right thing to compute, and when is it not?"* The honest summary:
+
+- **Use rank** for *exact* or symbolic matrices, for theoretical arguments (existence and
+  uniqueness of solutions, dimension counting via rank–nullity), and as the conceptual lens
+  for "how many independent directions are here." It is exactly right in exact arithmetic.
+- **Do not lean on rank** for noisy, finite-precision data. There, the integer is a
+  thresholded artifact; reach for the **singular-value spectrum** and the **condition
+  number** ([GEOM-26]) for a continuous, honest measure of near-dependence, and the **SVD**
+  ([GEOM-20]) or a **rank-revealing QR** ([GEOM-07]) to actually expose the structure.
+- **The deepest connection to volunteer:** rank, the four subspaces, and the rank–nullity
+  theorem are *read directly off the SVD* — the count of nonzero singular values is the rank,
+  the corresponding left/right singular vectors are orthonormal bases for the column/row
+  spaces, and the rest are bases for the two null spaces. So the SVD is not a separate
+  topic; it is this article's four subspaces, made numerically robust.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-11 *Solving $A\mathbf{x}=\mathbf{b}$*]**, which described the three
+outcomes — unique solution, no solution, infinitely many — and hinted that each is governed
+by a subspace. This article named those subspaces and proved how they fit together: one
+rank $r$, the rank–nullity accounting $r+(n-r)=n$, and the two perpendicular pairs. From
+here the track continues:
+
+- **[GEOM-13 *The Determinant*]** — the single number for square matrices that detects
+  full rank ($\det\neq 0$) geometrically, as a volume-scaling factor; and the honest reason
+  it is a *bad* numerical singularity test.
+- **[GEOM-14]–[GEOM-15] *Eigenvalues and Diagonalization*]** — special directions a matrix
+  only scales; the null space is the eigenspace for eigenvalue $0$, so rank-deficiency is
+  "the matrix has a zero eigenvalue."
+- **[GEOM-20 *The Singular Value Decomposition*]** — the master factorization that reads
+  *all four subspaces at once* off orthonormal bases, makes the rank the count of nonzero
+  singular values, and turns the near-rank-deficiency of @sec-ex-edge into a precise,
+  continuous statement.
+- **[GEOM-26 *Condition Number and Numerical Stability*]** — the continuous successor to
+  the integer rank, $\kappa=\sigma_{\max}/\sigma_{\min}$, which is the honest diagnostic for
+  the *near*-rank-deficient matrices real data produces.
+
+Downstream of the track, this article is the linear-algebra core behind **Regression R5**
+(when $X^\top X$ is invertible — exactly when $X$ has full column rank) and **Regression
+R7** (multicollinearity is near-rank-deficiency of the design matrix).
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The canonical source.** Gilbert Strang, *Introduction to Linear Algebra* and *Linear
+  Algebra and Its Applications* — the four-fundamental-subspaces framing, the "big picture"
+  diagram of @fig-bigpic, and the insistence on rank–nullity as a single conservation law
+  are all his. His essay "The Fundamental Theorem of Linear Algebra" (*American Mathematical
+  Monthly*, 1993) collects the four-subspace orthogonality into one statement.
+- **The factorization proof.** The $A=CF$ argument for row rank = column rank in
+  @thm-rank-equal is the *rank factorization* (or *full-rank factorization*); it is the
+  cleanest proof and the conceptual seed of the SVD's $A=U\Sigma V^\top$, where the same
+  rank $r$ appears as the number of nonzero singular values.
+- **Open threads deliberately deferred.** *How do you compute the subspaces stably?* — via
+  the SVD, [GEOM-20]. *What is the "right" rank of a noisy matrix?* — there isn't a crisp
+  answer; you trade off approximation error against rank, the Eckart–Young story of
+  [GEOM-21]. *Why does a zero eigenvalue mean rank-deficiency?* — because the eigenvector for
+  $\lambda=0$ lives in the null space, developed in [GEOM-14].

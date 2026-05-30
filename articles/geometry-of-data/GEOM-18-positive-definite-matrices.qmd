@@ -1,0 +1,1023 @@
+---
+title: "Positive-Definite Matrices: The Good Matrices"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / input directions
+HILITE = "#c1121f"   # first eigenvector / max-curvature axis
+ACCENT = "#0a7d4d"   # second eigenvector / highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the article where everything about symmetric
+> matrices finally pays off as a *judgment*: which symmetric matrices are the "good" ones.
+> It assumes the **spectral theorem** of [GEOM-16] — that every real symmetric matrix
+> $A = A^\top$ factors as $A = Q\Lambda Q^\top$ with $Q$ orthogonal and $\Lambda$ real
+> diagonal — and the **quadratic form** of [GEOM-17] — the scalar $q(x) = x^\top A x$ and
+> the fact that diagonalizing it with $x = Qz$ turns it into the clean sum of squares
+> $\sum_k \lambda_k z_k^2$. It also leans lightly on the dot product and norm ([GEOM-04]),
+> orthonormal coordinates ([GEOM-05]), the transpose and the Gram matrix $A^\top A$
+> ([GEOM-10]), and rank ([GEOM-12]). The one question here: *what does it mean for a matrix
+> to be positive-definite, why is that exactly "the quadratic form is a bowl with a unique
+> bottom," and how do we actually check it?* It sets up [GEOM-19] (Cholesky and the matrix
+> square root, which exist precisely **because** a matrix is positive-definite) and
+> [GEOM-24]–[GEOM-25] (a positive-definite Hessian means a genuine minimum). It is the
+> object behind a **valid Gaussian** (a covariance must be positive-definite, Probability /
+> Inference), behind **whitening and GLS** (Regression R11), and behind the **convexity
+> test** that all of Optimization runs on.
+
+## Abstract {.unnumbered}
+
+A symmetric matrix is geometrically a set of stretches along perpendicular axes. This
+article asks the one question that decides whether such a matrix is *useful*: are all of
+those stretches **positive**? A matrix $A$ is **positive-definite** when its quadratic
+form $x^\top A x$ is strictly positive for every nonzero direction $x$ — equivalently
+(we prove it) when **all of its eigenvalues are positive**. We derive that equivalence in
+full from the spectral theorem, then show what it buys: the surface $x^\top A x$ is a
+**bowl with a single lowest point**, the matrix is invertible with a positive-definite
+inverse, and a "square root" of it exists. We prove that the Gram matrix $A^\top A$ is
+always positive-*semi*definite and is positive-*definite* exactly when $A$ has full column
+rank — which is why covariance matrices and the normal-equations matrix $X^\top X$ are the
+canonical positive-definite objects in data science. We give three honest tests
+(eigenvalues, leading principal minors, and "a Cholesky factor exists"), run them on real
+matrices including one sitting right at the semidefinite boundary, and state plainly when
+the property holds, when it barely holds, and when its failure is telling you the modeling
+problem is broken. The single claim defended throughout: **positive-definiteness is the
+precise algebraic name for "this matrix is a bowl," and a bowl is the one shape from which
+optimization, statistics, and geometry all get a unique, stable answer.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A symmetric matrix $A = A^\top$ is **positive-definite** (PD) when
+$$
+x^\top A x > 0 \quad\text{for every } x \neq 0,
+$$
+and **positive-semidefinite** (PSD) when the inequality is merely $\ge 0$. By the spectral
+theorem this is *exactly* the statement that **every eigenvalue of $A$ is positive** (PD)
+or **nonnegative** (PSD) — because in the eigenbasis the quadratic form unpacks to
+$x^\top A x = \sum_k \lambda_k z_k^2$, a sum of squares weighted by the eigenvalues. So
+the abstract inequality and the concrete eigenvalues say the same thing, and they both say
+one geometric thing: **the surface $x^\top A x$ is a bowl that opens upward in every
+direction, with its single lowest point at the origin.** That is the entire content of
+"positive-definite," and it is why these are the good matrices: a bowl has a unique bottom,
+so problems built on a PD matrix — minimizing a quadratic loss, inverting a covariance,
+factoring out correlation — all have one stable answer.
+:::
+
+Everything below orbits that box. We will earn the equivalence "PD $\Leftrightarrow$ all
+eigenvalues positive" line by line, then read off its consequences — invertibility, a
+positive-definite inverse, a square root — and prove the one fact that makes the whole
+property show up everywhere in data science: $A^\top A$ is always PSD, and PD exactly when
+$A$'s columns are independent. By the end, "is this matrix positive-definite?" should feel
+like the same question as "is this surface a bowl?", and you should know three ways to
+answer it and what each costs.
+
+# Why we are here: the matrices that behave, and the ones that betray you {#sec-why}
+
+Keep one question in view for the whole article: **what makes a symmetric matrix
+trustworthy, and how do we test for it before we lean on it?** Every step below answers
+some piece of that.
+
+The spectral theorem ([GEOM-16]) told us symmetric matrices are the well-behaved ones:
+real eigenvalues, perpendicular eigenvectors, a free transpose for an inverse. But
+"well-behaved" is not the same as "useful for the job at hand." Three of the most
+important objects in all of applied mathematics are symmetric, and in each case the entire
+question of whether the surrounding machinery works reduces to a single property of the
+matrix.
+
+**The covariance matrix.** A covariance matrix $\Sigma$ summarizes how the features of a
+dataset co-vary. To use it as the heart of a Gaussian model — to write down the bell-curve
+density in many dimensions — you must form $\Sigma^{-1}$, and the exponent of that density
+is the quadratic form $-\tfrac12 (x-\mu)^\top \Sigma^{-1}(x-\mu)$. If that quadratic form
+were ever *negative*, the density would blow up instead of decay, and there would be no
+valid probability distribution at all. A Gaussian exists if and only if its covariance is
+positive-definite. (The probabilistic meaning is Probability's to own; here we need only
+that the matrix must pass a definiteness test.)
+
+**The normal-equations matrix.** Least-squares regression solves
+$X^\top X\,\hat\beta = X^\top y$ ([REGR-05], the multi-predictor sequel to [REGR-01]). To
+get a *unique* line you must invert $X^\top X$ — and whether that inverse exists, and
+whether the solution is a genuine minimum rather than a saddle, is precisely the question
+of whether $X^\top X$ is positive-definite. When it is only barely so, the regression is
+unstable (multicollinearity, [REGR-07] / [GEOM-26]); when it fails outright, there is no
+unique fit.
+
+**The Hessian.** The matrix of second derivatives of a loss function is symmetric
+([GEOM-24]). Whether a critical point of that loss is a minimum, a maximum, or a saddle is
+decided entirely by the definiteness of the Hessian there: positive-definite means a true
+local minimum, the thing every optimizer is hunting for. "Is this a minimum?" *is* "is the
+Hessian positive-definite?"
+
+In all three, the symmetric matrix is doing its job only when its quadratic form points the
+right way — strictly up. The history of the idea runs through exactly these problems.
+Gauss and Lagrange, working on quadratic forms in the early 1800s, needed to know when a
+form $\sum a_{ij} x_i x_j$ stays positive (so a least-squares problem has a real minimum);
+James Joseph Sylvester in the 1850s gave the determinant test that still bears his name;
+and the word *definite* entered the language precisely to mark a form that keeps a *fixed*
+sign rather than wandering between positive and negative. The vocabulary was invented to
+name the matrices you can trust.
+
+::: {.callout-tip title="You might be asked"}
+*"Why do we even need a special name — aren't symmetric matrices already nice?"* Symmetry
+guarantees *clean structure* (real eigenvalues, orthogonal axes), but says nothing about
+*sign*. A symmetric matrix can stretch some axes the right way and *flip* others — the
+quadratic-form surface is then a saddle, not a bowl, and a saddle has no minimum to find.
+Positive-definiteness is the extra condition that all the stretches point the same way
+(all eigenvalues positive), turning the saddle into a bowl. Symmetry makes the matrix
+*understandable*; positive-definiteness makes it *useful*. Almost every place a symmetric
+matrix appears in data science, you secretly need it to be positive-definite, and the
+half-failures (PSD but not PD, or "nearly" not PD) are where the real subtleties live.
+:::
+
+# Intuition before symbols: a bowl, a saddle, and a trough {#sec-intuition}
+
+Before any proof, fix the picture. A symmetric matrix $A$ produces a *surface* over the
+plane (or over $\mathbb{R}^n$): the height above the point $x$ is the single number
+$q(x) = x^\top A x$. [GEOM-17] established that this surface is always a (rotated, scaled)
+**quadric** — and that its shape is governed entirely by the *signs* of the eigenvalues.
+There are three shapes, and positive-definiteness is the name of the first.
+
+- **All eigenvalues positive — a bowl (paraboloid).** Every direction curves upward; the
+  surface has a single lowest point at the origin and rises away from it on all sides. This
+  is positive-definite.
+- **Eigenvalues of mixed sign — a saddle.** Some directions curve up, others down. There is
+  a critical point at the origin, but it is a *saddle*: a minimum along one axis and a
+  maximum along another. The matrix is **indefinite**.
+- **All eigenvalues $\ge 0$ but at least one equal to zero — a trough (degenerate bowl).**
+  The surface is flat along the zero-eigenvalue direction — a valley floor with no slope —
+  so the "minimum" is an entire line (or subspace) of equally-low points, not a unique
+  point. This is positive-*semi*definite but not definite, and it is the honest boundary
+  case we will keep returning to.
+
+@fig-three-surfaces draws all three. The whole article is a way of making the leap from
+"the surface looks like a bowl" to "the matrix is positive-definite" exact and checkable.
+
+```{python}
+#| label: fig-three-surfaces
+#| fig-cap: "The three faces of a symmetric quadratic form $q(x) = x^\\top A x$, decided by the signs of the eigenvalues. **Left (PD):** both eigenvalues positive — a bowl with one lowest point at the origin. **Middle (indefinite):** eigenvalues of opposite sign — a saddle, a minimum along one axis and a maximum along the perpendicular one. **Right (PSD, not PD):** one eigenvalue zero — a trough that is flat along an entire direction, so its minimum is a whole line, not a point. Positive-definiteness is precisely the leftmost shape."
+fig = plt.figure(figsize=(11.2, 3.5))
+g = np.linspace(-2, 2, 60)
+GX, GY = np.meshgrid(g, g)
+
+mats = [
+    (np.array([[2.0, 0.5], [0.5, 1.5]]), "PD: bowl\n(both $\\lambda>0$)"),
+    (np.array([[1.5, 0.0], [0.0, -1.0]]), "indefinite: saddle\n($\\lambda$ mixed sign)"),
+    (np.array([[1.0, -1.0], [-1.0, 1.0]]), "PSD not PD: trough\n(one $\\lambda=0$)"),
+]
+for i, (M, title) in enumerate(mats, 1):
+    ax = fig.add_subplot(1, 3, i, projection="3d")
+    Z = (M[0, 0] * GX**2 + (M[0, 1] + M[1, 0]) * GX * GY + M[1, 1] * GY**2)
+    ax.plot_surface(GX, GY, Z, cmap="viridis", alpha=0.9, linewidth=0, antialiased=True)
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel("$x_1$", fontsize=9); ax.set_ylabel("$x_2$", fontsize=9)
+    ax.set_zlabel("$q(x)$", fontsize=9)
+    ax.view_init(elev=22, azim=-60)
+plt.tight_layout()
+```
+
+Why should the *signs of the eigenvalues* control the shape? Because, as [GEOM-17] showed
+and we recall in @sec-form-in-eigenbasis, when you look at the surface in the eigenbasis
+the cross-terms vanish and it becomes $q = \lambda_1 z_1^2 + \lambda_2 z_2^2 + \cdots$ — a
+clean sum of upward parabolas, one per axis, each scaled by its eigenvalue. An upward
+parabola $\lambda z^2$ opens up when $\lambda > 0$, opens down when $\lambda < 0$, and goes
+flat when $\lambda = 0$. The whole surface is just these one-dimensional parabolas stacked
+along perpendicular axes, so its global shape is read straight off the signs. The rest of
+the article turns this picture into theorems and tests.
+
+# The formal development {#sec-formal}
+
+We begin with the definition that is stated in terms of the quadratic form, recall the one
+fact from [GEOM-17] that diagonalizes that form, and then prove the eigenvalue
+characterization — the workhorse of everything after.
+
+## The definition, and reading it carefully {#sec-definition}
+
+::: {#def-pd}
+**Definition (positive-definite and positive-semidefinite).** Let $A = A^\top$ be a real
+symmetric $n\times n$ matrix. Then $A$ is
+
+- **positive-definite (PD)** if $x^\top A x > 0$ for every nonzero vector $x \in
+  \mathbb{R}^n$;
+- **positive-semidefinite (PSD)** if $x^\top A x \ge 0$ for every $x \in \mathbb{R}^n$.
+
+The mirror notions are **negative-definite** ($x^\top A x < 0$ for all $x\neq 0$) and
+**negative-semidefinite** ($\le 0$); a symmetric matrix that is none of these — its form
+takes both signs — is **indefinite**.
+:::
+
+Three points of care, because the definition is more subtle than it looks.
+
+**We require $A$ symmetric.** For a general matrix the quadratic form $x^\top A x$ only ever
+"sees" the symmetric part of $A$: writing any square $A$ as $A = S + K$ with $S =
+\tfrac12(A + A^\top)$ symmetric and $K = \tfrac12(A - A^\top)$ anti-symmetric, the
+anti-symmetric piece contributes nothing, because $x^\top K x = (x^\top K x)^\top = x^\top
+K^\top x = -x^\top K x$ forces $x^\top K x = 0$. (The first equality holds because $x^\top
+K x$ is a $1\times1$ matrix, equal to its own transpose; the transpose rule $(x^\top K
+x)^\top = x^\top K^\top x$ is [GEOM-10]; and $K^\top = -K$ is what "anti-symmetric" means.)
+So definiteness is genuinely a property of symmetric matrices, and we lose nothing by
+assuming $A = A^\top$ from the start. This is the same "symmetrize without loss of
+generality" move that opened [GEOM-17].
+
+**The strict inequality must hold for *every* nonzero $x$ at once.** It is not enough for
+$x^\top A x$ to be positive at the standard basis vectors, or on average. PD is a statement
+about *all* directions simultaneously; a single bad direction (one $x$ with $x^\top A x \le
+0$) disqualifies it. This is exactly why testing one entry, or even all the diagonal
+entries, is not a test (we will see a matrix with all-positive diagonal that is still not
+PD in @sec-ex-edge).
+
+**The $x \neq 0$ exclusion is mandatory.** At $x = 0$ the form is $0^\top A 0 = 0$ for
+*every* matrix, so the origin can never witness positivity; that is why the PD definition
+quantifies over $x \neq 0$. The PSD definition allows $x^\top A x = 0$ at nonzero $x$ too —
+that slack is the entire difference between "bowl" (PD) and "trough" (PSD), and it is where
+the boundary cases live.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the diagonal of a positive-definite matrix always positive?"* Yes — and it is a free
+one-line consequence of the definition, worth knowing as a quick *necessary* (not
+sufficient) screen. Take $x = e_i$, the standard basis vector with a $1$ in slot $i$ and
+zeros elsewhere. Then $e_i^\top A e_i = A_{ii}$, the $i$-th diagonal entry, and PD demands
+this be $> 0$. So **every diagonal entry of a PD matrix is positive.** The converse fails
+badly: positive diagonal does *not* imply PD (the bad direction may be a diagonal one, not
+an axis). Use "any nonpositive diagonal entry $\Rightarrow$ not PD" as an instant
+disqualifier, never as a confirmation.
+:::
+
+## The quadratic form in the eigenbasis (recalled from GEOM-17) {#sec-form-in-eigenbasis}
+
+The single fact we import — and it is the hinge of the whole article — is how the spectral
+theorem simplifies a quadratic form. We restate it and re-derive it in three lines so the
+logic runs end to end here, even though its full treatment is [GEOM-17].
+
+Let $A = A^\top$ be symmetric. By the spectral theorem ([GEOM-16]) it factors as
+$$
+A = Q\Lambda Q^\top, \qquad Q^\top Q = I, \qquad
+\Lambda = \operatorname{diag}(\lambda_1,\dots,\lambda_n),
+$$ {#eq-spectral}
+with $Q$ orthogonal (columns an orthonormal eigenbasis $q_1,\dots,q_n$) and the
+$\lambda_k$ the real eigenvalues. Now feed a vector $x$ into the quadratic form and
+substitute @eq-spectral:
+$$
+x^\top A x = x^\top Q\Lambda Q^\top x = (Q^\top x)^\top \Lambda (Q^\top x),
+$$
+where the last step just regrouped, using $(Q^\top x)^\top = x^\top Q$ (the transpose rule
+$[GEOM-10]$). Define the **rotated coordinates**
+$$
+z = Q^\top x,
+$$ {#eq-rotated-coords}
+the coordinates of $x$ in the eigenbasis (each $z_k = q_k^\top x$ is a dot product, the
+orthonormal-coordinates fact of [GEOM-05]). Then $x^\top A x = z^\top \Lambda z$, and because
+$\Lambda$ is diagonal this last expression is just a weighted sum of squares:
+$$
+z^\top \Lambda z
+= \begin{bmatrix} z_1 & \cdots & z_n \end{bmatrix}
+\begin{bmatrix} \lambda_1 z_1 \\ \vdots \\ \lambda_n z_n \end{bmatrix}
+= \sum_{k=1}^{n} \lambda_k z_k^2 .
+$$ {#eq-diag-form}
+
+This is the result we will use over and over:
+
+$$
+\boxed{\; x^\top A x \;=\; \sum_{k=1}^{n} \lambda_k z_k^2, \qquad z = Q^\top x. \;}
+$$ {#eq-form-eigenbasis}
+
+In words: **in the eigenbasis, a quadratic form is a pure sum of squares, each weighted by
+an eigenvalue.** No cross-terms, no interaction — the eigenbasis is exactly the coordinate
+system in which the form decouples. Two facts about the change of coordinates $z = Q^\top
+x$ that we will need: it is a *bijection* (because $Q$ is invertible, with $x = Qz$), so $x$
+ranges over all of $\mathbb{R}^n$ exactly as $z$ does; and it is *length-preserving*, since
+$\|z\|^2 = z^\top z = (Q^\top x)^\top(Q^\top x) = x^\top Q Q^\top x = x^\top x = \|x\|^2$
+(using $QQ^\top = I$). In particular $x \neq 0 \iff z \neq 0$. We use this equivalence
+immediately.
+
+## The eigenvalue characterization {#sec-eigenvalue-char}
+
+Here is the theorem that converts the abstract, all-directions inequality of @def-pd into a
+finite, checkable list of $n$ numbers.
+
+::: {#thm-pd-eig}
+**Theorem (PD $\Leftrightarrow$ positive eigenvalues).** Let $A = A^\top$ be real
+symmetric with eigenvalues $\lambda_1,\dots,\lambda_n$ (all real, by the spectral theorem).
+Then
+
+1. $A$ is **positive-definite** $\iff$ every $\lambda_k > 0$;
+2. $A$ is **positive-semidefinite** $\iff$ every $\lambda_k \ge 0$.
+:::
+
+::: {.proof}
+We prove part 1 in full; part 2 is the identical argument with $>$ relaxed to $\ge$, noted
+at the end. Throughout we use @eq-form-eigenbasis: for every $x$, with $z = Q^\top x$,
+$$
+x^\top A x = \sum_{k=1}^{n}\lambda_k z_k^2 ,
+$$
+and the bijection $x \leftrightarrow z$ with $x\neq 0 \iff z\neq 0$ from
+@sec-form-in-eigenbasis.
+
+**($\Leftarrow$) Suppose every $\lambda_k > 0$; we show $A$ is PD.** Take any $x \neq 0$.
+Then $z = Q^\top x \neq 0$, so at least one coordinate $z_j \neq 0$, giving $z_j^2 > 0$.
+Each term $\lambda_k z_k^2$ in $\sum_k \lambda_k z_k^2$ is a positive eigenvalue times a
+nonnegative square, hence $\ge 0$; and the $j$-th term is $\lambda_j z_j^2 > 0$ strictly
+(positive times positive). A sum of nonnegative terms that includes a strictly positive
+one is strictly positive:
+$$
+x^\top A x = \sum_{k=1}^{n}\lambda_k z_k^2 \;\ge\; \lambda_j z_j^2 \;>\; 0 .
+$$
+Since this holds for every $x \neq 0$, $A$ is positive-definite by @def-pd.
+
+**($\Rightarrow$) Suppose $A$ is PD; we show every $\lambda_k > 0$.** This is the half where
+we *test the form in a cleverly chosen direction*. Fix any eigenvalue $\lambda_j$ and feed
+its own eigenvector $q_j$ (a column of $Q$) into the form. The rotated coordinates of $q_j$
+are $z = Q^\top q_j$, and because the columns of $Q$ are orthonormal,
+$$
+z_k = q_k^\top q_j = \begin{cases} 1 & k = j \\ 0 & k \neq j \end{cases},
+$$
+i.e. $z = e_j$, the $j$-th standard basis vector. Plugging into @eq-form-eigenbasis, only
+the $k=j$ term of the sum survives:
+$$
+q_j^\top A q_j = \sum_{k=1}^{n}\lambda_k (z_k)^2 = \lambda_j \cdot 1^2 = \lambda_j .
+$$
+But $q_j \neq 0$ (it is a unit vector), so PD demands $q_j^\top A q_j > 0$, i.e.
+$$
+\lambda_j = q_j^\top A q_j > 0 .
+$$
+Since $j$ was arbitrary, *every* eigenvalue is positive. This completes part 1.
+
+**Part 2 (PSD).** Replace "$>0$" by "$\ge 0$" throughout. The ($\Leftarrow$) direction now
+gives $x^\top A x = \sum_k \lambda_k z_k^2 \ge 0$ as a sum of nonnegative terms (each
+$\lambda_k \ge 0$). The ($\Rightarrow$) direction is identical: $q_j^\top A q_j =
+\lambda_j$, and PSD forces this to be $\ge 0$. $\qquad\blacksquare$
+:::
+
+The ($\Rightarrow$) half is worth pausing on, because it contains the recurring trick of
+this whole subject: **to learn about a quadratic form, probe it with the eigenvectors.**
+Feeding $q_j$ into $x^\top A x$ isolates a single eigenvalue, $q_j^\top A q_j = \lambda_j$.
+That identity — *the quadratic form evaluated on a unit eigenvector returns its
+eigenvalue* — is the bridge between the geometric definition and the algebraic test, and it
+is worth memorizing on its own.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me the fastest correct check that a symmetric matrix is positive-definite."* The
+honest answer depends on what you have. With the matrix in hand and modest size, **compute
+the eigenvalues and check they are all $> 0$** (@thm-pd-eig) — conceptually cleanest, and
+exactly what the theorem licenses. In production code the faster and numerically preferred
+test is **attempt a Cholesky factorization and see whether it succeeds** (@sec-cholesky-test),
+because Cholesky exists *if and only if* the matrix is PD and costs about half a general
+factorization. The classroom favorite is **Sylvester's criterion** — all leading principal
+minors positive (@sec-sylvester) — which is what you use when checking a small symbolic
+matrix by hand. Three tests, same property; knowing which to deploy when is the
+practitioner's judgment.
+:::
+
+## Three immediate payoffs: invertibility, a PD inverse, and a square root {#sec-payoffs}
+
+The eigenvalue characterization makes several "good matrix" properties fall out
+immediately. Each is a one- or two-line consequence, and each is a reason PD matrices are
+the ones you want.
+
+::: {#cor-invertible}
+**Corollary (a PD matrix is invertible, with a PD inverse).** If $A$ is positive-definite
+then $A$ is invertible, $A^{-1}$ exists, and $A^{-1}$ is itself positive-definite.
+:::
+
+::: {.proof}
+A symmetric matrix is invertible exactly when no eigenvalue is zero — because $\det A =
+\prod_k \lambda_k$ (the determinant is the product of the eigenvalues, [GEOM-14]), and a
+product is nonzero iff every factor is nonzero. Since $A$ is PD, every $\lambda_k > 0$, so
+none is zero and $\det A = \prod_k \lambda_k > 0 \neq 0$: $A$ is invertible.
+
+For the inverse, use the spectral form @eq-spectral. We claim $A^{-1} = Q\Lambda^{-1}
+Q^\top$, where $\Lambda^{-1} = \operatorname{diag}(1/\lambda_1,\dots,1/\lambda_n)$ (each
+$\lambda_k \neq 0$, so the reciprocals exist). Verify by multiplying, using $Q^\top Q = I$:
+$$
+(Q\Lambda Q^\top)(Q\Lambda^{-1}Q^\top)
+= Q\Lambda (Q^\top Q)\Lambda^{-1} Q^\top
+= Q\Lambda\Lambda^{-1}Q^\top
+= Q I Q^\top = QQ^\top = I .
+$$
+So $A^{-1} = Q\Lambda^{-1}Q^\top$ — and this is again a spectral decomposition, of a
+symmetric matrix whose eigenvalues are the $1/\lambda_k$. Each $1/\lambda_k > 0$ because
+each $\lambda_k > 0$, so by @thm-pd-eig the inverse is positive-definite. $\qquad\blacksquare$
+:::
+
+This is the corollary that makes covariance-based methods work: a positive-definite
+covariance can always be inverted (to form the *precision matrix* $\Sigma^{-1}$ that drives
+the Gaussian density and the Mahalanobis distance), and the inverse is again a genuine
+covariance-shaped object — symmetric and positive-definite.
+
+::: {#cor-sqrt}
+**Corollary (a PD matrix has a positive-definite square root).** If $A$ is
+positive-definite then there is a unique positive-definite symmetric matrix $A^{1/2}$ with
+$A^{1/2}A^{1/2} = A$.
+:::
+
+::: {.proof}
+Define $A^{1/2} = Q\Lambda^{1/2}Q^\top$ where $\Lambda^{1/2} =
+\operatorname{diag}(\sqrt{\lambda_1},\dots,\sqrt{\lambda_n})$; the real square roots exist
+because every $\lambda_k > 0$. It squares correctly, again using $Q^\top Q = I$:
+$$
+A^{1/2}A^{1/2}
+= Q\Lambda^{1/2}(Q^\top Q)\Lambda^{1/2}Q^\top
+= Q\Lambda^{1/2}\Lambda^{1/2}Q^\top
+= Q\Lambda Q^\top = A .
+$$
+It is symmetric ($(Q\Lambda^{1/2}Q^\top)^\top = Q\Lambda^{1/2}Q^\top$ since $\Lambda^{1/2}$
+is diagonal) and its eigenvalues are the $\sqrt{\lambda_k} > 0$, so by @thm-pd-eig it is
+positive-definite. (Uniqueness among *PD symmetric* square roots is true and is taken up in
+[GEOM-19]; here we only need existence.) $\qquad\blacksquare$
+:::
+
+The square root is the engine of **whitening**: if $\Sigma$ is a PD covariance, then
+$\Sigma^{-1/2} = Q\Lambda^{-1/2}Q^\top$ transforms correlated data into uncorrelated,
+unit-variance data — the move at the heart of generalized least squares ([REGR-11]) and of
+the Mahalanobis distance. [GEOM-19] develops this square root alongside the *triangular*
+Cholesky factor, which does a related job more cheaply; for now the point is simply that
+positive-definiteness is the exact condition under which "take the square root of a matrix"
+even makes sense (you cannot take a real square root of a negative eigenvalue).
+
+::: {.callout-warning title="Pitfall"}
+**Positive-definite is not the same as "all entries positive," and the two have nothing to
+do with each other.** The matrix $\bigl[\begin{smallmatrix} 1 & 2 \\ 2 & 1
+\end{smallmatrix}\bigr]$ has all-positive entries but eigenvalues $3$ and $-1$, so it is
+*indefinite* — its form is a saddle. Conversely $\bigl[\begin{smallmatrix} 2 & -1 \\ -1 & 2
+\end{smallmatrix}\bigr]$ has a negative entry but eigenvalues $1$ and $3$, so it is PD. Sign
+of *entries* and sign of *eigenvalues* are unrelated; definiteness is always about the
+eigenvalues (equivalently, the quadratic form), never the entry signs. The only entrywise
+fact that holds is the necessary screen from earlier: the *diagonal* entries of a PD matrix
+must be positive.
+:::
+
+## Why $A^\top A$ is the canonical PSD matrix {#sec-gram}
+
+We now prove the single fact that explains why positive-(semi)definiteness is *everywhere*
+in data science rather than an occasional curiosity. The matrices that arise from data are
+overwhelmingly of the form $A^\top A$ — the **Gram matrix** of $A$'s columns ([GEOM-10]) —
+and these are *automatically* PSD, with definiteness governed by a clean rank condition.
+
+::: {#thm-gram}
+**Theorem (the Gram matrix is PSD, and PD iff full column rank).** Let $A$ be any real
+$m\times n$ matrix (not necessarily square or symmetric). Then $A^\top A$ is symmetric and
+positive-semidefinite. Moreover, $A^\top A$ is positive-*definite* if and only if the
+columns of $A$ are linearly independent (equivalently, $A$ has full column rank $n$).
+:::
+
+::: {.proof}
+**Symmetric.** $(A^\top A)^\top = A^\top (A^\top)^\top = A^\top A$ by the transpose rules
+$(MN)^\top = N^\top M^\top$ and $(M^\top)^\top = M$ ([GEOM-10]). So $A^\top A$ equals its
+own transpose.
+
+**PSD — the key identity.** Take any $x \in \mathbb{R}^n$ and compute its quadratic form.
+Group the product as $(A^\top A)$ acting between $x^\top$ and $x$, then re-associate:
+$$
+x^\top (A^\top A) x = (x^\top A^\top)(A x) = (Ax)^\top (Ax) = \|Ax\|^2 .
+$$
+The middle step used $(Ax)^\top = x^\top A^\top$ ([GEOM-10]); the last is the definition of
+the squared norm, $v^\top v = \|v\|^2$ ([GEOM-04]). So the quadratic form of $A^\top A$ at
+$x$ is **literally the squared length of the vector $Ax$** — and a squared length is never
+negative:
+$$
+x^\top (A^\top A) x = \|Ax\|^2 \ge 0 \quad\text{for every } x .
+$$ {#eq-gram-norm}
+That is precisely PSD by @def-pd. This is the cleanest derivation in the article, and the
+identity $x^\top A^\top A x = \|Ax\|^2$ is worth carrying: *the Gram matrix's quadratic form
+measures how long $A$ makes the input.*
+
+**PD $\iff$ full column rank.** From @eq-gram-norm, $A^\top A$ fails to be PD exactly when
+the inequality is *not strict* for some nonzero $x$ — that is, when there is an $x \neq 0$
+with
+$$
+\|Ax\|^2 = 0 \quad\Longleftrightarrow\quad Ax = 0
+$$
+(a vector has zero length iff it is the zero vector, [GEOM-04]). So:
+
+- If the columns of $A$ are **independent**, the only solution of $Ax = 0$ is $x = 0$ (that
+  is the definition of independence — no nontrivial combination of the columns vanishes,
+  [GEOM-03]). Then for every $x \neq 0$ we have $Ax \neq 0$, hence $\|Ax\|^2 > 0$, hence
+  $x^\top A^\top A x > 0$: **$A^\top A$ is PD.**
+- If the columns are **dependent**, there is some $x \neq 0$ with $Ax = 0$, and then
+  $x^\top A^\top A x = \|Ax\|^2 = 0$ with $x \neq 0$: the form hits zero off the origin, so
+  **$A^\top A$ is PSD but not PD.**
+
+The two phrasings in the theorem statement are the same condition: "$A$ has full column
+rank $n$" is *defined* as "the $n$ columns of $A$ are linearly independent" ([GEOM-12]), so
+the rank-$n$ case is exactly the independent-columns case just handled, and the
+rank-deficient case is exactly the dependent-columns case. $\qquad\blacksquare$
+:::
+
+This theorem is why the three motivating objects of @sec-why are PD or PSD without anyone
+having to check eigenvalues by hand:
+
+- **Covariance.** The sample covariance is $\Sigma = \tfrac{1}{n-1}X_c^\top X_c$ for the
+  centered data matrix $X_c$, which is $\tfrac{1}{n-1}$ times a Gram matrix — automatically
+  PSD by @thm-gram, and PD exactly when the centered features are linearly independent (no
+  feature is an exact linear combination of the others). A degenerate, redundant feature set
+  is *precisely* what makes a covariance only PSD, the boundary case we explore in
+  @sec-ex-edge.
+- **Normal equations.** $X^\top X$ is a Gram matrix, PSD always, and PD exactly when the
+  design matrix $X$ has full column rank — which is the condition for a *unique* least-squares
+  fit. When predictors are collinear, $X^\top X$ drops to merely PSD (singular), $\det = 0$,
+  and there is no unique $\hat\beta$.
+
+::: {.callout-tip title="You might be asked"}
+*"Is every positive-semidefinite matrix of the form $A^\top A$?"* Yes — and the square root
+corollary basically proves it. If $M$ is symmetric PSD, then by the PSD analogue of
+@cor-sqrt it has a symmetric PSD square root $M^{1/2}$ (real, since all $\lambda_k \ge 0$),
+and $M = M^{1/2}M^{1/2} = (M^{1/2})^\top M^{1/2}$ — so $M = A^\top A$ with $A = M^{1/2}$.
+The Gram form and the PSD property are therefore two descriptions of the same class of
+matrices. That equivalence is the linear-algebra reason the SVD and PCA, which factor data
+matrices through $A^\top A$, are so closely tied to the spectral theory of PSD matrices
+([GEOM-20]).
+:::
+
+# Three tests for positive-definiteness {#sec-tests}
+
+The eigenvalue characterization (@thm-pd-eig) is the *meaning* of positive-definiteness,
+but in practice you reach for whichever test fits the situation. We give the three standard
+ones, derive the part that needs deriving, and say plainly when to use each.
+
+## Test 1 — the eigenvalues {#sec-eig-test}
+
+**Compute the eigenvalues; $A$ is PD iff all are $> 0$, PSD iff all are $\ge 0$.** This is
+@thm-pd-eig verbatim. It is the conceptually correct test and the one that *explains* the
+property, and for small or moderate matrices it is what you would do. Its cost is that of a
+full symmetric eigendecomposition (a `numpy.linalg.eigvalsh` call), which is more work than
+strictly necessary if all you want is a yes/no answer. Numerically, beware that an
+eigenvalue computed as a tiny negative number like $-10^{-15}$ on a matrix that is
+mathematically PSD is almost always *round-off*, not a real negative direction — at the
+exact PD/PSD boundary, finite-precision arithmetic cannot tell $0$ from a hair below it,
+which is itself the practical lesson of @sec-ex-edge.
+
+## Test 2 — Sylvester's criterion (leading principal minors) {#sec-sylvester}
+
+For checking a small matrix *by hand* — especially a symbolic one — the determinant test is
+often fastest because it needs no eigenvalues at all.
+
+::: {#thm-sylvester}
+**Theorem (Sylvester's criterion).** A symmetric matrix $A$ is positive-definite if and
+only if all of its **leading principal minors** are positive. The $k$-th leading principal
+minor $D_k$ is the determinant of the top-left $k\times k$ block of $A$:
+$$
+D_1 = A_{11}, \quad
+D_2 = \det\!\begin{bmatrix} A_{11} & A_{12} \\ A_{21} & A_{22}\end{bmatrix}, \quad \dots,
+\quad D_n = \det A .
+$$
+$A$ is PD $\iff D_1 > 0,\ D_2 > 0,\ \dots,\ D_n > 0$.
+:::
+
+We do not re-derive the general criterion from scratch (its cleanest proof rides on the
+Cholesky construction of [GEOM-19], and we flag that rather than bury a long induction
+here). But the $2\times 2$ case is short, illuminating, and the one you will actually use by
+hand, so we prove *it* completely — and it already shows why the test works.
+
+::: {#lem-sylvester2}
+**Lemma (Sylvester for $2\times 2$).** A symmetric $A = \bigl[\begin{smallmatrix} a & b \\
+b & c \end{smallmatrix}\bigr]$ is positive-definite if and only if $a > 0$ and $ac - b^2 >
+0$.
+:::
+
+::: {.proof}
+Write out the quadratic form for $x = (x_1, x_2)^\top$ and **complete the square** — the
+same Calc-I-level algebra used to graph a parabola:
+$$
+x^\top A x = a x_1^2 + 2b x_1 x_2 + c x_2^2 .
+$$
+(The cross-term is $2b x_1 x_2$ because the symmetric off-diagonal contributes $b$ twice,
+from $A_{12}$ and $A_{21}$.) Assume first $a > 0$, so we may factor it out of the $x_1$
+terms and complete the square in $x_1$:
+$$
+x^\top A x
+= a\Bigl(x_1^2 + \tfrac{2b}{a}x_1 x_2\Bigr) + c x_2^2
+= a\Bigl(x_1 + \tfrac{b}{a}x_2\Bigr)^2 - a\cdot\tfrac{b^2}{a^2}x_2^2 + c x_2^2 ,
+$$
+where the subtracted term $-a(b/a)^2 x_2^2 = -(b^2/a)x_2^2$ undoes the cross-term we added
+inside the square. Collecting the $x_2^2$ terms over the common denominator $a$:
+$$
+x^\top A x = a\Bigl(x_1 + \tfrac{b}{a}x_2\Bigr)^2 + \frac{ac - b^2}{a}\,x_2^2 .
+$$ {#eq-completed-square}
+Now read off both directions.
+
+**($\Leftarrow$)** If $a > 0$ and $ac - b^2 > 0$, then both coefficients in
+@eq-completed-square are positive ($a > 0$ and $(ac-b^2)/a > 0$), so $x^\top A x$ is a sum
+of two nonnegative squares. It is zero only if *both* squares vanish: $x_2 = 0$ (from the
+second term) and then $x_1 + (b/a)\cdot 0 = x_1 = 0$ (from the first). So $x^\top A x = 0$
+forces $x = 0$, i.e. $x^\top A x > 0$ for all $x \neq 0$: $A$ is PD.
+
+**($\Rightarrow$)** Suppose $A$ is PD. Testing $x = e_1 = (1,0)^\top$ gives $a = e_1^\top A
+e_1 > 0$, our first condition. Now choose the direction that isolates the second term: take
+$x_2 = 1$ and $x_1 = -b/a$ (which kills the first square). Then @eq-completed-square gives
+$$
+x^\top A x = a\cdot 0 + \frac{ac-b^2}{a}\cdot 1 = \frac{ac-b^2}{a} ,
+$$
+and PD forces this to be $> 0$; since $a > 0$, that means $ac - b^2 > 0$, the second
+condition. $\qquad\blacksquare$
+:::
+
+Notice the proof *is* the geometry: completing the square rewrites the form as a sum of
+squares with the leading minors as coefficients, so "all minors positive" is just "all the
+squared-coefficient stretches are positive." Sylvester's test is fast by hand and needs no
+eigenvalue solving, but it has two cautions: it is a test for **strict** PD only (the minor
+version for PSD requires checking *all* principal minors, not just the leading ones, and is
+fiddly), and computing $n$ growing determinants is numerically poor for large matrices.
+
+::: {.callout-tip title="You might be asked"}
+*"Can I check PSD by relaxing Sylvester to 'all leading principal minors $\ge 0$'?"* **No —
+this is a classic trap.** The matrix $A = \bigl[\begin{smallmatrix} 0 & 0 \\ 0 & -1
+\end{smallmatrix}\bigr]$ has leading minors $D_1 = 0 \ge 0$ and $D_2 = 0 \ge 0$, yet it is
+*not* PSD: $x = (0,1)^\top$ gives $x^\top A x = -1 < 0$. For PSD you must check **every
+principal minor** (all $\binom{n}{k}$ of them, from every subset of rows/columns, not just
+the top-left ones), or — far better — just check the eigenvalues are $\ge 0$. The
+leading-minor shortcut is valid only for *strict* PD. Interviewers love this one because
+the natural-looking generalization is wrong.
+:::
+
+## Test 3 — "a Cholesky factor exists" {#sec-cholesky-test}
+
+The test used inside numerical libraries is the most efficient of all: **try to factor $A =
+L L^\top$ with $L$ lower-triangular and positive diagonal (the Cholesky factorization); the
+factorization runs to completion if and only if $A$ is positive-definite.** The construction
+proceeds entry by entry, and at each step it must take the square root of a quantity that is
+positive exactly when the matrix is PD — so a non-PD matrix is caught the instant that
+quantity goes nonpositive, and the algorithm reports failure. We only *flag* this test here;
+the full constructive derivation of $L$, and the proof that its existence is equivalent to
+positive-definiteness, is the subject of [GEOM-19]. The reason it is the practitioner's
+default is cost and robustness: Cholesky is about twice as fast as a general factorization,
+and "did the factorization succeed?" is a clean, stable yes/no that does not require
+interpreting a near-zero eigenvalue.
+
+::: {.callout-tip title="You might be asked"}
+*"In code, how would you actually test positive-definiteness — and why not just look at the
+determinant?"* Attempt a Cholesky factorization (`numpy.linalg.cholesky`) and catch the
+failure: success means PD, a `LinAlgError` means not PD. **Do not** test PD by checking
+$\det A > 0$ — the determinant is the *product* of eigenvalues, so it is positive whenever
+an *even* number of eigenvalues are negative. The indefinite matrix
+$\bigl[\begin{smallmatrix} -1 & 0 \\ 0 & -1 \end{smallmatrix}\bigr]$ has $\det = +1 > 0$ but
+is negative-definite — a positive determinant is fully consistent with the matrix being a
+saddle or an upside-down bowl. The determinant tells you about invertibility, not
+definiteness.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the tests on real, messy matrices — never one rigged to flatter the property. The
+first is done entirely by hand so you watch all three tests agree; the second is the
+covariance matrix of a genuine dataset; and the third sits right at the PSD boundary, the
+honest edge where the property fails and tells us something true about the data.
+
+## Example 1 — one matrix, all three tests, by hand {#sec-ex-byhand}
+
+Take the symmetric matrix
+$$
+A = \begin{bmatrix} 2 & -1 \\ -1 & 2 \end{bmatrix}, \qquad A = A^\top .
+$$
+We verify it is PD three independent ways.
+
+**Test 2 (Sylvester), fastest by hand.** The leading minors are
+$$
+D_1 = A_{11} = 2 > 0, \qquad
+D_2 = \det A = (2)(2) - (-1)(-1) = 4 - 1 = 3 > 0 .
+$$
+Both positive, so by @thm-sylvester (or @lem-sylvester2 with $a=2,\ c=2,\ b=-1$:
+$a>0$ and $ac-b^2 = 3 > 0$) $A$ is **positive-definite**.
+
+**Test 1 (eigenvalues).** The characteristic polynomial ([GEOM-14]) is
+$$
+\det(A - \lambda I) = (2-\lambda)^2 - (-1)(-1) = (2-\lambda)^2 - 1 ,
+$$
+so $(2-\lambda)^2 = 1$, $2 - \lambda = \pm 1$, giving $\lambda_1 = 3$ and $\lambda_2 = 1$.
+Both positive — PD confirmed, and consistent with $D_2 = \det A = \lambda_1\lambda_2 = 3$
+and $\operatorname{tr}A = \lambda_1 + \lambda_2 = 4$.
+
+**Test 3 (Cholesky), by hand.** Seek lower-triangular $L = \bigl[\begin{smallmatrix} \ell_{11}
+& 0 \\ \ell_{21} & \ell_{22}\end{smallmatrix}\bigr]$ with $LL^\top = A$. Multiplying out,
+$$
+LL^\top = \begin{bmatrix} \ell_{11}^2 & \ell_{11}\ell_{21} \\
+\ell_{11}\ell_{21} & \ell_{21}^2 + \ell_{22}^2 \end{bmatrix}
+= \begin{bmatrix} 2 & -1 \\ -1 & 2 \end{bmatrix} .
+$$
+Match entries top-left to bottom-right: $\ell_{11}^2 = 2 \Rightarrow \ell_{11} = \sqrt 2$
+(real, positive — the first place PD is needed); then $\ell_{11}\ell_{21} = -1 \Rightarrow
+\ell_{21} = -1/\sqrt 2$; finally $\ell_{21}^2 + \ell_{22}^2 = 2 \Rightarrow \ell_{22}^2 = 2
+- \tfrac12 = \tfrac32 \Rightarrow \ell_{22} = \sqrt{3/2}$ (real, positive again). The
+factorization completed with real positive diagonal, so $A$ is PD. Had any of those
+under-the-root quantities been negative, the algorithm would have stopped — that is exactly
+how Cholesky detects non-PD matrices.
+
+All three tests agree. @fig-ex-byhand draws the bowl and confirms numerically.
+
+```{python}
+#| label: fig-ex-byhand
+#| fig-cap: "The hand-worked PD matrix $A = \\bigl[\\begin{smallmatrix}2&-1\\\\-1&2\\end{smallmatrix}\\bigr]$. **Left:** the quadratic-form surface $q(x)=x^\\top A x$ is a bowl opening upward in every direction, with its single lowest point at the origin. **Right:** the level sets $q(x)=c$ are concentric ellipses whose axes lie along the eigenvectors $q_1$ (red, eigenvalue $\\lambda_1=3$, the *steeper* direction, so the shorter ellipse axis) and $q_2$ (green, $\\lambda_2=1$, the gentler direction, longer axis). All eigenvalues positive $\\Leftrightarrow$ bowl $\\Leftrightarrow$ positive-definite."
+A = np.array([[2.0, -1.0], [-1.0, 2.0]])
+w, V = np.linalg.eigh(A)                  # ascending
+order = np.argsort(w)[::-1]; w, V = w[order], V[:, order]
+q1, q2 = V[:, 0], V[:, 1]
+
+g = np.linspace(-2.2, 2.2, 80)
+GX, GY = np.meshgrid(g, g)
+Z = A[0, 0]*GX**2 + 2*A[0, 1]*GX*GY + A[1, 1]*GY**2
+
+fig = plt.figure(figsize=(10.6, 4.4))
+axL = fig.add_subplot(1, 2, 1, projection="3d")
+axL.plot_surface(GX, GY, Z, cmap="viridis", alpha=0.92, linewidth=0, antialiased=True)
+axL.scatter([0], [0], [0], color=HILITE, s=45, depthshade=False)
+axL.set_title(r"bowl: $q(x)=x^\top A x$")
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$"); axL.set_zlabel("$q$")
+axL.view_init(elev=24, azim=-58)
+
+axR = fig.add_subplot(1, 2, 2)
+axR.set_aspect("equal")
+cs = axR.contour(GX, GY, Z, levels=[0.5, 1.5, 3, 5, 8], colors=VEC, linewidths=1.3)
+axR.clabel(cs, inline=True, fontsize=8)
+draw_vec(axR, (0, 0), tuple(q1), color=HILITE, label=r"$q_1\ (\lambda=3)$", label_offset=(0.0, 0.35))
+draw_vec(axR, (0, 0), tuple(q2), color=ACCENT, label=r"$q_2\ (\lambda=1)$", label_offset=(0.5, 0.1))
+axR.axhline(0, color=GREY, lw=0.6, alpha=0.4); axR.axvline(0, color=GREY, lw=0.6, alpha=0.4)
+axR.set_xlim(-2.4, 2.4); axR.set_ylim(-2.4, 2.4)
+axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$")
+axR.set_title("level sets are ellipses along eigenvectors")
+axR.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+print("eigenvalues:", np.round(np.sort(np.linalg.eigvalsh(A))[::-1], 6), " (all > 0  => PD)")
+print("leading minors: D1 =", A[0, 0], " D2 = det A =", round(np.linalg.det(A), 6))
+L = np.linalg.cholesky(A)
+print("Cholesky L =\n", np.round(L, 4), "\n L L^T == A:", np.allclose(L @ L.T, A))
+```
+
+## Example 2 — a covariance matrix is positive-definite {#sec-ex-covariance}
+
+The PD matrix a data scientist meets most often is a **covariance matrix** of full-rank
+data. We build one from three genuinely correlated features — height, weight, and a derived
+"build" score — and confirm, via @thm-gram, that it is PD because the features are
+independent (no one is an exact linear combination of the others). This is the matrix you
+would invert to form a Gaussian density or a Mahalanobis distance, so its
+positive-definiteness is exactly what makes those constructions legal.
+
+```{python}
+#| label: fig-covariance
+#| fig-cap: "A full-rank covariance matrix is positive-definite. **Left:** the $3\\times3$ sample covariance $\\Sigma = \\tfrac{1}{n-1}X_c^\\top X_c$ of three correlated features, a Gram matrix and so PSD by construction; because the features are linearly independent it is strictly PD. **Right:** its three eigenvalues, all positive — the variances along the three perpendicular principal axes of the data cloud. All bars above the zero line is the visual signature of positive-definiteness."
+rng = np.random.default_rng(11)
+n = 400
+height = rng.normal(170, 9, n)                      # cm
+weight = 0.9 * height - 90 + rng.normal(0, 6, n)    # correlated with height
+build  = 0.5 * weight - 0.2 * height + rng.normal(0, 4, n)  # correlated, but independent column
+X = np.column_stack([height, weight, build])
+Xc = X - X.mean(axis=0)
+Sigma = (Xc.T @ Xc) / (n - 1)
+evals = np.sort(np.linalg.eigvalsh(Sigma))[::-1]
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 3.8))
+im = axL.imshow(Sigma, cmap="viridis")
+axL.set_xticks(range(3)); axL.set_yticks(range(3))
+axL.set_xticklabels(["height", "weight", "build"], fontsize=8, rotation=30)
+axL.set_yticklabels(["height", "weight", "build"], fontsize=8)
+for i in range(3):
+    for j in range(3):
+        axL.text(j, i, f"{Sigma[i, j]:.0f}", ha="center", va="center",
+                 color="white", fontsize=9)
+axL.set_title(r"covariance $\Sigma = \frac{1}{n-1}X_c^\top X_c$")
+fig.colorbar(im, ax=axL, fraction=0.046, pad=0.04)
+
+axR.bar(range(3), evals, color=[HILITE, ACCENT, VEC])
+axR.axhline(0, color=GREY, lw=1.0)
+axR.set_xticks(range(3)); axR.set_xticklabels([r"$\lambda_1$", r"$\lambda_2$", r"$\lambda_3$"])
+axR.set_ylabel("eigenvalue (variance along axis)")
+axR.set_title("all eigenvalues > 0  =>  PD")
+plt.tight_layout()
+
+print("eigenvalues:", np.round(evals, 3), " (all > 0 => positive-definite)")
+try:
+    np.linalg.cholesky(Sigma)
+    print("Cholesky succeeded => positive-definite (Test 3 agrees)")
+except np.linalg.LinAlgError:
+    print("Cholesky failed => not PD")
+```
+
+The covariance has all-positive eigenvalues and a successful Cholesky — PD by every test.
+Geometrically (the reading from [GEOM-16]) the eigenvalues are the variances along the
+cloud's perpendicular principal axes; positive-definiteness says the cloud has genuine
+spread in *every* direction, no flattened-to-a-pancake axis. That last phrase is the hinge
+to the edge case: what happens when the cloud *does* flatten?
+
+## Example 3 — the edge of applicability: a singular covariance (PSD, not PD) {#sec-ex-edge}
+
+Here is the honest boundary the constitution demands, and it is not contrived — it is the
+single most common way positive-definiteness fails in practice. Suppose one feature is an
+exact linear combination of the others: a "total" column that is the sum of two component
+columns, or a unit conversion duplicated (weight in kilograms *and* in pounds), or — the
+canonical regression sin — a set of one-hot dummy variables that sum to the all-ones column.
+Then the data cloud is genuinely *flat* in one direction, the columns are linearly
+dependent, and by @thm-gram the covariance (and the normal-equations matrix $X^\top X$) is
+PSD **but not PD**: it has a zero eigenvalue, is singular, and cannot be inverted. The
+Gaussian density and the unique least-squares fit both cease to exist.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability: a redundant feature kills positive-definiteness. We take two real features and append a third, $f_3 = f_1 + f_2$ (an exact 'total' column). The covariance is now PSD but **not** PD. **Left:** its eigenvalues — two positive, and one that is *zero* to machine precision (the flat direction $f_1 + f_2 - f_3 = 0$). **Right:** the data cloud projected onto the plane of $f_1, f_2$ and the perpendicular contribution of $f_3$: the points lie exactly on a tilted plane (zero thickness in one direction), the geometric meaning of the zero eigenvalue. Cholesky fails; the matrix has no inverse."
+rng = np.random.default_rng(4)
+n = 300
+f1 = rng.normal(0, 2, n)
+f2 = 0.6 * f1 + rng.normal(0, 1.5, n)
+f3 = f1 + f2                                  # exact linear dependence
+X = np.column_stack([f1, f2, f3])
+Xc = X - X.mean(axis=0)
+Sigma = (Xc.T @ Xc) / (n - 1)
+evals = np.sort(np.linalg.eigvalsh(Sigma))[::-1]
+
+fig = plt.figure(figsize=(10.2, 4.0))
+axL = fig.add_subplot(1, 2, 1)
+axL.bar(range(3), evals, color=[HILITE, ACCENT, GREY])
+axL.axhline(0, color=GREY, lw=1.0)
+axL.set_xticks(range(3)); axL.set_xticklabels([r"$\lambda_1$", r"$\lambda_2$", r"$\lambda_3$"])
+axL.set_ylabel("eigenvalue")
+axL.set_title("one eigenvalue is zero  =>  PSD, not PD")
+axL.annotate("flat direction\n$\\lambda_3\\approx 0$", xy=(2, 0), xytext=(1.2, evals[0]*0.4),
+             fontsize=9, color=GREY, arrowprops=dict(arrowstyle="->", color=GREY))
+
+axR = fig.add_subplot(1, 2, 2, projection="3d")
+axR.scatter(Xc[:, 0], Xc[:, 1], Xc[:, 2], s=10, color=PALE, alpha=0.7)
+axR.set_xlabel("$f_1$", fontsize=9); axR.set_ylabel("$f_2$", fontsize=9)
+axR.set_zlabel("$f_3$", fontsize=9)
+axR.set_title("cloud lies on a plane (zero thickness)")
+axR.view_init(elev=18, azim=-70)
+plt.tight_layout()
+
+print("eigenvalues:", np.round(evals, 8), "  (smallest ~ 0 => singular, PSD not PD)")
+print("det Sigma =", f"{np.linalg.det(Sigma):.3e}", " (~0 => not invertible)")
+try:
+    np.linalg.cholesky(Sigma)
+    print("Cholesky succeeded")
+except np.linalg.LinAlgError as e:
+    print("Cholesky FAILED:", e, " => matrix is not positive-definite")
+```
+
+This is the failure that matters most, because it is *informative*, not a numerical
+accident. A zero eigenvalue in a covariance or $X^\top X$ is the matrix telling you that
+your features carry redundant information — the cloud has no spread along $f_1 + f_2 - f_3$,
+because that combination is identically zero. The fixes are modeling fixes, and which one
+you reach for is real practitioner judgment:
+
+- **Drop the redundant feature** (the cleanest fix when the dependence is exact and known —
+  e.g. remove one dummy from a complete one-hot set, the "drop a level" rule of regression).
+- **Regularize**: add a small positive multiple of the identity, $X^\top X + \lambda I$,
+  which shifts every eigenvalue up by $\lambda$ and so *guarantees* positive-definiteness
+  (every $\lambda_k + \lambda > 0$). This is **ridge regression** ([REGR-14]) seen from the
+  linear-algebra side, and it is exactly why ridge always has a unique solution even when
+  OLS does not.
+- **Use a pseudoinverse** ([GEOM-21]), which gives the minimum-norm solution on the
+  non-flat subspace and simply ignores the flat direction.
+
+::: {.callout-warning title="Pitfall"}
+**"Nearly singular" is more dangerous than "singular," and definiteness will not warn you.**
+The exact dependence above produces a clean zero eigenvalue you can catch. The realistic
+case is a *tiny* positive eigenvalue — features that are highly but not perfectly collinear.
+The matrix is then *technically* positive-definite (Cholesky succeeds, all eigenvalues
+$>0$), so every PD test says "fine," yet it is so close to the boundary that inverting it
+amplifies noise enormously: the bowl is a near-flat trough, and its bottom slides wildly
+under tiny data changes. Positive-definiteness is a *binary* yes/no; it cannot see *how
+close* to the cliff you are. The quantity that measures that distance is the **condition
+number** $\kappa = \lambda_{\max}/\lambda_{\min}$ ([GEOM-26]) — a PD matrix with
+$\kappa = 10^{12}$ passes every test in this article and is still numerically useless. Pass
+the definiteness test *and* check the condition number.
+:::
+
+# Failure modes and the honest scope {#sec-failure}
+
+Positive-definiteness is a clean property, but knowing *when its presence or absence is
+telling you something real* is the practitioner skill. We collect the boundaries.
+
+**When the property genuinely holds, lean on it fully.** A PD matrix gives you everything at
+once: a unique minimizer of its quadratic form, an invertible (and PD) inverse, a real
+square root, a Cholesky factor for fast and stable solves, and a guarantee that any
+optimization built on it (as a Hessian) is locally convex with a true minimum. This is why
+so much of applied mathematics works hard to *arrange* a PD matrix — centering data so the
+covariance is well-conditioned, adding ridge so $X^\top X + \lambda I$ is PD, choosing
+parameterizations so the Hessian is PD near the optimum.
+
+**When it is only PSD (a zero eigenvalue), the failure is structural, not numerical.** As in
+@sec-ex-edge, a genuine zero eigenvalue means an exact redundancy or a flat direction in the
+data. The right response is to fix the model (drop, regularize, or pseudoinvert), not to
+nudge the matrix and pretend. A PSD-not-PD covariance is a *valid* object (it still
+describes a degenerate-but-real distribution supported on a lower-dimensional subspace) —
+what fails is *inversion*, so any method that needs $\Sigma^{-1}$ must be replaced by one
+that works on the subspace.
+
+**When it is indefinite, your modeling assumption is probably wrong.** A symmetric matrix
+that was *supposed* to be PD but comes out indefinite (some negative eigenvalue) is a red
+flag. A covariance estimated by a shortcut (pairwise-complete correlations, or a shrinkage
+gone wrong) can come out indefinite — which is nonsense for a covariance and signals the
+estimator is broken; the fix is a proper PSD estimator or nearest-PSD projection. A Hessian
+that is indefinite at a point you hoped was a minimum is telling you the truth: that point
+is a *saddle*, and the optimizer must keep moving. Do not "repair" an indefinite matrix by
+flipping signs of eigenvalues unless you understand what the negative directions mean — they
+are usually information, not error.
+
+::: {.callout-tip title="You might be asked"}
+*"When is positive-definiteness the right thing to require, and when are you forcing it
+where it doesn't belong?"* The summary you should be able to recite:
+
+- **Require it** for covariance matrices you intend to invert (Gaussian density, Mahalanobis
+  distance, GLS whitening), for $X^\top X$ when you want a unique least-squares fit, and for
+  a Hessian when you are claiming a local minimum. In these, PD is not a convenience — it is
+  the existence condition for the answer.
+- **Settle for PSD** when the object is genuinely degenerate and you only need the quadratic
+  form's value or a projection, not an inverse (rank-deficient designs handled by a
+  pseudoinverse, PCA on data with redundant features, covariance of a deterministic linear
+  combination).
+- **Do not force it** when the matrix is honestly indefinite and the negative directions
+  carry meaning — a saddle in a loss surface, a curvature that genuinely bends down. Forcing
+  PD there (e.g. clipping negative eigenvalues to zero) discards real structure. The honest
+  move is to understand the negative directions, not to legislate them away.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. To *test* positive-definiteness
+in code, the idiom is to attempt a Cholesky factorization and catch the exception:
+`numpy.linalg.cholesky(A)` succeeds iff $A$ is PD (to numerical tolerance), and is the
+fastest reliable test. To *use* a PD matrix, never form $A^{-1}$ explicitly when you only
+need to solve $A x = b$ — factor once with Cholesky and solve the two triangular systems
+(`scipy.linalg.cho_factor` / `cho_solve`), which is faster and far more numerically stable
+than inversion ([GEOM-26]'s "solve, don't invert"). To *inspect* the property and its
+margin, `numpy.linalg.eigvalsh(A)` returns the (sorted, real) eigenvalues; check the
+smallest is positive *and* compute $\kappa = \lambda_{\max}/\lambda_{\min}$ to gauge how
+close to the boundary you are. Every one of these routines is doing exactly the algebra of
+this article — the eigenvalues of @thm-pd-eig, the Cholesky existence of @sec-cholesky-test
+— and you now know what each is checking and why.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-16 *Symmetric Matrices and the Spectral Theorem*]** (which gave us
+$A = Q\Lambda Q^\top$) and **[GEOM-17 *Quadratic Forms*]** (which gave us $x^\top A x =
+\sum_k \lambda_k z_k^2$). This article asked the one question those left open — *are the
+stretches positive?* — and named the answer positive-definiteness, the precise algebraic
+form of "the surface is a bowl." From here:
+
+- **[GEOM-19 *Cholesky and the Matrix Square Root*]** — the factorizations a PD matrix
+  *admits*: $A = LL^\top$ (triangular, the basis of Test 3) and $A^{1/2} = Q\Lambda^{1/2}
+  Q^\top$ (symmetric, the whitening tool of @cor-sqrt). Their existence is equivalent to the
+  positive-definiteness proved here.
+- **[GEOM-24 *The Hessian and the Curvature of a Surface*]** and **[GEOM-25 *The Gradient
+  and Hessian of a Quadratic Form*]** — where definiteness becomes the second-derivative
+  test: a PD Hessian means a genuine local minimum, the exact statement that the loss surface
+  is locally a bowl.
+- **[GEOM-26 *Condition Number and Numerical Stability*]** — the refinement the Pitfall in
+  @sec-ex-edge demanded: definiteness is binary, but $\kappa = \lambda_{\max}/\lambda_{\min}$
+  measures *how* definite, and that number predicts whether a PD problem is actually solvable
+  in floating point.
+
+Downstream of the track, this is the article behind a **valid Gaussian** (Probability /
+Inference need a PD covariance), behind **GLS and whitening** (Regression [REGR-11], via the
+square root), behind **ridge regression** ([REGR-14], which adds $\lambda I$ precisely to
+restore positive-definiteness), and behind every **convexity test** in Optimization.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Where the idea was forged.** The theory of quadratic forms and their signs grew out of
+  Gauss's *Disquisitiones Arithmeticae* (1801) and Lagrange's work on minima of quadratic
+  functions; the determinant test is **J. J. Sylvester**'s "law of inertia" and criterion
+  from the 1850s, which also gave us the word *definite* for a form of fixed sign. Any
+  graduate linear-algebra text (Strang's *Linear Algebra and Its Applications*; Horn &
+  Johnson's *Matrix Analysis*, ch. 7, the definitive modern reference on PD matrices)
+  develops all three tests and the full PSD principal-minor story.
+- **The threads this article deliberately deferred.** *Why does the Cholesky factor exist
+  exactly when $A$ is PD, and how is it built?* — that is the constructive heart of
+  [GEOM-19], and it also supplies the clean proof of the general Sylvester criterion we only
+  stated. *How close to the boundary is "too close"?* — the condition number, [GEOM-26].
+  *What replaces inversion when the matrix is only PSD?* — the Moore–Penrose pseudoinverse,
+  [GEOM-21]. *And the statistical meaning of a covariance being PD* — that a Gaussian exists
+  and is non-degenerate — is owned by the Probability and Inference tracks, which import the
+  algebra proved here.

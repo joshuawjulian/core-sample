@@ -1,0 +1,1054 @@
+---
+title: "Quadratic Forms: A Number from a Matrix and a Direction"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / input directions
+HILITE = "#c1121f"   # eigen-axes / principal directions
+ACCENT = "#0a7d4d"   # second axis / highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This opens **Movement V — Quadratic Forms,
+> Positive-Definiteness, and the SVD**. It assumes the **dot product** and the norm
+> $\|x\|^2 = x^\top x$ ([GEOM-04]); the **transpose**, its algebra $(AB)^\top = B^\top A^\top$,
+> and what it means for a matrix to be **symmetric**, $A = A^\top$ ([GEOM-10]); and — the
+> piece it leans on hardest — the **spectral theorem**, which guarantees that a real
+> symmetric matrix factors as $A = Q\Lambda Q^\top$ with $Q$ orthogonal ($Q^\top Q = I$) and
+> $\Lambda$ diagonal ([GEOM-16]). The one question here: *what is the geometry of the single
+> number $q(x) = x^\top A x$, and why does every such surface turn out to be a (rotated,
+> scaled) bowl, an upside-down bowl, a saddle, or a degenerate trough — and nothing else?*
+> It sets up [GEOM-18] (positive-definite matrices, where the bowl has a unique bottom) and
+> [GEOM-25] (the gradient and Hessian of $\tfrac12 x^\top A x - b^\top x$). It is the
+> unifying picture behind **variance along a direction**, the **Mahalanobis distance**, the
+> **least-squares loss surface**, **Inference's Fisher-information form** ([INFR-B3]), and
+> the **quadratic model of a loss** in Optimization.
+
+## Abstract {.unnumbered}
+
+A symmetric matrix $A$ turns a direction $x$ into a *single number*, $q(x) = x^\top A x$.
+This article is about the shape of that number as $x$ ranges over space. We define the
+**quadratic form**, show that only the symmetric part of $A$ matters (so we may always
+take $A$ symmetric without loss of generality), and expand $q$ in coordinates so the
+reader sees it is exactly a weighted sum of squares and cross-terms. Then we apply the
+spectral theorem: rotating to the eigenbasis, $x = Qz$, makes every cross-term vanish and
+collapses the form to $q = \sum_i \lambda_i z_i^2$. From that one line the entire geometry
+falls out — the **signs of the eigenvalues** decide whether the surface is a bowl (all
+$\lambda_i > 0$), an inverted bowl (all $< 0$), a saddle (mixed signs), or a degenerate
+ridge/trough (some $\lambda_i = 0$), and the eigenvalues themselves are the curvatures
+along the eigen-axes. The single claim this article defends is that **a quadratic form is
+nothing but a stretched, rotated paraboloid whose principal axes are the eigenvectors of
+$A$ and whose steepnesses are its eigenvalues** — and that this one picture is the same
+object reappearing as variance, distance, and loss across the rest of the series.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Feed a symmetric matrix $A$ a direction $x$ and it returns a single scalar,
+$$q(x) = x^\top A x = \sum_{i}\sum_{j} A_{ij}\, x_i x_j.$$
+This is the **quadratic form** of $A$. It is the only way to build a *degree-two* scalar
+out of a vector and a matrix, and it is the multidimensional cousin of $a x^2$ from
+high-school algebra — with the eigenvalues of $A$ playing the role of $a$ along each
+**eigen-axis**. The spectral theorem ([GEOM-16]) makes this exact: rotate the input into
+the eigenbasis, $x = Qz$, and the form becomes a clean weighted sum of squares with **no
+cross-terms**,
+$$q(x) = \sum_{i=1}^{n} \lambda_i\, z_i^2.$$
+So the surface $q(x)$ is always a paraboloid, tilted to align with the eigenvectors and
+stretched by the eigenvalues. The **signs** of the $\lambda_i$ tell you the whole story:
+all positive $\Rightarrow$ a bowl with a unique bottom; all negative $\Rightarrow$ an
+inverted bowl; mixed $\Rightarrow$ a saddle; any zero $\Rightarrow$ a flat direction. There
+is no fifth case.
+:::
+
+Everything below orbits that box. The expression $x^\top A x$ will look at first like an
+arbitrary sandwich of symbols. By the end it should read as a sentence: *take the
+direction $x$, measure how far it lies along each eigen-axis, square those measurements,
+and add them up weighted by the eigenvalues.* Once you can hear that sentence inside the
+matrix product, every quadratic form in the rest of the series — variance, distance,
+loss, curvature — becomes the same picture wearing different clothes.
+
+# Why we are doing this: the problem that forced the quadratic form {#sec-why}
+
+Keep one question in view for the whole article: **why does the data-science world keep
+producing this one expression $x^\top A x$, and what is its shape?** Every algebraic step
+below is in service of seeing that shape.
+
+## The shape of "second order" is everywhere
+
+Linear algebra so far has been resolutely *first order*. A matrix map $x \mapsto Ax$ is
+linear; the dot product $a^\top x$ is linear in $x$; the gradient of a function is the
+best linear approximation. But the quantities we actually care about in data science are
+overwhelmingly *second order* — they involve **squares and products of pairs**:
+
+- **Spread.** The variance of a dataset projected onto a direction $u$ is a sum of
+  *squared* deviations. As we will derive in @sec-variance, it equals $u^\top \Sigma u$ for
+  the covariance matrix $\Sigma$ — a quadratic form.
+- **Distance.** The squared length of a vector is $\|x\|^2 = x^\top x$, the quadratic form
+  of the identity. The moment we want to measure distance in *correlated* coordinates —
+  where some directions are "longer" than others — we get $x^\top M x$ for a general
+  symmetric $M$ (the Mahalanobis distance, @sec-mahalanobis).
+- **Error.** The least-squares loss $\|y - X\beta\|^2$, expanded, is a quadratic form in
+  the parameters $\beta$ plus lower-order terms ([REGR-05], and the full gradient in
+  [GEOM-25]). Its *curvature* — what makes it easy or hard to minimize — is captured by a
+  symmetric matrix.
+- **Curvature itself.** The second-order Taylor expansion of *any* smooth function has a
+  quadratic-form term $\tfrac12 \Delta x^\top H \Delta x$, with $H$ the Hessian of second
+  derivatives ([GEOM-24]). The local shape of every loss surface in machine learning is a
+  quadratic form.
+
+Four different fields, one object. The reason is structural: **the only way to combine a
+vector with itself to degree two, linearly in a matrix of coefficients, is
+$x^\top A x$.** A degree-one scalar is $a^\top x$; a degree-two scalar is $x^\top A x$;
+there is nothing else at second order. So if we want a single, complete understanding of
+the *shape* of second-order quantities, we need exactly one thing: the geometry of
+$x^\top A x$. That is this article.
+
+## The historical thread: conics, principal axes, and Sylvester
+
+The story is older than data science by two centuries. In the 18th century, mathematicians
+classifying the **conic sections** — ellipses, parabolas, hyperbolas — wrote them as
+$ax^2 + bxy + cy^2 = \text{const}$. That left-hand side is precisely a two-dimensional
+quadratic form. The central problem was: given the messy cross-term $bxy$, *which* conic
+is it, and how is it oriented? Euler and Lagrange found that one could always **rotate the
+coordinate axes** to kill the cross-term, turning the equation into
+$\lambda_1 z_1^2 + \lambda_2 z_2^2 = \text{const}$ — a clean ellipse or hyperbola aligned
+with the new axes. Those new axes are the **principal axes**, and the coefficients
+$\lambda_1, \lambda_2$ are what we now call eigenvalues.
+
+That "rotate away the cross-term" move *is* the spectral theorem ([GEOM-16]), discovered
+geometrically a century before it was stated as a theorem about symmetric matrices. In
+1852 James Joseph Sylvester proved that no matter *how* you rotate or rescale the axes, the
+**number of positive, negative, and zero coefficients never changes** — his **law of
+inertia** (@sec-inertia). That invariance is why "bowl, saddle, or trough" is a genuine
+property of the form, not an artifact of the coordinates you happened to use. We inherit
+all of this: the quadratic form is the conic-section problem, grown up into $n$ dimensions
+and handed the spectral theorem as its solvent.
+
+::: {.callout-tip title="You might be asked"}
+*"Why restrict to symmetric matrices? Don't quadratic forms make sense for any square
+$A$?"* They are *defined* for any square $A$ — $x^\top A x$ is a perfectly good number. But
+as we prove in @sec-symmetrize, the value of $x^\top A x$ depends **only on the symmetric
+part** $\tfrac12(A + A^\top)$ of $A$; the antisymmetric part contributes exactly zero for
+every $x$. So any non-symmetric $A$ produces the *same* form as a unique symmetric matrix,
+and we lose nothing — and gain the entire spectral theorem — by agreeing to take $A$
+symmetric from the start. An interviewer asking this wants to hear "the antisymmetric part
+is invisible to the form, so we symmetrize without loss of generality."
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, here is the picture to carry. Forget matrices for a moment and recall
+the humblest quadratic, $f(t) = a t^2$ from Calc 1. Its graph is a parabola: opening up if
+$a > 0$, down if $a < 0$, flat if $a = 0$. The number $a$ is both the *steepness* and,
+through its sign, the *shape*.
+
+A quadratic form is this exact idea, but the input is a *direction in space* rather than a
+single number $t$. Walk away from the origin along some straight ray — say in direction
+$u$ with $\|u\| = 1$ — and watch the value $q(tu)$ as the distance $t$ grows. Because
+$q(tu) = (tu)^\top A (tu) = t^2\, u^\top A u$, the value grows as $t^2$: **along every
+straight ray through the origin, a quadratic form is an ordinary parabola**, with steepness
+$u^\top A u$ depending on which way you set out. Different directions can give different
+steepnesses, and even different *signs*.
+
+The whole subject is: *as $u$ sweeps around, how does that steepness $u^\top A u$ change,
+and what surface does it trace?* The spectral theorem will tell us there are special
+directions — the eigenvectors — along which the parabola is steepest and shallowest, and
+that every other direction is a blend of these. @fig-rays shows three rays out of one
+2-D form and the parabola you ride along each.
+
+```{python}
+#| label: fig-rays
+#| fig-cap: "A quadratic form restricted to a ray is a parabola. **Left:** the level sets (contours) of $q(x) = x^\\top A x$ for $A = \\begin{psmallmatrix}3 & 1\\\\ 1 & 2\\end{psmallmatrix}$, with three unit directions drawn as arrows. **Right:** the value $q(tu)$ as you walk distance $t$ along each ray. Every ray gives a parabola $q(tu) = t^2\\,(u^\\top A u)$; the steepness $u^\\top A u$ is the only thing that changes from ray to ray. The red direction is the steepest (largest eigenvalue), the green the shallowest."
+A = np.array([[3.0, 1.0], [1.0, 2.0]])
+
+# three unit directions
+thetas = [20, 65, 130]
+dirs = {f"{th}°": np.array([np.cos(np.radians(th)), np.sin(np.radians(th))])
+        for th in thetas}
+cols = {f"{thetas[0]}°": HILITE, f"{thetas[1]}°": VEC, f"{thetas[2]}°": ACCENT}
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.9))
+
+# left: contours + rays
+g = np.linspace(-2.2, 2.2, 220)
+GX, GY = np.meshgrid(g, g)
+Q = A[0, 0]*GX**2 + 2*A[0, 1]*GX*GY + A[1, 1]*GY**2
+cs = axL.contour(GX, GY, Q, levels=[1, 3, 6, 10, 15], colors=GREY, linewidths=1.0)
+axL.clabel(cs, inline=True, fontsize=8, fmt="%.0f")
+for name, u in dirs.items():
+    draw_vec(axL, (0, 0), tuple(1.6*u), color=cols[name], lw=2.4)
+axL.set_aspect("equal"); axL.set_xlim(-2.2, 2.2); axL.set_ylim(-2.2, 2.2)
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$")
+axL.set_title("Level sets and three directions")
+
+# right: parabolas along each ray
+ts = np.linspace(-2.0, 2.0, 100)
+for name, u in dirs.items():
+    steep = u @ A @ u
+    axR.plot(ts, ts**2 * steep, color=cols[name], label=f"{name}: $u^\\top\\!Au={steep:.2f}$")
+axR.axhline(0, color=GREY, lw=1.0)
+axR.set_xlabel("distance $t$ along ray"); axR.set_ylabel("$q(tu)=t^2\\,u^\\top\\!Au$")
+axR.set_title("Each ray is a parabola"); axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+Hold this image. The formal development is just the careful version of "ride a parabola
+along each ray, and find the steepest and shallowest rays."
+
+# The formal development {#sec-formal}
+
+## Definition, and reading it in coordinates {#sec-definition}
+
+::: {#def-quadform}
+**Definition (quadratic form).** Let $A$ be an $n \times n$ real matrix. The **quadratic
+form** associated with $A$ is the scalar-valued function
+$$
+q : \mathbb{R}^n \to \mathbb{R}, \qquad q(x) = x^\top A x .
+$$ {#eq-def}
+:::
+
+Let us unpack @eq-def so no symbol is mysterious. Here $x = (x_1, \dots, x_n)^\top$ is a
+column vector, $A x$ is the usual matrix–vector product (a column vector), and
+$x^\top (Ax)$ is a dot product of two column vectors — hence a single number. Writing it
+with the matrix entries $A_{ij}$ exposed: the $i$-th entry of $Ax$ is
+$(Ax)_i = \sum_{j=1}^n A_{ij} x_j$ (row $i$ of $A$ dotted with $x$), and then $x^\top(Ax)$
+dots $x$ against that result:
+
+$$
+q(x) = x^\top A x = \sum_{i=1}^n x_i (Ax)_i
+      = \sum_{i=1}^n x_i \sum_{j=1}^n A_{ij} x_j
+      = \sum_{i=1}^n \sum_{j=1}^n A_{ij}\, x_i x_j .
+$$ {#eq-double-sum}
+
+So a quadratic form is a **weighted sum over all ordered pairs $(i,j)$**, with weight
+$A_{ij}$ on the product $x_i x_j$. Every term is degree two: either a *square* $x_i^2$
+(when $i = j$) or a *cross-term* $x_i x_j$ (when $i \neq j$). This is why it is called
+"quadratic" — every term has total degree exactly two, the multidimensional analogue of
+$a t^2$.
+
+It pays to see @eq-double-sum fully written out in two dimensions, where you can hold it in
+your hand. Take a general $2 \times 2$ matrix and grind the double sum:
+
+$$
+A = \begin{pmatrix} a & b \\ c & d \end{pmatrix},
+\qquad x = \begin{pmatrix} x_1 \\ x_2 \end{pmatrix}.
+$$
+
+The four ordered pairs $(i,j) \in \{(1,1),(1,2),(2,1),(2,2)\}$ contribute
+$A_{11}x_1 x_1$, $A_{12}x_1 x_2$, $A_{21}x_2 x_1$, $A_{22}x_2 x_2$. Substituting the
+entries:
+
+$$
+q(x) = a\,x_1^2 \;+\; b\,x_1 x_2 \;+\; c\,x_2 x_1 \;+\; d\,x_2^2
+     \;=\; a\,x_1^2 \;+\; (b + c)\,x_1 x_2 \;+\; d\,x_2^2 .
+$$ {#eq-2d-form}
+
+The two off-diagonal entries $b$ and $c$ collapse into a single coefficient $b + c$ on the
+cross-term $x_1 x_2$, because $x_1 x_2 = x_2 x_1$. Stare at that: **the form can only feel
+the *sum* $b + c$, never $b$ and $c$ separately.** That is the first hint that off-diagonal
+asymmetry is invisible to the form — the observation we promote to a theorem next.
+
+## Only the symmetric part matters {#sec-symmetrize}
+
+The collapse $b + c$ generalizes. We can split *any* square matrix into a symmetric piece
+and an antisymmetric piece, and show the form ignores the second piece entirely.
+
+::: {#lem-symmetrize}
+**Lemma (symmetrization).** For any square matrix $A$ and any vector $x$,
+$$
+x^\top A x = x^\top A_{\mathrm{sym}}\, x,
+\qquad \text{where } A_{\mathrm{sym}} = \tfrac12\bigl(A + A^\top\bigr) = A_{\mathrm{sym}}^\top .
+$$
+That is, the quadratic form of $A$ equals the quadratic form of its **symmetric part**.
+:::
+
+::: {.proof}
+First, $x^\top A x$ is a $1 \times 1$ matrix, i.e. a single number, so it equals its own
+transpose: $x^\top A x = (x^\top A x)^\top$. Now apply the transpose-of-a-product rule
+$(MN)^\top = N^\top M^\top$ ([GEOM-10]) to the right-hand side. Treat the form as the
+product of the two factors $M = x^\top$ and $N = A x$, so the rule flips their order:
+
+$$
+(x^\top A x)^\top = (x^\top \cdot Ax)^\top = (Ax)^\top (x^\top)^\top .
+$$
+
+Apply the same product rule once more to $(Ax)^\top = (A\cdot x)^\top = x^\top A^\top$, and
+use $(x^\top)^\top = x$ on the trailing factor:
+
+$$
+(Ax)^\top (x^\top)^\top = x^\top A^\top \, x .
+$$
+
+So we have established the small but decisive fact
+$$
+x^\top A x = x^\top A^\top x .
+$$ {#eq-transpose-trick}
+
+Both sides are the same number. Average them — add @eq-transpose-trick to the identity
+$x^\top A x = x^\top A x$ and divide by two:
+
+$$
+x^\top A x = \tfrac12\bigl(x^\top A x + x^\top A^\top x\bigr)
+           = x^\top \underbrace{\tfrac12\bigl(A + A^\top\bigr)}_{A_{\mathrm{sym}}} x ,
+$$
+
+where the last step factored the common $x^\top(\cdot)x$ out of the sum, legal because
+matrix multiplication distributes over addition. Finally $A_{\mathrm{sym}}$ is symmetric:
+$A_{\mathrm{sym}}^\top = \tfrac12(A^\top + (A^\top)^\top) = \tfrac12(A^\top + A) =
+A_{\mathrm{sym}}$, using $(A^\top)^\top = A$. $\qquad\blacksquare$
+:::
+
+In the $2 \times 2$ case this just recovers @eq-2d-form: the symmetric part of
+$\begin{psmallmatrix} a & b \\ c & d \end{psmallmatrix}$ is
+$\begin{psmallmatrix} a & (b+c)/2 \\ (b+c)/2 & d \end{psmallmatrix}$, whose form is
+$a x_1^2 + 2\cdot\frac{b+c}{2} x_1 x_2 + d x_2^2 = a x_1^2 + (b+c)x_1 x_2 + d x_2^2$,
+matching exactly.
+
+::: {.callout-important title="Standing convention from here on"}
+Because of @lem-symmetrize, **we lose nothing by assuming $A$ is symmetric**, and we gain
+everything: the spectral theorem applies, the eigenvalues are real, and the eigenvectors
+are orthogonal. *For the rest of this article $A = A^\top$.* Whenever a quadratic form
+arrives wearing a non-symmetric matrix — and they sometimes do, e.g. straight out of an
+expansion — silently replace it with $\tfrac12(A + A^\top)$. The form does not change.
+:::
+
+A useful convention falls out for the off-diagonal: with $A$ symmetric, $A_{ij} = A_{ji}$,
+so each unordered pair $\{i,j\}$ contributes $A_{ij}x_i x_j + A_{ji}x_j x_i = 2A_{ij}x_i
+x_j$. The clean coordinate form of a symmetric quadratic form is therefore
+
+$$
+q(x) = \sum_{i=1}^n A_{ii}\, x_i^2 \;+\; 2\!\!\sum_{1 \le i < j \le n}\!\! A_{ij}\, x_i x_j ,
+$$ {#eq-sym-form}
+
+the diagonal entries weight the pure squares, and *twice* each off-diagonal entry weights
+the corresponding cross-term. This factor of two is the source of endless sign-and-half
+bookkeeping errors later; pin it down now.
+
+## Diagonalizing the form: the cross-terms vanish {#sec-diagonalize}
+
+The cross-terms in @eq-sym-form are what make a quadratic form hard to read — they tangle
+the coordinates together. The central act of this article is to *make them disappear* by
+changing to the right coordinate system. The spectral theorem hands us that system for
+free.
+
+Recall the spectral theorem ([GEOM-16]): a real symmetric matrix $A$ can be written
+
+$$
+A = Q \Lambda Q^\top, \qquad
+Q^\top Q = I, \qquad
+\Lambda = \operatorname{diag}(\lambda_1, \dots, \lambda_n) ,
+$$ {#eq-spectral}
+
+where the columns $q_1, \dots, q_n$ of $Q$ are an **orthonormal** set of eigenvectors of
+$A$ (so $A q_i = \lambda_i q_i$ and $q_i^\top q_j = \delta_{ij}$), the $\lambda_i$ are the
+**real** eigenvalues, and $Q$ being orthogonal means its transpose is its inverse,
+$Q^{-1} = Q^\top$. We imported this from [GEOM-16], where both halves — real eigenvalues
+and orthogonal eigenvectors — are proved from scratch; here we put it to work.
+
+Substitute @eq-spectral into the form and watch what happens:
+
+$$
+q(x) = x^\top A x = x^\top \bigl(Q \Lambda Q^\top\bigr) x
+     = \bigl(Q^\top x\bigr)^\top \Lambda \bigl(Q^\top x\bigr) .
+$$ {#eq-substituted}
+
+The last equality regrouped the product using associativity and $(Q^\top x)^\top = x^\top
+(Q^\top)^\top = x^\top Q$, which is exactly the $x^\top Q$ on the left. Now **define new
+coordinates**
+
+$$
+z = Q^\top x \quad\Longleftrightarrow\quad x = Q z ,
+$$ {#eq-change-coords}
+
+the equivalence holding because $Q^\top = Q^{-1}$, so multiplying $z = Q^\top x$ by $Q$
+gives $Qz = QQ^\top x = x$. Geometrically $z$ is just $x$ *re-expressed in the eigenbasis*:
+$z_i = q_i^\top x$ is the coordinate of $x$ along the $i$-th eigenvector — the amount of
+$x$ that points in the $q_i$ direction (this is the "coordinates in an orthonormal basis
+are dot products" fact from [GEOM-05]). With this substitution @eq-substituted becomes
+
+$$
+q(x) = z^\top \Lambda z .
+$$ {#eq-diag-form}
+
+But $\Lambda$ is *diagonal*, so its quadratic form has **no cross-terms at all**. Expanding
+$z^\top \Lambda z$ with @eq-double-sum and using $\Lambda_{ij} = 0$ for $i \neq j$ and
+$\Lambda_{ii} = \lambda_i$:
+
+$$
+z^\top \Lambda z = \sum_{i=1}^n \sum_{j=1}^n \Lambda_{ij}\, z_i z_j
+                 = \sum_{i=1}^n \Lambda_{ii}\, z_i^2
+                 = \sum_{i=1}^n \lambda_i\, z_i^2 .
+$$
+
+We have arrived at the central formula of the article.
+
+::: {#thm-principal-axes}
+**Theorem (principal-axis form).** Let $A$ be a real symmetric $n \times n$ matrix with
+spectral decomposition $A = Q\Lambda Q^\top$, eigenvalues $\lambda_1, \dots, \lambda_n$, and
+orthonormal eigenvectors $q_1, \dots, q_n$. In the eigen-coordinates $z = Q^\top x$, the
+quadratic form is a pure weighted sum of squares:
+$$
+q(x) = x^\top A x = \sum_{i=1}^n \lambda_i\, z_i^2,
+\qquad z_i = q_i^\top x .
+$$ {#eq-principal}
+:::
+
+::: {.proof}
+The chain @eq-substituted → @eq-change-coords → @eq-diag-form → the diagonal expansion is
+the proof; every step is an equality, no step assumes anything beyond the spectral
+decomposition @eq-spectral (imported and proved in [GEOM-16]) and the transpose algebra of
+[GEOM-10]. $\qquad\blacksquare$
+:::
+
+This is the conic-section move of @sec-why made rigorous in $n$ dimensions: **rotate into
+the eigenbasis and the cross-terms vanish, leaving one independent parabola per axis.**
+Along the $i$-th eigen-axis the form behaves like $\lambda_i z_i^2$ — a parabola of
+steepness $\lambda_i$ — and the surface is the sum of these $n$ independent parabolas. The
+eigenvectors are the **principal axes**; the eigenvalues are the **curvatures** along them.
+
+::: {.callout-tip title="You might be asked"}
+*"What does the change of variables $z = Q^\top x$ do, geometrically?"* It is a pure
+**rotation** (and possibly reflection) of the coordinate axes onto the eigenvectors —
+because $Q$ is orthogonal, it preserves all lengths and angles ($\|Qz\| = \|z\|$, since
+$\|Qz\|^2 = z^\top Q^\top Q z = z^\top z$). So we are not distorting the surface, only
+**looking at it from the natural viewpoint** where its axes line up with the coordinate
+axes. The value $q$ at each point is unchanged; we have just relabeled the floor. This is
+why eigen-coordinates are the right coordinates: they are a rigid re-orientation that
+happens to untangle the form.
+:::
+
+## The four shapes — and why there is no fifth {#sec-shapes}
+
+Formula @eq-principal makes the classification immediate. The form is a sum of terms
+$\lambda_i z_i^2$. Each $z_i^2 \ge 0$ always, so the *sign* of each term is the sign of its
+$\lambda_i$. Sweeping over all directions $x$ (equivalently all $z$), the possible
+behaviors are exactly determined by the signs of the eigenvalues:
+
+::: {#thm-classification}
+**Theorem (classification by eigenvalue signs).** With $q(x) = \sum_i \lambda_i z_i^2$ as
+in @eq-principal:
+
+1. **All $\lambda_i > 0$** $\Rightarrow$ $q(x) > 0$ for every $x \neq 0$: a **bowl**
+   (elliptic paraboloid) opening upward, with a unique minimum at $x = 0$. The form is
+   **positive definite**.
+2. **All $\lambda_i < 0$** $\Rightarrow$ $q(x) < 0$ for every $x \neq 0$: an **inverted
+   bowl**, unique maximum at $0$. **Negative definite**.
+3. **Mixed signs** (some $\lambda_i > 0$, some $< 0$) $\Rightarrow$ $q$ takes both positive
+   and negative values: a **saddle**. **Indefinite**.
+4. **Some $\lambda_i = 0$, the rest one sign** $\Rightarrow$ $q$ is flat along the
+   zero-eigenvalue directions: a **trough / ridge**. **Positive (or negative)
+   semidefinite**.
+:::
+
+::: {.proof}
+*Case 1.* If every $\lambda_i > 0$ and $x \neq 0$, then $z = Q^\top x \neq 0$ (because
+$Q^\top$ is invertible, it sends nonzero to nonzero), so at least one $z_k \neq 0$, giving
+$z_k^2 > 0$. Then $q(x) = \sum_i \lambda_i z_i^2 \ge \lambda_k z_k^2 > 0$, since every term
+is $\ge 0$ and the $k$-th is strictly positive. So $q > 0$ off the origin and $q(0) = 0$ is
+the unique minimum.
+
+*Case 2* is Case 1 applied to $-A$ (eigenvalues $-\lambda_i > 0$), flipping every sign.
+
+*Case 3.* Pick an eigenvector $q_p$ with $\lambda_p > 0$ and one $q_m$ with $\lambda_m <
+0$. Evaluate the form along each. In eigen-coordinates, $x = q_p$ has $z = e_p$ (the $p$-th
+standard basis vector, since $q_i^\top q_p = \delta_{ip}$), so $q(q_p) = \lambda_p > 0$.
+Likewise $q(q_m) = \lambda_m < 0$. The form is positive in one direction and negative in
+another — a saddle.
+
+*Case 4.* If $\lambda_k = 0$, then moving along $q_k$ leaves the form unchanged:
+$q(t q_k) = \lambda_k t^2 = 0$ for all $t$. So $q$ is constant (flat) along that whole
+direction, while the nonzero eigenvalues curve it up (or down) in the other directions —
+a trough (if the rest are positive) or a ridge (if negative).
+
+These four cases — all-positive, all-negative, mixed, and some-zero — exhaust the
+sign-patterns of a finite list of real numbers, so there is no fifth case.
+$\qquad\blacksquare$
+:::
+
+This classification is the deep reason the Core box can promise "bowl, inverted bowl,
+saddle, or trough, and nothing else." The next article, [GEOM-18], takes Case 1 — the
+positive-definite "good" matrices — and studies it in full, because a bowl with a unique
+bottom is exactly the surface optimization and statistics most want. @fig-four-shapes draws
+all four.
+
+```{python}
+#| label: fig-four-shapes
+#| fig-cap: "The complete zoo of quadratic-form surfaces $q(x)=x^\\top A x$ over $\\mathbb{R}^2$, one per eigenvalue sign-pattern. **(a)** both eigenvalues positive: a bowl (positive definite). **(b)** both negative: an inverted bowl (negative definite). **(c)** mixed signs: a saddle (indefinite). **(d)** one eigenvalue zero, one positive: a trough, flat along the zero-direction (positive semidefinite). There is no fifth shape — @thm-classification proves these exhaust the cases."
+g = np.linspace(-2, 2, 60)
+GX, GY = np.meshgrid(g, g)
+
+forms = [
+    (np.array([[2.0, 0.5], [0.5, 1.5]]), "(a) bowl — positive definite\n$\\lambda>0,\\ \\lambda>0$"),
+    (np.array([[-2.0, 0.5], [0.5, -1.5]]), "(b) inverted bowl — neg. definite\n$\\lambda<0,\\ \\lambda<0$"),
+    (np.array([[1.5, 0.0], [0.0, -1.5]]), "(c) saddle — indefinite\n$\\lambda>0,\\ \\lambda<0$"),
+    (np.array([[1.0, 0.0], [0.0, 0.0]]), "(d) trough — pos. semidefinite\n$\\lambda>0,\\ \\lambda=0$"),
+]
+
+fig = plt.figure(figsize=(9.2, 7.4))
+for k, (M, title) in enumerate(forms, start=1):
+    ax = fig.add_subplot(2, 2, k, projection="3d")
+    Z = M[0, 0]*GX**2 + 2*M[0, 1]*GX*GY + M[1, 1]*GY**2
+    ax.plot_surface(GX, GY, Z, cmap="viridis", linewidth=0, antialiased=True, alpha=0.9)
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel("$x_1$", labelpad=-6); ax.set_ylabel("$x_2$", labelpad=-6)
+    ax.tick_params(labelsize=7, pad=-2)
+    ax.view_init(elev=26, azim=-122)
+plt.tight_layout()
+```
+
+## Level sets: ellipses, hyperbolas, and the eigen-axes you can see {#sec-level-sets}
+
+The 3-D surfaces are vivid but a flatter view is more useful day to day: the **level sets**
+$\{x : q(x) = c\}$, the curves where the form equals a constant. In two dimensions these
+are the conic sections of @sec-why, and they show the eigenstructure directly.
+
+Set @eq-principal equal to a positive constant $c$ in a positive-definite case, in
+eigen-coordinates:
+
+$$
+\lambda_1 z_1^2 + \lambda_2 z_2^2 = c
+\quad\Longleftrightarrow\quad
+\frac{z_1^2}{(c/\lambda_1)} + \frac{z_2^2}{(c/\lambda_2)} = 1 ,
+$$ {#eq-ellipse}
+
+dividing through by $c$. This is the standard equation of an **ellipse** with semi-axis
+lengths $\sqrt{c/\lambda_1}$ along $q_1$ and $\sqrt{c/\lambda_2}$ along $q_2$. Read the
+geometry off it: the ellipse's axes point along the eigenvectors, and the semi-axis length
+in each direction is $\sqrt{c/\lambda_i}$ — **inversely** proportional to $\sqrt{\lambda_i}$.
+A *large* eigenvalue means the form climbs fast, so it hits the level $c$ quickly: a
+**short** axis. A *small* eigenvalue means a slow climb and a **long** axis. The ellipse is
+squashed along the steep (large-eigenvalue) directions and stretched along the shallow
+ones.
+
+When the eigenvalues have opposite signs (the saddle), @eq-ellipse becomes a difference of
+squares equal to a constant — the equation of a **hyperbola** — and the level sets open out
+along the directions where the form is negative. @fig-level-sets shows both, with the
+eigenvectors drawn so you can confirm they are the axes.
+
+```{python}
+#| label: fig-level-sets
+#| fig-cap: "Level sets carry the eigenstructure on their face. **Left:** a positive-definite form; the contours are concentric ellipses whose axes are the eigenvectors $q_1,q_2$ (red, green) and whose semi-axis lengths go as $1/\\sqrt{\\lambda_i}$ — short along the steep large-$\\lambda$ direction, long along the shallow one. **Right:** an indefinite form; the contours are hyperbolas opening along the negative-eigenvalue direction. The eigenvectors are the symmetry axes in both cases."
+def eig_contours(ax, A, title, levels):
+    g = np.linspace(-3, 3, 300)
+    GX, GY = np.meshgrid(g, g)
+    Q = A[0, 0]*GX**2 + 2*A[0, 1]*GX*GY + A[1, 1]*GY**2
+    cs = ax.contour(GX, GY, Q, levels=levels, colors=GREY, linewidths=1.1)
+    ax.clabel(cs, inline=True, fontsize=8, fmt="%.0f")
+    w, V = np.linalg.eigh(A)
+    for k, col in zip(range(2), (HILITE, ACCENT)):
+        v = V[:, k]
+        draw_vec(ax, (0, 0), tuple(1.6*v), color=col, lw=2.6,
+                 label=f"$q_{k+1}\\ (\\lambda={w[k]:.1f})$",
+                 label_offset=(0.35*np.sign(v[0]+1e-9), 0.30*np.sign(v[1]+1e-9)))
+    ax.set_aspect("equal"); ax.set_xlim(-3, 3); ax.set_ylim(-3, 3)
+    ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$"); ax.set_title(title)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.6))
+eig_contours(axL, np.array([[3.0, 1.2], [1.2, 1.0]]),
+             "Positive definite: ellipses", [1, 3, 6, 10])
+eig_contours(axR, np.array([[1.0, 1.6], [1.6, -1.0]]),
+             "Indefinite: hyperbolas", [-6, -2, 2, 6])
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"If the level sets of a positive-definite form are ellipses with axes along the
+eigenvectors, what does a near-singular matrix (one tiny eigenvalue) look like?"* A
+**hugely elongated** ellipse — a long thin cigar — because the semi-axis $\sqrt{c/\lambda}$
+blows up as $\lambda \to 0^+$. The form barely changes along the small-eigenvalue
+direction. This is the geometric face of an **ill-conditioned** matrix: the ratio of
+longest to shortest axis is $\sqrt{\lambda_{\max}/\lambda_{\min}}$, and that ratio is the
+condition number's fingerprint ([GEOM-26]). It is also exactly what near-collinear
+predictors do to the least-squares loss surface ([REGR-07]) — a valley so stretched that
+the minimum is poorly pinned down in one direction.
+:::
+
+## The extremes: Rayleigh quotient and the steepest directions {#sec-rayleigh}
+
+We promised that the eigenvectors are the steepest and shallowest directions. Here is the
+precise statement, and it is one of the most useful facts in applied linear algebra. On the
+unit sphere $\|u\| = 1$, the form's value $u^\top A u$ is exactly the steepness of the
+parabola along direction $u$ (from @sec-intuition). How big and small can it get?
+
+::: {#thm-rayleigh}
+**Theorem (Rayleigh bounds).** For a symmetric $A$ with eigenvalues
+$\lambda_{\min} = \lambda_1 \le \dots \le \lambda_n = \lambda_{\max}$, and any unit vector
+$u$ ($\|u\| = 1$),
+$$
+\lambda_{\min} \;\le\; u^\top A u \;\le\; \lambda_{\max},
+$$
+with equality at the bottom when $u$ is an eigenvector for $\lambda_{\min}$, and at the top
+when $u$ is an eigenvector for $\lambda_{\max}$.
+:::
+
+::: {.proof}
+Write $u$ in eigen-coordinates, $z = Q^\top u$. Because $Q$ is orthogonal it preserves
+length, so $\|z\|^2 = z^\top z = u^\top Q Q^\top u = u^\top u = 1$ — the new coordinates
+also lie on the unit sphere, $\sum_i z_i^2 = 1$. By @eq-principal,
+
+$$
+u^\top A u = \sum_{i=1}^n \lambda_i z_i^2 .
+$$
+
+This is a **weighted average** of the eigenvalues: the weights $z_i^2$ are nonnegative and
+sum to one. An average of numbers can be no larger than the largest of them and no smaller
+than the smallest:
+
+$$
+\lambda_{\min} = \lambda_{\min}\sum_i z_i^2 \le \sum_i \lambda_i z_i^2
+              \le \lambda_{\max}\sum_i z_i^2 = \lambda_{\max} ,
+$$
+
+where the middle inequalities replaced each $\lambda_i$ by the smallest (resp. largest)
+eigenvalue term by term, legal because the weights $z_i^2 \ge 0$. The upper bound is
+*achieved* by putting all the weight on the top eigenvalue: choose $u = q_n$, so $z = e_n$,
+$z_n^2 = 1$, and $u^\top A u = \lambda_n = \lambda_{\max}$. Likewise $u = q_1$ achieves
+$\lambda_{\min}$. $\qquad\blacksquare$
+:::
+
+The ratio $R(x) = \dfrac{x^\top A x}{x^\top x}$ for any $x \neq 0$ is called the **Rayleigh
+quotient**; dividing by $x^\top x = \|x\|^2$ is exactly the normalization to a unit vector,
+so @thm-rayleigh says the Rayleigh quotient ranges over $[\lambda_{\min}, \lambda_{\max}]$,
+hitting the ends at the extreme eigenvectors. This is the entire engine of **principal
+component analysis** — "find the direction of maximum variance" *is* "maximize the Rayleigh
+quotient of the covariance matrix," whose answer is the top eigenvector — though the
+statistical packaging belongs to Unsupervised Learning, which links back here for the
+algebra. @fig-rayleigh shows the steepness sweeping between the two eigenvalues as the
+direction rotates.
+
+```{python}
+#| label: fig-rayleigh
+#| fig-cap: "The Rayleigh quotient $u^\\top A u$ as the unit direction $u=(\\cos\\theta,\\sin\\theta)$ rotates, for $A=\\begin{psmallmatrix}3&1\\\\1&2\\end{psmallmatrix}$. It oscillates strictly between $\\lambda_{\\min}$ (dashed) and $\\lambda_{\\max}$ (dotted), touching each exactly when $u$ aligns with the corresponding eigenvector (vertical markers). Every achievable steepness of the form lives in this band."
+A = np.array([[3.0, 1.0], [1.0, 2.0]])
+w, V = np.linalg.eigh(A)              # ascending eigenvalues
+th = np.linspace(0, np.pi, 400)
+U = np.vstack([np.cos(th), np.sin(th)])
+R = np.einsum("ij,ji->i", U.T @ A, U)  # u^T A u for each column
+
+fig, ax = plt.subplots(figsize=(7.0, 4.0))
+ax.plot(np.degrees(th), R, color=VEC, label="$u^\\top A u$")
+ax.axhline(w[1], color=HILITE, ls=":", lw=1.8, label=f"$\\lambda_\\max={w[1]:.3f}$")
+ax.axhline(w[0], color=ACCENT, ls="--", lw=1.8, label=f"$\\lambda_\\min={w[0]:.3f}$")
+# angles of eigenvectors
+for k, col in zip(range(2), (ACCENT, HILITE)):
+    ang = np.degrees(np.arctan2(V[1, k], V[0, k])) % 180
+    ax.axvline(ang, color=col, ls=":", lw=1.0)
+ax.set_xlabel("direction angle $\\theta$ (degrees)")
+ax.set_ylabel("steepness $u^\\top A u$")
+ax.set_title("Steepness is bounded by the eigenvalues")
+ax.legend(fontsize=9, framealpha=0.9, loc="center right")
+plt.tight_layout()
+```
+
+## Sylvester's law of inertia: the signs are intrinsic {#sec-inertia}
+
+A nagging worry: we read the four shapes off the *eigenvalues*, which came from the
+*orthogonal* change of coordinates $z = Q^\top x$. What if we had used some *other* change
+of coordinates — a non-orthogonal one — and gotten different signs? Could "bowl vs. saddle"
+depend on the coordinate system? Sylvester's 1852 theorem says no, and it is what makes the
+classification a real property of the form.
+
+Define the **inertia** of a symmetric matrix as the triple $(n_+, n_-, n_0)$: the number of
+positive, negative, and zero eigenvalues. (These sum to $n$.)
+
+::: {#thm-inertia}
+**Theorem (Sylvester's law of inertia).** If $A = C^\top D C$ for *any* invertible matrix
+$C$ and diagonal $D$, then $D$ has the same number of positive, negative, and zero diagonal
+entries as $A$ has positive, negative, and zero eigenvalues. In short: **the inertia
+$(n_+, n_-, n_0)$ is invariant under any invertible change of variables**, not just
+orthogonal ones.
+:::
+
+::: {.proof}
+We prove the part that matters for the classification — that $n_+$, the dimension of the
+largest subspace on which $q$ is strictly positive, is well defined regardless of how we
+diagonalize. Call a subspace $S$ **positive** for $q$ if $q(x) > 0$ for every nonzero
+$x \in S$. Let $p$ be the maximum possible dimension of a positive subspace; this number is
+defined purely from $q$ — it mentions no coordinate system.
+
+From the spectral decomposition, the span of the eigenvectors with positive eigenvalues is
+a positive subspace of dimension $n_+$ (on it, $q(x) = \sum_{\lambda_i > 0}\lambda_i z_i^2 >
+0$ for $x \neq 0$). So $p \ge n_+$. Conversely, suppose $S$ is a positive subspace with
+$\dim S > n_+$. Let $W$ be the span of the eigenvectors with eigenvalue $\le 0$, which has
+dimension $n_- + n_0 = n - n_+$. Since $\dim S + \dim W > n_+ + (n - n_+) = n$, the two
+subspaces must intersect in some nonzero vector $v$ (two subspaces whose dimensions sum to
+more than $n$ cannot meet only at the origin — a counting fact from the dimension formula,
+[GEOM-03]). But $v \in W$ forces $q(v) = \sum_{\lambda_i \le 0}\lambda_i z_i^2 \le 0$, while
+$v \in S$ forces $q(v) > 0$ — a contradiction. Hence no positive subspace exceeds dimension
+$n_+$, so $p = n_+$.
+
+Now take *any* diagonalization $A = C^\top D C$ with $C$ invertible and $D =
+\operatorname{diag}(d_1, \dots, d_n)$, and let $d_+$ be its number of strictly positive
+entries. We show $d_+ = p$, which (since $p = n_+$) forces $d_+ = n_+$ for every such
+factorization — the invariance we want. Substituting and using $(Cx)^\top = x^\top C^\top$,
+the form reads, in the coordinates $y = Cx$,
+$$
+q(x) = x^\top C^\top D C x = (Cx)^\top D (Cx) = y^\top D y = \sum_{j=1}^n d_j\, y_j^2 .
+$$
+Because $C$ is invertible, $y = Cx$ is a bijection between $x$-space and $y$-space, so we
+may build subspaces in $y$-coordinates and pull them back.
+
+*$d_+ \le p$.* Let $P$ be the set of $x$ whose image $y = Cx$ is supported on the positive
+entries of $D$ — that is, $y_j = 0$ whenever $d_j \le 0$. This is a subspace of dimension
+$d_+$ (it is the preimage under the invertible map $C$ of the $d_+$-dimensional coordinate
+subspace spanned by the positive-$d_j$ axes, and an invertible map preserves dimension,
+[GEOM-03]). On $P$, any nonzero $x$ has nonzero $y$ with all weight on positive $d_j$, so
+$q(x) = \sum_{d_j > 0} d_j\, y_j^2 > 0$. Thus $P$ is a positive subspace of dimension $d_+$,
+giving $d_+ \le p$.
+
+*$d_+ \ge p$.* Conversely let $N$ be the preimage of the axes with $d_j \le 0$ (so $y_j = 0$
+whenever $d_j > 0$); it has dimension $n - d_+$, and on it $q(x) = \sum_{d_j \le 0} d_j\,
+y_j^2 \le 0$. If some positive subspace $S$ had $\dim S = p > d_+$, then $\dim S + \dim N >
+d_+ + (n - d_+) = n$, so $S$ and $N$ meet in a nonzero $v$ (same counting fact, [GEOM-03]);
+but $v \in N$ gives $q(v) \le 0$ and $v \in S$ gives $q(v) > 0$, a contradiction. Hence
+$p \le d_+$.
+
+Together $d_+ = p = n_+$: every diagonalization of $A$, orthogonal or not, has exactly
+$n_+$ positive diagonal entries. The identical argument applied to $-q$ (whose positive
+subspaces are $q$'s negative subspaces) pins down $n_-$ as the invariant count of negative
+entries, and $n_0 = n - n_+ - n_-$ follows. $\qquad\blacksquare$
+:::
+
+The payoff is conceptual but important: **"this form is a saddle" is a fact about the form,
+not about your basis.** You may diagonalize by the orthogonal spectral route (which also
+gives the right *curvatures*), or by completing the square (a non-orthogonal route that is
+faster by hand but distorts the axes); either way you get the same count of $+$, $-$, $0$
+signs, hence the same shape verdict. The eigenvalues give *more* — the actual steepnesses
+and the true principal axes — but the **signature** $(n_+, n_-, n_0)$ alone already decides
+bowl/saddle/trough.
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on three honest examples: variance along a direction (where the
+form is born from data), the Mahalanobis distance (where the form *is* a notion of
+distance), and a deliberately degenerate case at the edge of applicability.
+
+## Example 1 — variance along a direction: $u^\top \Sigma u$ {#sec-variance}
+
+This is the example that makes quadratic forms matter for data science, so we build it from
+the definition. Suppose we have $m$ data points $x^{(1)}, \dots, x^{(m)}$ in $\mathbb{R}^n$,
+already **centered** so their mean is zero ($\frac1m\sum_k x^{(k)} = 0$). Pick a direction
+$u$ with $\|u\| = 1$ and ask: *how spread out is the data when projected onto $u$?* The
+projection of point $x^{(k)}$ onto the unit direction $u$ is the scalar $u^\top x^{(k)}$
+(the signed length of the shadow, [GEOM-06]). The spread is the average squared projection
+(the variance, since the projections have mean zero):
+
+$$
+\operatorname{Var}_u = \frac1m \sum_{k=1}^m \bigl(u^\top x^{(k)}\bigr)^2 .
+$$
+
+Now turn the scalar square into a quadratic form. A scalar equals its own transpose, so
+$(u^\top x^{(k)})^2 = (u^\top x^{(k)})(u^\top x^{(k)}) = (u^\top x^{(k)})({x^{(k)}}^\top u)$,
+and the middle two factors combine into the outer product ${x^{(k)}}{x^{(k)}}^\top$:
+
+$$
+\operatorname{Var}_u
+= \frac1m \sum_{k=1}^m u^\top x^{(k)} {x^{(k)}}^\top u
+= u^\top \underbrace{\Bigl(\frac1m \sum_{k=1}^m x^{(k)} {x^{(k)}}^\top\Bigr)}_{\textstyle \Sigma} u
+= u^\top \Sigma u ,
+$$ {#eq-variance-form}
+
+where we factored the constant $u^\top(\cdot)u$ out of the sum. The matrix $\Sigma =
+\frac1m \sum_k x^{(k)}{x^{(k)}}^\top$ is the **covariance matrix** of the centered data; it
+is symmetric (each outer product $x x^\top$ is symmetric, and a sum of symmetric matrices
+is symmetric), so everything above applies. *Variance along a direction is a quadratic
+form.* The interpretation of $\Sigma$ as a statistical object is Probability's to own; here
+it is simply a symmetric matrix whose quadratic form we now read geometrically.
+
+By @thm-rayleigh, the direction of **maximum variance** is the top eigenvector of $\Sigma$
+(the principal component), and the variance there is $\lambda_{\max}$; the minimum-variance
+direction is the bottom eigenvector. The ellipse of @eq-ellipse is literally the **scatter
+shape** of the cloud. @fig-variance makes this concrete on a real-looking 2-D cloud.
+
+```{python}
+#| label: fig-variance
+#| fig-cap: "Variance along a direction is the quadratic form $u^\\top\\Sigma u$. **Left:** a centered data cloud with its covariance ellipse (the level set $u^\\top\\Sigma^{-1}u=$const that the data trace out); the eigenvectors of $\\Sigma$ (red, green) are the directions of maximum and minimum variance, scaled by $\\sqrt{\\lambda}$. **Right:** the projected variance $u^\\top\\Sigma u$ as the direction rotates, peaking at the top eigenvector exactly as @thm-rayleigh predicts. The eigenvalues are the variances along the principal axes."
+rng = np.random.default_rng(3)
+# a correlated cloud
+true_cov = np.array([[4.0, 2.2], [2.2, 2.0]])
+L = np.linalg.cholesky(true_cov)
+data = (L @ rng.normal(size=(2, 400))).T
+data -= data.mean(axis=0)
+Sigma = (data.T @ data) / data.shape[0]
+w, V = np.linalg.eigh(Sigma)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.2))
+axL.scatter(data[:, 0], data[:, 1], s=10, color=PALE, alpha=0.7, zorder=1)
+# covariance ellipse at 2 std
+tt = np.linspace(0, 2*np.pi, 200)
+ell = (V @ np.diag(2*np.sqrt(w)) @ np.vstack([np.cos(tt), np.sin(tt)]))
+axL.plot(ell[0], ell[1], color=GREY, lw=1.5, zorder=2)
+for k, col in zip(range(2), (ACCENT, HILITE)):
+    draw_vec(axL, (0, 0), tuple(2*np.sqrt(w[k])*V[:, k]), color=col, lw=2.6,
+             label=f"$\\lambda={w[k]:.2f}$",
+             label_offset=(0.5*np.sign(V[0, k]+1e-9), 0.4*np.sign(V[1, k]+1e-9)))
+axL.set_aspect("equal"); axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$")
+axL.set_title("Cloud, covariance ellipse, principal axes")
+
+th = np.linspace(0, np.pi, 300)
+U = np.vstack([np.cos(th), np.sin(th)])
+var_u = np.einsum("ij,ji->i", U.T @ Sigma, U)
+axR.plot(np.degrees(th), var_u, color=VEC)
+axR.axhline(w[1], color=HILITE, ls=":", lw=1.6, label=f"max var $={w[1]:.2f}$")
+axR.axhline(w[0], color=ACCENT, ls="--", lw=1.6, label=f"min var $={w[0]:.2f}$")
+axR.set_xlabel("direction angle (degrees)"); axR.set_ylabel("$u^\\top\\Sigma u$ (variance)")
+axR.set_title("Projected variance vs. direction"); axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Example 2 — the Mahalanobis distance: a form that measures distance {#sec-mahalanobis}
+
+The ordinary squared distance from the origin, $\|x\|^2 = x^\top I x$, is the quadratic form
+of the identity — all eigenvalues equal to one, so the level sets are *circles* and every
+direction counts equally. But in correlated data this is the wrong distance. A point two
+standard deviations out along a high-variance direction is unremarkable; the same Euclidean
+distance along a low-variance direction is a genuine outlier. We want a distance that
+**accounts for the spread of the data** — that measures "how many standard deviations out"
+in each direction.
+
+That distance is the quadratic form of the *inverse* covariance matrix:
+
+$$
+d_M(x)^2 = x^\top \Sigma^{-1} x .
+$$ {#eq-mahalanobis}
+
+Why the inverse? Diagonalize: with $\Sigma = Q\Lambda Q^\top$, the inverse is $\Sigma^{-1} =
+Q\Lambda^{-1}Q^\top$ (orthogonal $Q$ makes the inverse trivial — invert the eigenvalues,
+keep the eigenvectors; from [GEOM-16]). So in eigen-coordinates $z = Q^\top x$,
+
+$$
+d_M(x)^2 = \sum_{i=1}^n \frac{z_i^2}{\lambda_i} .
+$$ {#eq-maha-diag}
+
+Each coordinate's contribution is **divided by its variance** $\lambda_i$. A step along a
+high-variance axis (large $\lambda_i$) costs little Mahalanobis distance; a step along a
+low-variance axis costs a lot. This is precisely "how many standard deviations": the level
+set $d_M = 1$ is the covariance ellipse itself — large $\lambda_i$ gives a long axis
+$\sqrt{\lambda_i}$ (by @eq-ellipse with the *inverse* eigenvalues), so the unit-Mahalanobis
+contour hugs the natural shape of the cloud. The eigenvalues being **positive** (a
+covariance matrix is positive semidefinite, and positive definite when the data are not
+trapped in a lower-dimensional subspace — [GEOM-18]) is exactly what makes $d_M^2 \ge 0$ a
+sensible squared distance. @fig-mahalanobis contrasts Euclidean and Mahalanobis level sets
+on the same cloud.
+
+```{python}
+#| label: fig-mahalanobis
+#| fig-cap: "Euclidean vs. Mahalanobis distance, same cloud. **Grey circles** are Euclidean level sets $x^\\top x=$const — they treat every direction equally and so flag the wrong points as far. **Red ellipses** are Mahalanobis level sets $x^\\top\\Sigma^{-1}x=$const — stretched to match the data's spread, so 'far' means 'far in standard-deviation units.' The starred point is only moderately far Euclidean-wise but very far in Mahalanobis terms, because it lies off the cloud's long axis."
+rng = np.random.default_rng(11)
+true_cov = np.array([[5.0, 3.0], [3.0, 2.2]])
+L = np.linalg.cholesky(true_cov)
+data = (L @ rng.normal(size=(2, 350))).T
+data -= data.mean(axis=0)
+Sigma = (data.T @ data) / data.shape[0]
+Sinv = np.linalg.inv(Sigma)
+
+fig, ax = plt.subplots(figsize=(6.6, 5.4))
+ax.scatter(data[:, 0], data[:, 1], s=10, color=PALE, alpha=0.7, zorder=1)
+gg = np.linspace(-9, 9, 400)
+GX, GY = np.meshgrid(gg, gg)
+Euc = GX**2 + GY**2
+Mah = Sinv[0, 0]*GX**2 + 2*Sinv[0, 1]*GX*GY + Sinv[1, 1]*GY**2
+ax.contour(GX, GY, Euc, levels=[4, 16, 36], colors=GREY, linewidths=1.2, linestyles="--")
+ax.contour(GX, GY, Mah, levels=[1, 4, 9], colors=HILITE, linewidths=1.6)
+# an off-axis point
+p = np.array([2.0, -2.6])
+ax.scatter(*p, marker="*", s=260, color="black", zorder=5)
+dE = np.sqrt(p @ p); dM = np.sqrt(p @ Sinv @ p)
+ax.annotate(f"Euclid {dE:.1f},  Mahalanobis {dM:.1f}", xy=p, xytext=(p[0]+0.6, p[1]-1.6),
+            fontsize=9)
+ax.set_aspect("equal"); ax.set_xlim(-9, 9); ax.set_ylim(-9, 9)
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title("Grey: Euclidean circles  ·  Red: Mahalanobis ellipses")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"The squared Mahalanobis distance is $x^\top\Sigma^{-1}x$. Where does that exact form show
+up in statistics?"* In the **multivariate Gaussian density**, whose exponent is exactly
+$-\tfrac12 (x-\mu)^\top\Sigma^{-1}(x-\mu)$ — a quadratic form in the inverse covariance. The
+level sets of constant density *are* the Mahalanobis ellipses, which is why a Gaussian's
+contours are ellipses aligned with the covariance eigenvectors. The probabilistic
+construction belongs to the Probability track, but the *shape* of those contours is
+entirely the content of this article: an ellipsoid whose axes are $\Sigma$'s eigenvectors
+and whose radii scale as $\sqrt{\lambda_i}$.
+:::
+
+## Example 3 — the edge of applicability: a semidefinite, degenerate form {#sec-degenerate}
+
+Now an honest case where the clean four-shape story strains: a form with a **zero
+eigenvalue**. This is not a contrived pathology — it is exactly what happens when data are
+*rank-deficient*, e.g. one feature is a perfect linear combination of others (collinearity,
+[REGR-07], [GEOM-12]), or when a covariance matrix is estimated from fewer points than
+dimensions.
+
+Take the rank-one symmetric matrix
+
+$$
+A = \begin{pmatrix} 1 & -1 \\ -1 & 1 \end{pmatrix},
+\qquad q(x) = x_1^2 - 2 x_1 x_2 + x_2^2 = (x_1 - x_2)^2 .
+$$
+
+The form is a *perfect square*, so $q(x) \ge 0$ always — it looks positive — but it is
+**zero on an entire line**: any $x$ with $x_1 = x_2$ gives $q = 0$. Its eigenvalues are
+$\lambda = 2$ (eigenvector $(1,-1)/\sqrt2$, across which the square grows) and $\lambda = 0$
+(eigenvector $(1,1)/\sqrt2$, along which it is flat). This is the **trough** of
+@thm-classification, Case 4: positive *semi*definite, not definite. @fig-degenerate shows
+the surface — a parabolic valley with a flat floor running off to infinity.
+
+```{python}
+#| label: fig-degenerate
+#| fig-cap: "The edge case: a positive *semi*definite form $q(x)=(x_1-x_2)^2$, with eigenvalues $2$ and $0$. **Left:** the surface is a trough — a parabola in the $(1,-1)$ direction, but dead flat along the entire $(1,1)$ valley floor (red line), where $q=0$. **Right:** its level sets are not ellipses but parallel straight lines, because the form has no curvature in the flat direction. A 'bowl with a unique bottom' it is not — the minimum is a whole line, the geometric signature of rank deficiency."
+A = np.array([[1.0, -1.0], [-1.0, 1.0]])
+g = np.linspace(-3, 3, 80)
+GX, GY = np.meshgrid(g, g)
+Z = (GX - GY)**2
+
+fig = plt.figure(figsize=(9.4, 4.4))
+ax1 = fig.add_subplot(1, 2, 1, projection="3d")
+ax1.plot_surface(GX, GY, Z, cmap="viridis", linewidth=0, antialiased=True, alpha=0.9)
+tt = np.linspace(-3, 3, 50)
+ax1.plot(tt, tt, np.zeros_like(tt), color=HILITE, lw=3, zorder=10)
+ax1.set_title("Trough: flat along $x_1=x_2$", fontsize=11)
+ax1.set_xlabel("$x_1$", labelpad=-6); ax1.set_ylabel("$x_2$", labelpad=-6)
+ax1.tick_params(labelsize=7, pad=-2); ax1.view_init(elev=24, azim=-120)
+
+ax2 = fig.add_subplot(1, 2, 2)
+cs = ax2.contour(GX, GY, Z, levels=[0.5, 2, 4.5, 8], colors=GREY, linewidths=1.2)
+ax2.clabel(cs, inline=True, fontsize=8, fmt="%.1f")
+ax2.plot(tt, tt, color=HILITE, lw=2.4, label="$q=0$ valley floor")
+ax2.set_aspect("equal"); ax2.set_xlim(-3, 3); ax2.set_ylim(-3, 3)
+ax2.set_xlabel("$x_1$"); ax2.set_ylabel("$x_2$")
+ax2.set_title("Level sets are parallel lines, not ellipses")
+ax2.legend(fontsize=9, framealpha=0.9, loc="upper left")
+plt.tight_layout()
+```
+
+Why is this the "edge"? Because the comfortable mental model — *quadratic form = ellipse,
+unique minimum, invertible matrix* — silently assumes positive **definiteness**. The moment
+an eigenvalue hits zero, every one of those conveniences breaks at once: the level sets stop
+being ellipses (they become parallel lines), the minimum stops being unique (it is a whole
+subspace), the matrix stops being invertible (so $\Sigma^{-1}$ in the Mahalanobis distance
+of @sec-mahalanobis *does not exist* — the distance is undefined along the flat direction),
+and any optimizer trying to "find the bottom" wanders freely along the trough. The honest
+lesson: **a quadratic form is only as well-behaved as its smallest eigenvalue.** When that
+eigenvalue is zero (or numerically near zero), you have left the world of bowls and entered
+the world of troughs, and you must reach for tools built for it — the pseudoinverse
+([GEOM-21]) instead of the inverse, regularization (adding $\lambda I$ to lift the zero
+eigenvalue, the ridge trick of [REGR-14]), or a dimension reduction that throws the flat
+direction away.
+
+::: {.callout-warning title="Pitfall"}
+**A nonnegative quadratic form is *not* the same as a positive-definite one.** Both give
+$q(x) \ge 0$, but the semidefinite case allows $q(x) = 0$ for some $x \neq 0$ — a flat
+direction. The difference is invisible in the inequality "$q \ge 0$" and visible only in
+the eigenvalues: definite means all $\lambda_i > 0$ (strictly), semidefinite allows
+$\lambda_i = 0$. Conflating them is how people end up inverting a singular matrix, trusting
+a "minimum" that is actually a ridge, or computing a Mahalanobis distance that is secretly
+infinite in some direction. The strict-vs-nonstrict distinction is the entire subject of
+[GEOM-18].
+:::
+
+# When the quadratic form is the right lens — and when it is not {#sec-applicability}
+
+The quadratic form is the correct tool whenever the quantity you care about is genuinely
+**second order and built from a symmetric matrix** — variance, squared distance,
+least-squares error, local curvature, energy. In those settings the eigen-picture is
+complete and exact: you know the shape (signs), the axes (eigenvectors), and the
+steepnesses (eigenvalues), and @thm-rayleigh hands you the extremes for free. This is why
+the form is the unifying object of Movement V and recurs throughout the series.
+
+It is the *wrong* lens in three honest situations, and a graduate-level answer names them:
+
+- **When the matrix is not symmetric and the antisymmetric part carries meaning.** The form
+  $x^\top A x$ throws the antisymmetric part of $A$ away (@lem-symmetrize). If your $A$
+  encodes a rotation or a flow where the skew part matters (e.g. the curl of a vector field,
+  a circulation), the quadratic form is blind to it — you need the full matrix action
+  $x \mapsto Ax$ ([GEOM-08]), not the scalar $x^\top A x$.
+- **When the surface is genuinely non-quadratic far from a point.** A quadratic form is the
+  *exact* shape only for actually-quadratic quantities, and the *local* shape (via the
+  second-order Taylor expansion, [GEOM-24]) for everything else. Far from the expansion
+  point, a real loss surface has higher-order structure — multiple basins, plateaus, cliffs
+  — that no single quadratic form captures. Trusting the quadratic model globally is how
+  Newton's method oversteps; it is a *local* picture.
+- **When the matrix is (near-)singular.** As @sec-degenerate showed, the clean story needs
+  $\lambda_{\min} > 0$. With a zero or tiny smallest eigenvalue you are in the
+  semidefinite/ill-conditioned regime, and you reach for the pseudoinverse, regularization,
+  or a low-rank truncation instead of the naive inverse.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-16 *Symmetric Matrices and the Spectral Theorem*]**, which proved
+that a symmetric $A$ factors as $Q\Lambda Q^\top$ with real eigenvalues and an orthonormal
+eigenbasis. This article spent that factorization: it is the entire reason a quadratic form
+collapses to $\sum_i \lambda_i z_i^2$, and hence the entire reason there are only four
+shapes. From here Movement V continues:
+
+- **[GEOM-18 *Positive-Definite Matrices*]** — Case 1 of @thm-classification, studied in
+  full: the "good" matrices whose form is a bowl with a unique bottom, the tests for them
+  (eigenvalues, leading minors, Cholesky), and why $A^\top A$ and covariance matrices are
+  the canonical examples. This article supplied the *picture*; [GEOM-18] supplies the
+  *theory and the tests*.
+- **[GEOM-19 *Cholesky and the Matrix Square Root*]** — once a form is positive definite,
+  it factors as a "square," powering whitening and Gaussian sampling.
+- **[GEOM-25 *The Gradient and Hessian of a Quadratic Form*]** — differentiates
+  $f(x) = \tfrac12 x^\top A x - b^\top x$, finds $\nabla f = Ax - b$ and $\nabla^2 f = A$,
+  and shows that minimizing a quadratic form *is* solving $Ax = b$ — the convergence point
+  of the whole track, discharging Regression's and Inference's heaviest requests.
+
+Downstream of the track, this article is the algebra behind **variance maximization in PCA**
+(Unsupervised Learning, via @thm-rayleigh), the **Fisher-information quadratic form**
+([INFR-B3]), and the **quadratic model of a loss** that Optimization minimizes.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary thread.** J. J. Sylvester's 1852 paper introducing the law of inertia
+  (@thm-inertia) is the origin of "signature"; the principal-axis idea traces back to Euler
+  and Lagrange's classification of conics and quadrics, which is the two- and
+  three-dimensional special case of @thm-principal-axes.
+- **The Rayleigh quotient** (@sec-rayleigh) is named for Lord Rayleigh's work on vibrational
+  modes; the same variational characterization of eigenvalues — that
+  $\lambda_{\max} = \max_{\|u\|=1} u^\top A u$ — generalizes to the **Courant–Fischer
+  min–max theorem** for the interior eigenvalues, a standard graduate result and the
+  rigorous foundation under PCA's "the $k$-th component maximizes residual variance."
+- **Open threads deliberately deferred.** *Exactly when is the form a bowl with a unique
+  bottom, and how do I test it without computing eigenvalues?* — positive-definiteness and
+  Sylvester's minor criterion, [GEOM-18]. *What if I want to differentiate the form?* —
+  [GEOM-25]. *What happens to the form when the matrix is rectangular, so it has no
+  eigenvalues?* — there is no quadratic form for a rectangular matrix, but the analogous
+  "stretch along orthogonal axes" picture survives as the **singular value decomposition**,
+  [GEOM-20], where $A^\top A$ (a quadratic-form matrix) is exactly the bridge.

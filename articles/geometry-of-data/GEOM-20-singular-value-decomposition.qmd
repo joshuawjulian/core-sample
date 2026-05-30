@@ -1,0 +1,998 @@
+---
+title: "The Singular Value Decomposition: The Master Factorization"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / inputs
+HILITE = "#c1121f"   # singular axes / right-side images
+ACCENT = "#0a7d4d"   # second axis / highlights
+GOLD   = "#d4a017"   # third axis
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is one of the two **summits** of the
+> Geometry-of-Data track and the second half of the **read-as-a-pair** fork that opened
+> with [GEOM-19 *Cholesky and the Matrix Square Root*]. It is the payoff of everything in
+> Movements III–V. It assumes you can read a matrix as a **linear map** whose columns are
+> where the axes go ([GEOM-08]); that you know **rank and the four fundamental subspaces** —
+> column space, row space, null space, left null space ([GEOM-12]); that you can
+> **diagonalize** a matrix with a full eigenbasis, $A = V\Lambda V^{-1}$ ([GEOM-15]); and,
+> above all, the **spectral theorem** — every real symmetric matrix factors as
+> $A = Q\Lambda Q^\top$ with an *orthonormal* eigenbasis and *real* eigenvalues
+> ([GEOM-16]) — together with the fact that $A^\top A$ is always **positive
+> semidefinite**, with **nonnegative** eigenvalues ([GEOM-18]). The one question here:
+> *is there one decomposition that works for **every** matrix — rectangular,
+> rank-deficient, anything — and reveals its complete geometry?* It sets up [GEOM-21]
+> (low-rank approximation and the pseudoinverse) and [GEOM-26] (the condition number
+> $\kappa = \sigma_{\max}/\sigma_{\min}$), and it is the **shared keystone with
+> Unsupervised Learning's PCA** and the machinery behind **Regression R14** (ridge in the
+> SVD basis).
+
+## Abstract {.unnumbered}
+
+The eigendecomposition is powerful but fragile: it needs a *square* matrix, it needs a
+full set of independent eigenvectors, and even then the eigenvectors can sit at awkward
+angles and the eigenvalues can be complex. Real data matrices are rectangular,
+rank-deficient, and otherwise badly behaved, so the eigendecomposition fails on exactly
+the matrices we care about most. This article builds the decomposition that **never
+fails**. For *any* real matrix $A$ of size $m \times n$ — square or rectangular, full-rank
+or not — there exist orthogonal matrices $U$ and $V$ and a nonnegative "diagonal" matrix
+$\Sigma$ such that
+$$A = U\Sigma V^\top.$$
+We derive it from a single move: apply the spectral theorem to the symmetric matrix
+$A^\top A$. The singular values are the square roots of its eigenvalues, the
+right singular vectors are its eigenvectors, and the relation $A v_i = \sigma_i u_i$
+manufactures the left singular vectors for free. The single claim this article defends is
+that the SVD is **the master factorization**: every linear map, with no exceptions, is
+*rotate, scale along orthogonal axes, rotate* — and once you can see that, the rank, the
+four subspaces, the operator norm, and the eigendecomposition of symmetric matrices all
+fall out as readings of one picture.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+**Every** real matrix $A$ — any shape, any rank — factors as
+$$A = U\,\Sigma\,V^\top,$$
+where $U$ ($m\times m$) and $V$ ($n\times n$) are **orthogonal** (their columns are
+orthonormal bases) and $\Sigma$ ($m\times n$) is **nonnegative diagonal**. Geometrically
+this says: *every linear map does the same three things in order* — **rotate/reflect** the
+input ($V^\top$), **stretch along perpendicular axes** by the nonnegative amounts
+$\sigma_1 \ge \sigma_2 \ge \cdots \ge 0$ ($\Sigma$), then **rotate/reflect** into the
+output space ($U$). A map cannot shear, cannot twist, cannot do anything else: under the
+right orthonormal coordinates in *and* out, it is pure axis-aligned scaling. The matrix's
+entire geometry — its rank, its four subspaces, how much it can amplify a vector — is
+written in the singular values and the columns of $U$ and $V$.
+:::
+
+Everything below orbits that box. We will *derive* the factorization rather than assert
+it, and the engine is one we already own: the spectral theorem from [GEOM-16]. The slogan
+"rotate–scale–rotate" must earn the status of a theorem, and it will.
+
+# Why we are here: the decomposition we wished the eigendecomposition were {#sec-why}
+
+Keep one question in view for the whole article: **the eigendecomposition is the natural
+way to understand what a matrix does, so why do we need a second, more elaborate
+factorization?** Every step below answers some piece of "what was broken, and how does the
+SVD fix it."
+
+## What the eigendecomposition gave us, and what it cost {#sec-eigen-cost}
+
+By [GEOM-15] we can sometimes write a square matrix as $A = V\Lambda V^{-1}$: change into
+the eigenbasis (the columns of $V$), scale each eigen-coordinate by its eigenvalue (the
+diagonal of $\Lambda$), and change back. That is a beautiful story — *the map is just
+scaling, once you look along the right directions* — but it comes with a long list of
+fine print, and on real data every clause of that fine print is routinely violated.
+
+1. **It needs a square matrix.** Eigenvalues are defined by $Av = \lambda v$, and that
+   equation only typechecks when $A$ maps a space to *itself* — i.e. $A$ is $n\times n$.
+   A data matrix with $m$ rows (samples) and $n$ columns (features) is almost never
+   square. The eigendecomposition has nothing to say about a $1000 \times 20$ matrix.
+2. **Even when square, it needs a full set of independent eigenvectors.** A *defective*
+   matrix — one short on eigenvectors — cannot be diagonalized at all ([GEOM-15] gives the
+   $\bigl[\begin{smallmatrix}2&1\\0&2\end{smallmatrix}\bigr]$ example with a single
+   eigen-direction). For such a matrix $V$ is not invertible and $A = V\Lambda V^{-1}$
+   does not exist.
+3. **Even when diagonalizable, the eigenvectors can be skewed and the eigenvalues
+   complex.** The columns of $V$ need not be orthogonal, so "change of coordinates" is a
+   *shearing* change, not a rigid rotation — and a rotation matrix has no real
+   eigenvectors at all (it turns *every* real direction). Then $\Lambda$ and $V$ have
+   complex entries, and the clean geometric picture clouds over.
+
+The one class of matrices that escapes all three defects is the **symmetric** ones: by the
+spectral theorem ([GEOM-16]) a real symmetric $A$ always has real eigenvalues and an
+*orthonormal* eigenbasis, so $A = Q\Lambda Q^\top$ with $Q$ a genuine rotation/reflection.
+That is the gold standard — and the SVD's entire strategy is to **manufacture symmetry out
+of any matrix** so that we can borrow that gold standard. The symmetric matrices we will
+build are $A^\top A$ and $AA^\top$, and we already know from [GEOM-18] that they are not
+merely symmetric but positive semidefinite, hence have *nonnegative* eigenvalues — which
+is exactly what lets us take their square roots and call the results "stretch factors."
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, why is the SVD strictly more general than the eigendecomposition?"*
+Because it exists for **every** matrix, of any shape and any rank, with **orthonormal**
+singular vectors and **real nonnegative** singular values — no diagonalizability
+assumption, no squareness assumption, no complex arithmetic. The eigendecomposition is a
+special case: when $A$ is symmetric positive semidefinite, the SVD and the
+eigendecomposition coincide (we prove this in @sec-vs-eigen). The price is that the SVD
+uses *two* orthonormal bases — one for the input space, one for the output — rather than
+one. That is the only thing extra, and it is exactly what a rectangular map needs.
+:::
+
+## The historical thread {#sec-history}
+
+The decomposition was discovered for symmetric matrices and bilinear forms in the 1870s,
+independently by **Eugenio Beltrami** (1873) and **Camille Jordan** (1874), as a way to
+classify quadratic and bilinear forms up to changes of orthonormal coordinates. **James
+Joseph Sylvester** reached the same object in 1889. For decades it lived as a piece of
+pure algebra. Its rise to the center of applied mathematics came only with the computer:
+in 1965 **Gene Golub and William Kahan** published the first numerically stable algorithm
+for computing it, and the SVD became the workhorse it is today — the engine inside
+least-squares solvers, the definition of the matrix condition number ([GEOM-26]), the
+mathematics under principal component analysis, latent semantic indexing, recommender
+systems, and image compression. The historical *why* and the modern *why* agree: people
+kept wanting to ask "what does this linear map really do to space, and how big can it make
+things?" — and the SVD is the complete, always-available answer.
+
+# Intuition before symbols: the circle becomes an ellipse {#sec-intuition}
+
+Here is the whole theorem as a picture, before a single proof. Take the unit circle in the
+input plane — all vectors of length one. Feed every one of them through a $2\times 2$
+matrix $A$. The image is always an **ellipse** (possibly squashed flat to a segment if $A$
+is rank-deficient). That is a remarkable fact on its own: no matter how $A$ skews or
+shears, the round circle never becomes a peanut or a teardrop — it becomes a clean
+ellipse. @fig-circle-ellipse shows it.
+
+```{python}
+#| label: fig-circle-ellipse
+#| fig-cap: "The geometric heart of the SVD. **Left:** the unit circle in the input space, with two perpendicular unit vectors $v_1, v_2$ (the right singular vectors) marked. **Right:** their images under a $2\\times2$ matrix $A$. The circle maps to an ellipse; the *perpendicular* directions $v_1, v_2$ map to the ellipse's *perpendicular* semi-axes $A v_1 = \\sigma_1 u_1$ and $A v_2 = \\sigma_2 u_2$. The singular values $\\sigma_1 \\ge \\sigma_2$ are the lengths of those semi-axes — exactly how far $A$ stretches along each principal direction."
+A = np.array([[1.6, 0.9],
+              [0.2, 1.3]])
+U, s, Vt = np.linalg.svd(A)
+V = Vt.T
+
+theta = np.linspace(0, 2*np.pi, 400)
+circle = np.vstack([np.cos(theta), np.sin(theta)])
+ellipse = A @ circle
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 4.2))
+for ax in (axL, axR):
+    ax.set_aspect("equal"); ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+
+axL.plot(circle[0], circle[1], color=PALE, lw=2)
+draw_vec(axL, (0, 0), V[:, 0], color=HILITE, label=r"$v_1$", label_offset=(0.16, 0.12))
+draw_vec(axL, (0, 0), V[:, 1], color=ACCENT, label=r"$v_2$", label_offset=(-0.18, 0.14))
+axL.set_title("Input: unit circle"); axL.set_xlim(-2.4, 2.4); axL.set_ylim(-2.4, 2.4)
+
+axR.plot(ellipse[0], ellipse[1], color=PALE, lw=2)
+draw_vec(axR, (0, 0), s[0]*U[:, 0], color=HILITE, label=r"$\sigma_1 u_1$", label_offset=(0.0, 0.28))
+draw_vec(axR, (0, 0), s[1]*U[:, 1], color=ACCENT, label=r"$\sigma_2 u_2$", label_offset=(-0.4, 0.0))
+axR.set_title("Output: image ellipse"); axR.set_xlim(-2.4, 2.4); axR.set_ylim(-2.4, 2.4)
+plt.tight_layout()
+```
+
+Now stare at the right panel and ask: *which* input directions landed on the ellipse's two
+perpendicular axes? The answer is the punchline of the SVD. There is a special pair of
+**perpendicular** input directions $v_1 \perp v_2$ (left panel) that $A$ sends to a
+**perpendicular** pair of output directions — the ellipse's semi-axes. Along $v_1$, $A$
+stretches by $\sigma_1$ (the long semi-axis); along $v_2$, by $\sigma_2$ (the short one).
+Write the output directions as unit vectors $u_1, u_2$ and the stretch amounts as
+$\sigma_1 \ge \sigma_2 \ge 0$, and the entire content of the picture is two equations:
+$$A v_1 = \sigma_1 u_1, \qquad A v_2 = \sigma_2 u_2,$$
+with $\{v_1,v_2\}$ orthonormal in the input and $\{u_1,u_2\}$ orthonormal in the output.
+*That* is the SVD. Everything formal below is the work of proving such special directions
+always exist, in any dimension, for any matrix, and packaging the two equations into the
+matrix form $A = U\Sigma V^\top$.
+
+The slogan **rotate–scale–rotate** reads straight off this: to compute $Ax$, first express
+$x$ in the $\{v_i\}$ coordinates (that is what multiplying by $V^\top$ does — @sec-vt
+proves it), then scale the $i$-th coordinate by $\sigma_i$ (that is $\Sigma$), then read
+the result as a combination of the $\{u_i\}$ (that is $U$). Rotate, scale, rotate. No
+shear is possible because the input axes used ($v_i$) are perpendicular and the output
+axes ($u_i$) are perpendicular too.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the image of the unit circle always an ellipse and never some lumpier shape?"*
+Because $A$ is **linear**, and a linear map of an ellipse (the circle is a special
+ellipse) is always an ellipse — linearity preserves the property "is the solution set of a
+single quadratic equation," and bounded such sets are ellipses. We will see it
+algebraically in @sec-derive: the squared length of the output, $\lVert Ax\rVert^2 =
+x^\top(A^\top A)x$, is a quadratic form ([GEOM-17]), and its level sets over the unit
+circle are governed entirely by the eigenvalues of the symmetric matrix $A^\top A$ — which
+is precisely why $A^\top A$ is where the derivation starts.
+:::
+
+# The formal development {#sec-formal}
+
+## Notation and what an orthogonal matrix is {#sec-notation}
+
+Fix the players. $A$ is a real $m \times n$ matrix: it maps an input vector
+$x \in \mathbb{R}^n$ to an output $Ax \in \mathbb{R}^m$. We will produce three matrices.
+
+- $V$ is $n \times n$ and **orthogonal**: its columns $v_1,\dots,v_n$ form an orthonormal
+  basis of the *input* space $\mathbb{R}^n$. These are the **right singular vectors**.
+- $U$ is $m \times m$ and **orthogonal**: its columns $u_1,\dots,u_m$ form an orthonormal
+  basis of the *output* space $\mathbb{R}^m$. These are the **left singular vectors**.
+- $\Sigma$ is $m \times n$, **diagonal** in the sense that its only possibly-nonzero
+  entries are $\Sigma_{ii} = \sigma_i \ge 0$ for $i = 1,\dots,\min(m,n)$, ordered
+  $\sigma_1 \ge \sigma_2 \ge \cdots \ge 0$. These are the **singular values**. (A
+  rectangular "diagonal" matrix is just a diagonal block padded with zero rows or columns
+  to make the shapes fit; we draw one explicitly in @sec-shapes.)
+
+A matrix $Q$ is **orthogonal** when $Q^\top Q = I$, equivalently $Q^{-1} = Q^\top$. We met
+this in [GEOM-05] and [GEOM-16]: it is precisely the condition that the columns of $Q$ are
+orthonormal, because the $(i,j)$ entry of $Q^\top Q$ is $q_i^\top q_j$, which is $1$ when
+$i=j$ (unit length) and $0$ otherwise (perpendicular). Geometrically, an orthogonal matrix
+is a **rigid motion fixing the origin**: a rotation, a reflection, or a combination.
+Crucially it **preserves lengths and angles**, since for any $x$,
+$$
+\lVert Qx \rVert^2 = (Qx)^\top(Qx) = x^\top Q^\top Q\, x = x^\top I\, x = x^\top x
+= \lVert x \rVert^2 .
+$$ {#eq-orth-length}
+This length-preservation is the reason $U$ and $V$ get to be called "rotations" in the
+Core: they reposition vectors without distorting them, so *all* the distortion the map $A$
+performs is concentrated in the single scaling step $\Sigma$.
+
+## The key object: $A^\top A$ and its spectral decomposition {#sec-ata}
+
+The SVD is born from one idea — *we cannot apply the spectral theorem to a rectangular
+$A$, but we can apply it to the square symmetric matrix $A^\top A$.* Let us assemble
+everything we know about $A^\top A$, because every property of the SVD is hiding in it.
+
+::: {#lem-ata}
+**Lemma ($A^\top A$ is symmetric and positive semidefinite).** For any real $m\times n$
+matrix $A$, the $n \times n$ matrix $A^\top A$ is symmetric and positive semidefinite:
+$x^\top (A^\top A)\, x \ge 0$ for every $x \in \mathbb{R}^n$, so all its eigenvalues are
+real and nonnegative.
+:::
+
+::: {.proof}
+*Symmetry.* Using $(BC)^\top = C^\top B^\top$ and $(B^\top)^\top = B$ (the transpose
+identities of [GEOM-10]),
+$$
+(A^\top A)^\top = A^\top (A^\top)^\top = A^\top A,
+$$
+so the matrix equals its own transpose. *Positive semidefiniteness.* For any
+$x \in \mathbb{R}^n$, group the product to expose a squared length:
+$$
+x^\top (A^\top A)\, x = (Ax)^\top (Ax) = \lVert Ax \rVert^2 \ge 0,
+$$ {#eq-ata-psd}
+since the squared norm of any real vector is nonnegative. By the spectral theorem
+([GEOM-16]) a real symmetric matrix has real eigenvalues; and an eigenvalue $\lambda$ with
+unit eigenvector $w$ (so $A^\top A\,w = \lambda w$) satisfies
+$\lambda = \lambda\, w^\top w = w^\top(A^\top A)w = \lVert Aw\rVert^2 \ge 0$ by
+@eq-ata-psd. Hence every eigenvalue is real and $\ge 0$. $\qquad\blacksquare$
+:::
+
+This is the same Gram-matrix fact proved in [GEOM-18] (`@thm-gram` there); we re-derive the
+one inequality we need, @eq-ata-psd, because it is the hinge of the whole construction and
+must be on the page. The nonnegativity is what lets us *take a real square root*, and that
+square root will be the singular value.
+
+Now invoke the spectral theorem on $A^\top A$ in full. Because $A^\top A$ is real and
+symmetric, [GEOM-16] guarantees an **orthonormal** basis $v_1,\dots,v_n$ of $\mathbb{R}^n$
+consisting of eigenvectors, with real eigenvalues $\lambda_1,\dots,\lambda_n$, which we are
+free to list in **decreasing** order:
+$$
+A^\top A\, v_i = \lambda_i\, v_i, \qquad
+\lambda_1 \ge \lambda_2 \ge \cdots \ge \lambda_n \ge 0, \qquad
+v_i^\top v_j = \begin{cases}1 & i=j\\ 0 & i\neq j.\end{cases}
+$$ {#eq-spectral-ata}
+These $v_i$ are *defined to be* the right singular vectors. We have not chosen them by
+guesswork; the spectral theorem produced them, and it always can, because $A^\top A$ is
+always symmetric. This single sentence is why the SVD always exists.
+
+## Defining the singular values and the left singular vectors {#sec-derive}
+
+We now extract the rest of the decomposition from @eq-spectral-ata by elementary algebra —
+no further deep theorem, just the definitions.
+
+**Step 1 — the singular values.** Define
+$$
+\sigma_i = \sqrt{\lambda_i} \ge 0, \qquad i = 1,\dots,n.
+$$ {#eq-sigma-def}
+This is legal precisely because @lem-ata made every $\lambda_i \ge 0$; the square root is a
+real number. Note immediately the meaning of $\sigma_i$: from @eq-ata-psd applied to the
+unit eigenvector $v_i$,
+$$
+\lVert A v_i \rVert^2 = v_i^\top (A^\top A)\, v_i = v_i^\top (\lambda_i v_i)
+= \lambda_i\, (v_i^\top v_i) = \lambda_i,
+$$ {#eq-Avi-len}
+using $v_i^\top v_i = 1$. Therefore $\lVert A v_i \rVert = \sqrt{\lambda_i} = \sigma_i$.
+**The singular value $\sigma_i$ is literally the length to which $A$ stretches the unit
+direction $v_i$.** The ellipse semi-axes of @fig-circle-ellipse were exactly these lengths.
+
+**Step 2 — the left singular vectors, for the nonzero singular values.** Suppose $r$ of
+the $\sigma_i$ are strictly positive: $\sigma_1 \ge \cdots \ge \sigma_r > 0$ and
+$\sigma_{r+1} = \cdots = 0$. (We will see in @sec-rank that $r$ is the rank of $A$.) For
+each $i \le r$, define
+$$
+u_i = \frac{1}{\sigma_i}\, A v_i \quad\in \mathbb{R}^m,
+\qquad\text{equivalently}\qquad A v_i = \sigma_i u_i .
+$$ {#eq-ui-def}
+The division by $\sigma_i$ is legal because $\sigma_i > 0$ for $i \le r$. By @eq-Avi-len
+the vector $A v_i$ has length $\sigma_i$, so dividing by $\sigma_i$ gives $u_i$ length $1$:
+$$
+\lVert u_i \rVert = \frac{1}{\sigma_i}\,\lVert A v_i \rVert
+= \frac{\sigma_i}{\sigma_i} = 1 .
+$$
+So each $u_i$ is a *unit* vector. The relation $A v_i = \sigma_i u_i$ in @eq-ui-def is the
+algebraic form of the picture's two equations — it just holds in every dimension now.
+
+**Step 3 — the $u_i$ are orthonormal.** We have unit length; we need perpendicularity. Take
+$i \ne j$ with both $\le r$ and compute the dot product, substituting @eq-ui-def for each:
+$$
+u_i^\top u_j
+= \Bigl(\tfrac{1}{\sigma_i} A v_i\Bigr)^{\!\top} \Bigl(\tfrac{1}{\sigma_j} A v_j\Bigr)
+= \frac{1}{\sigma_i \sigma_j}\, (A v_i)^\top (A v_j)
+= \frac{1}{\sigma_i \sigma_j}\, v_i^\top (A^\top A)\, v_j .
+$$
+Now use that $v_j$ is an eigenvector of $A^\top A$, $A^\top A\, v_j = \lambda_j v_j$
+(@eq-spectral-ata):
+$$
+u_i^\top u_j
+= \frac{1}{\sigma_i \sigma_j}\, v_i^\top (\lambda_j v_j)
+= \frac{\lambda_j}{\sigma_i \sigma_j}\, (v_i^\top v_j)
+= \frac{\lambda_j}{\sigma_i \sigma_j}\cdot 0 = 0,
+$$
+because $v_i^\top v_j = 0$ for $i\ne j$ (the $v$'s are orthonormal, @eq-spectral-ata). So
+the $u_1,\dots,u_r$ are mutually perpendicular unit vectors — an **orthonormal set** in
+$\mathbb{R}^m$. They were not assumed orthonormal; their orthonormality is *inherited* from
+the $v$'s through $A^\top A$. This inheritance is the quiet miracle of the construction.
+
+**Step 4 — complete both bases.** We have an orthonormal set $v_1,\dots,v_n$ already
+(it spans $\mathbb{R}^n$, being $n$ orthonormal vectors). On the output side we have only
+$u_1,\dots,u_r$, which is $r \le m$ vectors. Extend them to a full orthonormal basis
+$u_1,\dots,u_m$ of $\mathbb{R}^m$ by appending any orthonormal basis of the orthogonal
+complement of $\operatorname{span}\{u_1,\dots,u_r\}$ — this is always possible (Gram–Schmidt
+on any spanning completion, [GEOM-07], produces it). The appended vectors $u_{r+1},\dots,u_m$
+will multiply zero singular values, so their exact choice does not affect $A$; they exist
+only to make $U$ a full square orthogonal matrix.
+
+We now have everything the Core promised. The next step is to check that bolting these
+pieces together reconstructs $A$.
+
+## Assembling $A = U\Sigma V^\top$ and proving it {#sec-assemble}
+
+Form the matrices by stacking the vectors as columns:
+$$
+U = [\,u_1\ \cdots\ u_m\,]\ (m\times m), \quad
+V = [\,v_1\ \cdots\ v_n\,]\ (n\times n), \quad
+\Sigma = \operatorname{diag}_{m\times n}(\sigma_1,\dots,\sigma_{\min(m,n)}),
+$$
+where $\Sigma$ has $\sigma_i$ in position $(i,i)$ and zeros elsewhere. $U$ and $V$ are
+orthogonal because their columns are orthonormal (Steps 3–4 and @eq-spectral-ata). We claim
+$A = U\Sigma V^\top$, and we prove it.
+
+::: {#thm-svd}
+**Theorem (existence of the SVD).** Every real $m \times n$ matrix $A$ can be written
+$$
+A = U\,\Sigma\,V^\top,
+$$
+with $U$ an $m\times m$ orthogonal matrix, $V$ an $n\times n$ orthogonal matrix, and
+$\Sigma$ an $m\times n$ nonnegative diagonal matrix whose diagonal entries
+$\sigma_1 \ge \cdots \ge \sigma_{\min(m,n)} \ge 0$ are the square roots of the eigenvalues
+of $A^\top A$.
+:::
+
+::: {.proof}
+Two matrices are equal iff they act identically on a basis, so it suffices to show that
+$A$ and $U\Sigma V^\top$ produce the same output on each basis vector $v_j$ of
+$\mathbb{R}^n$. We compute the right-hand side $U\Sigma V^\top v_j$ and check it equals
+$A v_j$.
+
+*The factor $V^\top v_j$.* The $i$-th entry of $V^\top v_j$ is the dot product of the
+$i$-th row of $V^\top$ — which is $v_i$ — with $v_j$, i.e. $v_i^\top v_j$. By orthonormality
+this is $1$ if $i=j$ and $0$ otherwise. So $V^\top v_j = e_j$, the $j$-th standard basis
+vector (a $1$ in slot $j$, zeros elsewhere). This is the algebraic content of "$V^\top$
+reads $v_j$'s coordinate in the $v$-basis."
+
+*The factor $\Sigma e_j$.* Multiplying the rectangular diagonal $\Sigma$ by $e_j$ picks out
+its $j$-th column. If $j \le \min(m,n)$ that column is $\sigma_j e_j$ (the value $\sigma_j$
+in row $j$); if $j > \min(m,n)$ — possible only when $n > m$ — the column is all zeros,
+which we may write $\sigma_j e_j$ with the convention $\sigma_j = 0$ there. Either way
+$\Sigma V^\top v_j = \Sigma e_j = \sigma_j e_j$ (an $m$-vector).
+
+*The factor $U(\sigma_j e_j)$.* Multiplying $U$ by $e_j$ picks out its $j$-th column $u_j$
+(when $j \le m$), so $U \Sigma V^\top v_j = \sigma_j u_j$.
+
+*Compare with $A v_j$.* There are two cases.
+
+- If $j \le r$ (a nonzero singular value), then by the definition @eq-ui-def,
+  $A v_j = \sigma_j u_j$ — which is exactly what we just got. ✓
+- If $j > r$, then $\sigma_j = 0$, so the right-hand side $\sigma_j u_j = 0$. We must check
+  the left-hand side $A v_j$ is also $0$. From @eq-Avi-len, $\lVert A v_j\rVert^2 =
+  \lambda_j = \sigma_j^2 = 0$, and the only vector of length zero is the zero vector, so
+  $A v_j = 0$. ✓
+
+Both sides agree on every basis vector $v_1,\dots,v_n$ of $\mathbb{R}^n$. A linear map is
+determined by its action on a basis (any $x = \sum c_j v_j$ gives
+$Ax = \sum c_j A v_j = \sum c_j (U\Sigma V^\top) v_j = U\Sigma V^\top x$ by linearity), so
+$A = U\Sigma V^\top$ as maps, hence as matrices. The construction used only the spectral
+theorem on $A^\top A$, which exists for *every* $A$, so the SVD exists for every $A$.
+$\qquad\blacksquare$
+:::
+
+That is the master factorization, derived end to end. Pause on what made it work: the only
+nontrivial ingredient was the spectral theorem, imported from [GEOM-16]; everything else
+was definitions (@eq-sigma-def, @eq-ui-def) and bookkeeping. The SVD is the spectral
+theorem in disguise, made to work for any shape of matrix by routing through $A^\top A$.
+
+::: {.callout-tip title="You might be asked"}
+*"Where did the left singular vectors come from — did you need a second eigen-problem for
+$AA^\top$?"* No, and that is the elegant part. We computed the $u_i$ *for free* from the
+$v_i$ via $u_i = Av_i/\sigma_i$ (@eq-ui-def); we never solved a second eigenproblem. That
+said, the $u_i$ **are** the eigenvectors of $AA^\top$ — we prove this in @sec-aat — and in
+practice, if $m \ll n$, you would diagonalize the smaller of $A^\top A$ ($n\times n$) and
+$AA^\top$ ($m\times m$) and generate the other side's vectors by the analogous relation.
+The choice of which Gram matrix to diagonalize is a *computational* one; the *existence*
+needs only one of them.
+:::
+
+## $V$ rotates the input into singular coordinates {#sec-vt}
+
+We claimed in @sec-intuition that "$V^\top$ expresses $x$ in the $v$-basis." Make it
+precise, since the rotate–scale–rotate reading depends on it. For any input $x$, the
+vector $c = V^\top x$ has $i$-th entry $c_i = v_i^\top x$ — the dot product of $x$ with the
+$i$-th right singular vector. By [GEOM-05], in an orthonormal basis the coordinate of $x$
+along $v_i$ *is* $v_i^\top x$, and $x = \sum_i c_i v_i$ exactly. So $V^\top$ takes the
+physical vector $x$ and returns its **coordinates in the singular basis** — the input
+rotation of the Core. Then $\Sigma$ scales coordinate $i$ by $\sigma_i$, and $U$ reads the
+scaled coordinates back out as a combination $\sum_i (\sigma_i c_i)\, u_i$ of left singular
+vectors. Three honest steps, rotate–scale–rotate, no shear.
+
+This also gives the **most useful form of the SVD for hand reasoning**, the *outer-product
+expansion*. Writing $A = U\Sigma V^\top$ and multiplying out the (rectangular) diagonal,
+only the $r$ nonzero singular values survive, and
+$$
+A = \sum_{i=1}^{r} \sigma_i\, u_i v_i^\top .
+$$ {#eq-outer}
+Each term $u_i v_i^\top$ is an $m\times n$ **rank-one** matrix (an outer product: column
+$u_i$ times row $v_i^\top$, [GEOM-09]), and the SVD writes $A$ as a sum of rank-one pieces,
+weighted by the singular values and listed in decreasing importance. This is the form that
+powers low-rank approximation in [GEOM-21]: truncating the sum after $k$ terms keeps the
+$k$ most important pieces. We will use @eq-outer again in @sec-norm and @sec-examples.
+
+# Reading a matrix's geometry off its SVD {#sec-reading}
+
+The factorization is not the destination; *what it reveals* is. We now read four central
+quantities straight off $U$, $\Sigma$, $V$.
+
+## Rank: count the nonzero singular values {#sec-rank}
+
+::: {#thm-rank}
+**Theorem (rank from singular values).** The rank of $A$ equals the number $r$ of strictly
+positive singular values.
+:::
+
+::: {.proof}
+Rank is the dimension of the column space — the span of all outputs $Ax$ ([GEOM-12]). Using
+the outer-product form @eq-outer, every output is
+$$
+Ax = \sum_{i=1}^{r} \sigma_i\, u_i (v_i^\top x) = \sum_{i=1}^{r} \bigl(\sigma_i\, v_i^\top
+x\bigr)\, u_i ,
+$$
+a linear combination of $u_1,\dots,u_r$ alone. So the column space is contained in
+$\operatorname{span}\{u_1,\dots,u_r\}$, giving $\operatorname{rank}(A) \le r$. Conversely,
+choosing $x = v_j$ for $j \le r$ gives $A v_j = \sigma_j u_j$ with $\sigma_j > 0$, so each
+$u_j$ ($j\le r$) is in the column space; these $r$ vectors are orthonormal, hence
+independent, so $\operatorname{rank}(A) \ge r$. Therefore $\operatorname{rank}(A) = r$.
+$\qquad\blacksquare$
+:::
+
+This is the SVD's most practically important reading. The eigenvalue test for rank is
+fragile, but the singular values give rank robustly — and they give *graded* rank: when
+$\sigma_{k+1},\dots,\sigma_r$ are tiny-but-nonzero, the matrix is "numerically rank $k$,"
+which is exactly the situation that low-rank approximation ([GEOM-21]) and the condition
+number ([GEOM-26]) are built to handle.
+
+## The four fundamental subspaces, on a silver platter {#sec-four-spaces}
+
+The four subspaces of [GEOM-12] — column space, null space, row space, left null space —
+are usually a chore to compute. The SVD hands all four directly as spans of singular
+vectors. With the convention that $u_1,\dots,u_r$ pair with the nonzero $\sigma_i$:
+
+- **Column space** of $A$ = $\operatorname{span}\{u_1,\dots,u_r\}$. (Proved inside
+  @thm-rank: every output is a combination of these, and they are attained.)
+- **Left null space** of $A$ (vectors $w$ with $A^\top w = 0$) =
+  $\operatorname{span}\{u_{r+1},\dots,u_m\}$ — the *leftover* left singular vectors, the
+  orthogonal complement of the column space inside $\mathbb{R}^m$.
+- **Row space** of $A$ = $\operatorname{span}\{v_1,\dots,v_r\}$.
+- **Null space** of $A$ (vectors $x$ with $Ax = 0$) =
+  $\operatorname{span}\{v_{r+1},\dots,v_n\}$ — the *leftover* right singular vectors.
+
+We verify the null-space claim, the others being analogous. If $j > r$ then $A v_j = 0$
+(shown in @thm-svd's proof), so each leftover $v_j$ is in the null space; they are $n - r$
+orthonormal vectors. And the rank–nullity theorem ([GEOM-12]) says the null space has
+dimension $n - r$, so these $n-r$ independent vectors *are* a basis of it. The orthogonality
+pairing that [GEOM-12] proved — row space $\perp$ null space — is now visible by inspection:
+$\{v_1,\dots,v_r\}$ and $\{v_{r+1},\dots,v_n\}$ are orthonormal, hence orthogonal, halves of
+the same basis. @fig-four-spaces draws the whole map.
+
+```{python}
+#| label: fig-four-spaces
+#| fig-cap: "The SVD lays out the four fundamental subspaces and how $A$ moves between them. The input space $\\mathbb{R}^n$ splits orthogonally into the **row space** (span of $v_1,\\dots,v_r$) and the **null space** (span of $v_{r+1},\\dots,v_n$). $A$ crushes the null space to $0$, and maps the row space *one-to-one and onto* the **column space** (span of $u_1,\\dots,u_r$) inside $\\mathbb{R}^m$, stretching each $v_i$ by $\\sigma_i$ into $u_i$. The **left null space** (span of $u_{r+1},\\dots,u_m$) is the part of the output space $A$ can never reach."
+fig, ax = plt.subplots(figsize=(8.4, 4.6))
+ax.set_xlim(0, 10); ax.set_ylim(0, 10); ax.axis("off"); ax.grid(False)
+
+# Input space boxes (left)
+ax.add_patch(plt.Rectangle((0.4, 5.6), 3.0, 3.4, fc="#dbe6f5", ec=VEC))
+ax.add_patch(plt.Rectangle((0.4, 1.0), 3.0, 3.4, fc="#e9eef5", ec=GREY))
+ax.text(1.9, 9.3, r"input space $\mathbb{R}^n$", ha="center", fontsize=11)
+ax.text(1.9, 7.3, "row space\n" + r"$\mathrm{span}\{v_1,\dots,v_r\}$", ha="center", fontsize=10, color=VEC)
+ax.text(1.9, 2.7, "null space\n" + r"$\mathrm{span}\{v_{r+1},\dots,v_n\}$", ha="center", fontsize=10, color=GREY)
+
+# Output space boxes (right)
+ax.add_patch(plt.Rectangle((6.6, 5.6), 3.0, 3.4, fc="#f6dcdc", ec=HILITE))
+ax.add_patch(plt.Rectangle((6.6, 1.0), 3.0, 3.4, fc="#f3eaea", ec=GREY))
+ax.text(8.1, 9.3, r"output space $\mathbb{R}^m$", ha="center", fontsize=11)
+ax.text(8.1, 7.3, "column space\n" + r"$\mathrm{span}\{u_1,\dots,u_r\}$", ha="center", fontsize=10, color=HILITE)
+ax.text(8.1, 2.7, "left null space\n" + r"$\mathrm{span}\{u_{r+1},\dots,u_m\}$", ha="center", fontsize=10, color=GREY)
+
+# Arrows
+ax.add_patch(FancyArrowPatch((3.5, 7.3), (6.5, 7.3), arrowstyle="-|>", mutation_scale=18, color=ACCENT, lw=2.2))
+ax.text(5.0, 7.7, r"$\times\,\sigma_i$  (one-to-one)", ha="center", fontsize=10, color=ACCENT)
+ax.add_patch(FancyArrowPatch((3.5, 2.7), (6.5, 5.7), arrowstyle="-|>", mutation_scale=18, color=GREY, lw=1.8, ls="--"))
+ax.text(4.9, 3.9, r"$\mapsto 0$", ha="center", fontsize=11, color=GREY)
+plt.tight_layout()
+```
+
+## The operator norm: $\lVert A \rVert_2 = \sigma_{\max}$ {#sec-norm}
+
+How much can $A$ amplify a vector? The **operator (spectral) norm** answers it:
+$$
+\lVert A \rVert_2 = \max_{x \ne 0} \frac{\lVert Ax \rVert}{\lVert x \rVert}
+= \max_{\lVert x\rVert = 1} \lVert Ax \rVert,
+$$ {#eq-opnorm-def}
+the largest factor by which $A$ stretches any input. (The two forms agree because scaling
+$x$ scales numerator and denominator equally, so we may as well fix $\lVert x\rVert = 1$.)
+
+::: {#thm-norm}
+**Theorem.** $\lVert A \rVert_2 = \sigma_1$, the largest singular value.
+:::
+
+::: {.proof}
+Write any unit vector in the singular basis: $x = \sum_{i=1}^n c_i v_i$ with
+$\sum_i c_i^2 = \lVert x\rVert^2 = 1$ (lengths in an orthonormal basis are Euclidean,
+[GEOM-05]). Apply $A$ using $A v_i = \sigma_i u_i$ (with $\sigma_i = 0$ for $i > r$):
+$$
+Ax = \sum_{i=1}^n c_i\, A v_i = \sum_{i=1}^n c_i \sigma_i u_i .
+$$
+The $u_i$ are orthonormal, so by the Pythagorean theorem ([GEOM-05]) the squared length adds
+componentwise:
+$$
+\lVert Ax \rVert^2 = \sum_{i=1}^n (c_i \sigma_i)^2 = \sum_{i=1}^n \sigma_i^2\, c_i^2 .
+$$
+Now bound it. Since $\sigma_1 \ge \sigma_i$ for all $i$, we have $\sigma_i^2 \le \sigma_1^2$,
+so
+$$
+\lVert Ax \rVert^2 = \sum_i \sigma_i^2 c_i^2 \le \sigma_1^2 \sum_i c_i^2 = \sigma_1^2 \cdot 1
+= \sigma_1^2 ,
+$$
+giving $\lVert Ax\rVert \le \sigma_1$ for every unit $x$ — so the max is at most $\sigma_1$.
+And it is *achieved*: take $x = v_1$, then $Ax = \sigma_1 u_1$ has length $\sigma_1$.
+Therefore the maximum equals $\sigma_1$. $\qquad\blacksquare$
+:::
+
+So the top singular value is the worst-case amplification, attained in the direction $v_1$.
+The same argument with the *minimum* over unit $x$ shows the least stretch is
+$\sigma_{\min}$ (the smallest singular value, $\sigma_n$ when $m \ge n$), attained at $v_n$.
+The ratio of these two — $\kappa = \sigma_{\max}/\sigma_{\min}$ — is the **condition
+number**, the single number that predicts numerical disaster in solving $Ax = b$, and it is
+the entire subject of [GEOM-26]. The SVD is where it is *defined*.
+
+## How the SVD relates to the eigendecomposition {#sec-vs-eigen}
+
+The SVD generalizes the eigendecomposition, and the exact relationship is worth pinning
+down because interviewers love it and because it closes the loop with [GEOM-15]–[GEOM-16].
+
+**$AA^\top$ and the left singular vectors.** {#sec-aat} We promised in @sec-derive that the
+$u_i$ diagonalize $AA^\top$. Substitute the SVD and use orthogonality $V^\top V = I$:
+$$
+AA^\top = (U\Sigma V^\top)(U\Sigma V^\top)^\top
+= U\Sigma V^\top V \Sigma^\top U^\top
+= U(\Sigma\Sigma^\top)U^\top .
+$$
+Here $\Sigma\Sigma^\top$ is the $m\times m$ diagonal matrix with $\sigma_i^2$ down the
+diagonal. This is exactly the spectral decomposition $AA^\top = U \Lambda' U^\top$ of the
+symmetric matrix $AA^\top$, so its eigenvectors are the columns of $U$ (the left singular
+vectors) and its eigenvalues are the $\sigma_i^2$. By the same computation
+$A^\top A = V(\Sigma^\top\Sigma)V^\top$, confirming the $v_i$ diagonalize $A^\top A$ with
+eigenvalues $\sigma_i^2 = \lambda_i$ — which is how we built them in @eq-spectral-ata. So:
+
+$$
+\boxed{\ \text{singular values of } A \;=\; \sqrt{\text{eigenvalues of } A^\top A}
+\;=\; \sqrt{\text{eigenvalues of } AA^\top}.\ }
+$$ {#eq-sv-eig}
+
+**When the two decompositions coincide.** Suppose $A$ is itself symmetric and positive
+semidefinite, so by the spectral theorem $A = Q\Lambda Q^\top$ with $\lambda_i \ge 0$. Then
+$A^\top A = A^2 = Q\Lambda^2 Q^\top$, whose eigenvalues are $\lambda_i^2$, so the singular
+values are $\sigma_i = \sqrt{\lambda_i^2} = \lambda_i$ (nonnegative, so the square root is
+$\lambda_i$ itself). Taking $U = V = Q$ and $\Sigma = \Lambda$ gives a valid SVD
+$A = Q\Lambda Q^\top$. **For symmetric PSD matrices, the SVD and the eigendecomposition are
+the same object.** This is why PCA — which diagonalizes a covariance matrix, a symmetric
+PSD object — can be phrased equivalently through the eigendecomposition of the covariance
+or the SVD of the centered data matrix; the Unsupervised Learning track exploits exactly
+this equivalence.
+
+::: {.callout-warning title="Pitfall"}
+**Singular values are not "the absolute values of the eigenvalues" in general.** That
+shortcut is true *only* for symmetric matrices. For a symmetric $A$ with a negative
+eigenvalue $\lambda < 0$, the corresponding singular value is $\sigma = |\lambda|$ (since
+$\sigma = \sqrt{\lambda^2}$ by @eq-sv-eig), and the sign gets absorbed into the singular
+vector. For a *non-symmetric* matrix the eigenvalues and singular values can be wildly
+different — a nilpotent matrix like
+$\bigl[\begin{smallmatrix}0&1\\0&0\end{smallmatrix}\bigr]$ has *both* eigenvalues zero but a
+nonzero singular value $\sigma_1 = 1$. Eigenvalues describe *iteration* ($A^k$); singular
+values describe *size* ($\lVert A\rVert$). Conflating them is a classic interview trap.
+:::
+
+# The shape bookkeeping: full vs. thin SVD {#sec-shapes}
+
+Before the worked examples, settle the dimensions, because the rectangular $\Sigma$ trips
+people up. Let $A$ be $m \times n$ with $m > n$ (a "tall" data matrix: more samples than
+features — the common case). Then in the **full SVD**:
+
+- $U$ is $m \times m$, $\Sigma$ is $m \times n$, $V^\top$ is $n \times n$.
+- $\Sigma$ is a square $n\times n$ diagonal block sitting on top of $m - n$ rows of zeros.
+
+The bottom zero rows of $\Sigma$ multiply the last $m-n$ columns of $U$ against nothing, so
+those columns are pure padding (they span the left null space). Discarding them gives the
+**thin (reduced) SVD**:
+$$
+A = U_n\, \Sigma_n\, V^\top, \qquad U_n:\ m\times n,\quad \Sigma_n:\ n\times n,\quad
+V^\top:\ n\times n,
+$$
+where $U_n$ keeps only the first $n$ columns of $U$ (orthonormal but no longer square) and
+$\Sigma_n$ is the square diagonal of singular values. The thin SVD reconstructs $A$ exactly
+and is what numerical libraries return by default for tall matrices, because storing and
+multiplying the $m\times m$ $U$ is wasteful when $m \gg n$. @fig-shapes draws both.
+
+```{python}
+#| label: fig-shapes
+#| fig-cap: "Shape bookkeeping for a tall matrix ($m > n$). **Top (full SVD):** $U$ is a big $m\\times m$ rotation, $\\Sigma$ is $m\\times n$ — a square diagonal block over zero rows — and $V^\\top$ is $n\\times n$. The shaded zero rows of $\\Sigma$ kill the padding columns of $U$. **Bottom (thin SVD):** drop the padding; $U_n$ is $m\\times n$ with orthonormal columns and $\\Sigma_n$ is the $n\\times n$ diagonal of singular values. Both reconstruct $A$ exactly."
+fig, axes = plt.subplots(2, 1, figsize=(8.0, 5.2))
+m, n = 6, 3
+
+def block(ax, x, w, h, color, ec, label, sub=None):
+    ax.add_patch(plt.Rectangle((x, 0), w, h, fc=color, ec=ec, lw=1.5))
+    ax.text(x + w/2, h/2 + 0.25, label, ha="center", va="center", fontsize=12)
+    if sub:
+        ax.text(x + w/2, h/2 - 0.45, sub, ha="center", va="center", fontsize=9, color=GREY)
+
+# Full SVD
+ax = axes[0]; ax.axis("off"); ax.grid(False); ax.set_xlim(0, 13); ax.set_ylim(-0.4, 6.5)
+block(ax, 0.3, 3.0, 6.0, "#dbe6f5", VEC, r"$A$", f"{m}×{n}")
+ax.text(3.6, 3.0, "=", ha="center", fontsize=16)
+block(ax, 4.1, 6.0, 6.0, "#f6dcdc", HILITE, r"$U$", f"{m}×{m}")
+# Sigma with shaded zero rows
+ax.add_patch(plt.Rectangle((10.4, 0), 1.6, 6.0, fc="#eef6ee", ec=ACCENT, lw=1.5))
+ax.add_patch(plt.Rectangle((10.4, 0), 1.6, 3.0, fc="#cccccc", ec=ACCENT, lw=0, alpha=0.6))
+ax.text(11.2, 4.7, r"$\Sigma$", ha="center", fontsize=12); ax.text(11.2, 1.5, "0", ha="center", fontsize=11, color=GREY)
+ax.text(11.2, 3.6, f"{m}×{n}", ha="center", fontsize=8, color=GREY)
+ax.set_title("Full SVD", fontsize=11, loc="left")
+
+# Thin SVD
+ax = axes[1]; ax.axis("off"); ax.grid(False); ax.set_xlim(0, 13); ax.set_ylim(-0.4, 6.5)
+block(ax, 0.3, 3.0, 6.0, "#dbe6f5", VEC, r"$A$", f"{m}×{n}")
+ax.text(3.6, 3.0, "=", ha="center", fontsize=16)
+block(ax, 4.1, 3.0, 6.0, "#f6dcdc", HILITE, r"$U_n$", f"{m}×{n}")
+block(ax, 7.5, 3.0, 3.0, "#eef6ee", ACCENT, r"$\Sigma_n$", f"{n}×{n}")
+block(ax, 10.7, 3.0, 3.0, "#fdf3d6", GOLD, r"$V^\top$", f"{n}×{n}")
+ax.set_title("Thin SVD", fontsize=11, loc="left")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Is the SVD unique?"* The singular *values* are unique (they are the fixed square roots of
+the eigenvalues of $A^\top A$). The singular *vectors* are unique up to two freedoms: (i)
+if a singular value is **repeated**, the corresponding singular vectors are only determined
+up to a rotation within their shared eigenspace — any orthonormal basis of that subspace
+works; (ii) for each *simple* nonzero $\sigma_i$ you may flip the sign of $u_i$ and $v_i$
+*together* (replacing both by their negatives leaves $\sigma_i u_i v_i^\top$ unchanged).
+The padding columns (for zero singular values) are free up to any orthonormal completion.
+So "the SVD" names a unique $\Sigma$ and an essentially-unique pair of bases.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the SVD on real, honest matrices — including one squarely at the edge of where it
+helps. Throughout, the figures and numbers are computed by `numpy.linalg.svd`, which
+returns exactly the $U$, the vector of singular values $s$ (the diagonal of $\Sigma$), and
+$V^\top$ of @thm-svd.
+
+## Example 1 — a $2\times 2$ map, every number by hand {#sec-ex-2x2}
+
+Take the matrix from @fig-circle-ellipse,
+$$
+A = \begin{bmatrix} 1.6 & 0.9 \\ 0.2 & 1.3 \end{bmatrix},
+$$
+and compute its SVD the way the proof prescribes: form $A^\top A$, diagonalize it, take
+square roots, and recover $U$. This is the full pipeline in miniature.
+
+```{python}
+#| label: tbl-2x2
+#| echo: false
+A = np.array([[1.6, 0.9], [0.2, 1.3]])
+G = A.T @ A
+lam, Veig = np.linalg.eigh(G)          # eigh: symmetric eigensolver, ascending eigenvalues
+# reorder to descending so sigma_1 >= sigma_2
+order = np.argsort(lam)[::-1]
+lam = lam[order]; Veig = Veig[:, order]
+sig = np.sqrt(lam)
+Ucols = (A @ Veig) / sig               # u_i = A v_i / sigma_i
+print("A^T A =\n", np.round(G, 4))
+print("\neigenvalues of A^T A (desc):   lambda =", np.round(lam, 4))
+print("singular values  sigma=sqrt(lambda) =", np.round(sig, 4))
+print("\nright singular vectors V (columns) =\n", np.round(Veig, 4))
+print("left  singular vectors U (columns) =\n", np.round(Ucols, 4))
+# cross-check against numpy's SVD
+Un, sn, Vtn = np.linalg.svd(A)
+print("\nnumpy singular values           =", np.round(sn, 4))
+print("reconstruction error |A - U S V^T| =", np.linalg.norm(A - (Un*sn) @ Vtn))
+```
+
+Walk the printout against the derivation:
+
+- We formed the symmetric **Gram matrix** $A^\top A$ and used a symmetric eigensolver
+  (`eigh`) to get its eigenvalues $\lambda_1, \lambda_2$ and orthonormal eigenvectors
+  $v_1, v_2$ — this is @eq-spectral-ata.
+- The **singular values** are $\sigma_i = \sqrt{\lambda_i}$ (@eq-sigma-def), printed in
+  decreasing order. The larger one is the long semi-axis of the ellipse in
+  @fig-circle-ellipse; the smaller is the short semi-axis.
+- The **left singular vectors** came from $u_i = A v_i / \sigma_i$ (@eq-ui-def), no second
+  eigenproblem.
+- The cross-check confirms our hand-built singular values match `numpy.linalg.svd` and that
+  $U\Sigma V^\top$ reconstructs $A$ to machine precision. The derivation is not just true on
+  paper; it is the literal algorithm (up to numerical refinements that [GEOM-26] motivates).
+
+Read the geometry: $\sigma_1 > \sigma_2 > 0$ means $A$ is full rank (rank $2$, @thm-rank),
+stretches most along $v_1$, least along $v_2$, and never collapses any direction — the
+ellipse is non-degenerate. The operator norm $\lVert A\rVert_2 = \sigma_1$ (@thm-norm) is
+the longest semi-axis.
+
+## Example 2 — a rank-deficient matrix the eigendecomposition mishandles {#sec-ex-rankdef}
+
+Here is a $3\times 3$ matrix engineered to be **rank-deficient** — its third column is the
+sum of the first two — which is exactly the regime where naive methods stumble and the SVD
+shines by reporting the deficiency cleanly.
+
+```{python}
+#| label: fig-rankdef
+#| fig-cap: "A rank-deficient $3\\times3$ matrix ($\\text{col}_3 = \\text{col}_1 + \\text{col}_2$). **Left:** its singular values on a log scale — two are $O(1)$ and the third is at machine zero ($\\sim10^{-16}$), so the SVD reports rank $2$ unambiguously. **Right:** the image of the unit sphere is a flat **ellipse living in a plane** (the 2-D column space) inside 3-D — the third singular value being zero means one whole direction is crushed. The SVD sees this instantly; the determinant ($\\approx 0$) only whispers it and is numerically treacherous."
+B = np.array([[2.0, 0.0, 2.0],
+              [0.0, 3.0, 3.0],
+              [1.0, 1.0, 2.0]])
+Ub, sb, Vtb = np.linalg.svd(B)
+
+fig = plt.figure(figsize=(8.8, 4.0))
+axL = fig.add_subplot(1, 2, 1)
+axL.semilogy(range(1, 4), sb, "o-", color=HILITE, ms=9)
+axL.set_xticks([1, 2, 3]); axL.set_xlabel("index $i$"); axL.set_ylabel(r"$\sigma_i$ (log scale)")
+axL.set_title(f"Singular values: rank = {np.sum(sb > 1e-10)}")
+for i, v in enumerate(sb):
+    axL.annotate(f"{v:.2e}", (i+1, v), textcoords="offset points", xytext=(8, 0), fontsize=8)
+
+axR = fig.add_subplot(1, 2, 2, projection="3d")
+u_ = np.linspace(0, np.pi, 30); v_ = np.linspace(0, 2*np.pi, 30)
+sph = np.array([np.outer(np.sin(u_), np.cos(v_)).ravel(),
+                np.outer(np.sin(u_), np.sin(v_)).ravel(),
+                np.outer(np.cos(u_), np.ones_like(v_)).ravel()])
+img = B @ sph
+axR.scatter(img[0], img[1], img[2], c=img[2], cmap="viridis", s=3, alpha=0.6)
+axR.set_title("Unit sphere $\\to$ flat ellipse\n(in the rank-2 column plane)")
+axR.set_xlabel("x"); axR.set_ylabel("y"); axR.set_zlabel("z")
+print("singular values:", np.round(sb, 6))
+print("rank (count sigma > 1e-10):", int(np.sum(sb > 1e-10)))
+print("det(B) =", round(np.linalg.det(B), 6), " (≈ 0, but a poor rank test)")
+```
+
+The lesson is precisely the *why* of the article. The eigendecomposition could in principle
+be attempted on this square $B$, but the SVD does the honest thing without drama: **two
+singular values of normal size and one at machine zero**, so $\operatorname{rank}(B) = 2$
+by @thm-rank. Geometrically (right panel) the unit sphere maps not to a solid ellipsoid but
+to a **flat disk** — the third axis has been stretched by $\sigma_3 = 0$, i.e. crushed. The
+column space is the plane this disk lives in: $\operatorname{span}\{u_1, u_2\}$. The
+determinant is $\approx 0$ too, but [GEOM-13] warned (and [GEOM-26] will hammer) that
+testing singularity by $\det \approx 0$ is numerically unreliable — the SVD's singular-value
+gap is the trustworthy detector of rank deficiency.
+
+## Example 3 — image compression, at and past the edge of where it helps {#sec-ex-image}
+
+The SVD's most visual application is **low-rank approximation** (the full theory, Eckart–
+Young, is [GEOM-21]'s; here we use the bare mechanism honestly). A grayscale image *is* a
+matrix of pixel intensities. Truncating its SVD to the top $k$ terms of the outer-product
+sum @eq-outer,
+$$
+A_k = \sum_{i=1}^{k} \sigma_i\, u_i v_i^\top ,
+$$
+keeps the $k$ most energetic rank-one pieces and discards the rest. This is the article's
+**edge-of-applicability** example: it works beautifully on images with strong low-rank
+structure and *fails honestly* on images that are intrinsically high-rank, and we show both.
+
+```{python}
+#| label: fig-image
+#| fig-cap: "Low-rank SVD approximation, shown honestly on two images. **Top row** — a smooth, structured image (overlapping gradients): even $k=10$ of $200$ singular values reconstructs it almost perfectly, because its singular values decay fast (most energy in a few components). **Bottom row** — high-frequency random texture: the singular values barely decay, so a rank-$k$ truncation throws away real information and the reconstruction stays blurry/grainy. The SVD compresses *low-rank* structure; it cannot manufacture structure that is not there."
+def low_rank(A, k):
+    U_, s_, Vt_ = np.linalg.svd(A, full_matrices=False)
+    return (U_[:, :k] * s_[:k]) @ Vt_[:k, :], s_
+
+N = 200
+xx, yy = np.meshgrid(np.linspace(-3, 3, N), np.linspace(-3, 3, N))
+smooth = (np.sin(xx) * np.cos(0.7*yy) + 0.5*xx - 0.3*yy)        # smooth -> low rank
+rng = np.random.default_rng(0)
+texture = rng.standard_normal((N, N))                          # white noise -> full rank
+
+fig, axes = plt.subplots(2, 4, figsize=(9.0, 4.6))
+for row, (img, name) in enumerate([(smooth, "smooth"), (texture, "texture")]):
+    rec_full, s_ = low_rank(img, N)
+    axes[row, 0].imshow(img, cmap="gray"); axes[row, 0].set_title(f"{name}\noriginal", fontsize=9)
+    for col, k in enumerate([5, 10, 40], start=1):
+        rec, _ = low_rank(img, k)
+        energy = 100 * np.sum(s_[:k]**2) / np.sum(s_**2)
+        axes[row, col].imshow(rec, cmap="gray")
+        axes[row, col].set_title(f"$k={k}$\n{energy:.0f}% energy", fontsize=9)
+    for c in range(4):
+        axes[row, c].set_xticks([]); axes[row, c].set_yticks([]); axes[row, c].grid(False)
+plt.tight_layout()
+
+# energy captured comparison
+_, ss = low_rank(smooth, N)
+_, st = low_rank(texture, N)
+print(f"smooth  image: top-10 singular values hold {100*np.sum(ss[:10]**2)/np.sum(ss**2):.1f}% of energy")
+print(f"texture image: top-10 singular values hold {100*np.sum(st[:10]**2)/np.sum(st**2):.1f}% of energy")
+```
+
+The contrast is the honest applicability call. For the **smooth** image the singular values
+plunge — the top ten carry nearly all the "energy" $\sum\sigma_i^2$ — so a rank-$10$
+approximation (storing $10(m + n + 1)$ numbers instead of $mn$) is visually faithful. For
+the **white-noise texture** the singular values are nearly flat: there *is* no low-rank
+structure to find, every component carries comparable energy, and truncation just deletes
+real detail. **When the SVD helps:** data with genuine low-rank structure — correlated
+features, smooth signals, near-collinear measurements. **When it does not:** intrinsically
+full-rank, high-entropy data, where you would reach for a transform matched to the signal
+(wavelets/DCT for natural images, which is what JPEG actually uses) rather than a global
+low-rank model. The energy spectrum $\sigma_i^2$ *tells you in advance* which regime you are
+in — that diagnostic is itself a reason to compute the SVD.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The SVD always *exists* (@thm-svd), so its failure modes are not about existence — they are
+about cost, interpretation, and the limits of what a *linear* factorization can capture.
+
+## It is a linear, global decomposition {#sec-fail-linear}
+
+The SVD describes a single linear map. If the structure in your data is **nonlinear** — a
+swiss-roll manifold, a curved relationship — the SVD will report whatever *linear* shadow
+that structure casts, exactly as OLS reports a line through a curve ([REGR-01]). The flat
+singular-value spectrum of the texture image in @sec-ex-image is one face of this; a more
+subtle face is data that lie on a low-dimensional *curved* surface, which has full *linear*
+rank even though it is "really" low-dimensional. The reach-for-instead is nonlinear
+dimensionality reduction (kernel PCA, manifold methods, autoencoders), which the
+Unsupervised Learning track addresses. The SVD's honesty is also its limit: it sees only
+linear structure, and it sees *all* of it.
+
+## Cost on large matrices {#sec-fail-cost}
+
+Computing the full SVD of an $m\times n$ matrix costs on the order of $O(mn\min(m,n))$
+operations — fine for thousands of rows, painful for millions. When you only need the top
+few singular values/vectors (the usual case in compression and PCA), you do **not** compute
+the full SVD: you use truncated/randomized SVD or iterative methods (Lanczos, randomized
+range finders) that get the leading components in a fraction of the time. Forming $A^\top A$
+explicitly to "follow the derivation" is a *bad numerical idea* for large or ill-conditioned
+$A$ — it **squares the condition number** (@eq-sv-eig: the eigenvalues of $A^\top A$ are the
+$\sigma_i^2$, so their ratio is $\kappa^2$), throwing away precision. The derivation via
+$A^\top A$ is the right way to *understand* the SVD and the wrong way to *compute* it; real
+algorithms (Golub–Kahan bidiagonalization) work on $A$ directly. This tension — clean theory
+through $A^\top A$, stable computation avoiding it — is the bridge to [GEOM-26].
+
+::: {.callout-warning title="Pitfall"}
+**Do not form $A^\top A$ to compute an SVD or solve least squares.** It is the cleanest path
+on paper and a precision-destroying path on a computer, because it squares the condition
+number. The normal-equations approach to least squares ([GEOM-11], Regression) inherits this
+flaw; the QR ([GEOM-07]) and SVD routes avoid it by never forming $A^\top A$. Use a library
+SVD (`numpy.linalg.svd`, LAPACK's `dgesdd`), which works on $A$ directly. The article uses
+$A^\top A$ to *derive*, not to *compute* — keep the two apart.
+:::
+
+## The interpretation gap {#sec-fail-interp}
+
+Singular vectors are mathematically optimal directions, but they are **not guaranteed to be
+interpretable**. The leading $v_1$ of a feature matrix is the direction of greatest spread,
+not necessarily a meaningful "concept," and it is a dense combination of *all* original
+features. When interpretability matters (which features actually drive the structure?), the
+SVD's orthonormal-but-dense components are often the wrong tool, and one reaches for sparse
+or non-negative factorizations (sparse PCA, non-negative matrix factorization) that trade
+mathematical optimality for human-readable factors. This is the standard, honest critique of
+PCA-by-SVD, and Unsupervised Learning takes it up where it owns the statistical method.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the SVD the right tool, and when is it the wrong one?"* The summary to be able to
+recite:
+
+- **Use it** to find rank robustly (@thm-rank), to read the four subspaces (@sec-four-spaces),
+  to compute the operator norm and condition number (@thm-norm, [GEOM-26]), to get the best
+  low-rank approximation ([GEOM-21]), to solve rank-deficient or ill-conditioned least
+  squares via the pseudoinverse ([GEOM-21]), and as the stable backbone of PCA. It always
+  exists and is numerically well-behaved when computed directly on $A$.
+- **Do not reach for it** when (a) the structure is genuinely nonlinear (use a manifold/kernel
+  method), (b) the matrix is enormous and you need the whole thing (use truncated/randomized
+  variants), (c) you need *interpretable* factors (use sparse/non-negative factorization), or
+  (d) the data is intrinsically full-rank with no spectral decay (there is nothing for it to
+  compress). And never form $A^\top A$ to compute it.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived at this summit from the **spectral theorem** ([GEOM-16]) — which the SVD's
+existence proof (@thm-svd) used as its only deep ingredient — together with positive
+definiteness ([GEOM-18], the nonnegativity of $A^\top A$'s eigenvalues), diagonalization
+([GEOM-15]), and the four subspaces ([GEOM-12], which the SVD reads off effortlessly in
+@sec-four-spaces). From here:
+
+- **[GEOM-21] *SVD in Action: Low-Rank Approximation and the Pseudoinverse*** — the direct
+  sequel. Eckart–Young (truncating @eq-outer gives the *best* rank-$k$ approximation) and the
+  Moore–Penrose pseudoinverse $A^+ = V\Sigma^+ U^\top$ (the always-defined "solve" for
+  systems with no inverse). Examples 2–3 here are the appetizer; that article is the meal.
+- **[GEOM-26] *Condition Number and Numerical Stability*** — formalizes
+  $\kappa(A) = \sigma_{\max}/\sigma_{\min}$ (defined in @sec-norm) as the predictor of
+  numerical error, explains why forming $A^\top A$ squares it (@sec-fail-cost), and ties the
+  whole optimization-conditioning story back to the singular values.
+- **Cross-track payoffs.** The SVD of the centered data matrix *is* PCA — the shared keystone
+  handed to **Unsupervised Learning**, which owns the statistical reading (variance
+  maximization, scree plots, component selection) and links back here for the algebra. It also
+  feeds **Regression R14** (ridge regression seen in the SVD basis, where each singular
+  direction is shrunk by $\sigma_i^2/(\sigma_i^2 + \lambda)$).
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** E. Beltrami, "Sulle funzioni bilineari" (1873) and C. Jordan's 1874
+  work — the independent births of the decomposition for bilinear forms. G. H. Golub and W.
+  Kahan, "Calculating the Singular Values and Pseudo-Inverse of a Matrix," *SIAM J. Numer.
+  Anal.* (1965) — the algorithm that made the SVD a computational tool.
+- **The definitive modern treatment.** G. H. Golub and C. F. Van Loan, *Matrix Computations*,
+  for the numerically serious account of how the SVD is actually computed (bidiagonalization
+  and the implicit-QR sweep) — the machinery behind the "compute on $A$, never on $A^\top A$"
+  imperative of @sec-fail-cost.
+- **Open threads deferred on purpose.** *Which rank-$k$ matrix is closest to $A$?* — the
+  Eckart–Young theorem, [GEOM-21]. *How do we "solve" $Ax=b$ when $A$ has no inverse?* — the
+  pseudoinverse, also [GEOM-21]. *Exactly how badly can a small data perturbation swing the
+  solution?* — the condition number, [GEOM-26]. *Why is the SVD of centered data the same as
+  the eigendecomposition of the covariance?* — the equivalence sketched in @sec-vs-eigen,
+  developed statistically in the Unsupervised Learning track.

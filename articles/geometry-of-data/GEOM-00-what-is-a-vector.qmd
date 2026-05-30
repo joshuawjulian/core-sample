@@ -34,7 +34,7 @@ GREY   = "#6c757d"
 > Everything the track later builds — span, projection, matrices as maps, the SVD,
 > gradients — rests on one idea fixed here: *a vector is a point in space, a list of
 > numbers, and a row of a dataset, and those are the same object.* It sets up
-> [GEOM-1 *Adding and Scaling*] (the two operations you may perform on the object defined
+> [GEOM-01 *Adding and Scaling*] (the two operations you may perform on the object defined
 > here) and the framing the whole track runs on: **a dataset is a cloud of points in a
 > room with as many walls as it has features.**
 
@@ -140,7 +140,7 @@ there to keep the dictionary between the three faces exact.
 *"Isn't a vector just an array? Why dress it up?"* An interviewer asking this wants to hear
 that you know the difference between a **data structure** and a **mathematical object**. A
 C array or a NumPy array is the storage; a vector is what that storage *means* the moment
-you grant it two operations — addition and scaling (the subject of [GEOM-1]) — and a
+you grant it two operations — addition and scaling (the subject of [GEOM-01]) — and a
 geometric home, a space it lives in. The array `[12, 2]` is inert. Calling it a vector
 commits you to a geometry: it is a point at coordinates $(12,2)$, an arrow of a definite
 length and direction, and a comparison can now be made to other vectors by distance and
@@ -270,7 +270,7 @@ faces.
   $\mathbf{x}, \mathbf{y}, \mathbf{v}$; their components are the same letter, not bold, with
   a subscript index, $x_1, x_2, \dots$. Plain (non-bold) lowercase letters like $c$ or
   $\lambda$ will be **scalars** — single real numbers, the things we scale vectors by in
-  [GEOM-1]. When a component itself needs a second index — as it will once we stack many
+  [GEOM-01]. When a component itself needs a second index — as it will once we stack many
   data rows — we write $x_{ij}$ for "row $i$, feature $j$," and we will flag that the moment
   it appears.
 
@@ -286,7 +286,7 @@ $$ {#eq-column}
 
 This is the same vector — same components, same order, same point in $\mathbb{R}^n$ — only
 stood up vertically. The reason for the preference is not aesthetics: when matrices arrive
-([GEOM-8]) and act on vectors by the rule "matrix times column," the column shape is what
+([GEOM-08]) and act on vectors by the rule "matrix times column," the column shape is what
 makes the multiplication line up. We adopt it now so no renotation is needed later. The
 horizontal form $(x_1, \dots, x_n)$ remains a convenient way to *write* a column inline,
 and the operation that formally turns one into the other — the **transpose**, written
@@ -297,7 +297,7 @@ column on its side."
 *"Row vector or column vector — does it matter?"* For storing a single observation, no: it
 is the same $n$ numbers either way. It starts to matter the instant you multiply by a
 matrix, because matrix multiplication is shape-sensitive (it pairs *rows of the left* with
-*columns of the right*, derived in [GEOM-9]). The near-universal convention in this track,
+*columns of the right*, derived in [GEOM-09]). The near-universal convention in this track,
 and in most of statistics and machine learning, is: **a vector is a column by default**,
 and a **data table stacks one observation per row** — so the matrix $X$ of a dataset has
 each *row* equal to one observation written across. Those two conventions seem to fight,
@@ -341,7 +341,7 @@ along the first axis." They make precise the phrase from the Core — *a coordin
 far along each axis"* — because, as the next subsection shows, every vector is its
 coordinates measured against these axis-vectors. We only name them here; what they truly
 *are* (a minimal set of directions that builds everything, a **basis**) is the subject of
-[GEOM-3].
+[GEOM-03].
 
 ## "How far along each axis," made exact {#sec-coords}
 
@@ -369,13 +369,13 @@ Let us justify each equals-sign so nothing is taken on faith.
   defined slot-by-slot — the entry in slot $1$ of the sum is $x_1 + 0 + 0 = x_1$, and
   likewise for the others, so the right side really does reassemble $\mathbf{x}$. (We are
   *using* componentwise addition here; it is *defined and drawn* as the first operation of
-  [GEOM-1], so this is a forward pointer, not a hidden assumption — the arithmetic
+  [GEOM-01], so this is a forward pointer, not a hidden assumption — the arithmetic
   $x_1+0+0=x_1$ is all that is needed and it is plain.)
 - The **third** equality pulls the lone nonzero number out of each column. A column with
   $x_1$ on top and zeros below is $x_1$ copies of the column with $1$ on top and zeros below
   — that is what scaling a vector by a number does, again slot-by-slot
   ($x_1 \cdot 1 = x_1$, $x_1 \cdot 0 = 0$). This scaling operation is the *second* operation
-  formalized in [GEOM-1]; here we need only the grade-school fact that $x_1 \cdot 0 = 0$.
+  formalized in [GEOM-01]; here we need only the grade-school fact that $x_1 \cdot 0 = 0$.
 - The **fourth** equality is the definition @eq-basis of the $\mathbf{e}_i$, read backwards.
 
 The result @eq-coords is worth saying in words, because it is the precise form of the Core's
@@ -384,7 +384,7 @@ second, $x_3$ along the third — and the coordinates are exactly the number of 
 same statement holds in $\mathbb{R}^n$ with $n$ terms,
 $\mathbf{x} = \sum_{i=1}^{n} x_i \mathbf{e}_i$. The expression on the right — a sum of scaled
 vectors — is the **linear combination**, the one move from which the rest of linear algebra
-is built; [GEOM-1] is devoted to it. We have just shown that *the coordinates of a vector
+is built; [GEOM-01] is devoted to it. We have just shown that *the coordinates of a vector
 are the recipe for rebuilding it from the axes*, which is why "how far along each axis" is
 not a metaphor but a literal decomposition.
 
@@ -407,7 +407,7 @@ the picture fails.**
 This is the leap: a row of a data table with $100$ features *is* a single point in
 $\mathbb{R}^{100}$, and we reason about it with the same dictionary we used for the house in
 the plane. "Which two observations are most alike" is still "which two points are closest";
-we just measure closeness with a formula (the distance, built in [GEOM-4]) instead of a
+we just measure closeness with a formula (the distance, built in [GEOM-04]) instead of a
 ruler. The geometry survives into dimensions we cannot see, carried entirely by the
 coordinates.
 
@@ -469,7 +469,7 @@ honest 5-D numbers).
 
 ```{python}
 #| label: fig-docs
-#| fig-cap: "Three documents as vectors in $\\mathbb{R}^5$, one axis per vocabulary word. **Left:** the honest object — each document's five word-counts, the thing that actually lives in 5-D. The two machine-learning notes (D1, D2) load on the same axes (`model`, `data`, `loss`); the cat blog (D3) loads on entirely different ones (`cat`, `nap`). **Right:** a 2-D *shadow* of the same three points (a projection, the operation of [GEOM-6]); D1 and D2 land near each other and D3 far off, which is the cloud's real structure — but the shadow is lossy, a point we make honest in the text."
+#| fig-cap: "Three documents as vectors in $\\mathbb{R}^5$, one axis per vocabulary word. **Left:** the honest object — each document's five word-counts, the thing that actually lives in 5-D. The two machine-learning notes (D1, D2) load on the same axes (`model`, `data`, `loss`); the cat blog (D3) loads on entirely different ones (`cat`, `nap`). **Right:** a 2-D *shadow* of the same three points (a projection, the operation of [GEOM-06]); D1 and D2 land near each other and D3 far off, which is the cloud's real structure — but the shadow is lossy, a point we make honest in the text."
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.0))
 
 names = list(vecs.keys())
@@ -510,7 +510,7 @@ real structure. **But the shadow is not the object.** Two points that look close
 disagreement along the three axes it threw away. This is the honest edge of "just visualize
 it": **every low-dimensional picture of high-dimensional data is a projection, and
 projection loses information.** The right tool — how to choose the *least* lossy shadow,
-and how to quantify what it discarded — is the projection of [GEOM-6] and the SVD of
+and how to quantify what it discarded — is the projection of [GEOM-06] and the SVD of
 [GEOM-20], built later in this track. For now the takeaway is exactly the article's thesis,
 with its caveat attached: the row *is* a point in $\mathbb{R}^5$; we may *draw* only its
 shadow; and we must not confuse the drawing with the thing.
@@ -530,28 +530,39 @@ fail on wide data.
 
 ```{python}
 #| label: fig-curse
-#| fig-cap: "An honest edge case: intuition that does *not* survive the leap. For dimensions $n = 2, 10, 100, 1000$ we drop $500$ random points uniformly in the unit cube of $\\mathbb{R}^n$ and histogram all pairwise distances. As $n$ grows the distribution marches rightward (everything is farther apart) and tightens (distances bunch around their average). The 2-D intuition of 'some neighbors are clearly closer than others' erodes — the practical meaning of the curse of dimensionality."
+#| fig-cap: "An honest edge case: intuition that does *not* survive the leap. For dimensions $n = 2, 10, 100, 1000$ we drop $500$ random points uniformly in the unit cube of $\\mathbb{R}^n$ and measure all pairwise distances. **Left (raw distances):** as $n$ grows the whole distribution marches rightward — *everything* is genuinely farther apart, because each new axis adds another nonnegative squared gap under the root. **Right (each distribution divided by its own mean, so all are centered at $1$):** the *relative* spread collapses — the cloud of distances tightens around its typical value, so the gap between the nearest and farthest neighbor of a point shrinks toward nothing. The printed coefficient of variation (standard deviation $\\div$ mean) falls from $\\approx 0.48$ at $n=2$ to $\\approx 0.05$ at $n=1000$. That collapse — not the rightward march — is the curse: 'there are close neighbors and far strangers' stops being true."
 rng = np.random.default_rng(0)
-fig, ax = plt.subplots(figsize=(6.6, 4.0))
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
 dims = [2, 10, 100, 1000]
 shades = ["#cfe3f5", "#7fb3e0", "#3d7fc0", "#13325c"]
+print("dimension |  mean dist |  std dist |  CV = std/mean")
 for d, c in zip(dims, shades):
     P = rng.random((500, d))
-    # pairwise distances among a sample of points
+    # pairwise distances among a sample of point-pairs
     idx = rng.choice(500, size=(4000, 2))
     diffs = P[idx[:, 0]] - P[idx[:, 1]]
     dists = np.sqrt(np.sum(diffs ** 2, axis=1))
-    dists = dists / np.sqrt(d)   # scale by sqrt(n) so the panels are comparable
-    ax.hist(dists, bins=40, density=True, histtype="stepfilled",
-            alpha=0.65, color=c, label=f"$n={d}$")
-ax.set_xlabel(r"pairwise distance (scaled by $1/\sqrt{n}$)")
-ax.set_ylabel("density")
-ax.set_title("High dimensions: distances bunch up")
-ax.legend(framealpha=0.9)
+    mu, sd = dists.mean(), dists.std()
+    print(f"n = {d:5d} | {mu:10.3f} | {sd:9.3f} | {sd / mu:13.3f}")
+    # Left: raw distances -> the rightward march (everything farther apart)
+    axL.hist(dists, bins=40, density=True, histtype="stepfilled",
+             alpha=0.6, color=c, label=f"$n={d}$")
+    # Right: divide each distribution by its OWN mean -> relative spread only
+    axR.hist(dists / mu, bins=40, density=True, histtype="stepfilled",
+             alpha=0.6, color=c, label=f"$n={d}$")
+axL.set_xlabel("raw pairwise distance")
+axL.set_ylabel("density")
+axL.set_title("Everything moves farther apart")
+axL.legend(framealpha=0.9, fontsize=8)
+axR.axvline(1.0, color=GREY, ls="--", lw=1.0)
+axR.set_xlabel("pairwise distance / (its own mean)")
+axR.set_xlim(0, 2)
+axR.set_title("...but the spread around the mean collapses")
+axR.legend(framealpha=0.9, fontsize=8)
 plt.tight_layout()
 ```
 
-We do not resolve the curse here — that needs the dot product and norms ([GEOM-4]) to even
+We do not resolve the curse here — that needs the dot product and norms ([GEOM-04]) to even
 state precisely, and it ramifies through Classification and Unsupervised Learning. We flag
 it now for one reason consistent with this article's job: **the leap into high dimensions is
 real and powerful, but it is not free.** The coordinate definition ports perfectly; *some*
@@ -579,7 +590,7 @@ quantities that it makes sense to add and scale. Three traps:
   bedrooms (values $1$–$5$) live on wildly different scales, so a raw distance in
   $\mathbb{R}^2$ is dominated by area and effectively ignores bedrooms. The geometry is
   valid but *misleading* until the features are standardized — a recurring theme once we
-  have norms ([GEOM-4]).
+  have norms ([GEOM-04]).
 - **Identifiers.** A ZIP code or a customer ID is stored as a number but has no axis
   meaning at all; subtracting two ZIP codes is meaningless. It is data, but it is not a
   coordinate.
@@ -593,7 +604,7 @@ A second boundary worth stating plainly: this article fixes the **standard** axe
 **standard** notion of $\mathbb{R}^n$. There are vectors that are not tuples of real numbers
 at all — polynomials, functions, random variables — which obey the same two operations and
 so form vector spaces too. The track deliberately *does not* pursue that abstraction
-([GEOM-1] explains the eight rules as "what addition and scaling obey," not as axioms to be
+([GEOM-01] explains the eight rules as "what addition and scaling obey," not as axioms to be
 revered), because the data-science payoff lives almost entirely in $\mathbb{R}^n$. Knowing
 the abstraction exists is enough; chasing it is out of scope by design.
 
@@ -617,19 +628,19 @@ the vector as arrow, as list, as data row — and the dictionary among the three
 the leap that lets a $100$-feature row be a single point in $\mathbb{R}^{100}$. From here
 the build is mostly linear:
 
-- **[GEOM-1 *Adding and Scaling: The Linear Combination*]** — the *only two* operations
+- **[GEOM-01 *Adding and Scaling: The Linear Combination*]** — the *only two* operations
   linear algebra grants this object, defined componentwise and drawn geometrically
   (tip-to-tail addition, stretch/flip scaling). Every "we are using componentwise
   addition/scaling" forward-pointer in @sec-coords is discharged there.
-- **[GEOM-2 *Span and Subspaces*]** — having one move (the linear combination), we ask
+- **[GEOM-02 *Span and Subspaces*]** — having one move (the linear combination), we ask
   *which points it can reach* from a given handful of vectors, and what shape that set is.
-- **[GEOM-4 *The Dot Product*]** — equips $\mathbb{R}^n$ with **length and angle**, which is
+- **[GEOM-04 *The Dot Product*]** — equips $\mathbb{R}^n$ with **length and angle**, which is
   how we finally measure the "closeness" and "same direction" this article could only
   gesture at, and how the curse of dimensionality ([@sec-curse]) gets stated precisely.
-- **[GEOM-6 *Orthogonal Projection*]** — the keystone, and the honest tool behind the lossy
+- **[GEOM-06 *Orthogonal Projection*]** — the keystone, and the honest tool behind the lossy
   2-D *shadow* of [@fig-docs]: it tells us how to cast a high-dimensional cloud down to a
   picture and exactly what gets lost.
-- **[GEOM-8 *Matrices as Linear Maps*]** — once a dataset is a *stack* of these row-vectors,
+- **[GEOM-08 *Matrices as Linear Maps*]** — once a dataset is a *stack* of these row-vectors,
   a matrix is the natural object that acts on the whole cloud at once.
 
 The running thread the track never drops: **a dataset is a cloud of points in a room with
@@ -648,9 +659,9 @@ of that cloud.
   $\mathbb{R}^{784}$ is the working premise of nearly all modern machine learning; the
   honest counterweight — that high-dimensional geometry is genuinely strange — is surveyed
   under "the curse of dimensionality," which we will be equipped to make precise after
-  [GEOM-4].
+  [GEOM-04].
 - **Open threads this article deliberately deferred.** *How do we add and scale these
-  objects, exactly?* — [GEOM-1]. *How do we measure length, distance, and angle so
-  "closeness" and "same direction" become numbers?* — [GEOM-4]. *How do we draw the least-
+  objects, exactly?* — [GEOM-01]. *How do we measure length, distance, and angle so
+  "closeness" and "same direction" become numbers?* — [GEOM-04]. *How do we draw the least-
   lossy flat picture of a high-dimensional cloud, and quantify what the picture threw away?*
-  — [GEOM-6] and [GEOM-20]. Each is a direct continuation of a promise made above.
+  — [GEOM-06] and [GEOM-20]. Each is a direct continuation of a promise made above.

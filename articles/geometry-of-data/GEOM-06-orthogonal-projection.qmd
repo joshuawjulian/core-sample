@@ -44,21 +44,21 @@ def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
 
 > **Where this sits in the track.** This is the **keystone** of the Geometry of Data
 > track — the single operation the rest of the series leans on hardest. It assumes
-> [GEOM-2 *Span and Subspaces*] (a subspace is the set of all linear combinations of
-> some vectors — a line or plane through the origin), [GEOM-3 *Linear Independence,
+> [GEOM-02 *Span and Subspaces*] (a subspace is the set of all linear combinations of
+> some vectors — a line or plane through the origin), [GEOM-03 *Linear Independence,
 > Basis, and Dimension*] (a basis is a minimal spanning set, and "independent columns"
-> means no redundancy), and especially [GEOM-4 *The Dot Product*] and [GEOM-5
+> means no redundancy), and especially [GEOM-04 *The Dot Product*] and [GEOM-05
 > *Orthogonality and Orthonormal Bases*], which gave us length
 > $\lVert\mathbf{x}\rVert=\sqrt{\mathbf{x}^\top\mathbf{x}}$, the angle relation
 > $\mathbf{x}^\top\mathbf{y}=\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta$, and
 > the meaning of *perpendicular* ($\mathbf{x}^\top\mathbf{y}=0$). We use matrix notation
 > for $A$, $A^\top$, and $(A^\top A)^{-1}$ lightly here; the full algebra of matrices as
-> maps is built in [GEOM-8]–[GEOM-11], and we will name every matrix fact we borrow so the
-> geometry stays self-contained. It sets up [GEOM-7 *Gram–Schmidt and QR*] (an
+> maps is built in [GEOM-08]–[GEOM-11], and we will name every matrix fact we borrow so the
+> geometry stays self-contained. It sets up [GEOM-07 *Gram–Schmidt and QR*] (an
 > orthonormal basis makes projection trivial), [GEOM-12 *The Four Subspaces*], and
 > [GEOM-20]–[GEOM-21] (the SVD and pseudoinverse, the numerically stable projection). Most
 > directly, it is the article that **Regression's least-squares geometry stands on** —
-> [REGR-4 *Regression as Projection*] and [REGR-5 *Multiple Regression*] are this article
+> [REGR-04 *Regression as Projection*] and [REGR-05 *Multiple Regression*] are this article
 > wearing statistical clothes.
 
 ## Abstract {.unnumbered}
@@ -110,7 +110,7 @@ perpendicular" the answer?** Every derivation below is an answer to some piece o
 
 ## The over-determined problem, told geometrically
 
-The historical engine is the same one that drove [REGR-1]: astronomy and geodesy around
+The historical engine is the same one that drove [REGR-01]: astronomy and geodesy around
 1800. Gauss and Legendre had *more measurements than unknowns*. A surveyor measuring the
 shape of the Earth, or an astronomer fixing a comet's orbit, collects dozens of noisy
 readings to pin down a handful of parameters. Written as a linear system $A\mathbf{c} =
@@ -122,7 +122,7 @@ $\mathbf{b}$ exactly, because the noisy measurements are mutually inconsistent.
 
 Here is the geometric translation, and it is the whole reason this article exists. The set
 of *all* vectors of the form $A\mathbf{c}$ — every linear combination of the columns of
-$A$ — is a subspace, the **column space** $\mathcal{C}(A)$ (built in [GEOM-2] as the span
+$A$ — is a subspace, the **column space** $\mathcal{C}(A)$ (built in [GEOM-02] as the span
 of the columns). Saying "$A\mathbf{c}=\mathbf{b}$ has no solution" is saying, in pictures,
 that **$\mathbf{b}$ does not lie in the column space**. The measurement vector floats
 *outside* the flat sheet of everything the model can produce.
@@ -153,7 +153,7 @@ yourself standing at $\mathbf{b}$, off the floor, and you must touch the floor (
 $S$). The shortest reach is straight down — the perpendicular. Any slanted reach is longer,
 because a slanted segment and the straight-down segment form a right triangle whose
 *hypotenuse* is the slanted reach, and the hypotenuse is always the longest side
-(Pythagoras, which lives in [GEOM-4]). The perpendicular is the one leg; everything else
+(Pythagoras, which lives in [GEOM-04]). The perpendicular is the one leg; everything else
 is a hypotenuse. We will turn this picture into a proof in @sec-closest, but hold onto it:
 **right angle = shortest distance** is not a coincidence, it is Pythagoras.
 
@@ -241,7 +241,7 @@ algebra) and earn the "closest" interpretation later.
 Everything is one equation, @eq-line-orth, in one unknown $c$. Expand the dot product
 using its linearity — $\mathbf{a}^\top(\mathbf{u}+\mathbf{v})=\mathbf{a}^\top\mathbf{u}+
 \mathbf{a}^\top\mathbf{v}$ and $\mathbf{a}^\top(c\mathbf{a})=c(\mathbf{a}^\top\mathbf{a})$,
-both established in [GEOM-4]:
+both established in [GEOM-04]:
 
 $$
 \mathbf{a}^\top(\mathbf{b}-c\mathbf{a})
@@ -250,7 +250,7 @@ $$
 
 Solve for $c$. Because $\mathbf{a}\neq\mathbf{0}$, its squared length
 $\mathbf{a}^\top\mathbf{a}=\lVert\mathbf{a}\rVert^2$ is strictly positive (a sum of squares
-that is zero only for the zero vector — [GEOM-4]), so we may divide by it:
+that is zero only for the zero vector — [GEOM-04]), so we may divide by it:
 
 $$
 c = \frac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}.
@@ -267,7 +267,7 @@ $$ {#eq-line-proj}
 Read the formula slowly, because every piece carries meaning. The scalar
 $\mathbf{a}^\top\mathbf{b}$ measures how much of $\mathbf{b}$ points along $\mathbf{a}$
 (it is $\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta$ by the angle relation of
-[GEOM-4], so it grows with the alignment of $\mathbf{b}$ to $\mathbf{a}$). Dividing by
+[GEOM-04], so it grows with the alignment of $\mathbf{b}$ to $\mathbf{a}$). Dividing by
 $\mathbf{a}^\top\mathbf{a}=\lVert\mathbf{a}\rVert^2$ rescales for the *length* of
 $\mathbf{a}$, so the answer does not change if we replace $\mathbf{a}$ by $2\mathbf{a}$ —
 the line is the same, so the projection must be the same. Let us verify that invariance,
@@ -289,8 +289,8 @@ trailing $\mathbf{a}$) against two downstairs. The projection depends only on th
 *direction* of $\mathbf{a}$, as a geometric quantity must. If $\mathbf{a}$ is already a
 unit vector ($\mathbf{a}^\top\mathbf{a}=1$), the formula collapses to
 $\hat{\mathbf{b}}=(\mathbf{a}^\top\mathbf{b})\,\mathbf{a}$ — the coordinate-as-dot-product
-rule from [GEOM-5]. This is the first hint that *orthonormal* bases make projection
-trivial, the theme [GEOM-7] develops.
+rule from [GEOM-05]. This is the first hint that *orthonormal* bases make projection
+trivial, the theme [GEOM-07] develops.
 :::
 
 ## The residual is orthogonal — by construction, and let us check it
@@ -320,7 +320,7 @@ the entire line $S$ (any point of $S$ is $t\mathbf{a}$, and
 $(t\mathbf{a})^\top\mathbf{r}=t\,\mathbf{a}^\top\mathbf{r}=0$). The decomposition
 $\mathbf{b}=\hat{\mathbf{b}}+\mathbf{r}$ has split $\mathbf{b}$ cleanly into a part on the
 line and a part perpendicular to it — exactly the orthogonal-complement decomposition
-promised in [GEOM-5].
+promised in [GEOM-05].
 
 ## A line projection as a matrix {#sec-line-matrix}
 
@@ -342,7 +342,7 @@ times a row vector, which produces an $n\times n$ *matrix*, not a scalar. The de
 $\mathbf{a}^\top\mathbf{a}$ is an **inner product**: a row times a column, a single number.
 So $P$ is a matrix divided by a number — an $n\times n$ matrix. Contrast this with the
 order $\mathbf{a}^\top\mathbf{a}$ (number) versus $\mathbf{a}\mathbf{a}^\top$ (matrix): in
-matrix multiplication the *order* decides the shape, a fact developed fully in [GEOM-9].
+matrix multiplication the *order* decides the shape, a fact developed fully in [GEOM-09].
 We will see in @sec-P-properties that this $P$ is symmetric and idempotent, the
 fingerprints of every projection matrix.
 
@@ -366,7 +366,7 @@ Then the subspace $S$ *is* the column space $\mathcal{C}(A)$: every point of $S$
 linear combination $c_1\mathbf{a}_1+\cdots+c_k\mathbf{a}_k$, and stacking the coefficients
 into $\mathbf{c}=(c_1,\dots,c_k)^\top$, that combination is exactly the matrix–vector
 product $A\mathbf{c}$ — "$A$ times $\mathbf{c}$ is a weighted sum of the columns of $A$"
-(this reading of $A\mathbf{c}$ is the central fact of [GEOM-8]; here we just use it).
+(this reading of $A\mathbf{c}$ is the central fact of [GEOM-08]; here we just use it).
 
 So the projection $\hat{\mathbf{b}}$, being a point of $S$, equals $A\hat{\mathbf{c}}$ for
 some coefficient vector $\hat{\mathbf{c}}\in\mathbb{R}^k$ that we must find. The residual is
@@ -413,7 +413,7 @@ $$ {#eq-normal-geom}
 Read it in English first: *$A^\top$ times the residual is zero* — the residual is
 orthogonal to every column of $A$. Now expand it. Distribute $A^\top$ across the
 subtraction ($A^\top(\mathbf{u}-\mathbf{v})=A^\top\mathbf{u}-A^\top\mathbf{v}$, the
-linearity of matrix multiplication — [GEOM-8]):
+linearity of matrix multiplication — [GEOM-08]):
 
 $$
 A^\top\mathbf{b} - A^\top A\,\hat{\mathbf{c}} = \mathbf{0},
@@ -439,7 +439,7 @@ projecting.
 column" is "$A^\top(\mathbf{b}-A\hat{\mathbf{c}})=\mathbf{0}$," which rearranges to $A^\top
 A\hat{\mathbf{c}}=A^\top\mathbf{b}$. If you can say that sentence and turn it into that
 equation on a whiteboard, you have demonstrated that you understand least squares
-geometrically and not as a memorized formula. This is the [REGR-4]/[REGR-5] content in its
+geometrically and not as a memorized formula. This is the [REGR-04]/[REGR-05] content in its
 purest, statistics-free form: there $\mathbf{b}=\mathbf{y}$ (the response), $A=X$ (the
 design matrix), and @eq-normal is $X^\top X\hat{\boldsymbol\beta}=X^\top\mathbf{y}$.
 :::
@@ -478,11 +478,11 @@ $$
 (A\mathbf{v})^\top(A\mathbf{v}) = \lVert A\mathbf{v}\rVert^2 = 0.
 $$
 
-A squared length is zero only when the vector itself is zero ([GEOM-4]), so
+A squared length is zero only when the vector itself is zero ([GEOM-04]), so
 $A\mathbf{v}=\mathbf{0}$. But $A\mathbf{v}$ is the linear combination
 $v_1\mathbf{a}_1+\cdots+v_k\mathbf{a}_k$ of the columns of $A$. Linear independence of the
 columns means the *only* combination equal to zero is the one with all coefficients zero
-([GEOM-3]). Hence $\mathbf{v}=\mathbf{0}$. The null space of $A^\top A$ is therefore
+([GEOM-03]). Hence $\mathbf{v}=\mathbf{0}$. The null space of $A^\top A$ is therefore
 trivial, so $A^\top A$ is invertible. $\qquad\blacksquare$
 :::
 
@@ -523,7 +523,7 @@ whose residual is orthogonal to $S$ by construction.
 *Uniqueness:* suppose two points $\hat{\mathbf{b}}_1,\hat{\mathbf{b}}_2\in S$ both have
 residuals orthogonal to $S$. Their difference
 $\mathbf{d}=\hat{\mathbf{b}}_1-\hat{\mathbf{b}}_2$ lies in $S$ (a subspace is closed under
-subtraction — [GEOM-2]). It also equals the difference of the two residuals,
+subtraction — [GEOM-02]). It also equals the difference of the two residuals,
 $(\mathbf{b}-\hat{\mathbf{b}}_2)-(\mathbf{b}-\hat{\mathbf{b}}_1)$, a difference of two
 vectors each orthogonal to $S$, hence itself orthogonal to $S$. So $\mathbf{d}$ is in $S$
 *and* orthogonal to $S$, which forces $\mathbf{d}^\top\mathbf{d}=0$ (a vector orthogonal to
@@ -540,7 +540,7 @@ accurate than solving the linear system @eq-normal directly — "solve, don't in
 rule we make precise in [GEOM-26]. Second, and worse, forming $A^\top A$ **squares the
 condition number** of the problem: if the columns of $A$ are nearly dependent (near
 collinear), $A^\top A$ is dangerously close to singular and the answer dissolves into
-floating-point noise. The professional route is a **QR** factorization ([GEOM-7]) or the
+floating-point noise. The professional route is a **QR** factorization ([GEOM-07]) or the
 **SVD** ([GEOM-20]–[GEOM-21]), which project without ever forming $A^\top A$. The normal
 equations are the cleanest *derivation* and a fine computation on well-behaved data; they
 are not the algorithm you ship.
@@ -646,7 +646,7 @@ to $S$ — the residual operator. Indeed $\mathbf{r}=\mathbf{b}-\hat{\mathbf{b}}
 \mathbf{b}-P\mathbf{b}=(I-P)\mathbf{b}$. It is itself a projection: it is symmetric
 ($(I-P)^\top=I-P^\top=I-P$) and idempotent ($(I-P)^2 = I-2P+P^2 = I-2P+P = I-P$, using
 $P^2=P$). It projects onto the **orthogonal complement** $S^\perp$ — everything
-perpendicular to $S$ ([GEOM-5]). The pair $(P,\,I-P)$ splits all of $\mathbb{R}^n$ into
+perpendicular to $S$ ([GEOM-05]). The pair $(P,\,I-P)$ splits all of $\mathbb{R}^n$ into
 $S\oplus S^\perp$, the orthogonal decomposition that underlies the Pythagorean accounting
 of the next section.
 
@@ -678,12 +678,12 @@ $$
 Examine the two pieces. The first, $\mathbf{r}=\mathbf{b}-\hat{\mathbf{b}}$, is the
 residual — orthogonal to all of $S$ by construction. The second,
 $\mathbf{d}=\hat{\mathbf{b}}-\mathbf{s}$, is a difference of two points of $S$, hence lies
-*in* $S$ (subspaces are closed under subtraction — [GEOM-2]). Therefore $\mathbf{r}$ and
+*in* $S$ (subspaces are closed under subtraction — [GEOM-02]). Therefore $\mathbf{r}$ and
 $\mathbf{d}$ are **orthogonal** to each other: $\mathbf{r}^\top\mathbf{d}=0$, because
 $\mathbf{r}$ is perpendicular to everything in $S$ and $\mathbf{d}\in S$.
 
 Now take the squared length of the sum and use the **Pythagorean theorem in $n$
-dimensions** ([GEOM-5]): when two vectors are orthogonal, the squared length of their sum
+dimensions** ([GEOM-05]): when two vectors are orthogonal, the squared length of their sum
 is the sum of their squared lengths. (For completeness, the one-line reason:
 $\lVert\mathbf{r}+\mathbf{d}\rVert^2 = (\mathbf{r}+\mathbf{d})^\top(\mathbf{r}+\mathbf{d})
 = \mathbf{r}^\top\mathbf{r} + 2\mathbf{r}^\top\mathbf{d} + \mathbf{d}^\top\mathbf{d}$, and
@@ -755,7 +755,7 @@ the equivalence is the point. The calculus route minimizes
 $f(\mathbf{c})=\lVert\mathbf{b}-A\mathbf{c}\rVert^2$ by setting its gradient to zero; the
 gradient is $\nabla f = 2A^\top(A\mathbf{c}-\mathbf{b})$, and $\nabla f=\mathbf{0}$ is
 *exactly* the normal equations @eq-normal (this gradient is derived in full in [GEOM-25],
-and it is the same computation that [REGR-1] does by hand for one predictor). The geometry
+and it is the same computation that [REGR-01] does by hand for one predictor). The geometry
 route — @thm-closest — never differentiates anything; it splits a right triangle and
 invokes Pythagoras. The two give the identical system because "the directional derivative
 of squared distance is zero in every in-subspace direction" *is* "the residual is
@@ -915,13 +915,13 @@ print(f"||residual|| (fit error)  = {np.linalg.norm(resid):.4f}")
 
 The two printed checks are the normal equations made flesh. The first column of $A$ is the
 all-ones vector $\mathbf{1}$, and $\mathbf{1}^\top\mathbf{r}=\sum_i r_i$ — its being zero
-says the residuals balance, which is the first normal equation of [REGR-1]. The second
+says the residuals balance, which is the first normal equation of [REGR-01]. The second
 column is $\mathbf{t}$, and $\mathbf{t}^\top\mathbf{r}=\sum_i t_i r_i = 0$ is the second.
 Together they are $A^\top\mathbf{r}=\mathbf{0}$ — the residual orthogonal to the column
-space. **This is the entire content of [REGR-4 *Regression as Projection*].** The vertical
+space. **This is the entire content of [REGR-04 *Regression as Projection*].** The vertical
 segments in the left panel are residuals; their squared lengths sum to
 $\lVert\mathbf{r}\rVert^2$, which @thm-closest guarantees is the smallest achievable. The
-one-predictor closed forms of [REGR-1] ($\hat\beta_1=S_{ty}/S_{tt}$, etc.) are exactly the
+one-predictor closed forms of [REGR-01] ($\hat\beta_1=S_{ty}/S_{tt}$, etc.) are exactly the
 solution of this $2\times2$ system — the same answer, derived by calculus there and by
 geometry here.
 
@@ -953,7 +953,7 @@ db = 1e-3 * rng.normal(size=n)              # tiny perturbation of b
 
 c0 = np.linalg.solve(A.T @ A, A.T @ b)
 c1 = np.linalg.solve(A.T @ A, A.T @ (b + db))
-bhat0 = A @ c0; bhat1 = A @ (c1)
+bhat0 = A @ c0; bhat1 = A @ c1
 
 angle = np.degrees(np.arccos(np.clip(a1 @ a2, -1, 1)))
 kappa = np.linalg.cond(A.T @ A)
@@ -993,9 +993,9 @@ are nearly redundant, the closest point $\hat{\mathbf{b}}$ (the *prediction*) re
 determined, but the weights $\hat{\mathbf{c}}$ that produce it (the *interpretation*)
 become unreliable, sign-flippable, and explosively sensitive. If you only need predictions,
 you may not care; if you need to *interpret* the coefficients, you are in trouble. This is
-exactly the multicollinearity story of [REGR-7], and the remedies live downstream: drop or
+exactly the multicollinearity story of [REGR-07], and the remedies live downstream: drop or
 combine redundant columns; use **ridge** regression ($A^\top A+\lambda I$, which un-squashes
-the smallest eigenvalues — [REGR-14]); or solve via **QR**/**SVD** ([GEOM-7], [GEOM-20]–[GEOM-21])
+the smallest eigenvalues — [REGR-14]); or solve via **QR**/**SVD** ([GEOM-07], [GEOM-20]–[GEOM-21])
 and use the **pseudoinverse** (@sec-rank-def) to pick the minimum-norm coefficient among the
 many that fit equally well.
 :::
@@ -1042,10 +1042,10 @@ inner product changes the perpendicular.
 ::: {.callout-tip title="You might be asked"}
 *"If the columns of $A$ are already orthonormal, what is $P$?"* It collapses beautifully.
 Orthonormal columns mean $A^\top A = I$ (each column has unit length, distinct columns are
-perpendicular — [GEOM-5]), so $P=A(A^\top A)^{-1}A^\top = A\,I^{-1}A^\top = AA^\top$. No
+perpendicular — [GEOM-05]), so $P=A(A^\top A)^{-1}A^\top = A\,I^{-1}A^\top = AA^\top$. No
 inverse to compute, no conditioning to worry about, and the coefficients are just dot
 products: $\hat c_j = \mathbf{a}_j^\top\mathbf{b}$. This is precisely why we *manufacture*
-orthonormal bases — the **Gram–Schmidt** process and the **QR** factorization of [GEOM-7]
+orthonormal bases — the **Gram–Schmidt** process and the **QR** factorization of [GEOM-07]
 exist to replace the messy $A$ by an orthonormal $Q$ spanning the same space, turning
 $P=A(A^\top A)^{-1}A^\top$ into the trivial, stable $P=QQ^\top$. The projection is
 unchanged (same subspace, same closest point); only the arithmetic and its numerical
@@ -1057,23 +1057,23 @@ behavior improve.
 Two honest non-failures worth stating, because interviewers probe them. First, projection
 finds the closest point *in the subspace you handed it*; if the subspace is the wrong model
 (a line where the truth curves), the projection is still computed flawlessly and is still
-useless — exactly the nonlinearity failure of [REGR-1], now visible as "you projected onto
+useless — exactly the nonlinearity failure of [REGR-01], now visible as "you projected onto
 a column space that cannot represent the signal." Second, the residual length
 $\lVert\mathbf{r}\rVert$ tells you *how much* of $\mathbf{b}$ the subspace fails to capture,
-but not *why*; diagnosing that is the work of residual analysis ([REGR-3], [REGR-10]).
+but not *why*; diagnosing that is the work of residual analysis ([REGR-03], [REGR-10]).
 Projection is a precise answer to a narrow question — nearest point — and it is silent on
 whether that was the right question.
 
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[GEOM-5 *Orthogonality and Orthonormal Bases*]**, which gave the
+You arrived from **[GEOM-05 *Orthogonality and Orthonormal Bases*]**, which gave the
 $S\oplus S^\perp$ decomposition and the Pythagorean theorem we leaned on in @thm-closest,
-and from **[GEOM-4 *The Dot Product*]**, the source of every length and angle here. This
+and from **[GEOM-04 *The Dot Product*]**, the source of every length and angle here. This
 article is the **keystone**: it is the single operation the rest of the series reuses most.
 From here the track continues:
 
-- **[GEOM-7 *Gram–Schmidt and QR*]** — manufacture an orthonormal basis so projection
+- **[GEOM-07 *Gram–Schmidt and QR*]** — manufacture an orthonormal basis so projection
   becomes the trivial, stable $P=QQ^\top$. Gram–Schmidt is *this article's* line projection
   applied repeatedly, one direction at a time.
 - **[GEOM-12 *The Four Fundamental Subspaces*]** — the residual orthogonal to the column
@@ -1086,8 +1086,8 @@ From here the track continues:
   normal equations: $\nabla\lVert\mathbf{b}-A\mathbf{c}\rVert^2 = 2A^\top(A\mathbf{c}-\mathbf{b})$,
   set to zero, *is* @eq-normal.
 
-And it feeds directly into **Regression**: **[REGR-4 *Regression as Projection*]** and
-**[REGR-5 *Multiple Regression*]** are this article with $\mathbf{b}=\mathbf{y}$ and $A=X$.
+And it feeds directly into **Regression**: **[REGR-04 *Regression as Projection*]** and
+**[REGR-05 *Multiple Regression*]** are this article with $\mathbf{b}=\mathbf{y}$ and $A=X$.
 The normal equations @eq-normal are their $X^\top X\hat{\boldsymbol\beta}=X^\top\mathbf{y}$.
 :::
 
@@ -1105,7 +1105,7 @@ The normal equations @eq-normal are their $X^\top X\hat{\boldsymbol\beta}=X^\top
   variable onto a $\sigma$-algebra). The geometry you learned here is *literally* the same;
   only the inner product changes.
 - **Open threads deliberately deferred.** *How do we project stably when columns are nearly
-  dependent?* — QR and SVD, [GEOM-7] and [GEOM-20]. *What if the right distance is weighted?*
+  dependent?* — QR and SVD, [GEOM-07] and [GEOM-20]. *What if the right distance is weighted?*
   — oblique projection and GLS, [REGR-11]. *What is the projection of a random variable?* —
   conditional expectation, owned by the Probability/Inference tracks, but it is exactly this
   picture with $\mathrm{Cov}$ as the inner product.

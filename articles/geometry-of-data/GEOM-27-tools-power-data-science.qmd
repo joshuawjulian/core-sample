@@ -1,0 +1,820 @@
+---
+title: "How These Tools Power Data Science"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # data / generic vectors
+HILITE = "#c1121f"   # the highlighted quantity (projection, principal axis, fit)
+ACCENT = "#0a7d4d"   # second axis / residual / highlights
+GOLD   = "#d4a017"   # third axis / extra series
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the **terminal node** of the Geometry-of-Data
+> track — the bridge from the toolbox to the rest of the series. It assumes the whole track
+> ([GEOM-00] through [GEOM-26]): a dataset is a **cloud of points** in $\mathbb{R}^n$
+> ([GEOM-00]); the **dot product** measures length and angle ([GEOM-04]); **orthogonal
+> projection** drops a perpendicular onto a subspace, $P = A(A^\top A)^{-1}A^\top$
+> ([GEOM-06]); a matrix is a **linear map** whose columns say where the axes land
+> ([GEOM-08]); the **spectral theorem** factors every symmetric matrix as
+> $A = Q\Lambda Q^\top$ with an orthonormal eigenbasis ([GEOM-16]); a **quadratic form**
+> $x^\top A x$ is a bowl, saddle, or ridge read off the signs of $A$'s eigenvalues
+> ([GEOM-17], [GEOM-18]); the **SVD** $A = U\Sigma V^\top$ works for every matrix and
+> reveals its complete geometry ([GEOM-20], [GEOM-21]); the **gradient** points uphill and
+> the **Hessian** measures curvature ([GEOM-23], [GEOM-24]); minimizing
+> $\tfrac12 x^\top A x - b^\top x$ *is* solving $Ax = b$ ([GEOM-25]); and the **condition
+> number** $\kappa = \sigma_{\max}/\sigma_{\min}$ says whether a computer can be trusted
+> with the answer ([GEOM-26]). The one question here: *now that the toolbox is built, where
+> does each piece reappear across the rest of the series, and how do I choose the right tool
+> for a problem I have never seen?* It **sets up nothing further inside this track** — it is
+> the explicit hand-off into Regression, Inference, Optimization, Classification,
+> Unsupervised Learning, and Causal Inference.
+
+## Abstract {.unnumbered}
+
+The Geometry-of-Data track built a toolbox one piece at a time; this article shows the
+toolbox at work. Its single claim is that **almost every workhorse method in data science
+is one of a small number of geometric operations wearing a statistical costume** — and
+once you can see through the costume, you can predict how a method behaves, why it breaks,
+and what to reach for instead, on problems you have never met. We make the claim concrete
+two ways. First, a **tool-to-consumer map**: projection becomes least squares, the spectral
+theorem and the SVD become PCA and covariance analysis, positive-definiteness and Cholesky
+become Gaussians and whitening, the gradient and Hessian become optimization and Fisher
+information, and the condition number becomes the multicollinearity diagnostic. Second,
+**two integrative worked examples** that chain several tools end-to-end on real data —
+center, form a covariance matrix, take its spectral decomposition, project onto the top
+directions, reconstruct, and read the conditioning — with an honest accounting of exactly
+where the geometric assumptions break. We close with an interview-lens roundup of the
+standard linear-algebra questions, each answered with the applicability judgment a graduate
+of a data-science program is expected to have.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Data science is not a hundred unrelated algorithms; it is a **handful of geometric
+operations applied over and over**. Fitting a model is **projecting** a data vector onto a
+subspace of explanations. Finding structure is taking a **spectral decomposition** of a
+symmetric matrix of pairwise relationships. Decorrelating data, sampling correlated noise,
+and certifying a minimum all run on **positive-definiteness** and its **Cholesky** factor.
+Training is **descending a gradient** while reading **curvature from the Hessian**.
+Knowing whether to trust the answer is reading a **condition number**. Every named method
+downstream — OLS, ridge, PCA, the multivariate Gaussian, gradient descent, Newton's
+method, Fisher information — is one of these operations in a statistical costume. Learn to
+see the geometry, and a method you have never met becomes a problem you have already solved.
+:::
+
+Everything below orbits that box. The rest of this track derived each operation in
+isolation; here we watch them combine, and we make the costume transparent so that when a
+later track says "we estimate $\hat\beta$ by least squares" you hear "we project $y$ onto
+the column space of $X$," and when it says "we run PCA" you hear "we take the spectral
+decomposition of the covariance matrix and keep the top eigenvectors." The single skill
+this article installs is **translation** — from statistical vocabulary back to the geometry
+you already own.
+
+# Why a bridge article exists at all {#sec-why}
+
+Keep one question in view for the whole article: *why bother collecting the tools into a
+map, instead of just meeting each application when it arrives in its own track?* The answer
+is the thing that separates someone who can run `sklearn` from someone who can be trusted
+with a problem nobody has solved before.
+
+A track built "an inch wide and a mile deep" has a hidden cost. By the time you reach
+[GEOM-26] you have proven the spectral theorem, derived the SVD, and computed the gradient
+of a quadratic form — each in its own sealed room, each with its own example. The danger is
+that the rooms stay sealed: you can prove $A = Q\Lambda Q^\top$ and still not *see* it the
+moment someone hands you a covariance matrix. The whole point of geometry-first linear
+algebra was that the operations would feel like physical actions on a cloud of points; that
+payoff only lands if the actions get *used together*, on data, with stakes.
+
+There is a historical echo here worth keeping in mind. The reason this track exists in its
+geometric form at all is that the people who invented these methods were almost never doing
+"linear algebra." Gauss and Legendre were reconciling astronomical observations and
+inventing least squares — projection — without the word *projection* ([GEOM-06]). Karl
+Pearson in 1901 and Harold Hotelling in 1933 were looking for the axes of a cloud of
+biometric measurements and invented PCA — the spectral decomposition of a covariance matrix
+— decades before anyone packaged it as "eigenvectors of a symmetric matrix." Ronald Fisher
+built the information matrix out of the curvature of a likelihood surface — a Hessian —
+while thinking about how much a sample could tell you, not about second derivatives of
+quadratic forms. **The applications came first; the unifying geometry was extracted
+afterward.** This track ran the extraction in reverse so you could learn the geometry
+cleanly. This article puts the applications back, so the geometry stops being a museum and
+becomes a tool you reach for under pressure.
+
+::: {.callout-tip title="You might be asked"}
+*"Why should I care about the linear algebra if the library already fits the model for
+me?"* Because the library cannot tell you when the model is the wrong tool, and that
+judgment is almost always a geometric judgment. *Will this regression's coefficients be
+stable?* is "are the columns of $X$ nearly collinear?" — a condition-number question
+([GEOM-26]). *How many PCA components should I keep?* is "where do the eigenvalues of the
+covariance matrix fall off a cliff?" ([GEOM-16], [GEOM-21]). *Why did my optimizer crawl?*
+is "is the Hessian ill-conditioned — a long thin valley?" ([GEOM-24], [GEOM-26]). The
+library returns numbers; the geometry tells you whether the numbers mean anything. An
+interviewer asking this is checking whether you can diagnose, not just call.
+:::
+
+# The map: each tool and the methods it powers {#sec-map}
+
+We start with the bird's-eye view, then spend the rest of the article earning it. @fig-map
+is the single picture to carry out of this track: the left column is the geometric tool we
+built, the right column is the statistical method it becomes, and the edge is the
+translation. Read it as "the method *is* the tool, renamed."
+
+```{python}
+#| label: fig-map
+#| fig-cap: "The tool-to-consumer map. Each geometric operation on the left (built in this track) reappears on the right as a named data-science method (owned by another track). The edge label is the translation: the method is the operation in a statistical costume. This is the single diagram to remember from the Geometry-of-Data track."
+fig, ax = plt.subplots(figsize=(9.0, 6.4))
+ax.axis("off")
+ax.set_xlim(0, 10); ax.set_ylim(0, 10)
+
+tools = [
+    ("Orthogonal projection\n$P=A(A^\\top A)^{-1}A^\\top$\n[GEOM-06]", 9.2),
+    ("Spectral theorem / SVD\n$A=Q\\Lambda Q^\\top,\\;A=U\\Sigma V^\\top$\n[GEOM-16],[GEOM-20]", 7.4),
+    ("Positive-definite\n& Cholesky $A=LL^\\top$\n[GEOM-18],[GEOM-19]", 5.6),
+    ("Gradient & Hessian\n$\\nabla f,\\;\\nabla^2 f$\n[GEOM-23],[GEOM-24]", 3.8),
+    ("Condition number\n$\\kappa=\\sigma_{\\max}/\\sigma_{\\min}$\n[GEOM-26]", 2.0),
+]
+consumers = [
+    ("Least squares / OLS\nleast squares = projection\n[REGR-04],[REGR-05]", 9.2, "best fit in a subspace"),
+    ("PCA / covariance\ntop eigenvectors of $\\Sigma$\n[UNSP-07]", 7.4, "axes of the cloud"),
+    ("Gaussians, GLS, whitening\n$\\Sigma^{-1/2}$, sampling $Lz$\n[REGR-11],[PROB-17]", 5.6, "decorrelate / simulate"),
+    ("Gradient descent, Newton,\nFisher information\n[OPTM],[INFR-B3]", 3.8, "train / curvature = information"),
+    ("Multicollinearity,\nnumerical care\n[REGR-07]", 2.0, "is the answer trustworthy?"),
+]
+
+for txt, y in tools:
+    ax.add_patch(plt.Rectangle((0.2, y-0.75), 3.5, 1.5, fc=PALE, ec=VEC, lw=1.4, alpha=0.55))
+    ax.text(1.95, y, txt, ha="center", va="center", fontsize=8.4)
+for txt, y, edge in consumers:
+    ax.add_patch(plt.Rectangle((6.3, y-0.75), 3.5, 1.5, fc="#f6e7c1", ec=GOLD, lw=1.4, alpha=0.7))
+    ax.text(8.05, y, txt, ha="center", va="center", fontsize=8.4)
+    ax.annotate("", xy=(6.25, y), xytext=(3.75, y),
+                arrowprops=dict(arrowstyle="-|>", color=HILITE, lw=2.0))
+    ax.text(5.0, y+0.32, edge, ha="center", va="bottom", fontsize=7.6, color=HILITE, style="italic")
+
+ax.text(1.95, 10.0, "GEOMETRIC TOOL", ha="center", fontsize=10, weight="bold", color=VEC)
+ax.text(8.05, 10.0, "DATA-SCIENCE METHOD", ha="center", fontsize=10, weight="bold", color=GOLD)
+plt.tight_layout()
+```
+
+We take the five edges of @fig-map one at a time. Each subsection is short on purpose — the
+*derivation* of each tool already lives in its own article; here we only make the
+translation explicit and say precisely where the seam is between what Geometry owns and
+what the consuming track owns.
+
+## Projection becomes least squares {#sec-map-proj}
+
+In [GEOM-06] we asked: given a point $y$ and a subspace, what is the closest point in the
+subspace, and why is "drop a perpendicular" the answer? We derived that the closest point is
+the **orthogonal projection** $\hat y = Py$ with $P = A(A^\top A)^{-1}A^\top$, characterized
+by the residual $y - \hat y$ being orthogonal to every column of $A$ — the **normal
+equations** $A^\top(y - A\hat c) = 0$, i.e. $A^\top A\,\hat c = A^\top y$.
+
+Regression is this operation with the columns renamed. Stack the predictor columns into a
+**design matrix** $X$ and the outcomes into a vector $y$; the model $\hat y = X\beta$ says
+the fitted values are forced to lie in the **column space** of $X$ — the subspace of all
+linear combinations of predictors. Ordinary least squares chooses the $\beta$ that minimizes
+$\lVert y - X\beta\rVert^2$, which is the squared distance from $y$ to that subspace.
+Minimizing distance to a subspace *is* projecting (@thm-ls-is-proj makes this exact). The
+normal equations become $X^\top X\,\hat\beta = X^\top y$, and the fitted vector
+$\hat y = X(X^\top X)^{-1}X^\top y = Py$ is literally the projection matrix of [GEOM-06]
+applied to $y$. The statistical word "fit" and the geometric word "project" name the same
+arrow. The full statistical reading — that this is also Gaussian maximum likelihood, what
+its sampling distribution is, when it is the best linear unbiased estimator — is
+**Regression's** to own ([REGR-04], [REGR-05]); the geometric skeleton is ours.
+
+::: {#thm-ls-is-proj}
+**Theorem (least squares is projection).** Let $X$ be $n \times p$ with linearly
+independent columns and $y \in \mathbb{R}^n$. The vector $\hat\beta$ minimizing
+$\lVert y - X\beta\rVert^2$ over all $\beta \in \mathbb{R}^p$ is the unique solution of
+$X^\top X\,\hat\beta = X^\top y$, and the fitted vector $\hat y = X\hat\beta$ is the
+orthogonal projection of $y$ onto the column space $\mathcal{C}(X)$.
+:::
+
+::: {.proof}
+We show the minimizer of the squared distance is exactly the point whose residual is
+orthogonal to the subspace, and that this point is the projection — closing the loop
+between the *optimization* statement (minimize $\lVert y - X\beta\rVert^2$) and the
+*geometric* statement (project) without assuming either.
+
+Write the objective as a function of $\beta$ and expand the squared norm using
+$\lVert v\rVert^2 = v^\top v$:
+$$
+S(\beta) = \lVert y - X\beta\rVert^2 = (y - X\beta)^\top(y - X\beta)
+= y^\top y - 2\beta^\top X^\top y + \beta^\top X^\top X\,\beta .
+$$
+The middle term used $y^\top X\beta = \beta^\top X^\top y$ (a scalar equals its own
+transpose). This is a **quadratic form** in $\beta$ of exactly the shape
+$\tfrac12 \beta^\top (2X^\top X)\beta - (2X^\top y)^\top\beta + \text{const}$, so by the
+gradient identity for quadratic forms proved component-by-component in [GEOM-25]
+($\nabla(\tfrac12\beta^\top M\beta - b^\top\beta) = M\beta - b$ for symmetric $M$, here
+with $M = 2X^\top X$ and $b = 2X^\top y$),
+$$
+\nabla S(\beta) = 2X^\top X\,\beta - 2X^\top y .
+$$
+Setting the gradient to zero — the first-order optimality condition of [GEOM-23] — gives
+the normal equations
+$$
+X^\top X\,\hat\beta = X^\top y .
+$$ {#eq-normal-multi}
+Because the columns of $X$ are linearly independent, $X^\top X$ is positive-definite
+(proved in [GEOM-18]: $\beta^\top X^\top X\beta = \lVert X\beta\rVert^2 > 0$ for
+$\beta \neq 0$ exactly when $X\beta \neq 0$, which independence guarantees). A
+positive-definite matrix is invertible, so $\hat\beta = (X^\top X)^{-1}X^\top y$ is the
+unique stationary point; and since the Hessian $\nabla^2 S = 2X^\top X$ is positive-definite
+everywhere, the second-order test of [GEOM-24] certifies this stationary point is the global
+minimum (the surface is a bowl). Finally, the residual at $\hat\beta$ satisfies
+$X^\top(y - X\hat\beta) = X^\top y - X^\top X\hat\beta = 0$ by the normal equations — the
+residual is orthogonal to every column of $X$, hence to all of $\mathcal{C}(X)$. That
+orthogonality is precisely the defining property of the orthogonal projection onto
+$\mathcal{C}(X)$ proved in [GEOM-06], so $\hat y = X\hat\beta = Py$. $\qquad\blacksquare$
+:::
+
+Notice the proof itself chained four articles — projection ([GEOM-06]), the quadratic-form
+gradient ([GEOM-25]), positive-definiteness ([GEOM-18]), and the Hessian test ([GEOM-24]) —
+to close one statistical claim. That chaining is the entire thesis of this article in
+miniature.
+
+## The spectral theorem and SVD become PCA and covariance analysis {#sec-map-pca}
+
+In [GEOM-16] we proved that every real symmetric matrix factors as $A = Q\Lambda Q^\top$ —
+an **orthonormal** basis of eigenvectors (the columns of $Q$) and real eigenvalues (the
+diagonal of $\Lambda$) — and read it geometrically as "rotate to the eigenaxes, scale along
+each, rotate back, no shear ever." In [GEOM-17] we saw that $u^\top A u$ for a unit vector
+$u$ is the eigenvalue-weighted combination of $u$'s coordinates in the eigenbasis, maximized
+by pointing $u$ along the top eigenvector.
+
+A **covariance matrix** $\Sigma$ (Probability owns its meaning — see [PROB-17]) is symmetric
+and positive-semidefinite, and the quadratic form $u^\top \Sigma u$, for a unit vector $u$,
+is exactly the variance of the data projected onto direction $u$. That one-line bridge is
+worth seeing rather than asserting. Let the centered data rows be
+$x_1,\dots,x_n \in \mathbb{R}^p$ (each $x_i$ already has the column means subtracted, so
+$\tfrac1n\sum_i x_i = 0$), and let $\Sigma = \tfrac{1}{n-1}\sum_i x_i x_i^\top$. Projecting a
+point $x_i$ onto the unit direction $u$ gives the scalar coordinate $u^\top x_i$ (the dot
+product of [GEOM-04]); because the data are centered, these coordinates also have mean zero,
+$\tfrac1n\sum_i u^\top x_i = u^\top(\tfrac1n\sum_i x_i) = 0$. The sample variance of those
+projected coordinates is therefore
+$$
+\frac{1}{n-1}\sum_{i=1}^{n}\bigl(u^\top x_i\bigr)^2
+= \frac{1}{n-1}\sum_{i=1}^{n} u^\top x_i\,x_i^\top u
+= u^\top\!\left(\frac{1}{n-1}\sum_{i=1}^{n} x_i x_i^\top\right)\! u
+= u^\top \Sigma u ,
+$$
+where the first equality writes the scalar square $(u^\top x_i)^2$ as
+$(u^\top x_i)(x_i^\top u)$ — the same scalar, since $u^\top x_i = x_i^\top u$ — and the third
+pulls the constant vector $u$ outside the sum. So maximizing the projected variance over unit
+directions is exactly maximizing the quadratic form $u^\top\Sigma u$ subject to
+$\lVert u\rVert = 1$. [GEOM-17] solved precisely that constrained maximization — diagonalize
+with the spectral theorem, $u^\top\Sigma u = \sum_k \lambda_k\,(q_k^\top u)^2$, a weighted
+average of the eigenvalues that is largest when all the weight sits on the largest one — so
+the maximizer is the **top eigenvector** of $\Sigma$ and the maximal variance is the **top
+eigenvalue**. That single
+sentence is PCA. Principal component analysis is the spectral decomposition of the
+covariance matrix, keeping the eigenvectors with the largest eigenvalues because those are
+the directions in which the cloud is most stretched. Equivalently, working from the centered
+data matrix $X_c$ directly, the **SVD** $X_c = U\Sigma_{\text{sv}}V^\top$ ([GEOM-20]) hands
+the principal directions as the columns of $V$ and the variances as $\sigma^2/(n-1)$ — the
+SVD route avoids ever forming $X_c^\top X_c$ and so is the numerically preferred one (a
+conditioning argument from [GEOM-26], revisited in @sec-conditioning-example).
+
+The seam, as the track's ownership table fixes it: **Geometry owns "best rank-$k$
+approximation of a matrix" and "eigenvectors of a symmetric matrix"** ([GEOM-16],
+[GEOM-20], [GEOM-21]); **Unsupervised Learning owns PCA *as a statistical procedure*** —
+why we center, what the components *mean*, how to choose $k$ with a scree plot, biplots,
+whitening, the probabilistic model ([UNSP-07], [UNSP-08]). UL links back here for the
+algebra rather than re-deriving the SVD. We work a full PCA-as-geometry example in
+@sec-faithful-pca.
+
+## Positive-definiteness and Cholesky become Gaussians, whitening, and GLS {#sec-map-pd}
+
+In [GEOM-18] we characterized **positive-definite** matrices as those with all-positive
+eigenvalues whose quadratic form is a bowl with a unique bottom, and in [GEOM-19] we factored
+any such matrix as $A = LL^\top$ (**Cholesky**, $L$ lower-triangular) and built its
+**matrix square root** $A^{1/2} = Q\Lambda^{1/2}Q^\top$ from the spectral theorem.
+
+These are the engine of everything Gaussian. A valid multivariate Gaussian *requires* a
+positive-definite covariance $\Sigma$ — the density's exponent is the negative quadratic
+form $-\tfrac12 (x-\mu)^\top\Sigma^{-1}(x-\mu)$, and it is a genuine bell-shaped bump
+(integrable, with a unique mode) exactly when that form is a bowl, i.e. when $\Sigma$ is
+positive-definite. To **sample** a correlated Gaussian you draw a vector $z$ of independent
+standard normals — so its covariance is the identity, $\operatorname{Cov}(z) = I$ — and form
+$\mu + Lz$. The reason this works is the linear-transform rule for covariance, which is
+short enough to derive here rather than borrow. For any fixed matrix $M$ and random vector
+$z$ with mean zero, the transformed vector $Mz$ also has mean zero
+($\mathbb{E}[Mz] = M\,\mathbb{E}[z] = 0$, since $M$ is constant), and its covariance is the
+expected outer product
+$$
+\operatorname{Cov}(Mz) = \mathbb{E}\!\bigl[(Mz)(Mz)^\top\bigr]
+= \mathbb{E}\!\bigl[Mz\,z^\top M^\top\bigr]
+= M\,\mathbb{E}\!\bigl[z z^\top\bigr]\,M^\top
+= M\operatorname{Cov}(z)\,M^\top ,
+$$
+using $(Mz)^\top = z^\top M^\top$ and pulling the constant matrices $M, M^\top$ outside the
+expectation (linearity). Setting $M = L$ and $\operatorname{Cov}(z) = I$ gives
+$\operatorname{Cov}(Lz) = L\,I\,L^\top = LL^\top = \Sigma$ — Cholesky manufactures exactly the
+target correlation. (The shift by $\mu$ only moves the mean and leaves the covariance
+unchanged, since subtracting the mean is built into the definition of covariance.) To **whiten** (decorrelate) data
+you multiply by $\Sigma^{-1/2}$, turning a tilted elliptical cloud into a round one; this is
+the move generalized least squares ([REGR-11]) uses to convert correlated-error regression
+back into ordinary least squares. Probability and Inference own the *statistics* of the
+Gaussian; Regression owns GLS; Geometry owns the factorizations they all call. We use the
+square-root/whitening move inside the worked example of @sec-faithful-pca.
+
+## Gradient and Hessian become optimization and Fisher information {#sec-map-grad}
+
+In [GEOM-23] the **gradient** $\nabla f$ pointed in the direction of steepest ascent and was
+perpendicular to level sets; in [GEOM-24] the **Hessian** $\nabla^2 f$ measured curvature,
+and its definiteness ran the second-derivative test — positive-definite Hessian means a
+bowl, hence a local minimum.
+
+Training a model is descending this geometry. **Gradient descent** takes steps along
+$-\nabla f$ (downhill); **Newton's method** preconditions the step by the inverse Hessian,
+$-(\nabla^2 f)^{-1}\nabla f$, which is exactly the step that jumps straight to the bottom of
+the local quadratic model (the quadratic-form minimizer of [GEOM-25]). The *algorithms* —
+step sizes, line search, momentum, convergence rates — are **Optimization's** to own; the
+*geometry* they walk on is ours. On the statistics side, **Fisher information** is the
+Hessian in a costume: it is (the expectation of) the negative curvature of the
+log-likelihood surface at its peak, so a sharply curved likelihood (large Hessian) means the
+data pin the parameter down tightly (high information, low variance). Inference builds the
+statistical object ([INFR-B3]); Geometry supplied the Hessian-as-curvature picture
+([GEOM-24], [GEOM-25]) it stands on. The conditioning of the Hessian — the eigenvalue ratio
+of [GEOM-26] — is what decides whether gradient descent crawls down a long thin valley or
+rolls straight to the bottom, the topic of @sec-conditioning-example.
+
+## The condition number becomes the multicollinearity diagnostic {#sec-map-cond}
+
+In [GEOM-26] the **condition number** $\kappa(A) = \sigma_{\max}/\sigma_{\min}$ measured the
+worst-case amplification of relative error when solving $Ax = b$, and its geometry was a
+stretched-out ellipse: near-parallel columns make $\sigma_{\min}$ tiny, $\kappa$ huge, and
+the solution wildly sensitive to small data wiggles.
+
+In regression this *is* **multicollinearity**. When predictor columns are nearly linearly
+dependent, $X^\top X$ has a tiny smallest eigenvalue, $\kappa(X^\top X)$ explodes, and the
+coefficient estimates swing violently from sample to sample even though the *fit* is fine.
+The cure — ridge regression's $X^\top X + \lambda I$ — works precisely because adding
+$\lambda$ to every eigenvalue lifts the smallest one off the floor and slashes the condition
+number. Regression owns the statistical story (variance inflation, confidence-interval
+blowup, the bias–variance trade of ridge — [REGR-07], [REGR-14]); Geometry owns the
+condition number and the "solve, don't invert" judgment. We measure $\kappa$ live in
+@sec-conditioning-example.
+
+# Worked example I: the geometry pipeline on a real cloud {#sec-faithful-pca}
+
+We now chain four tools end to end on a genuine dataset, doing every numerical step in the
+open: **center $\to$ covariance $\to$ spectral decomposition $\to$ project $\to$
+reconstruct**, then whiten, then read off the conditioning. The data are the classic Old
+Faithful geyser measurements — for each eruption, the *duration* (minutes) and the *waiting
+time* until the next eruption (minutes). These two are strongly related (long waits follow
+long eruptions), so the cloud is a tilted ellipse — exactly the regime where the spectral
+picture earns its keep, and honest enough that we will see where it strains.
+
+```{python}
+#| label: fig-pca-pipeline
+#| fig-cap: "The geometry pipeline on the Old Faithful cloud. **Left:** centered data (blue) with the two principal axes drawn as arrows scaled to one standard deviation along each — the eigenvectors of the covariance matrix, longest along the direction of maximum variance. **Right:** the rank-1 reconstruction (red) keeping only the top principal component; every point is forced onto the dominant axis (grey line), and the dropped perpendiculars are exactly the projection residuals of [GEOM-06]. The geometry is honest here: the cloud genuinely has one dominant direction, so one component captures most of it — but the right panel also shows the cost, the spread that the single axis throws away."
+# Old Faithful: (eruption duration, waiting time). A representative slice.
+dur = np.array([3.6,1.8,3.33,2.28,4.53,2.88,4.7,3.6,1.95,4.35,
+                1.83,3.92,4.2,1.75,4.27,1.67,4.5,1.73,4.62,3.43,
+                4.25,1.68,3.92,3.68,3.1,4.43,2.72,4.27,1.85,3.95], dtype=float)
+wait = np.array([79,54,74,62,85,55,88,85,51,85,
+                 54,84,78,47,83,52,84,53,84,70,
+                 84,52,79,76,64,86,57,82,52,80], dtype=float)
+D = np.column_stack([dur, wait])
+n = D.shape[0]
+mu = D.mean(axis=0)
+Dc = D - mu                                  # center
+Sigma = (Dc.T @ Dc) / (n - 1)                # sample covariance (2x2)
+evals, evecs = np.linalg.eigh(Sigma)         # ascending; eigh -> symmetric
+order = np.argsort(evals)[::-1]              # largest first
+evals = evals[order]; evecs = evecs[:, order]
+
+# Standardize columns to comparable scale for a clean picture of the *direction*.
+scale = Dc.std(axis=0, ddof=1)
+Z = Dc / scale
+Sz = (Z.T @ Z) / (n - 1)
+ev_z, V_z = np.linalg.eigh(Sz)
+oz = np.argsort(ev_z)[::-1]; ev_z = ev_z[oz]; V_z = V_z[:, oz]
+
+# Rank-1 reconstruction in the standardized space, then map back.
+pc1 = V_z[:, [0]]                            # top principal direction (unit)
+coords = Z @ pc1                             # scores on PC1
+Z_rec = coords @ pc1.T                       # rank-1 reconstruction
+D_rec = Z_rec * scale + mu                   # back to original units
+Zc = Z                                       # standardized centered cloud
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.1))
+
+axL.scatter(Zc[:, 0], Zc[:, 1], color=VEC, s=28, alpha=0.85, zorder=3, label="centered data")
+for k, col, lab in [(0, HILITE, "PC1"), (1, ACCENT, "PC2")]:
+    v = V_z[:, k] * np.sqrt(ev_z[k])
+    draw_vec(axL, (0, 0), (v[0], v[1]), color=col, lw=3.0,
+             label=f"{lab} ($\\sqrt{{\\lambda}}={np.sqrt(ev_z[k]):.2f}$)",
+             label_offset=(0.25*np.sign(v[0]+0.1), 0.18*np.sign(v[1]+0.1)))
+axL.set_aspect("equal"); axL.set_title("Centered cloud + principal axes")
+axL.set_xlabel("standardized duration"); axL.set_ylabel("standardized wait")
+axL.legend(loc="lower right", fontsize=8, framealpha=0.9)
+
+axR.scatter(D[:, 0], D[:, 1], color=VEC, s=28, alpha=0.6, zorder=3, label="original")
+axR.scatter(D_rec[:, 0], D_rec[:, 1], color=HILITE, s=30, zorder=4, marker="D",
+            label="rank-1 reconstruction")
+for p, q in zip(D, D_rec):
+    axR.plot([p[0], q[0]], [p[1], q[1]], color=GREY, lw=1.0, zorder=2)
+# draw the PC1 line through the mean (in original units)
+t = np.linspace(-2.4, 2.4, 50)
+line = mu + (t[:, None] * (V_z[:, 0] * scale))
+axR.plot(line[:, 0], line[:, 1], color=GREY, ls="--", lw=1.2, zorder=1)
+axR.set_title("Project onto PC1, reconstruct")
+axR.set_xlabel("duration (min)"); axR.set_ylabel("wait (min)")
+axR.legend(loc="upper left", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+
+print(f"mean (duration, wait)   = ({mu[0]:.3f}, {mu[1]:.3f})")
+print(f"covariance matrix Sigma =\n{Sigma}")
+print(f"eigenvalues  (orig units) = {evals}")
+print(f"eigenvectors (cols)      =\n{evecs}")
+print(f"variance fraction in PC1 (standardized) = {ev_z[0]/ev_z.sum():.4f}")
+```
+
+Walk the pipeline the code just executed, tying each step to the article that owns it.
+
+**Step 1 — center.** We subtract the column means $\mu = (\bar{\text{dur}}, \bar{\text{wait}})$
+so the cloud is anchored at the origin; centering is what makes the covariance matrix and the
+eigen-directions about *spread* rather than *location*. (Why centering is the right
+pre-processing for variance analysis is Unsupervised Learning's point to make in [UNSP-07];
+geometrically it is just translating the cloud to the origin, [GEOM-00].)
+
+**Step 2 — covariance.** We form $\Sigma = \tfrac{1}{n-1}X_c^\top X_c$, a $2\times 2$
+**symmetric positive-semidefinite** matrix ([GEOM-18] guarantees $X_c^\top X_c$ is PSD). Its
+diagonal entries are the two variances and its off-diagonal entry is the covariance; here it
+is strongly positive, confirming long eruptions and long waits travel together.
+
+**Step 3 — spectral decomposition.** We take the eigendecomposition $\Sigma = Q\Lambda Q^\top$
+with `np.linalg.eigh` (the routine for *symmetric* matrices, which returns an orthonormal $Q$
+exactly as the spectral theorem of [GEOM-16] promises). The eigenvector with the larger
+eigenvalue is the long axis of the ellipse — the direction of maximum variance, drawn as the
+red **PC1** arrow in the left panel. The variance fraction printed shows PC1 alone carries
+the overwhelming majority of the spread: this cloud is *almost* one-dimensional.
+
+**Step 4 — project and reconstruct.** The rank-1 reconstruction is the **orthogonal
+projection** of [GEOM-06] onto the line spanned by PC1: every point is replaced by its closest
+point on that line, and the grey segments in the right panel are the projection residuals —
+the perpendicular gaps we proved are orthogonal to the subspace. Keeping only PC1 is the
+best rank-1 approximation of the centered data (Eckart–Young, [GEOM-21]); the residuals are
+the price.
+
+::: {.callout-tip title="You might be asked"}
+*"Why did you standardize the columns before taking eigenvectors, and when would that be
+wrong?"* Duration is measured in single minutes and waiting time in tens of minutes, so on
+the raw scale the wait variable's larger numbers would dominate the covariance purely because
+of its units — the top eigenvector would chase the variable with the bigger numbers, not the
+one with more *relative* structure. Standardizing (dividing each column by its standard
+deviation) puts them on equal footing, which is the right default when variables have
+incommensurable units. But it is **not** always right: if the variables are already in the
+same units and their differing variances are *real signal* (e.g. pixel intensities, returns
+of comparable assets), standardizing throws that signal away. The choice between covariance
+PCA and correlation PCA is a genuine modeling decision Unsupervised Learning takes up in
+[UNSP-08]; geometrically it is just whether you stretch the axes before finding the cloud's
+direction.
+:::
+
+## Whitening the same cloud {#sec-whiten}
+
+The same spectral decomposition gives the whitening transform for free. Whitening sends the
+tilted ellipse to a round, unit-variance, uncorrelated cloud by multiplying centered data by
+$\Sigma^{-1/2} = Q\Lambda^{-1/2}Q^\top$ — the inverse matrix square root of [GEOM-19], built
+from the very $Q, \Lambda$ we already computed.
+
+```{python}
+#| label: fig-whiten
+#| fig-cap: "Whitening as the inverse matrix square root in action. **Left:** the centered Old Faithful cloud is a tilted ellipse — the variables are correlated. **Right:** after applying $W=\\Sigma^{-1/2}=Q\\Lambda^{-1/2}Q^\\top$, the cloud is round, with unit variance in every direction and zero correlation. This is the exact move generalized least squares uses to turn correlated-error regression into ordinary least squares, and the move that turns a general Gaussian into a standard one."
+# Build Sigma^{-1/2} from the (original-unit) spectral decomposition.
+Lam = np.diag(evals)
+Q = evecs
+Sigma_inv_sqrt = Q @ np.diag(evals ** -0.5) @ Q.T
+W = Dc @ Sigma_inv_sqrt.T                      # whitened coordinates
+cov_white = (W.T @ W) / (n - 1)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.0))
+axL.scatter(Dc[:, 0], Dc[:, 1], color=VEC, s=28, alpha=0.85)
+axL.set_aspect("equal"); axL.set_title("Centered (correlated, tilted)")
+axL.set_xlabel("duration $-\\bar{x}$ (min)"); axL.set_ylabel("wait $-\\bar{x}$ (min)")
+axR.scatter(W[:, 0], W[:, 1], color=ACCENT, s=28, alpha=0.85)
+axR.set_aspect("equal"); axR.set_title("Whitened (round, uncorrelated)")
+axR.set_xlabel("$w_1$"); axR.set_ylabel("$w_2$")
+th = np.linspace(0, 2*np.pi, 100)
+axR.plot(np.cos(th), np.sin(th), color=GREY, ls="--", lw=1.2)  # unit circle
+plt.tight_layout()
+print(f"covariance of whitened data (should be ~ identity) =\n{cov_white}")
+```
+
+The printed covariance of the whitened data is the $2\times2$ identity to numerical
+precision: the ellipse has become a circle. This single transform underlies three distinct
+downstream methods — GLS in regression ([REGR-11]), the change of variables that standardizes
+a Gaussian in probability ([PROB-17], [PROB-18]), and the preconditioning that fixes
+ill-conditioned optimization (Optimization track) — all of them the inverse matrix square
+root of [GEOM-19] wearing different costumes.
+
+# Worked example II: when the geometry strains — conditioning and a near-degenerate fit {#sec-conditioning-example}
+
+The honest edge of this whole toolbox is **conditioning**. Every method above is a *solve*
+or a *decomposition*, and every solve inherits the condition number of its matrix. We now
+build a regression that is mathematically perfectly well-posed yet numerically treacherous,
+watch the geometry predict the trouble, and apply the fix — chaining the condition number
+([GEOM-26]), the spectral theorem ([GEOM-16]), and ridge's eigenvalue-lifting.
+
+We fit $y$ on two predictors that are *almost* the same column — near-collinear, the cloud's
+column space nearly a line instead of a plane. This is the multicollinearity of @sec-map-cond,
+and it is the single most common way a real regression quietly produces garbage.
+
+```{python}
+#| label: fig-conditioning
+#| fig-cap: "The edge of applicability: near-collinear predictors. **Left:** the two predictor columns $x_1, x_2$ are almost parallel (correlation near 1), so the design's column space is a nearly-degenerate sliver. **Right:** as collinearity tightens (correlation $\\to 1$), the condition number $\\kappa(X^\\top X)$ explodes and the fitted coefficients swing wildly across bootstrap resamples (shaded band = coefficient range), even though the *prediction* stays fine. Ridge ($+\\lambda I$) lifts the smallest eigenvalue off the floor and tames both. This is multicollinearity seen as pure geometry."
+rng = np.random.default_rng(0)
+n = 120
+x1 = rng.normal(0, 1, n)
+
+def make_design(rho):
+    # x2 = rho-correlated copy of x1
+    x2 = rho * x1 + np.sqrt(max(1 - rho**2, 1e-12)) * rng.normal(0, 1, n)
+    X = np.column_stack([np.ones(n), x1, x2])
+    return X, x2
+
+# true relationship uses both, but they are nearly redundant
+beta_true = np.array([0.5, 1.0, 1.0])
+
+rhos = np.array([0.5, 0.9, 0.99, 0.999, 0.9999])
+kappas, coef_spread = [], []
+for rho in rhos:
+    X, x2 = make_design(rho)
+    XtX = X.T @ X
+    kappas.append(np.linalg.cond(XtX))
+    # bootstrap the slope-on-x1 to see its instability
+    slopes = []
+    for _ in range(200):
+        idx = rng.integers(0, n, n)
+        Xb = X[idx]; yb = Xb @ beta_true + rng.normal(0, 0.3, n)
+        bhat = np.linalg.lstsq(Xb, yb, rcond=None)[0]
+        slopes.append(bhat[1])
+    coef_spread.append(np.std(slopes))
+kappas = np.array(kappas); coef_spread = np.array(coef_spread)
+
+# also show the ridge fix at the worst rho
+rho_bad = 0.9999
+Xb, _ = make_design(rho_bad)
+XtX = Xb.T @ Xb
+lams = np.array([0, 1e-3, 1e-2, 1e-1, 1.0])
+kappa_ridge = [np.linalg.cond(XtX + l*np.eye(3)) for l in lams]
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.0))
+Xv, x2v = make_design(0.99)
+axL.scatter(Xv[:, 1], x2v, color=VEC, s=18, alpha=0.7)
+axL.set_title("Two near-parallel predictors ($\\rho=0.99$)")
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$"); axL.set_aspect("equal")
+
+axR.plot(kappas, coef_spread, "o-", color=HILITE, label="coef. instability (boot. SD)")
+axR.set_xscale("log"); axR.set_yscale("log")
+axR.set_xlabel(r"$\kappa(X^\top X)$  (log)"); axR.set_ylabel("SD of fitted slope (log)")
+axR.set_title("Big $\\kappa$ $\\Rightarrow$ unstable coefficients")
+axR.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+print("rho      kappa(X'X)        bootstrap SD of slope")
+for r, k, s in zip(rhos, kappas, coef_spread):
+    print(f"{r:<8.4f} {k:>14.1f}    {s:>10.4f}")
+print()
+print("ridge fix at rho = 0.9999:")
+print("lambda     kappa(X'X + lambda I)")
+for l, k in zip(lams, kappa_ridge):
+    print(f"{l:<8.3g}  {k:>14.1f}")
+```
+
+The printed table is the entire multicollinearity story in numbers. As the predictor
+correlation climbs from $0.5$ toward $0.9999$, the condition number of $X^\top X$ grows by
+orders of magnitude, and in lockstep the bootstrap standard deviation of the fitted slope —
+how much the coefficient jumps when the data are resampled — blows up. The coefficients are
+not *wrong*; they are *unstable*, which is worse, because a single fit gives no hint of it.
+The geometry diagnosed it in advance: near-parallel columns mean a tiny smallest eigenvalue
+of $X^\top X$, hence a huge $\kappa$, hence — by the error-amplification bound of [GEOM-26] —
+a solution that small data perturbations swing wildly.
+
+The ridge table shows the fix as pure spectral arithmetic. Ridge replaces $X^\top X$ with
+$X^\top X + \lambda I$. Adding $\lambda I$ adds $\lambda$ to *every* eigenvalue, and here is
+the one line that shows it: $X^\top X$ is symmetric, so by the spectral theorem ([GEOM-16])
+it factors as $X^\top X = Q\Lambda Q^\top$ with $Q$ orthonormal ($Q^\top Q = I$). Since
+$I = QQ^\top$, we can write $\lambda I = Q(\lambda I)Q^\top$, and therefore
+$$
+X^\top X + \lambda I = Q\Lambda Q^\top + Q(\lambda I)Q^\top
+= Q\,(\Lambda + \lambda I)\,Q^\top ,
+$$
+which is the spectral decomposition of the ridge-modified matrix with the *same*
+eigenvectors $Q$ and each eigenvalue shifted from $\lambda_k$ to $\lambda_k + \lambda$. So
+the smallest eigenvalue rises from near-zero $\lambda_{\min}$ to $\lambda_{\min} + \lambda
+\geq \lambda$, while the largest barely moves, and the condition number
+$(\lambda_{\max}+\lambda)/(\lambda_{\min}+\lambda)$ collapses toward a sane value — exactly
+what the printed $\kappa$ column shows as $\lambda$ grows. Regression owns the statistical price of this trade
+(it introduces bias — [REGR-14]); Geometry explains *why it works at all*: it is eigenvalue
+lifting, visible only because we can see $X^\top X$ through its spectral decomposition.
+
+::: {.callout-warning title="Pitfall"}
+**Do not test for trouble by checking whether $\det(X^\top X) \approx 0$, and do not solve
+by literally forming $(X^\top X)^{-1}$.** Both are the classic numerical traps [GEOM-26]
+warned about. The determinant conflates *scale* with *conditioning* — a well-conditioned
+matrix scaled down has a tiny determinant and a benign $\kappa$, while a treacherous matrix
+can have a determinant near 1. The condition number, not the determinant, is the singularity
+diagnostic. And forming the normal equations $X^\top X$ *squares* the condition number of
+$X$ (because $\kappa(X^\top X) = \kappa(X)^2$ from the SVD, [GEOM-26]), so whenever
+collinearity is even mild you should solve the least-squares problem through the **QR**
+([GEOM-07]) or **SVD** ([GEOM-20]) of $X$ directly, never by inverting $X^\top X$. This is the
+"solve, don't invert" discipline made specific to regression.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"A colleague's regression has wildly different coefficients every time they refit on a new
+batch, but the predictions are fine. What's going on and what do you do?"* This is the exact
+scenario of @fig-conditioning, and the answer is a geometry answer. The predictors are
+near-collinear, so the column space is a near-degenerate sliver: the *projection* (the fitted
+values, the predictions) is stable because it only depends on the subspace, but the
+*coordinates of that projection in the predictor basis* (the coefficients) are unstable
+because the basis is nearly degenerate. Diagnose it with the condition number of $X^\top X$
+or a variance-inflation factor, not the determinant. Fix it by removing or combining the
+redundant predictors, by regularizing (ridge lifts the smallest eigenvalue), or by switching
+to a PCA/SVD basis that is orthogonal by construction. The deeper point you should volunteer:
+*prediction and inference have different conditioning* — the same model can be trustworthy
+for one and useless for the other.
+:::
+
+# When the geometry is the wrong lens {#sec-failure}
+
+An honest bridge must say where the bridge ends. The linear-algebraic geometry this track
+built is the right lens for an enormous swath of data science, but it has a definite
+boundary, and a graduate-level practitioner names it without being asked.
+
+- **The structure is genuinely nonlinear.** Every tool here finds *linear* structure —
+  subspaces, principal *axes*, linear maps. If the data lie on a curved manifold (a spiral, a
+  swiss roll), the best line or plane is a poor summary, and PCA's top components miss the
+  real geometry entirely. The fix lives one level up: kernel methods ([UNSP-09], and the
+  kernel trick owned by Classification), manifold learning ([UNSP-10], [UNSP-11]), and
+  nonparametric regression. The geometric *idea* survives — we project in a richer feature
+  space — but the plain linear tools do not.
+- **The relationship is not about second-order structure at all.** Covariance, the spectral
+  theorem, and PCA only ever see *means, variances, and linear correlations* — the first two
+  moments. Two variables can be strongly dependent with zero correlation (e.g.
+  $Y = X^2$ with symmetric $X$), and a covariance matrix is blind to it. When dependence is
+  higher-order or distributional, you need mutual information, copulas, or distributional
+  tests, not eigenvectors.
+- **The matrix is not symmetric, or the problem is not a quadratic.** The cleanest results in
+  the track — the spectral theorem, the bowl-shaped quadratic, the unique minimum — are
+  promises about *symmetric* matrices and *quadratic* objectives. A general loss surface has
+  no orthonormal eigenbasis and many critical points; a non-symmetric map can have complex
+  eigenvalues and no real invariant axes ([GEOM-14] flagged this). The SVD is the tool that
+  survives generality ([GEOM-20]), which is exactly why it is the master decomposition — but
+  even it only linearizes.
+- **The data are not numeric, or distances are meaningless.** The entire edifice rests on
+  a cloud of points in $\mathbb{R}^n$ with a meaningful dot product ([GEOM-00], [GEOM-04]). For
+  categorical data, graphs, text, or sets, the right geometry is a *chosen* embedding or
+  kernel, and the linear tools apply only after that choice — which is itself the hard part,
+  and not a linear-algebra question.
+
+::: {.callout-tip title="You might be asked"}
+*"PCA gave me components that explain 95% of the variance but my downstream classifier got
+worse. Why?"* Because **variance is not relevance.** PCA keeps the directions of largest
+*spread*, but the discriminative signal — the direction that separates classes — may lie in a
+low-variance direction that PCA discards. PCA is unsupervised; it cannot see the label. This
+is the honest limit of "axes of the cloud": the cloud's longest axis need not be the axis
+that matters for your task. When the goal is separation, reach for a *supervised* projection
+(linear discriminant analysis, owned by Classification) instead. The interviewer is testing
+whether you know that "captures the variance" and "captures the signal" are different claims.
+:::
+
+# Interview-lens roundup {#sec-interview}
+
+The standard linear-algebra interview surface for a data-science role is small and
+predictable, and every question on it is one we have now earned an answer to. A compact
+reference, each answered in one move with its applicability judgment.
+
+- **"What is least squares, geometrically?"** Projection of $y$ onto the column space of $X$;
+  the residual is orthogonal to every predictor (the normal equations). Use it when the
+  relationship is linear, errors are roughly homoscedastic, and no point dominates; reach for
+  robust loss, GLS, or nonparametric methods otherwise ([GEOM-06], [REGR-04]).
+- **"What is PCA actually computing?"** The eigenvectors of the covariance matrix (equivalently
+  the right singular vectors of the centered data), kept in order of eigenvalue size. It finds
+  the directions of maximum variance. Use it for compression, denoising, and visualization;
+  do **not** use it as feature selection for a supervised task, because variance is not
+  relevance ([GEOM-16], [GEOM-20], [UNSP-07]).
+- **"Why is the covariance matrix always positive-semidefinite, and why does it matter?"**
+  Because $u^\top \Sigma u$ is the variance of the projection onto $u$, which cannot be
+  negative; it is positive-*definite* iff no linear combination of the variables is constant.
+  It matters because PD is exactly the condition for a valid Gaussian, an invertible
+  whitening transform, and a Cholesky factor ([GEOM-18], [GEOM-19]).
+- **"What does the SVD give you that the eigendecomposition does not?"** It exists for *every*
+  matrix — rectangular, rank-deficient, anything — with real nonnegative singular values and
+  orthonormal $U, V$. The eigendecomposition needs a square matrix with a full eigenbasis
+  (and is only orthonormal when the matrix is symmetric). Reach for the SVD for rank, the
+  pseudoinverse, low-rank approximation, and numerically stable least squares ([GEOM-20],
+  [GEOM-21]).
+- **"How do you know an optimization will converge quickly / a regression is trustworthy?"**
+  Look at the conditioning: the eigenvalue ratio of the Hessian for optimization, the
+  condition number of $X^\top X$ for regression. A long thin valley (large $\kappa$) means
+  slow gradient descent and unstable coefficients; preconditioning, ridge, or a better basis
+  fix it ([GEOM-24], [GEOM-26]).
+- **"What is Fisher information, in one sentence?"** The (expected) curvature of the
+  log-likelihood at its peak — a Hessian — so high curvature means the data pin the parameter
+  down tightly. It is the bridge from the second-derivative geometry of this track to the
+  variance of an estimator ([GEOM-24], [INFR-B3]).
+- **"When should you NOT use these linear tools?"** When the structure is nonlinear, when
+  dependence is higher-order than correlation, when distances on the raw data are meaningless,
+  or when you need separation rather than spread. Name the alternative each time — kernels,
+  manifold learning, mutual information, LDA (@sec-failure).
+
+::: {.callout-important title="The one-line translations to memorize"}
+- **Fit a model** = project onto the column space ([GEOM-06]).
+- **Find structure** = spectral-decompose the covariance / SVD the data ([GEOM-16], [GEOM-20]).
+- **Decorrelate or simulate** = inverse / forward matrix square root ([GEOM-19]).
+- **Train** = descend the gradient, read curvature from the Hessian ([GEOM-23], [GEOM-24]).
+- **Trust the answer?** = read the condition number ([GEOM-26]).
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track — and where you go now"}
+This is the **terminal article** of the Geometry-of-Data track. You arrived having built and
+proved every tool in isolation; you leave able to recognize each one inside the methods of
+every other track. There is no [GEOM-28] — the track's job is done. The hand-offs:
+
+- **Regression.** [REGR-04] is "least squares = projection" ([GEOM-06]); [REGR-05] is the
+  matrix normal equations @eq-normal-multi; [REGR-07] is the condition number of $X^\top X$
+  ([GEOM-26]); [REGR-11] is GLS via the matrix square root ([GEOM-19]); [REGR-14] is ridge as
+  eigenvalue lifting ([GEOM-16]). Every one links back here for the algebra.
+- **Statistical Inference.** [INFR-B3] builds Fisher information on the Hessian-as-curvature
+  picture ([GEOM-24], [GEOM-25]); the multivariate normal and its quadratic-form exponent ride
+  on positive-definiteness ([GEOM-18]).
+- **Optimization.** Consumes the gradient ([GEOM-23]), the Hessian and Newton step
+  ([GEOM-24], [GEOM-25]), and the condition number as the convergence-rate driver
+  ([GEOM-26]); it owns the *algorithms*, this track owns the *geometry* they walk on.
+- **Unsupervised Learning.** [UNSP-07]/[UNSP-08] build PCA on the spectral theorem and the SVD
+  ([GEOM-16], [GEOM-20], [GEOM-21]); the kernel and manifold articles ([UNSP-09]–[UNSP-11])
+  are where the geometry goes *nonlinear*, exactly the boundary of @sec-failure.
+- **Probability foundations.** [PROB-17]/[PROB-18] use the covariance matrix, linear
+  transforms of random vectors, and whitening — the statistics on top of the symmetric-PSD
+  and matrix-square-root machinery here.
+- **Classification** and **Causal Inference** consume projection, the SVD, and quadratic forms
+  throughout (LDA, kernel methods, regression adjustment) and link back rather than
+  re-deriving.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The book that made the geometric view canonical.** Gilbert Strang, *Introduction to
+  Linear Algebra* (and his MIT 18.06 lectures) — the four-subspaces, "matrix = action on a
+  cloud" pedagogy that this entire track is downstream of. Strang's *Linear Algebra and
+  Learning from Data* (Wellesley-Cambridge, 2019) is the closest single source to *this very
+  article*: a working data scientist's map from the algebra to the methods.
+- **The decomposition-first reference.** Lloyd N. Trefethen and David Bau, *Numerical Linear
+  Algebra* (SIAM 1997) — least squares as projection, the SVD as the organizing object, and
+  conditioning treated as a first-class citizen, all in the geometric spirit used here.
+- **The historical roots of the costumes.** Karl Pearson, "On lines and planes of closest fit
+  to systems of points in space," *Philosophical Magazine* (1901), and Harold Hotelling,
+  "Analysis of a complex of statistical variables into principal components," *J. Educational
+  Psychology* (1933) — PCA invented as a geometry of clouds, decades before "eigenvectors of a
+  covariance matrix" was the phrase. R. A. Fisher's information matrix and Gauss's *Theoria
+  Motus* (least squares) complete the picture of applications preceding the unifying algebra.
+- **Open threads this track deliberately left to its consumers.** *How do we choose the number
+  of PCA components in practice?* — scree plots and cross-validation, [UNSP-08]. *What exactly
+  is the convergence rate of gradient descent in terms of $\kappa$?* — Optimization, where the
+  rate $(\kappa-1)/(\kappa+1)$ (and the $\sqrt{\kappa}$ improvement of conjugate gradients) is
+  derived. *How do we make these tools nonlinear without abandoning the geometry?* — the
+  kernel trick (Classification) and manifold learning ([UNSP-10]–[UNSP-11]), where projection
+  and the SVD reappear in a feature space we never coordinate explicitly. The bridge ends
+  here; each of those is the first plank of the next.

@@ -1,0 +1,1145 @@
+---
+title: "The Determinant: Signed Volume and Invertibility"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon, FancyArrowPatch
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / data
+HILITE = "#c1121f"   # the highlighted vector / image
+ACCENT = "#0a7d4d"   # area / volume highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+ORANGE = "#d97706"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the closing article of **Movement III —
+> Matrices as Maps**. It assumes [GEOM-08 *Matrices as Linear Maps*] (a matrix is a map
+> $\mathbf{x}\mapsto A\mathbf{x}$, and $A\mathbf{x}$ is a linear combination of $A$'s
+> columns — equivalently, the columns are *where the standard axis vectors land*),
+> [GEOM-09 *Matrix Multiplication as Composition*] ($AB$ means "do $B$, then $A$"), and
+> [GEOM-11 *Solving $A\mathbf{x}=\mathbf{b}$*] (a square map is invertible exactly when its
+> columns are independent, and singular when they collapse). It leans lightly on the
+> transpose from [GEOM-10] and on the rank language of [GEOM-12 *Rank and the Four
+> Fundamental Subspaces*] ($\det\neq 0 \Leftrightarrow$ full rank). Its job is to answer
+> one question — *what single number tells you whether a square map is invertible, and why
+> is "the factor by which it scales volume" the right way to understand it?* It sets up the
+> **characteristic polynomial** $\det(A-\lambda I)=0$ of [GEOM-14 *Eigenvalues and
+> Eigenvectors*], and it plants the **change-of-variables Jacobian** hook that the
+> Probability track collects in [PROB-18 *Linear Transforms of Random Vectors*]. It also
+> issues a warning it will pay off at the end of the track: *do not use the determinant to
+> test whether a matrix is numerically singular* — that is the condition number's job
+> ([GEOM-26]).
+
+## Abstract {.unnumbered}
+
+Every square matrix $A\in\mathbb{R}^{n\times n}$ carries a single number, its
+**determinant** $\det A$, with a startlingly concrete meaning: it is the **signed factor
+by which the map $\mathbf{x}\mapsto A\mathbf{x}$ scales volume**. Feed in the unit cube;
+the image is a parallelepiped whose (signed) volume is exactly $\det A$. The sign records
+whether the map preserves or flips orientation — whether a right-handed coordinate frame
+stays right-handed. From this one picture everything follows, and we derive it that way,
+not from a cofactor formula memorized in a sophomore course. A map is **invertible
+exactly when $\det A\neq 0$**, because $\det A=0$ means the cube was flattened — squashed
+into lower dimension, its volume annihilated, its information irretrievably lost. The
+multiplicativity law $\det(AB)=\det A\,\det B$ is just "scaling volume twice multiplies the
+factors." We derive the $2\times 2$ and $3\times 3$ formulas as special cases of the
+volume picture, show how row operations change the determinant, prove $\det(A^\top)=\det A$,
+and then deliver the honest practitioner's verdict: the determinant is a beautiful
+*theoretical* invariant — it powers the change-of-variables formula for densities and
+defines the characteristic polynomial — but it is a **terrible numerical test for
+singularity**, and we explain exactly why and what to use instead. The single claim this
+article defends is that **the determinant is one geometric quantity, signed volume scaling,
+and every algebraic property it has is a sentence about volume.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **determinant** of a square matrix $A$ is the **signed factor by which the linear map
+$\mathbf{x}\mapsto A\mathbf{x}$ multiplies volume**. Take the unit cube (in 2-D, the unit
+square; in $n$-D, the unit hypercube); its image under $A$ is a parallelepiped, and
+$\det A$ is that parallelepiped's signed volume. The **magnitude** $|\det A|$ is the volume
+scaling factor; the **sign** says whether the map preserves orientation ($+$) or flips it
+like a mirror ($-$). Consequently:
+
+- $\det A = 0$ **exactly when the map collapses space** — flattens the cube into a
+  lower-dimensional sheet of zero volume — which is exactly when $A$ is **singular
+  (non-invertible)**. A nonzero determinant means full rank, an inverse, a unique solution
+  to $A\mathbf{x}=\mathbf{b}$.
+- $\det(AB)=\det A\,\det B$, because doing two maps scales volume by each factor in turn.
+- $\det(A^{-1}) = 1/\det A$, because undoing a map must undo its volume scaling.
+
+Every algebraic rule about determinants is a restatement of one of these geometric facts.
+:::
+
+Everything below orbits that box. The cofactor expansions and the row-operation rules that
+fill linear-algebra textbooks will look like a grab-bag of formulas; by the end you should
+see each one as a *sentence about volume*. The headline — $\det A=0$ means the map crushed
+space — is the bridge straight back to [GEOM-11]'s singular matrices and [GEOM-12]'s
+rank-deficient ones, now given a number you can compute.
+
+# Why we are doing this: the problem of detecting a collapse {#sec-why}
+
+Keep one question in view for the whole article: **given a square matrix, is the map it
+defines reversible — and if so, by how much does it stretch or squeeze the space it acts
+on?** Every definition and derivation below answers a piece of that.
+
+## What the previous articles left open
+
+By [GEOM-11], a square matrix $A$ either is **invertible** — every target $\mathbf{b}$ is
+hit by exactly one input, the columns are independent, the map can be undone — or it is
+**singular** — the columns are dependent, the map collapses some directions to zero, and
+$A\mathbf{x}=\mathbf{b}$ has either no solution or infinitely many. By [GEOM-12], the
+dividing line is *rank*: a square $n\times n$ matrix is invertible exactly when its rank is
+the full $n$.
+
+But rank, as [GEOM-12] showed, is computed by elimination or read off the SVD — there is no
+*single arithmetic expression in the entries of $A$* that returns "invertible or not." For
+a $2\times2$ matrix you may dimly remember the test "$ad-bc\neq 0$." Where does that come
+from? Why that combination of entries and no other? And what is the analogue for $3\times3$,
+for $n\times n$? The determinant is the answer: **one polynomial in the entries of $A$ that
+is zero precisely when the matrix is singular.** This article's task is to find that
+polynomial, and — crucially — to understand it, not just compute it.
+
+## Where the *why* came from historically
+
+The determinant predates the matrix. In the late 1600s and 1700s, mathematicians solving
+systems of linear equations — Leibniz, then Cramer in 1750 — kept noticing that the
+*solvability* of a system, and the formula for its solution, hinged on one particular
+alternating sum of products of coefficients. Cramer's rule expressed each unknown as a
+ratio of two such sums. The expression was discovered as **the thing in the denominator
+that, when it vanishes, the system has no unique solution**. That is its origin: a
+solvability detector.
+
+The geometric meaning — signed volume — came later, crystallized by Cauchy (who in 1812
+gave the word "déterminant" its modern sense and proved the product rule) and by the 19th
+century's geometers. We will run history in reverse, because the geometry is the *why* that
+makes every algebraic fact inevitable. We start from "how does this map change volume,"
+and the solvability detector falls out: **a map that crushes volume to zero cannot be
+undone.**
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what is the determinant?"* It is the signed volume-scaling factor of the
+linear map the matrix performs — the factor by which it inflates or deflates volume, with a
+sign for whether it flips orientation. Everything else (the invertibility test, the product
+rule, Cramer's rule, the Jacobian in change-of-variables) is a consequence of that one
+sentence. If you can only remember one thing about determinants, remember *signed volume*,
+and you can reconstruct the rest.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formula, fix the picture. By [GEOM-08], a matrix $A$ is completely described by
+**where it sends the standard basis vectors** — the unit arrows along each axis. In 2-D,
+$\mathbf{e}_1=(1,0)$ lands at the first column of $A$ and $\mathbf{e}_2=(0,1)$ lands at the
+second. The unit square spanned by $\mathbf{e}_1,\mathbf{e}_2$ — the square with corners
+$(0,0),(1,0),(0,1),(1,1)$, of area exactly $1$ — is therefore sent to the **parallelogram**
+spanned by the two columns of $A$.
+
+The determinant is the (signed) area of that image parallelogram. Since the square we
+started with had area $1$, this area *is* the factor by which the map scaled area: a
+parallelogram of area $3$ means "this map triples areas everywhere." @fig-unit-square shows
+the move.
+
+```{python}
+#| label: fig-unit-square
+#| fig-cap: "The determinant as area scaling, in 2-D. **Left:** the unit square (area $1$), spanned by $\\mathbf{e}_1=(1,0)$ and $\\mathbf{e}_2=(0,1)$. **Right:** its image under $A=\\bigl[\\begin{smallmatrix}2&1\\\\0&1.5\\end{smallmatrix}\\bigr]$. The two columns $(2,0)$ and $(1,1.5)$ span a parallelogram; its area is $\\det A = 2\\cdot 1.5 - 1\\cdot 0 = 3$. So this map triples every area in the plane — the unit square became a region of area $3$, and the same factor applies to *any* region."
+A = np.array([[2.0, 1.0], [0.0, 1.5]])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
+
+# Left: unit square.
+sq = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)], closed=True,
+             facecolor=ACCENT, alpha=0.25, edgecolor=ACCENT, lw=1.8)
+axL.add_patch(sq)
+draw_vec(axL, (0, 0), (1, 0), color=VEC, label=r"$\mathbf{e}_1$", label_offset=(0.12, -0.18))
+draw_vec(axL, (0, 0), (0, 1), color=HILITE, label=r"$\mathbf{e}_2$", label_offset=(-0.22, 0.10))
+axL.text(0.5, 0.5, "area $= 1$", ha="center", va="center", fontsize=11, color=ACCENT)
+axL.set_xlim(-0.6, 3.0); axL.set_ylim(-0.6, 2.4); axL.set_aspect("equal")
+axL.set_title("Unit square in the input plane")
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$")
+
+# Right: image parallelogram.
+c1, c2 = A[:, 0], A[:, 1]
+para = Polygon([(0, 0), tuple(c1), tuple(c1 + c2), tuple(c2)], closed=True,
+               facecolor=ACCENT, alpha=0.25, edgecolor=ACCENT, lw=1.8)
+axR.add_patch(para)
+draw_vec(axR, (0, 0), tuple(c1), color=VEC, label=r"$A\mathbf{e}_1$", label_offset=(0.18, -0.22))
+draw_vec(axR, (0, 0), tuple(c2), color=HILITE, label=r"$A\mathbf{e}_2$", label_offset=(-0.30, 0.12))
+axR.text(1.4, 0.8, r"area $= \mathrm{det}\,A = 3$", ha="center", va="center", fontsize=11, color=ACCENT)
+axR.set_xlim(-0.6, 3.6); axR.set_ylim(-0.6, 2.4); axR.set_aspect("equal")
+axR.set_title("Image: columns span a parallelogram")
+axR.set_xlabel("$y_1$"); axR.set_ylabel("$y_2$")
+plt.tight_layout()
+```
+
+Three features of this picture carry the entire article, so name them now.
+
+**Why a sign.** Area, as a raw geometric quantity, is positive. But the determinant can be
+negative, and the sign is not noise — it records **orientation**. Walking from
+$A\mathbf{e}_1$ to $A\mathbf{e}_2$ is either a counterclockwise turn (orientation
+preserved, like the original $\mathbf{e}_1\to\mathbf{e}_2$ turn) or a clockwise turn
+(orientation flipped, as if the plane were reflected in a mirror). The determinant is
+*positive* for the first, *negative* for the second. A matrix with $\det A<0$ contains a
+flip; a pure rotation, which preserves handedness, has $\det>0$.
+
+**Why zero means collapse.** If the two columns happen to be parallel — point along the
+same line — the "parallelogram" they span is degenerate: a flat sliver of zero area. The
+map has crushed the 2-D square onto a 1-D line. That is precisely the singular case of
+[GEOM-11]: dependent columns, lost dimension, no inverse. **Zero area $=$ zero determinant
+$=$ collapse $=$ singular.** @fig-collapse-2d makes the collapse visible.
+
+```{python}
+#| label: fig-collapse-2d
+#| fig-cap: "The singular case. The map $A=\\bigl[\\begin{smallmatrix}2&1\\\\4&2\\end{smallmatrix}\\bigr]$ has a second column $(1,2)$ that is exactly half the first column $(2,4)$ — both lie on the line through $(1,2)$. The image of the unit square is not a parallelogram but a flat segment of *zero* area: the plane has been crushed onto a line. Its determinant is $2\\cdot 2 - 1\\cdot 4 = 0$. A zero determinant is the algebraic signature of this geometric collapse, and it is exactly the condition under which the map cannot be inverted."
+A = np.array([[2.0, 1.0], [4.0, 2.0]])
+c1, c2 = A[:, 0], A[:, 1]
+
+fig, ax = plt.subplots(figsize=(5.4, 4.6))
+# The "parallelogram" degenerates to a segment along the line through (1,2).
+t = np.linspace(-0.2, 3.4, 50)
+direction = np.array([1.0, 2.0]) / np.sqrt(5)
+ax.plot(t * direction[0], t * direction[1], color=GREY, lw=1.2, ls="--",
+        label="image line (the collapse)")
+draw_vec(ax, (0, 0), tuple(c1), color=VEC, label=r"$A\mathbf{e}_1=(2,4)$",
+         label_offset=(0.9, 0.1))
+draw_vec(ax, (0, 0), tuple(c2), color=HILITE, label=r"$A\mathbf{e}_2=(1,2)$",
+         label_offset=(1.0, -0.3))
+ax.text(1.5, 0.4, r"area $= \mathrm{det}\,A = 0$", fontsize=11, color=ACCENT)
+ax.set_xlim(-0.6, 4.2); ax.set_ylim(-0.6, 5.0); ax.set_aspect("equal")
+ax.set_title("Parallel columns: the square is crushed to a line")
+ax.set_xlabel("$y_1$"); ax.set_ylabel("$y_2$")
+ax.legend(loc="upper left", fontsize=9)
+plt.tight_layout()
+```
+
+**Why it is the same factor everywhere.** The map is *linear*, and linear maps scale *all*
+areas by the same factor. We do not have to check the unit square specially: a region of
+area $S$ becomes a region of area $|\det A|\cdot S$, whatever its shape, because any region
+is built from tiny copies of the square and the map treats them all alike. This is the
+property that lets the determinant double as the Jacobian factor in calculus (@sec-jacobian).
+
+The whole of @sec-formal makes these three observations precise and turns them into
+formulas. In $n$ dimensions the unit *hypercube* of volume $1$ is sent to a
+*parallelepiped*, and $\det A$ is its signed $n$-dimensional volume; the same three facts
+hold verbatim.
+
+# The formal development {#sec-formal}
+
+We proceed in four moves. First we pin down what "signed volume" must mean by listing the
+properties any honest area/volume function must have (@sec-axioms). Second, we show those
+properties *force* a unique formula and derive the $2\times2$ and $3\times3$ cases
+explicitly (@sec-formulas). Third, we derive the headline algebraic laws — the product rule,
+the invertibility criterion, the transpose rule, and the effect of row operations — *from
+the volume picture* (@sec-laws). Fourth, we connect to the cofactor expansion that lets us
+compute any size (@sec-cofactor).
+
+## What signed volume must satisfy {#sec-axioms}
+
+Rather than pull a formula out of the air, we ask: what does it *mean* to measure the signed
+volume of the parallelepiped spanned by $n$ vectors? Write the determinant as a function of
+the $n$ columns,
+$$
+D(\mathbf{a}_1,\mathbf{a}_2,\dots,\mathbf{a}_n),
+$$
+where $\mathbf{a}_j\in\mathbb{R}^n$ is the $j$-th column of $A$ — that is, $A\mathbf{e}_j$,
+where $\mathbf{e}_j$ lands. Three properties capture exactly what "signed volume of the
+spanned box" means, and we will see they pin $D$ down completely.
+
+::: {#def-det-properties}
+**Definition (the defining properties of signed volume).** The determinant is the unique
+function $D$ of the $n$ columns satisfying:
+
+1. **Normalization.** $D(\mathbf{e}_1,\dots,\mathbf{e}_n)=1$. The unit cube has volume $1$.
+   (When the columns *are* the standard axes, the matrix is the identity $I$, and we are
+   measuring the cube we declared to have volume $1$.)
+
+2. **Multilinearity.** $D$ is linear in each column separately, holding the others fixed.
+   Concretely, for the $j$-th column,
+   $$
+   D(\dots,\ \alpha\mathbf{u}+\beta\mathbf{v},\ \dots)
+   = \alpha\,D(\dots,\mathbf{u},\dots) + \beta\,D(\dots,\mathbf{v},\dots).
+   $$
+
+3. **Alternating (antisymmetry).** Swapping any two columns flips the sign:
+   $$
+   D(\dots,\mathbf{a}_i,\dots,\mathbf{a}_j,\dots)
+   = -\,D(\dots,\mathbf{a}_j,\dots,\mathbf{a}_i,\dots).
+   $$
+:::
+
+Each property is a statement about volume; let us read them as such, because the article's
+spine is that *the algebra is geometry*.
+
+**Normalization** is just the choice of unit: the box on the standard axes has volume one,
+the meter-stick of the whole theory.
+
+**Multilinearity** is the scaling-and-adding behavior of volume along one edge. Doubling one
+edge of a box doubles its volume — that is $D(\dots,2\mathbf{u},\dots)=2D(\dots,\mathbf{u},
+\dots)$, the $\alpha$ part. The additivity part ($\mathbf{u}+\mathbf{v}$ in one slot splits
+the volume into two pieces) is the statement, familiar from the shear pictures of [GEOM-08],
+that gluing two boxes along a face adds their volumes. @fig-multilinear illustrates the
+$\alpha$-scaling half, which is the one most people find intuitive on sight.
+
+```{python}
+#| label: fig-multilinear
+#| fig-cap: "Multilinearity, the scaling half. Stretching one edge vector by a factor $\\alpha$ stretches the spanned parallelogram's area by exactly $\\alpha$ (the other edge is untouched). Here doubling the second column from $(1,1.5)$ to $(2,3)$ doubles the area from $3$ to $6$. Volume is linear in each edge separately — that is property 2 of @def-det-properties."
+a1 = np.array([2.0, 0.0])
+fig, ax = plt.subplots(figsize=(6.0, 4.4))
+for a2, col, alpha_lab, fc in [(np.array([1.0, 1.5]), HILITE, r"$\mathbf{a}_2$", 0.18),
+                               (np.array([2.0, 3.0]), ORANGE, r"$2\mathbf{a}_2$", 0.12)]:
+    para = Polygon([(0, 0), tuple(a1), tuple(a1 + a2), tuple(a2)], closed=True,
+                   facecolor=fc and col, alpha=fc, edgecolor=col, lw=1.6)
+    ax.add_patch(para)
+draw_vec(ax, (0, 0), tuple(a1), color=VEC, label=r"$\mathbf{a}_1$", label_offset=(0.0, -0.3))
+draw_vec(ax, (0, 0), (1.0, 1.5), color=HILITE)
+draw_vec(ax, (0, 0), (2.0, 3.0), color=ORANGE)
+ax.text(1.3, 0.5, "area 3", color=HILITE, fontsize=10)
+ax.text(2.5, 1.6, "area 6", color=ORANGE, fontsize=10)
+ax.set_xlim(-0.4, 4.6); ax.set_ylim(-0.4, 3.6); ax.set_aspect("equal")
+ax.set_title("Scaling one edge scales the area by the same factor")
+ax.set_xlabel("$y_1$"); ax.set_ylabel("$y_2$")
+plt.tight_layout()
+```
+
+**The alternating property** is where the *sign* of "signed volume" lives, and it has one
+consequence so important we extract it immediately.
+
+::: {#lem-repeated-zero}
+**Lemma (repeated column $\Rightarrow$ zero).** If two columns of $A$ are equal, then
+$D(A)=0$.
+:::
+
+::: {.proof}
+Suppose columns $i$ and $j$ are the same vector, $\mathbf{a}_i=\mathbf{a}_j=\mathbf{a}$.
+Swapping those two columns leaves the matrix entirely unchanged — we swapped a vector with
+its identical twin, and the resulting list of columns is the same list — so $D$ is unchanged:
+$D(A)=D(A)$. But the alternating property
+(property 3) says swapping columns $i$ and $j$ must *negate* $D$: $D(A)=-D(A)$. A number
+equal to its own negative satisfies $D(A)=-D(A)$, i.e. $2D(A)=0$, so $D(A)=0$.
+$\qquad\blacksquare$
+:::
+
+Geometrically this is obvious and reassuring: if two edges of the box point in the same
+direction, the box is flat — it has been squashed into a lower-dimensional sheet — so its
+volume is zero. @lem-repeated-zero is the seed of the entire invertibility story: dependent
+columns force the determinant to zero, which is the collapse we drew in @fig-collapse-2d. We
+sharpen "two equal columns" to the full "any linear dependence among columns" in
+@sec-laws.
+
+::: {.callout-tip title="You might be asked"}
+*"Why define the determinant by three abstract properties instead of just writing the
+formula?"* Two reasons. First, the properties *are* the geometry — normalization is the
+unit cube, multilinearity is "volume scales with each edge," antisymmetry is orientation —
+so they explain the formula instead of asserting it. Second, the properties are what make
+the *proofs* clean: the product rule $\det(AB)=\det A\det B$ and the row-operation rules
+fall out in a couple of lines from properties 1–3, whereas grinding them out of the entry
+formula is a mess. The formula is a *consequence*; the properties are the *definition*. This
+"characterize by properties, then derive the formula" move is exactly how mathematicians
+actually think about the determinant.
+:::
+
+## The properties force a unique formula: $2\times2$ and $3\times3$ {#sec-formulas}
+
+We now show that properties 1–3 do not merely describe *a* volume function — they pin down
+*the* formula, with no freedom left. We do the $2\times2$ case in full, because the same
+mechanism produces every larger case.
+
+### The $2\times2$ formula, derived
+
+Let
+$$
+A = \begin{bmatrix} a & b \\ c & d \end{bmatrix},
+\qquad
+\mathbf{a}_1 = \begin{bmatrix} a \\ c \end{bmatrix},\quad
+\mathbf{a}_2 = \begin{bmatrix} b \\ d \end{bmatrix},
+$$
+so the two columns are $\mathbf{a}_1=a\mathbf{e}_1+c\mathbf{e}_2$ and
+$\mathbf{a}_2=b\mathbf{e}_1+d\mathbf{e}_2$, where $\mathbf{e}_1=(1,0)$ and
+$\mathbf{e}_2=(0,1)$. Apply multilinearity to expand $D(\mathbf{a}_1,\mathbf{a}_2)$. First
+expand in the first column (treating $\mathbf{a}_2$ as a fixed second slot):
+$$
+D(\mathbf{a}_1,\mathbf{a}_2)
+= D(a\mathbf{e}_1 + c\mathbf{e}_2,\ \mathbf{a}_2)
+= a\,D(\mathbf{e}_1,\mathbf{a}_2) + c\,D(\mathbf{e}_2,\mathbf{a}_2),
+$$
+using property 2 in the first slot. Now expand each of those in the second column,
+$\mathbf{a}_2=b\mathbf{e}_1+d\mathbf{e}_2$:
+$$
+\begin{aligned}
+D(\mathbf{e}_1,\mathbf{a}_2)
+  &= D(\mathbf{e}_1,\ b\mathbf{e}_1 + d\mathbf{e}_2)
+   = b\,D(\mathbf{e}_1,\mathbf{e}_1) + d\,D(\mathbf{e}_1,\mathbf{e}_2),\\
+D(\mathbf{e}_2,\mathbf{a}_2)
+  &= D(\mathbf{e}_2,\ b\mathbf{e}_1 + d\mathbf{e}_2)
+   = b\,D(\mathbf{e}_2,\mathbf{e}_1) + d\,D(\mathbf{e}_2,\mathbf{e}_2).
+\end{aligned}
+$$
+Substituting back, $D(\mathbf{a}_1,\mathbf{a}_2)$ is the sum of four terms:
+$$
+D(\mathbf{a}_1,\mathbf{a}_2)
+= ab\,D(\mathbf{e}_1,\mathbf{e}_1)
++ ad\,D(\mathbf{e}_1,\mathbf{e}_2)
++ cb\,D(\mathbf{e}_2,\mathbf{e}_1)
++ cd\,D(\mathbf{e}_2,\mathbf{e}_2).
+$$
+Now evaluate the four basis determinants using properties 1 and 3, and @lem-repeated-zero:
+
+- $D(\mathbf{e}_1,\mathbf{e}_1)=0$ and $D(\mathbf{e}_2,\mathbf{e}_2)=0$ by
+  @lem-repeated-zero (a repeated column).
+- $D(\mathbf{e}_1,\mathbf{e}_2)=1$ by normalization (these columns *are* the identity).
+- $D(\mathbf{e}_2,\mathbf{e}_1)=-D(\mathbf{e}_1,\mathbf{e}_2)=-1$ by the alternating
+  property (swap the two columns of the identity).
+
+The first and last terms drop, and we are left with
+$$
+\boxed{\;
+D(A) = ad\cdot 1 + cb\cdot(-1) = ad - bc.
+\;}
+$$ {#eq-det2}
+
+There it is — the half-remembered "$ad-bc$," now *derived* rather than memorized, and seen
+to be forced by the three volume properties with no choice along the way. The combination is
+not arbitrary: it is the only multilinear, alternating, normalized function of the columns.
+
+### The same expansion in general: the uniqueness lemma {#sec-uniqueness}
+
+The $2\times2$ expansion was not a special trick — it was the *general* mechanism run at
+$n=2$. We now run it at general $n$ once, because the result is the structural fact the
+product rule and the transpose rule both stand on. Let $\Phi$ be **any** multilinear,
+alternating function of $n$ vectors in $\mathbb{R}^n$ (we do not yet assume normalization).
+Write each input column in the standard basis, $\mathbf{a}_j=\sum_{k=1}^{n}A_{kj}\mathbf{e}_k$,
+where $A_{kj}$ is the $k$-th entry of the $j$-th column. Expand $\Phi$ by multilinearity in
+every slot at once — each slot $j$ contributes its own summation index $k_j$:
+$$
+\Phi(\mathbf{a}_1,\dots,\mathbf{a}_n)
+= \sum_{k_1=1}^{n}\cdots\sum_{k_n=1}^{n}
+  A_{k_1 1}A_{k_2 2}\cdots A_{k_n n}\;
+  \Phi(\mathbf{e}_{k_1},\mathbf{e}_{k_2},\dots,\mathbf{e}_{k_n}).
+$$
+This is just property 2 applied $n$ times, exactly as in the $2\times2$ case (which had two
+nested sums of two terms each). Now use the alternating property to prune the $n^n$ terms.
+By @lem-repeated-zero, $\Phi(\mathbf{e}_{k_1},\dots,\mathbf{e}_{k_n})=0$ whenever two of the
+indices $k_1,\dots,k_n$ are equal. So the *only* surviving terms are those where
+$(k_1,\dots,k_n)$ is a **permutation** of $(1,\dots,n)$ — call such an ordering $\pi$, with
+$\pi(j)=k_j$. For each permutation $\pi$, the value $\Phi(\mathbf{e}_{\pi(1)},\dots,
+\mathbf{e}_{\pi(n)})$ is the identity columns $\Phi(\mathbf{e}_1,\dots,\mathbf{e}_n)$ shuffled
+into the order $\pi$. Antisymmetry (property 3) says each swap that sorts $\pi$ back to
+$(1,2,\dots,n)$ flips the sign once, so
+$$
+\Phi(\mathbf{e}_{\pi(1)},\dots,\mathbf{e}_{\pi(n)})
+= \operatorname{sgn}(\pi)\;\Phi(\mathbf{e}_1,\dots,\mathbf{e}_n),
+$$
+where $\operatorname{sgn}(\pi)=(-1)^{(\text{number of swaps to sort }\pi)}=+1$ for an even
+number of swaps and $-1$ for an odd number. (This sign is well-defined — the *parity* of the
+swap count does not depend on which swaps you choose — precisely because $\Phi(\mathbf{e}_1,
+\dots,\mathbf{e}_n)$ would otherwise be forced to equal both $+$ and $-$ itself, and the only
+number equal to its own negative is $0$; we exclude that by allowing $\Phi$ to be nonzero on
+the identity.) Substituting back,
+$$
+\Phi(\mathbf{a}_1,\dots,\mathbf{a}_n)
+= \Phi(\mathbf{e}_1,\dots,\mathbf{e}_n)\;
+  \underbrace{\sum_{\pi}\operatorname{sgn}(\pi)\,
+  A_{\pi(1)1}A_{\pi(2)2}\cdots A_{\pi(n)n}}_{\textstyle =\ \det A\ \text{(the Leibniz formula)}},
+$$
+the sum running over all $n!$ permutations $\pi$ of $\{1,\dots,n\}$. We package this as the
+lemma the rest of the article cites.
+
+::: {#lem-uniqueness}
+**Lemma (uniqueness / the expansion formula).** Every multilinear, alternating function
+$\Phi$ of $n$ columns in $\mathbb{R}^n$ is a single constant times the determinant,
+$$
+\Phi(\mathbf{a}_1,\dots,\mathbf{a}_n)
+= \Phi(\mathbf{e}_1,\dots,\mathbf{e}_n)\cdot\det A,
+\qquad
+\det A := \sum_{\pi}\operatorname{sgn}(\pi)\prod_{j=1}^{n}A_{\pi(j)\,j}.
+$$
+The free constant is $\Phi$'s value on the identity columns. Imposing **normalization**
+($\Phi(\mathbf{e}_1,\dots,\mathbf{e}_n)=1$) fixes that constant to $1$, so there is **exactly
+one** normalized multilinear alternating function — the determinant — and the displayed
+permutation sum (the **Leibniz formula**) is its explicit form.
+:::
+
+For $n=2$ the two permutations are the identity ($\operatorname{sgn}=+1$, term $A_{11}A_{22}=
+ad$) and the single swap ($\operatorname{sgn}=-1$, term $A_{21}A_{12}=cb$), recovering
+$ad-bc$ — the same four-term expansion we did above, now seen as the $n=2$ instance of one
+formula. This lemma is doing triple duty: it *defines* $\det$ for every size, it proves the
+function is *unique*, and its "constant times $\det$" form is precisely what makes the product
+rule (@thm-product) a two-line argument.
+
+::: {#def-det}
+**Definition (determinant).** The **determinant** of a square matrix $A\in\mathbb{R}^{n\times
+n}$, written $\det A$ or $|A|$, is the value $D(\mathbf{a}_1,\dots,\mathbf{a}_n)$ of the
+unique multilinear, alternating, normalized function of its columns (@def-det-properties).
+That function exists, is unique, and equals the permutation sum of @lem-uniqueness; for $n=2$
+it equals $ad-bc$ by @eq-det2. The cofactor expansion of @sec-cofactor is the same number
+regrouped for hand computation.
+:::
+
+### The $3\times3$ formula, by the same machine
+
+Specialize @lem-uniqueness to $n=3$. Of the $3^3=27$ terms in the multilinear expansion, only
+the ones whose index triple $(\pi(1),\pi(2),\pi(3))$ is a permutation of $(1,2,3)$ survive
+@lem-repeated-zero — there are $3!=6$ of them, one per ordering. Listing the six permutations
+of $(1,2,3)$ with their signs (identity and the two $3$-cycles are even, $\operatorname{sgn}=
++1$; the three single-swap transpositions are odd, $\operatorname{sgn}=-1$) and reading the
+entry products $A_{\pi(1)1}A_{\pi(2)2}A_{\pi(3)3}$ off the matrix gives the familiar rule. For
+$$
+A = \begin{bmatrix} a & b & c \\ d & e & f \\ g & h & i \end{bmatrix},
+$$
+$$
+\det A = aei + bfg + cdh - ceg - bdi - afh.
+$$ {#eq-det3}
+The three positive terms ($aei$, $bfg$, $cdh$) are the even permutations; the three negative
+ones ($ceg$, $bdi$, $afh$) are the odd ones. We do not memorize @eq-det3; we
+*recover* it from the expansion when needed, or — far more usefully — we reduce to it via
+the cofactor recursion of @sec-cofactor. The point of showing it is to confirm the same
+machine that gave $ad-bc$ scales to any size and always yields a single polynomial in the
+entries.
+
+The signed volume reading is identical: @eq-det3 is the signed volume of the parallelepiped
+spanned by the three columns of $A$, which is the unit cube's image. @fig-parallelepiped
+draws that 3-D box.
+
+```{python}
+#| label: fig-parallelepiped
+#| fig-cap: "In 3-D, the unit cube (volume $1$) maps to the parallelepiped spanned by the three columns of $A$, and $\\det A$ is its signed volume. Here $A$ has columns $(1.6,0.2,0)$, $(0.4,1.3,0.1)$, $(0.2,0.3,1.4)$; the volume scaling factor is $\\det A\\approx 2.86$, so this map nearly triples 3-D volume. Flatten any column into the plane of the other two and the box collapses to zero thickness — that is $\\det A=0$, singular."
+A = np.array([[1.6, 0.4, 0.2],
+              [0.2, 1.3, 0.3],
+              [0.0, 0.1, 1.4]])
+c1, c2, c3 = A[:, 0], A[:, 1], A[:, 2]
+O = np.zeros(3)
+# Eight corners of the parallelepiped: O + combinations of the three columns.
+corners = np.array([O, c1, c2, c3, c1 + c2, c1 + c3, c2 + c3, c1 + c2 + c3])
+faces = [[O, c1, c1 + c2, c2], [O, c1, c1 + c3, c3], [O, c2, c2 + c3, c3],
+         [c3, c1 + c3, c1 + c2 + c3, c2 + c3], [c1, c1 + c2, c1 + c2 + c3, c1 + c3],
+         [c2, c1 + c2, c1 + c2 + c3, c2 + c3]]
+
+fig = plt.figure(figsize=(6.2, 5.2))
+ax = fig.add_subplot(111, projection="3d")
+pc = Poly3DCollection(faces, facecolor=ACCENT, alpha=0.22, edgecolor=VEC, lw=1.4)
+ax.add_collection3d(pc)
+for c, lab, col in [(c1, r"$A\mathbf{e}_1$", VEC), (c2, r"$A\mathbf{e}_2$", HILITE),
+                    (c3, r"$A\mathbf{e}_3$", ORANGE)]:
+    ax.quiver(0, 0, 0, c[0], c[1], c[2], color=col, lw=2.4, arrow_length_ratio=0.12)
+    ax.text(c[0], c[1], c[2], lab, color=col, fontsize=11)
+ax.set_xlim(0, 2.2); ax.set_ylim(0, 2.2); ax.set_zlim(0, 2.2)
+ax.set_xlabel("$y_1$"); ax.set_ylabel("$y_2$"); ax.set_zlabel("$y_3$")
+ax.set_title(f"Image of the unit cube: volume = det A = {np.linalg.det(A):.2f}")
+ax.view_init(elev=22, azim=-58)
+plt.tight_layout()
+```
+
+## The algebraic laws, derived from volume {#sec-laws}
+
+We now harvest the payoff. Each law below is proved from properties 1–3 (equivalently, from
+the volume picture) in a few lines — and each, read aloud, is a sentence about volume.
+
+### Dependence among columns forces the determinant to zero
+
+@lem-repeated-zero handled *equal* columns. The real statement we want is the full
+invertibility criterion, so we upgrade it.
+
+::: {#thm-singular}
+**Theorem (zero determinant $\Leftrightarrow$ singular).** $\det A = 0$ if and only if the
+columns of $A$ are linearly dependent — equivalently, $A$ is singular (non-invertible, rank
+$< n$).
+:::
+
+::: {.proof}
+**($\Leftarrow$) Dependence $\Rightarrow \det A=0$.** Suppose the columns are dependent.
+Then (by the definition of dependence, [GEOM-03]) some column is a linear combination of the
+others; relabel so it is the last, $\mathbf{a}_n = \sum_{j=1}^{n-1}c_j\mathbf{a}_j$. Expand
+$\det A = D(\mathbf{a}_1,\dots,\mathbf{a}_{n-1},\ \sum_j c_j\mathbf{a}_j)$ by multilinearity
+in the last slot:
+$$
+\det A = \sum_{j=1}^{n-1} c_j\,D(\mathbf{a}_1,\dots,\mathbf{a}_{n-1},\ \mathbf{a}_j).
+$$
+In each term of the sum, the vector $\mathbf{a}_j$ ($j\le n-1$) appears *twice* — once in
+its original slot $j$ and once in the last slot. By @lem-repeated-zero every such term is
+zero. Hence $\det A = 0$.
+
+**($\Rightarrow$) $\det A = 0 \Rightarrow$ dependence.** We prove the contrapositive: if the
+columns are *independent*, then $\det A\neq 0$. Independent columns of an $n\times n$ matrix
+form a basis of $\mathbb{R}^n$ ([GEOM-03]: $n$ independent vectors in an $n$-dimensional space
+are a basis), so the matrix is invertible ([GEOM-11]): there is a matrix $A^{-1}$ with
+$A^{-1}A = I$. We will show in @thm-product below that $\det$ is multiplicative, giving
+$\det(A^{-1})\det(A) = \det(A^{-1}A)=\det I = 1$ (normalization). A product equal to $1$
+cannot have a zero factor, so $\det A\neq 0$. (The product rule's proof, @thm-product, uses
+only properties 1–3 and does *not* use this theorem, so there is no circularity.)
+$\qquad\blacksquare$
+:::
+
+This is the headline of the article, now proved: **the determinant vanishes exactly when
+the map collapses space.** The number $\det A$ is the long-sought single arithmetic test for
+invertibility. Read against [GEOM-12]: $\det A\neq 0 \Leftrightarrow$ full rank
+$\Leftrightarrow$ trivial null space $\Leftrightarrow$ the four-subspace picture degenerates
+to "nothing is crushed."
+
+### The product rule: scaling volume twice
+
+::: {#thm-product}
+**Theorem (multiplicativity).** For square $A,B$ of the same size,
+$$
+\det(AB) = \det A\,\det B .
+$$
+:::
+
+::: {.proof}
+The geometric idea is one sentence: the composite map $AB$ does $B$ first (scaling volume by
+$\det B$) and then $A$ (scaling the already-scaled volume by $\det A$), so the total volume
+factor is the product $\det A\,\det B$. We make this a proof using the uniqueness from
+@sec-formulas.
+
+Fix $A$ and define a function of the columns of $B$,
+$$
+\Phi(\mathbf{b}_1,\dots,\mathbf{b}_n) := \det(AB),
+$$
+where $\mathbf{b}_1,\dots,\mathbf{b}_n$ are the columns of $B$. Recall ([GEOM-09]) that the
+$j$-th column of $AB$ is $A\mathbf{b}_j$. So $\Phi$ is the determinant of the matrix with
+columns $A\mathbf{b}_1,\dots,A\mathbf{b}_n$. We check $\Phi$ is multilinear and alternating
+*in the columns $\mathbf{b}_j$*:
+
+- *Multilinear.* If $\mathbf{b}_j = \alpha\mathbf{u}+\beta\mathbf{v}$, then by linearity of
+  the map $A$ ([GEOM-08]), $A\mathbf{b}_j = \alpha A\mathbf{u} + \beta A\mathbf{v}$. Since
+  $\det$ is multilinear in *its* columns (property 2), $\Phi$ splits accordingly:
+  $\Phi(\dots,\alpha\mathbf{u}+\beta\mathbf{v},\dots) = \alpha\Phi(\dots,\mathbf{u},\dots) +
+  \beta\Phi(\dots,\mathbf{v},\dots)$.
+- *Vanishes on repeats.* If $\mathbf{b}_i=\mathbf{b}_j$, then $A\mathbf{b}_i = A\mathbf{b}_j$,
+  so the matrix $AB$ has two equal columns and $\det(AB)=0$ by @lem-repeated-zero. So $\Phi$
+  vanishes whenever two of its arguments coincide.
+- *Alternating.* A multilinear function that vanishes on repeats is automatically
+  *alternating* (sign-flips on a swap), and here is the two-line derivation, not a cited fact.
+  Hold all slots but $i$ and $j$ fixed, and feed the *same* vector $\mathbf{w}=\mathbf{u}+
+  \mathbf{v}$ into both slots $i$ and $j$. Vanishing-on-repeats gives
+  $\Phi(\dots,\mathbf{u}+\mathbf{v},\dots,\mathbf{u}+\mathbf{v},\dots)=0$. Expand the left side
+  by multilinearity in slot $i$ and then in slot $j$ (four terms):
+  $$
+  \underbrace{\Phi(\dots,\mathbf{u},\dots,\mathbf{u},\dots)}_{=\,0\ \text{(repeat)}}
+  + \Phi(\dots,\mathbf{u},\dots,\mathbf{v},\dots)
+  + \Phi(\dots,\mathbf{v},\dots,\mathbf{u},\dots)
+  + \underbrace{\Phi(\dots,\mathbf{v},\dots,\mathbf{v},\dots)}_{=\,0\ \text{(repeat)}} = 0 .
+  $$
+  The two underbraced terms vanish (each has a repeated argument), leaving
+  $\Phi(\dots,\mathbf{u},\dots,\mathbf{v},\dots) = -\,\Phi(\dots,\mathbf{v},\dots,\mathbf{u},
+  \dots)$ — which is exactly antisymmetry under swapping slots $i$ and $j$. So $\Phi$ is
+  alternating.
+
+So $\Phi$ is a multilinear alternating function of $n$ vectors in $\mathbb{R}^n$ — exactly the
+hypothesis of @lem-uniqueness. The lemma therefore applies verbatim: $\Phi$ equals $\det$
+times its value on the identity columns,
+$$
+\Phi(\mathbf{b}_1,\dots,\mathbf{b}_n) = \Phi(\mathbf{e}_1,\dots,\mathbf{e}_n)\cdot
+\det\!\big([\mathbf{b}_1\ \cdots\ \mathbf{b}_n]\big).
+$$
+Here $\det\big([\mathbf{b}_1\ \cdots\ \mathbf{b}_n]\big)=\det B$, and the constant is
+$$
+\Phi(\mathbf{e}_1,\dots,\mathbf{e}_n) = \det(A\,[\mathbf{e}_1\ \cdots\ \mathbf{e}_n])
+= \det(AI) = \det A .
+$$
+Therefore $\det(AB) = \Phi(\mathbf{b}_1,\dots,\mathbf{b}_n) = \det A\cdot\det B$, as claimed.
+$\qquad\blacksquare$
+:::
+
+The product rule discharges several smaller facts at once.
+
+- **Inverse.** From $A^{-1}A=I$ and the product rule, $\det(A^{-1})\det(A)=\det I = 1$, so
+  $$
+  \det(A^{-1}) = \frac{1}{\det A}.
+  $$ {#eq-det-inv}
+  An invertible map's volume factor must have a reciprocal — you cannot undo a $3\times$
+  inflation except by a $\tfrac{1}{3}\times$ deflation. (This also re-confirms that an
+  invertible matrix has $\det A\neq 0$, since $1/\det A$ must exist.)
+- **Powers and similarity.** $\det(A^k)=(\det A)^k$, and for any invertible $P$,
+  $\det(P^{-1}AP)=\det(P^{-1})\det A\det P = \tfrac{1}{\det P}\det A\,\det P = \det A$ — a
+  *similarity transformation preserves the determinant*. This is exactly why the determinant
+  is well-defined as a property of the underlying *map*, not the particular coordinates, and
+  it is the fact [GEOM-14] uses when it builds the characteristic polynomial.
+
+### The transpose rule
+
+::: {#thm-transpose}
+**Theorem (transpose).** $\det(A^\top) = \det A$.
+:::
+
+::: {.proof}
+The general proof uses the Leibniz sum already derived in @lem-uniqueness,
+$$
+\det A = \sum_{\pi}\operatorname{sgn}(\pi)\prod_{j=1}^{n}A_{\pi(j)\,j},
+$$
+the sum over all permutations $\pi$ of $\{1,\dots,n\}$. Apply it to $A^\top$, whose entries
+are $(A^\top)_{ij}=A_{ji}$:
+$$
+\det(A^\top) = \sum_{\pi}\operatorname{sgn}(\pi)\prod_{j=1}^{n}(A^\top)_{\pi(j)\,j}
+            = \sum_{\pi}\operatorname{sgn}(\pi)\prod_{j=1}^{n}A_{j\,\pi(j)} .
+$$
+Now rewrite one generic product $\prod_{j}A_{j\,\pi(j)}$ in terms of the inverse permutation
+$\sigma=\pi^{-1}$ (so $\sigma(\pi(j))=j$). The factors are the same $n$ numbers in a different
+order: setting $i=\pi(j)$ runs $i$ over all of $\{1,\dots,n\}$ as $j$ does, and then $j=
+\sigma(i)$, so $\prod_{j}A_{j\,\pi(j)}=\prod_{i}A_{\sigma(i)\,i}$. Two facts close it. First,
+$\operatorname{sgn}(\pi)=\operatorname{sgn}(\pi^{-1})=\operatorname{sgn}(\sigma)$: writing
+$\pi$ as a sequence of transpositions and reversing that sequence builds $\pi^{-1}$ with the
+*same number* of transpositions, so the parities match. Second, summing over all $\pi$ is the
+same as summing over all $\sigma$, since inversion is a bijection of the set of permutations
+onto itself. Therefore
+$$
+\det(A^\top) = \sum_{\pi}\operatorname{sgn}(\pi)\prod_{i}A_{\sigma(i)\,i}
+            = \sum_{\sigma}\operatorname{sgn}(\sigma)\prod_{i}A_{\sigma(i)\,i}
+            = \det A,
+$$
+the last sum being the Leibniz formula for $\det A$ verbatim. Hence $\det(A^\top)=\det A$.
+
+We verify the claim concretely in the $2\times2$ case so it is not just a permutation
+argument: with $A=\bigl[\begin{smallmatrix}a&b\\c&d\end{smallmatrix}\bigr]$ we have
+$A^\top=\bigl[\begin{smallmatrix}a&c\\b&d\end{smallmatrix}\bigr]$, and
+$\det(A^\top)=ad-cb=ad-bc=\det A$. $\qquad\blacksquare$
+:::
+
+The geometric consequence is the one to carry: **everything we proved about columns holds
+verbatim for rows.** The determinant is the signed volume of the box spanned by the *rows*
+just as much as the columns, the row dependence test mirrors the column one, and the
+cofactor expansion (next) may be done along any row or any column. The transpose rule is the
+formal license for that symmetry.
+
+### Row (and column) operations
+
+The three elementary operations of Gaussian elimination ([GEOM-11]) each have a clean,
+volume-flavored effect on the determinant. These are the *practical* way determinants are
+computed, so we state and justify each from properties 1–3.
+
+1. **Add a multiple of one row to another:** *determinant unchanged.* Adding
+   $\lambda\,(\text{row }i)$ to row $k$ can be expanded by multilinearity in row $k$ into
+   $\det A + \lambda\,D(\text{rows with row }i\text{ in slot }k\text{ too})$; the second
+   determinant has row $i$ appearing twice and so is zero (@lem-repeated-zero, on rows via
+   @thm-transpose). Net change: zero. *Geometrically: a shear slides the box parallel to a
+   face and does not change its volume — base times height is unchanged.*
+
+2. **Multiply a row by a scalar $\lambda$:** *determinant multiplied by $\lambda$.* This is
+   multilinearity (property 2) applied to that row: scaling one edge of the box scales the
+   volume by the same factor.
+
+3. **Swap two rows:** *determinant changes sign.* This is the alternating property
+   (property 3) on rows. *Geometrically: a swap of two edges reverses orientation.*
+
+These rules turn computation into elimination: reduce $A$ to an upper-triangular matrix $U$
+tracking the sign flips and scalings, and read $\det A$ off the diagonal of $U$, because the
+determinant of a triangular matrix is the product of its diagonal entries (each off-diagonal
+entry can be cleared by operation 1 without changing the determinant, leaving a diagonal
+matrix whose determinant is the product of diagonal entries by repeated multilinearity and
+normalization). This is how every numerical library actually computes a determinant — never
+by the cofactor formula — and it costs the same $O(n^3)$ as solving a system.
+
+::: {.callout-tip title="You might be asked"}
+*"How is a determinant computed in practice, and how expensive is it?"* Not by cofactor
+expansion — that is $O(n!)$ and unusable past tiny $n$. In practice you do **LU
+decomposition** (Gaussian elimination, [GEOM-11]): factor $A=PLU$ with $P$ a row-swap
+(permutation) matrix, $L$ lower-triangular with unit diagonal, $U$ upper-triangular. Then
+$\det A = \det P\cdot\det L\cdot\det U = (\pm 1)\cdot 1\cdot\prod_i U_{ii}$ — the product of
+$U$'s diagonal, times $-1$ for each row swap. Cost: $O(n^3)$, the same as a linear solve.
+The honest follow-up the interviewer wants (covered in @sec-failure): even computed this
+well, the determinant is a *poor* way to decide invertibility numerically.
+:::
+
+## The cofactor expansion: computing any size {#sec-cofactor}
+
+For completeness and hand-computation of small matrices, we record the recursive **cofactor
+(Laplace) expansion**, which the Leibniz permutation sum of @lem-uniqueness produces when you
+group its $n!$ terms by which entry of a single row (or column) they contain. It is not a new
+definition — it is @def-det equivalently restated — and we show it is consistent with @eq-det2.
+
+::: {#def-cofactor}
+**Definition (minor and cofactor).** For $A\in\mathbb{R}^{n\times n}$, the **minor** $M_{ij}$
+is the determinant of the $(n-1)\times(n-1)$ matrix obtained by deleting row $i$ and column
+$j$ from $A$. The **cofactor** is the signed minor $C_{ij} = (-1)^{i+j}M_{ij}$.
+:::
+
+::: {#thm-cofactor}
+**Theorem (Laplace expansion).** For any fixed row $i$,
+$$
+\det A = \sum_{j=1}^{n} A_{ij}\,C_{ij}
+       = \sum_{j=1}^{n} (-1)^{i+j} A_{ij}\,M_{ij},
+$$
+and likewise along any fixed column $j$ (using @thm-transpose).
+:::
+
+We do not re-prove this from scratch — it *is* the Leibniz sum of @lem-uniqueness with its
+$n!$ terms collected by the entries $A_{ij}$ of one fixed row $i$ (each group, after factoring
+out $A_{ij}$, is a signed Leibniz sum over the remaining $(n-1)!$ permutations of the deleted
+submatrix, which is exactly $\pm M_{ij}$, with the sign collapsing to $(-1)^{i+j}$). We
+sanity-check it reproduces @eq-det2.
+Expand the $2\times2$ matrix along the first row ($i=1$):
+$$
+\det\begin{bmatrix}a&b\\c&d\end{bmatrix}
+= (-1)^{1+1}a\,M_{11} + (-1)^{1+2}b\,M_{12}
+= a\cdot d - b\cdot c = ad-bc,
+$$
+where $M_{11}=\det[d]=d$ (delete row 1, col 1) and $M_{12}=\det[c]=c$ (delete row 1, col 2).
+It matches. The checkerboard of signs $(-1)^{i+j}$ — $+,-,+,\dots$ — is the alternating
+property bookkept into the recursion. The cofactor expansion is good for $2\times2$ and
+$3\times3$ by hand and for sparse or structured matrices; for anything dense and larger,
+elimination (@sec-laws) is the right tool.
+
+# Worked examples {#sec-examples}
+
+We run the determinant on real, honest matrices and tasks — never a toy rigged to flatter.
+The first we carry through by hand; the rest show where the determinant genuinely earns its
+keep and where it does not.
+
+## Example 1 — a $3\times3$ determinant by hand, and what it says {#sec-ex-byhand}
+
+Consider the map
+$$
+A = \begin{bmatrix} 2 & 1 & 0 \\ 1 & 3 & 1 \\ 0 & 1 & 2 \end{bmatrix},
+$$
+a symmetric matrix of the kind that shows up everywhere as a covariance or Gram matrix. We
+ask: is it invertible, and by how much does it scale 3-D volume? Expand along the first row
+using @thm-cofactor:
+$$
+\det A = 2\cdot M_{11} - 1\cdot M_{12} + 0\cdot M_{13},
+$$
+with signs $+,-,+$. The third term dies because $A_{13}=0$, so we need only two minors:
+$$
+M_{11} = \det\begin{bmatrix} 3 & 1 \\ 1 & 2 \end{bmatrix} = 3\cdot 2 - 1\cdot 1 = 5,
+\qquad
+M_{12} = \det\begin{bmatrix} 1 & 1 \\ 0 & 2 \end{bmatrix} = 1\cdot 2 - 1\cdot 0 = 2.
+$$
+Therefore
+$$
+\det A = 2(5) - 1(2) + 0 = 10 - 2 = 8 .
+$$
+The determinant is $8\neq 0$, so $A$ is invertible (@thm-singular): the columns are
+independent, the map can be undone, $A\mathbf{x}=\mathbf{b}$ has a unique solution for every
+$\mathbf{b}$. And the geometric reading: this map *inflates 3-D volume eightfold*. The unit
+cube becomes a parallelepiped of volume $8$. Let us confirm with elimination (@sec-laws) and
+numerically, watching the diagonal product emerge.
+
+```{python}
+#| label: tbl-ex1-det
+#| echo: true
+import numpy as np
+
+A = np.array([[2.0, 1.0, 0.0],
+              [1.0, 3.0, 1.0],
+              [0.0, 1.0, 2.0]])
+
+print("det A (library)      =", round(np.linalg.det(A), 10))   # expect 8
+
+# Reproduce the by-hand cofactor result.
+M11 = A[1, 1] * A[2, 2] - A[1, 2] * A[2, 1]
+M12 = A[1, 0] * A[2, 2] - A[1, 2] * A[2, 0]
+det_cofactor = A[0, 0] * M11 - A[0, 1] * M12
+print("det A (cofactor row1)=", det_cofactor)
+
+# Reproduce via LU: det = sign(P) * product of U's diagonal.
+import scipy.linalg as sla
+P, L, U = sla.lu(A)
+sign = np.linalg.det(P)                       # +-1 from the row swaps
+print("U diagonal           =", np.round(np.diag(U), 4))
+print("sign(P)*prod(diagU)  =", round(sign * np.prod(np.diag(U)), 10))
+
+# The inverse's determinant is the reciprocal (eq-det-inv).
+print("det(A^-1)            =", round(np.linalg.det(np.linalg.inv(A)), 6),
+      " vs 1/8 =", 1/8)
+print("det(A^T)             =", round(np.linalg.det(A.T), 10), " (= det A, thm-transpose)")
+```
+
+Every cross-check lands: the cofactor arithmetic, the LU diagonal product, the reciprocal
+rule $\det(A^{-1})=1/8$ from @eq-det-inv, and the transpose rule $\det(A^\top)=\det A$ from
+@thm-transpose. The math was done by hand; the code is the microscope.
+
+## Example 2 — the determinant *is* the change-of-variables factor for densities {#sec-jacobian}
+
+This is the example where the determinant does indispensable work in data science, and it is
+the hook the Probability track collects. Suppose a random vector $\mathbf{z}$ has a known
+probability density $p_{\mathbf{z}}$, and we transform it linearly, $\mathbf{x}=A\mathbf{z}$
+with $A$ invertible. What is the density of $\mathbf{x}$?
+
+Probability mass must be conserved: the chance of landing in a region $R$ of
+$\mathbf{x}$-space equals the chance of landing in the pre-image $A^{-1}R$ of
+$\mathbf{z}$-space. In integral form, $\int_R p_{\mathbf{x}}(\mathbf{x})\,d\mathbf{x} =
+\int_{A^{-1}R} p_{\mathbf{z}}(\mathbf{z})\,d\mathbf{z}$. To compare the two integrands we must
+account for how the linear map stretches volume — and *that factor is exactly the
+determinant*. A tiny volume $d\mathbf{z}$ in $\mathbf{z}$-space becomes a volume
+$|\det A|\,d\mathbf{z}$ in $\mathbf{x}$-space (the Core's "same factor everywhere"
+property). Substituting $\mathbf{z}=A^{-1}\mathbf{x}$, so $d\mathbf{z}=|\det
+A^{-1}|\,d\mathbf{x}=\frac{1}{|\det A|}d\mathbf{x}$ by @eq-det-inv, gives the change-of-
+variables formula for a linear map:
+$$
+p_{\mathbf{x}}(\mathbf{x}) = \frac{1}{|\det A|}\;p_{\mathbf{z}}\!\big(A^{-1}\mathbf{x}\big).
+$$ {#eq-cov}
+The $\frac{1}{|\det A|}$ is doing essential work: if $A$ stretches space (volume factor
+$|\det A|>1$), the same probability mass is spread over a larger region, so the density must
+*drop* by exactly that factor to keep the total at $1$. @fig-jacobian shows this on a 2-D
+Gaussian cloud: the map stretches the cloud, its area grows by $|\det A|$, and the per-point
+density falls correspondingly.
+
+```{python}
+#| label: fig-jacobian
+#| fig-cap: "The determinant as the density-rescaling factor. **Left:** $n=4000$ samples from a standard 2-D Gaussian $\\mathbf{z}$, with the unit square (area $1$) marked. **Right:** the transformed cloud $\\mathbf{x}=A\\mathbf{z}$ for $A=\\bigl[\\begin{smallmatrix}1.8&0.9\\\\0&1.3\\end{smallmatrix}\\bigr]$ ($\\det A=2.34$); the unit square has become a parallelogram of area $2.34$. The cloud spreads over $2.34\\times$ the area, so its density at any point falls to $1/2.34$ of the original — exactly the factor in @eq-cov. This is the linear special case of the general Jacobian; the full random-vector treatment is [PROB-18]."
+rng = np.random.default_rng(0)
+Z = rng.normal(size=(2, 4000))
+A = np.array([[1.8, 0.9], [0.0, 1.3]])
+X = A @ Z
+detA = np.linalg.det(A)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
+axL.scatter(Z[0], Z[1], s=4, color=VEC, alpha=0.25)
+sq = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)], closed=True, fill=False,
+             edgecolor=ACCENT, lw=2.2)
+axL.add_patch(sq)
+axL.set_title(r"$\mathbf{z}\sim\mathcal{N}(0,I)$; unit square area 1")
+axL.set_xlim(-4, 4); axL.set_ylim(-4, 4); axL.set_aspect("equal")
+axL.set_xlabel("$z_1$"); axL.set_ylabel("$z_2$")
+
+axR.scatter(X[0], X[1], s=4, color=HILITE, alpha=0.25)
+c1, c2 = A[:, 0], A[:, 1]
+para = Polygon([(0, 0), tuple(c1), tuple(c1 + c2), tuple(c2)], closed=True,
+               fill=False, edgecolor=ACCENT, lw=2.2)
+axR.add_patch(para)
+axR.set_title(fr"$\mathbf{{x}}=A\mathbf{{z}}$; parallelogram area $=\mathrm{{det}}\,A={detA:.2f}$")
+axR.set_xlim(-6, 6); axR.set_ylim(-6, 6); axR.set_aspect("equal")
+axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$")
+plt.tight_layout()
+print(f"det A = {detA:.4f}  -> density rescales by 1/|det A| = {1/abs(detA):.4f}")
+```
+
+This is the determinant's most important appearance in statistics: it is why the
+multivariate normal density carries a $|\det\Sigma|^{-1/2}$ factor, why normalizing flows
+track a "log-determinant of the Jacobian" term, and why any change of variables in a density
+must multiply by the Jacobian determinant. The geometry — *volume scaling* — is the entire
+content; the probabilistic packaging is [PROB-18]'s to own, and the nonlinear Jacobian
+(where $A$ is replaced by a local linearization, the matrix of partial derivatives) is built
+in the calculus movement of this track ([GEOM-22]).
+
+::: {.callout-tip title="You might be asked"}
+*"Where does the $|\det\Sigma|^{-1/2}$ in the multivariate Gaussian come from?"* From exactly
+@eq-cov. A standard Gaussian $\mathbf{z}\sim\mathcal{N}(\mathbf{0},I)$ pushed through a linear
+map $\mathbf{x}=A\mathbf{z}+\boldsymbol\mu$ has covariance $\Sigma=AA^\top$, so
+$\det\Sigma=\det(AA^\top)=(\det A)^2$ by the product and transpose rules — hence
+$|\det A|=|\det\Sigma|^{1/2}$. The change-of-variables factor $1/|\det A|$ becomes
+$1/|\det\Sigma|^{1/2}=|\det\Sigma|^{-1/2}$, the normalizing constant that keeps the Gaussian
+integrating to $1$. Being able to trace that factor back to "volume scaling of the linear
+map" is the answer that separates memorization from understanding.
+:::
+
+## Example 3 — orientation and the sign, on a reflection {#sec-ex-sign}
+
+The sign of the determinant is the part most often forgotten, so we make it concrete. A
+**rotation** preserves handedness and has $\det = +1$; a **reflection** flips handedness and
+has $\det=-1$. Both preserve area ($|\det|=1$ — they are rigid), but they differ in sign,
+and the sign is the only thing distinguishing "rotate" from "rotate-then-mirror."
+
+```{python}
+#| label: fig-orientation
+#| fig-cap: "The sign is orientation. A small asymmetric 'F' shape (so we can see flips) under three maps. **Left:** a $40^\\circ$ rotation, $\\det=+1$ — the F turns but is not mirrored. **Middle:** a reflection across the $y$-axis, $\\det=-1$ — the F is mirror-imaged (note it now reads backwards). **Right:** a shear, $\\det=+1$ — area and orientation preserved, only slanted. Magnitude $|\\det|$ is the area factor (all $1$ here); the *sign* records whether a right-handed frame stayed right-handed."
+# An asymmetric polyline shaped like 'F'.
+F = np.array([[0, 0], [0, 3], [1.6, 3], [1.6, 2.4], [0.6, 2.4],
+              [0.6, 1.7], [1.3, 1.7], [1.3, 1.1], [0.6, 1.1], [0.6, 0], [0, 0]]).T
+F = F - F.mean(1, keepdims=True)   # center it
+
+theta = np.deg2rad(40)
+R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])  # rotation
+Ref = np.array([[-1.0, 0.0], [0.0, 1.0]])                                        # reflection
+Sh = np.array([[1.0, 0.8], [0.0, 1.0]])                                          # shear
+
+fig, axes = plt.subplots(1, 3, figsize=(9.4, 3.6))
+for ax, (M, name) in zip(axes, [(R, "rotation"), (Ref, "reflection"), (Sh, "shear")]):
+    MF = M @ F
+    ax.plot(F[0], F[1], color=GREY, lw=1.4, ls="--", label="original")
+    ax.plot(MF[0], MF[1], color=HILITE, lw=2.4, label="image")
+    ax.set_title(f"{name}:  det = {np.linalg.det(M):+.0f}")
+    ax.set_xlim(-3, 3); ax.set_ylim(-3, 3); ax.set_aspect("equal")
+    ax.legend(loc="lower left", fontsize=8)
+plt.tight_layout()
+print("det(rotation) =", round(np.linalg.det(R), 3),
+      " det(reflection) =", round(np.linalg.det(Ref), 3),
+      " det(shear) =", round(np.linalg.det(Sh), 3))
+```
+
+The reflection's $\det=-1$ is the algebra noticing that the image F reads backwards. In data
+work this matters whenever orientation carries meaning — for instance, a "rotation" matrix
+estimated from noisy data that secretly contains a reflection ($\det=-1$) will silently flip
+your coordinate frame, a bug the sign of the determinant catches at a glance.
+
+## Example 4 — the edge of applicability: $\det\approx 0$ is a bad singularity test {#sec-ex-edge}
+
+Here is the honest boundary, and it is the most important practical lesson in the article.
+The clean theorem $\det A = 0 \Leftrightarrow$ singular is **exactly true in exact
+arithmetic** and **dangerously misleading on a computer with finite precision**. The reason
+is that the determinant *scales with the entries*, so its raw magnitude tells you almost
+nothing about how close a matrix is to singular.
+
+```{python}
+#| label: fig-bad-test
+#| fig-cap: "Why $\\det\\approx 0$ fails as a singularity test. **Left:** a perfectly well-behaved, easily invertible matrix $0.1\\cdot I_n$ — its inverse is just $10\\cdot I_n$ — yet its determinant is $0.1^n$, which underflows toward zero as $n$ grows (red). A tiny determinant here means *nothing is wrong*. **Right:** a genuinely near-singular matrix family whose determinant stays moderate while its condition number (blue, log scale) explodes — the determinant fails to raise the alarm. The honest near-singularity diagnostic is the condition number $\\kappa$ (the smallest-to-largest singular-value ratio), not $\\det$ ([GEOM-26])."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+
+# Left: well-conditioned but tiny determinant.
+ns = np.arange(2, 26)
+dets = 0.1 ** ns               # det(0.1 * I_n) = 0.1^n
+axL.semilogy(ns, dets, color=HILITE, marker="o", ms=3)
+axL.set_xlabel("dimension $n$"); axL.set_ylabel(r"$\mathrm{det}(0.1\,I_n)$")
+axL.set_title("Perfectly invertible, yet det $\\to 0$")
+
+# Right: near-singular, but det stays moderate while kappa explodes.
+eps = np.logspace(-1, -9, 30)
+det_vals, kappa_vals = [], []
+for e in eps:
+    M = np.array([[1.0, 1.0], [1.0, 1.0 + e]])   # nearly singular as e -> 0
+    det_vals.append(np.linalg.det(M))
+    kappa_vals.append(np.linalg.cond(M))
+axR.loglog(eps, np.abs(det_vals), color=HILITE, marker="o", ms=3, label=r"$|\mathrm{det}|$")
+axR.loglog(eps, kappa_vals, color=VEC, marker="s", ms=3, label=r"$\kappa$ (cond. number)")
+axR.set_xlabel(r"perturbation $\epsilon$ (smaller = nearer singular)")
+axR.set_title("det and condition number disagree")
+axR.legend(fontsize=9); axR.grid(True, which="both", alpha=0.2)
+axR.invert_xaxis()
+plt.tight_layout()
+print("det(0.1*I_20) =", 0.1**20, " (tiny, but 0.1*I_20 is trivially invertible)")
+print("near-singular [[1,1],[1,1.001]]: det =", round(np.linalg.det([[1,1],[1,1.001]]), 6),
+      " cond =", round(np.linalg.cond([[1,1],[1,1.001]]), 1))
+```
+
+The left panel is the killer counterexample: $0.1\cdot I_n$ is the easiest matrix in the
+world to invert (multiply by $10$), yet its determinant $0.1^n$ races toward zero as $n$
+grows and underflows to literal $0.0$ in floating point around $n=300$ — at which point a
+"$\det\approx 0$" test would falsely declare a trivially invertible matrix singular. The
+right panel shows the dual failure: scaling can keep $|\det|$ moderate even as the matrix
+becomes genuinely ill-conditioned. **The determinant conflates "near-singular" with "small
+entries," and those are completely different things.** The correct, scale-aware diagnostic
+is the **condition number** $\kappa(A)=\sigma_{\max}/\sigma_{\min}$ (the ratio of largest to
+smallest singular value), which is invariant to overall scaling and measures exactly how
+close to collapse the map is. We build it in [GEOM-26]; flag it now as the tool that
+*replaces* the determinant for any numerical singularity question.
+
+# Failure modes and what to reach for instead {#sec-failure}
+
+::: {.callout-warning title="Pitfall"}
+**Never test numerical singularity with $\det A\approx 0$.** Three independent reasons, each
+fatal on its own: (1) the determinant scales as $\sigma_1\sigma_2\cdots\sigma_n$, so it can
+be astronomically small for a perfectly well-conditioned matrix (just small entries, as with
+$0.1\,I_n$) or not-small for a nearly singular one; (2) it overflows or underflows for even
+moderate $n$, becoming a meaningless $0$ or $\infty$ in floating point; (3) it gives no
+*degree* of singularity — a single near-zero answer cannot tell you whether you are slightly
+or catastrophically ill-conditioned. The right diagnostic is the **condition number** (the
+singular-value ratio, [GEOM-26]) or directly the **smallest singular value**. If you only
+need to *solve* a system, don't compute $\det$ at all — factor and back-substitute ([GEOM-11]),
+and let the solver's pivoting warn you about near-singularity.
+:::
+
+A few more honest boundaries:
+
+- **The determinant says *whether*, not *how*, a matrix is singular.** $\det A=0$ tells you
+  the columns are dependent but not *which* dependence holds or how many dimensions
+  collapsed. For that you need the null space ([GEOM-12]) or the SVD ([GEOM-20]); the
+  determinant is the alarm, not the diagnosis. (It is also blind to *rank*: every singular
+  matrix has $\det=0$, whether its rank is $n-1$ or $0$.)
+
+- **Cofactor expansion is computationally hopeless.** The recursive definition is $O(n!)$;
+  a $20\times20$ determinant by cofactors would take longer than the age of the universe.
+  Always reduce to LU/triangular form ($O(n^3)$), and prefer working with $\log|\det|$ (the
+  sum of $\log|U_{ii}|$) to dodge overflow when the determinant is genuinely needed (as in a
+  Gaussian log-likelihood).
+
+- **Where the determinant is genuinely the right tool.** Small symbolic or exact matrices
+  ($2\times2$, $3\times3$, structured ones); *theoretical* arguments about invertibility and
+  orientation; the **characteristic polynomial** $\det(A-\lambda I)$ that defines eigenvalues
+  ([GEOM-14]); the **change-of-variables Jacobian** for densities (@sec-jacobian, [PROB-18]);
+  Cramer's rule (elegant on paper, never used numerically); and the *volume / orientation*
+  questions it was invented for. Outside those, reach for rank, condition number, or a
+  factorization.
+
+::: {.callout-tip title="You might be asked"}
+*"When would you actually compute a determinant in a data-science pipeline, and when would
+you refuse?"* The honest summary:
+
+- **Compute it** when you need a *volume or orientation* answer: the log-determinant term in
+  a multivariate Gaussian or normalizing-flow log-likelihood (always as $\log|\det|$ via the
+  LU diagonal, never the raw product); checking whether an estimated transform contains a
+  reflection ($\det<0$); the characteristic polynomial for a small eigenproblem by hand.
+- **Refuse it** for testing invertibility or near-singularity of a numerical matrix — use the
+  condition number or smallest singular value ([GEOM-26]); for solving $A\mathbf{x}=\mathbf{b}$
+  — factor and solve ([GEOM-11]); and never via cofactors for anything beyond $3\times3$.
+- **The one-line judgment:** the determinant is a superb *theoretical* invariant and a poor
+  *numerical* diagnostic. Know which question you are asking, and pick the tool to match.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-11 *Solving $A\mathbf{x}=\mathbf{b}$*]** and **[GEOM-12 *Rank and
+the Four Fundamental Subspaces*]**, which together established *that* a square matrix is
+invertible exactly when it has full rank — when nothing collapses. This article supplied the
+single number that detects the collapse, $\det A$, and revealed it to be the **signed volume
+scaling factor** of the map. Every algebraic law turned out to be a sentence about volume.
+From here the track continues:
+
+- **[GEOM-14 *Eigenvalues and Eigenvectors*]** — the determinant's biggest theoretical job:
+  the **characteristic polynomial** $\det(A-\lambda I)=0$ is the equation whose roots are the
+  eigenvalues, and it is well-defined precisely because similarity preserves the determinant
+  (@thm-product). A zero eigenvalue ($\lambda=0$ a root) means $\det A=0$ — the
+  rank-deficiency of [GEOM-12], seen through the determinant.
+- **[GEOM-20 *The Singular Value Decomposition*]** — makes $|\det A|=\sigma_1\sigma_2\cdots
+  \sigma_n$ (the product of singular values) explicit, which is exactly why the determinant
+  is a bad near-singularity test (@sec-ex-edge): it is a *product*, blind to whether one
+  factor is dangerously small.
+- **[GEOM-26 *Condition Number and Numerical Stability*]** — the scale-aware successor to the
+  determinant for the only question $\det$ tempts you to misuse it on: *how close to singular
+  is this matrix, numerically?*
+
+Downstream of the track, the **change-of-variables Jacobian** of @sec-jacobian is the hook
+that **[PROB-18 *Linear Transforms of Random Vectors*]** collects, where it becomes the
+$|\det\Sigma|^{-1/2}$ of the multivariate normal and the engine of density transformation.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The origin.** Gabriel Cramer's 1750 *Introduction à l'analyse des lignes courbes
+  algébriques* (Cramer's rule) and Augustin-Louis Cauchy's 1812 memoir, which fixed the term
+  "déterminant" and proved the product rule $\det(AB)=\det A\det B$ — the determinant as a
+  *solvability detector* first, a *volume* second.
+- **The properties-first definition.** The "multilinear, alternating, normalized" characterization
+  of @def-det-properties, and the proof that it forces a unique function, is the modern
+  (Weierstrass/Artin) treatment; Sheldon Axler's *Linear Algebra Done Right* and Michael
+  Artin's *Algebra* both develop the determinant this way, geometry first.
+- **The numerical verdict.** Any text on numerical linear algebra (Trefethen & Bau, *Numerical
+  Linear Algebra*; Golub & Van Loan, *Matrix Computations*) makes the case of @sec-ex-edge
+  rigorously: never use $\det$ for conditioning; use the SVD's singular values.
+- **Open threads deliberately deferred.** *Why is the characteristic polynomial's constant
+  term $\pm\det A$ and its leading behavior tied to the trace?* — eigenvalue structure,
+  [GEOM-14]. *What is the determinant of a non-square or rank-deficient matrix?* — there
+  isn't one; the right generalization is the product of singular values / the SVD,
+  [GEOM-20]–[GEOM-21]. *How does the volume factor generalize when the map is nonlinear?* —
+  the Jacobian determinant of the local linearization, built in [GEOM-22].

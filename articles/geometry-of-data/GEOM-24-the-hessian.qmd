@@ -1,0 +1,976 @@
+---
+title: "The Hessian and the Curvature of a Surface"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / points
+GRAD   = "#c1121f"   # gradients / the answer direction
+ACCENT = "#0a7d4d"   # highlights / curvature
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+```
+
+> **Where this sits in the track.** This is the third article of **Movement VI — Calculus
+> on Vectors**, read as a pair with [GEOM-22] (vector and matrix differentiation) and
+> [GEOM-23] (the gradient as steepest ascent). [GEOM-23] told us that the gradient
+> $\nabla f$ points uphill and that $\nabla f = 0$ marks a *critical point* — but it
+> stopped there, unable to say whether that flat spot is the bottom of a valley, the top
+> of a hill, or a mountain pass. This article answers that question. It assumes the
+> **gradient** and the layout conventions of [GEOM-22]; **quadratic forms** $x^\top A x$
+> and the way the eigenvalues' signs sort them into bowls, domes, and saddles ([GEOM-17]);
+> and **positive-definite matrices** with the eigenvalue test for definiteness
+> ([GEOM-18]). From the floor it borrows only single-variable Taylor expansion, which we
+> restate. The one question: *how does the matrix of second derivatives tell us the shape
+> of a surface near a critical point?* It sets up [GEOM-25] (the gradient and Hessian of a
+> quadratic form, where the Hessian is constant — derived there) and [GEOM-26] (the
+> conditioning of an optimization problem). It supplies the **Hessian / Fisher-information**
+> object that Inference's curvature-of-the-log-likelihood work ([INFR-B3], [INFR-B4])
+> stands on, and the second-order model that Optimization's Newton-type methods optimize.
+
+## Abstract {.unnumbered}
+
+The gradient locates the flat spots of a surface but is blind to their character: a valley
+floor, a hilltop, and a saddle all have $\nabla f = 0$. The missing information is
+*curvature* — how the surface bends as you move away from the flat spot — and curvature
+lives in the second derivatives. This article assembles the nine (or $n^2$) second partial
+derivatives of a scalar function into one symmetric matrix, the **Hessian** $H = \nabla^2
+f$, and shows that it is exactly the curvature operator. We derive the **second-order
+Taylor expansion** of a multivariable function from the single-variable one, term by term,
+and watch the Hessian appear as the coefficient of a quadratic form $\tfrac12\,\Delta
+x^\top H\,\Delta x$. Because that is a quadratic form, the entire geometry of [GEOM-17]
+applies wholesale: the *signs of the eigenvalues* of $H$ decide whether the critical point
+is a minimum (all positive — a bowl), a maximum (all negative — a dome), or a saddle
+(mixed). That is the **second-derivative test**, stated for any number of variables and
+proved, not asserted. The single claim this article defends is that **the Hessian is not a
+table of numbers but a shape**: read its definiteness and you have read the local geometry
+of the surface.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The gradient tells you *where* a surface is flat; the **Hessian** — the symmetric matrix of
+all second partial derivatives — tells you *what shape* it has there. Near any point, a
+smooth surface is approximated by a quadratic: $f(x_0 + \Delta x) \approx f(x_0) + \nabla
+f^\top \Delta x + \tfrac12\,\Delta x^\top H\,\Delta x$. At a critical point the linear term
+vanishes and only the **quadratic form** $\tfrac12\,\Delta x^\top H\,\Delta x$ remains — so
+the sign pattern of $H$'s eigenvalues *is* the local shape: all positive is a bowl (a
+minimum), all negative a dome (a maximum), mixed signs a saddle.
+:::
+
+Everything below orbits that box. The Hessian will look at first like bookkeeping — a grid
+of partial derivatives you compute and store — but by the end you should see it as the
+*curvature* of the surface, the same way [GEOM-23] taught you to see the gradient as a
+direction rather than a list. The phrase "$\Delta x^\top H\,\Delta x$ is a quadratic form"
+is the whole article in one line: it routes every question about the shape of a surface
+straight into the machinery of [GEOM-17] and [GEOM-18], which we already built.
+
+# Why we are here: the gradient cannot tell a valley from a pass {#sec-why}
+
+Keep one question in view for the entire article: **once the gradient says "flat here,"
+what else do we need to know what kind of flat it is?** Every step below answers a piece of
+that.
+
+## What the gradient left undone
+
+[GEOM-23] earned us the **first-order optimality condition**: at any local minimum or
+maximum of a smooth function, the gradient is zero,
+$$
+\nabla f(x_0) = 0 .
+$$
+The reasoning was airtight but one-sided. If $x_0$ were a minimum and the gradient pointed
+in some direction $u$, we could step the *other* way, $-u$, and decrease $f$ — contradiction
+— so the gradient must vanish. A point where $\nabla f = 0$ is called a **critical point**
+(or stationary point): the surface is momentarily flat there, level in every direction to
+first order.
+
+But "flat to first order" is exactly the information that *cannot* distinguish the cases we
+care about. Picture three surfaces, each flat at the origin:
+
+- a **bowl** $f = x^2 + y^2$ — the origin is the lowest point;
+- a **dome** $f = -x^2 - y^2$ — the origin is the highest point;
+- a **saddle** $f = x^2 - y^2$ — the origin is a minimum along the $x$-axis and a maximum
+  along the $y$-axis at once, a mountain pass.
+
+All three have $\nabla f = (0,0)$ at the origin. The gradient is identical; the geometry
+could not be more different. @fig-three-surfaces draws them.
+
+```{python}
+#| label: fig-three-surfaces
+#| fig-cap: "Three surfaces that share the same gradient $\\nabla f = 0$ at the origin, yet have entirely different shapes there. **Left:** a bowl $f = x^2 + y^2$ (the origin is a minimum). **Middle:** a dome $f = -x^2 - y^2$ (a maximum). **Right:** a saddle $f = x^2 - y^2$ (a minimum one way, a maximum the perpendicular way). The first-order condition $\\nabla f = 0$ is blind to the difference; only the second derivatives — the curvature — tell them apart."
+g = np.linspace(-1.4, 1.4, 60)
+X, Y = np.meshgrid(g, g)
+surfaces = [
+    (X**2 + Y**2,  "bowl:  $x^2+y^2$",        "viridis"),
+    (-X**2 - Y**2, "dome:  $-x^2-y^2$",       "magma"),
+    (X**2 - Y**2,  "saddle:  $x^2-y^2$",      "cividis"),
+]
+fig = plt.figure(figsize=(9.2, 3.2))
+for k, (Z, title, cmap) in enumerate(surfaces, start=1):
+    ax = fig.add_subplot(1, 3, k, projection="3d")
+    ax.plot_surface(X, Y, Z, cmap=cmap, alpha=0.9, linewidth=0, antialiased=True)
+    ax.scatter([0], [0], [0], color=GRAD, s=40, depthshade=False)
+    ax.set_title(title, fontsize=10)
+    ax.set_xticks([]); ax.set_yticks([]); ax.set_zticks([])
+    ax.view_init(elev=22, azim=-60)
+plt.tight_layout()
+```
+
+The thing that differs across the three is how the surface **bends** as you leave the
+origin. Bending is the rate of change of the slope, and the rate of change of a derivative
+is a *second* derivative. So the tool we are missing is the second derivative — but for a
+function of many variables there are many of them, and the whole content of this article is
+how to organize them into one object that reads off the shape directly.
+
+::: {.callout-tip title="You might be asked"}
+*"What does a critical point with $\nabla f = 0$ guarantee, and what does it not?"* It
+guarantees the surface is flat to first order — no downhill or uphill direction *to first
+order*. It does **not** guarantee a minimum, a maximum, or even that the point is an
+extremum at all. A saddle is a critical point that is neither. This is the multivariable
+generalization of the Calc-1 fact that $f'(x_0)=0$ can be a min, a max, or an inflection
+($f(x)=x^3$ at $0$). The second-derivative test is what resolves the ambiguity, and we
+build its multivariable version below.
+:::
+
+## The historical thread
+
+The matrix of second partials is named for **Ludwig Otto Hesse**, who introduced it in the
+1840s–1850s while studying the curves and surfaces cut out by polynomial equations. Hesse's
+problem was algebraic geometry — classifying the singular points and inflections of plane
+curves — but the object he built is precisely the curvature operator we need. The deeper
+root is older: it is **Taylor's theorem** (Brook Taylor, 1715), which says any smooth
+function is, near a point, a polynomial plus a controlled remainder. In one variable Taylor
+gives $f(x_0+h) \approx f(x_0) + f'(x_0)h + \tfrac12 f''(x_0)h^2$, and the second-derivative
+test you met in Calculus I — $f''>0$ means a local minimum — is read straight off the
+$h^2$ term. This article does nothing more exotic than carry that exact idea up to many
+variables. The $f''$ that decided concavity becomes a *matrix* $H$, the $h^2$ becomes a
+*quadratic form* $\Delta x^\top H\,\Delta x$, and "is it positive?" becomes "is $H$
+positive-definite?" — which is exactly the question [GEOM-18] answered. The *why* of this
+whole article is that single act of lifting Taylor's $h^2$ term into linear algebra.
+
+# Intuition before symbols {#sec-intuition}
+
+Before any partial derivatives, fix the picture. Stand at a critical point $x_0$, where the
+surface is level. Walk away in some chosen direction $u$ and watch your height. Because the
+surface is flat at $x_0$, you do not start by going up or down — to first order you stay
+level. What you feel instead, immediately, is the **curve** of the ground: it either cups
+upward beneath you (you are in a valley along this direction) or arches downward (you are on
+a ridge along this direction). That cupping-or-arching is curvature, and it can be
+*different in different directions* — that is exactly what a saddle is: cupping up one way,
+arching down the perpendicular way.
+
+So the natural question is: *for each direction $u$, is the surface cupping up or arching
+down, and by how much?* The astonishing fact — the one that makes linear algebra the right
+language — is that the answer for *every* direction is captured by a single matrix. You do
+not need a separate measurement per direction; you measure curvature along the coordinate
+axes (and their interactions), pack the numbers into a matrix $H$, and then the curvature
+in *any* direction $u$ is the one number $u^\top H u$. A whole continuum of curvatures,
+folded into one $n \times n$ object. That object is the Hessian, and $u^\top H u$ is — once
+again — a quadratic form, the hero of [GEOM-17].
+
+The plan, then, is short and forced by this picture:
+
+1. Define the second partial derivatives and pack them into the matrix $H$ (@sec-define).
+2. Show $H$ is symmetric (@sec-symmetry), which is what lets the quadratic-form machinery
+   apply.
+3. Derive the second-order Taylor expansion so we can *see* $\tfrac12\,\Delta x^\top
+   H\,\Delta x$ emerge as the curvature term (@sec-taylor).
+4. Read the shape off the eigenvalues of $H$ — the second-derivative test (@sec-test).
+
+# The formal development {#sec-formal}
+
+## From one second derivative to a matrix of them {#sec-define}
+
+We work with a scalar function of $n$ variables, $f : \mathbb{R}^n \to \mathbb{R}$, written
+$f(x)$ with $x = (x_1, \dots, x_n)^\top$. We assume throughout that $f$ is **twice
+continuously differentiable** — its first and second partial derivatives all exist and are
+continuous functions. (This is the smoothness condition under which everything below holds;
+we will need it precisely once, for symmetry, and flag it there.)
+
+Recall from [GEOM-22] the **partial derivative**: $\partial f / \partial x_i$ is computed
+by varying the single coordinate $x_i$ and freezing all the others, then differentiating
+with the ordinary Calc-1 rules. The **gradient** stacks the $n$ first partials into a
+column vector,
+$$
+\nabla f(x) =
+\begin{pmatrix} \partial f / \partial x_1 \\ \vdots \\ \partial f / \partial x_n \end{pmatrix} .
+$$
+
+A first partial $\partial f / \partial x_i$ is itself a function of all $n$ variables, so we
+can differentiate it again — with respect to any coordinate $x_j$. That gives a **second
+partial derivative**, written
+$$
+\frac{\partial^2 f}{\partial x_j \, \partial x_i}
+\;=\; \frac{\partial}{\partial x_j}\!\left( \frac{\partial f}{\partial x_i} \right) .
+$$
+Read it inside-out: first differentiate with respect to $x_i$, then differentiate the
+result with respect to $x_j$. When $i = j$ we get a **pure** second partial, $\partial^2 f
+/ \partial x_i^2$ (differentiate twice in the same direction — this is the direct analogue
+of $f''$ and measures cupping along the $x_i$-axis). When $i \neq j$ we get a **mixed**
+second partial, which measures how the slope in one direction changes as you move in
+another — the *interaction* or twist between two axes.
+
+There are $n$ choices for the first index and $n$ for the second, so there are $n^2$ second
+partials. Packing them into a square grid — row $j$, column $i$ holding $\partial^2 f /
+\partial x_j \partial x_i$ — defines the Hessian.
+
+::: {#def-hessian}
+**Definition (Hessian matrix).** For a twice-differentiable $f : \mathbb{R}^n \to
+\mathbb{R}$, the **Hessian** at a point $x$ is the $n \times n$ matrix of all second partial
+derivatives,
+$$
+H(x) \;=\; \nabla^2 f(x) \;=\;
+\begin{pmatrix}
+\dfrac{\partial^2 f}{\partial x_1^2} & \dfrac{\partial^2 f}{\partial x_1\,\partial x_2} & \cdots & \dfrac{\partial^2 f}{\partial x_1\,\partial x_n} \\[10pt]
+\dfrac{\partial^2 f}{\partial x_2\,\partial x_1} & \dfrac{\partial^2 f}{\partial x_2^2} & \cdots & \dfrac{\partial^2 f}{\partial x_2\,\partial x_n} \\[6pt]
+\vdots & \vdots & \ddots & \vdots \\[4pt]
+\dfrac{\partial^2 f}{\partial x_n\,\partial x_1} & \dfrac{\partial^2 f}{\partial x_n\,\partial x_2} & \cdots & \dfrac{\partial^2 f}{\partial x_n^2}
+\end{pmatrix},
+\qquad
+H_{ji} = \frac{\partial^2 f}{\partial x_j\,\partial x_i} .
+$$
+:::
+
+Two readings of @def-hessian are worth holding side by side. The **entrywise** reading is
+the grid above: $H_{ji}$ is one second partial. The **operator** reading, which we earn in
+@sec-taylor, is that $H$ is the linear map sending a displacement $\Delta x$ to a curvature
+number $\Delta x^\top H \Delta x$. The notation $\nabla^2 f$ for the Hessian is deliberate
+and worth pausing on: it reads "$\nabla$ applied twice." The gradient $\nabla f$ is the
+vector of first derivatives; differentiating *that vector* — taking the Jacobian of the
+gradient, in the language of [GEOM-22] — produces the matrix of second derivatives. So
+"$\nabla^2 f$ = the Hessian" is not a coincidence of symbols; it says the Hessian is the
+derivative of the gradient, the second derivative of $f$.
+
+::: {.callout-warning title="Pitfall"}
+**$\nabla^2 f$ is the Hessian matrix, not the Laplacian.** In physics and PDE the same
+symbol $\nabla^2 f$ often denotes the **Laplacian** $\sum_i \partial^2 f / \partial x_i^2$ —
+a single *number* (the trace of the Hessian, in fact). In the calculus-on-vectors and
+optimization world we live in here, $\nabla^2 f$ means the full Hessian *matrix*. The two
+agree only in their diagonal: the Laplacian is the trace $\operatorname{tr}(H)$, the sum of
+the diagonal entries. Always check which convention a source is using; they are different
+objects.
+:::
+
+A tiny worked example pins down the mechanics before we generalize. Let
+$$
+f(x_1, x_2) = x_1^2 + 3 x_1 x_2 + 2 x_2^3 .
+$$
+First the gradient. Differentiating with respect to $x_1$ (freeze $x_2$): the $x_1^2$ term
+gives $2x_1$, the $3x_1 x_2$ term gives $3 x_2$ (treating $3x_2$ as the constant
+coefficient of $x_1$), and $2x_2^3$ gives $0$. Differentiating with respect to $x_2$ (freeze
+$x_1$): $x_1^2$ gives $0$, $3 x_1 x_2$ gives $3 x_1$, and $2 x_2^3$ gives $6 x_2^2$. So
+$$
+\frac{\partial f}{\partial x_1} = 2 x_1 + 3 x_2, \qquad
+\frac{\partial f}{\partial x_2} = 3 x_1 + 6 x_2^2 .
+$$
+Now the four second partials, each obtained by differentiating one of these once more:
+$$
+\frac{\partial^2 f}{\partial x_1^2} = \frac{\partial}{\partial x_1}(2x_1 + 3x_2) = 2,
+\qquad
+\frac{\partial^2 f}{\partial x_2 \, \partial x_1} = \frac{\partial}{\partial x_2}(2x_1 + 3x_2) = 3,
+$$
+$$
+\frac{\partial^2 f}{\partial x_1 \, \partial x_2} = \frac{\partial}{\partial x_1}(3x_1 + 6x_2^2) = 3,
+\qquad
+\frac{\partial^2 f}{\partial x_2^2} = \frac{\partial}{\partial x_2}(3x_1 + 6x_2^2) = 12 x_2 .
+$$
+Assembling them in the grid of @def-hessian:
+$$
+H(x) = \begin{pmatrix} 2 & 3 \\ 3 & 12 x_2 \end{pmatrix} .
+$$
+Two things to notice, both of which we will explain in general. First, $H$ *depends on the
+point* — the bottom-right entry is $12 x_2$, so the curvature changes as you move around the
+surface; the Hessian is a function of $x$, not a fixed matrix (except for special functions,
+the topic of [GEOM-25]). Second, the two off-diagonal entries came out **equal**, both $3$.
+That equality is not luck.
+
+## Why the Hessian is symmetric {#sec-symmetry}
+
+The mixed partials in the example matched: $\partial^2 f / \partial x_2 \partial x_1 = 3 =
+\partial^2 f / \partial x_1 \partial x_2$. Differentiating "$x_1$ then $x_2$" gave the same
+answer as "$x_2$ then $x_1$." This is a general phenomenon for smooth functions, and it is
+the property that makes the Hessian a *symmetric* matrix — which in turn is what lets us
+apply the spectral and definiteness machinery of [GEOM-16]–[GEOM-18].
+
+::: {#thm-clairaut}
+**Theorem (equality of mixed partials; Clairaut / Schwarz).** If $f$ is twice continuously
+differentiable on an open region (its second partial derivatives exist and are continuous
+there), then for every pair of indices $i, j$,
+$$
+\frac{\partial^2 f}{\partial x_j \, \partial x_i} = \frac{\partial^2 f}{\partial x_i \, \partial x_j} .
+$$
+Equivalently, $H_{ji} = H_{ij}$: the Hessian is **symmetric**, $H = H^\top$.
+:::
+
+We will not reproduce the full $\varepsilon$–$\delta$ proof of @thm-clairaut here — it is a
+result about limits that belongs to a real-analysis treatment, and reproducing it would
+bury the geometry that is this article's subject. But we will not leave it a black box
+either: here is the complete idea of *why* it is true, so the claim is motivated rather than
+asserted.
+
+Fix the two coordinates that matter, call them $x_i$ and $x_j$, and freeze the rest. Form
+the "second difference" of $f$ over a tiny rectangle with corners at the base point and
+displaced by $h$ in the $x_i$-direction and $k$ in the $x_j$-direction:
+$$
+D \;=\; f(\,\cdots + h,\, \cdots + k\,) - f(\,\cdots + h,\, \cdots\,) - f(\,\cdots,\, \cdots + k\,) + f(\,\cdots,\, \cdots\,) .
+$$
+This combination is built to measure "how much does the change-in-$x_i$ itself change as
+you step in $x_j$." Group the four terms one way — pair the first with the second, the
+third with the fourth — and $D$ reads as a difference (over the $x_j$-step $k$) of
+differences (over the $x_i$-step $h$); shrinking the steps turns it into $\partial^2 f /
+\partial x_j \partial x_i$. Group the *same four terms the other way* — pair the first with
+the third, the second with the fourth — and $D$ reads as a difference over $h$ of
+differences over $k$, giving $\partial^2 f / \partial x_i \partial x_j$ in the limit. The
+quantity $D$ is *one number* regardless of how we grouped it, so both limits must equal it,
+and hence each other — *provided* the second partials are continuous, which is what lets the
+two limiting processes commute. Continuity is not a technicality you can drop: there are
+hand-built pathological functions whose mixed partials *disagree* at a point exactly because
+the second partials fail to be continuous there. For every function we meet in this series —
+losses, log-likelihoods, quadratic forms — the smoothness holds and the Hessian is
+symmetric.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does it matter that the Hessian is symmetric?"* Because symmetry is the entry ticket
+to the **spectral theorem** ([GEOM-16]): a real symmetric matrix has *real* eigenvalues and
+a full set of *orthonormal* eigenvectors, so it acts by "rotate to the eigenaxes, scale
+along each, rotate back" — pure stretching, no shearing. That is exactly what makes the
+second-derivative test below clean: the eigenvalues of $H$ are real numbers whose *signs* we
+can ask about, and the eigenvectors are the orthogonal directions of pure curvature. If the
+Hessian were not symmetric, "the curvature in direction $u$" would not even be well-defined
+as $u^\top H u$ in the tidy way it is. Symmetry is what turns the second-derivative test from
+a special trick into the quadratic-form story of [GEOM-17].
+:::
+
+We can dispose of one further subtlety immediately. Only the symmetric part of a matrix
+survives in a quadratic form: for *any* square $M$, the scalar $u^\top M u$ equals $u^\top
+\big(\tfrac12(M + M^\top)\big) u$, because $u^\top M u$ is a $1\times 1$ number and so equals
+its own transpose $u^\top M^\top u$, and averaging the two gives the symmetric part. So even
+if some construction handed us a non-symmetric "Hessian," the curvature it produces would
+only see the symmetric part — and by @thm-clairaut the true Hessian is already symmetric, so
+there is nothing to fix. This is the same observation [GEOM-17] used to symmetrize a
+quadratic form's matrix without loss of generality.
+
+## The second-order Taylor expansion: where the curvature term comes from {#sec-taylor}
+
+We now derive the central formula — the one that shows $\tfrac12\,\Delta x^\top H\,\Delta x$
+is the curvature term — by lifting the single-variable Taylor expansion to many variables.
+The trick is to *make* the multivariable problem single-variable by walking in a straight
+line.
+
+**The Calc-1 ingredient we restate.** Taylor's theorem in one variable says that for a
+twice-differentiable $g$,
+$$
+g(t) \;=\; g(0) + g'(0)\,t + \tfrac{1}{2}\,g''(0)\,t^2 + R(t),
+\qquad \frac{R(t)}{t^2} \to 0 \ \text{as}\ t \to 0 .
+$$ {#eq-taylor-1d}
+The first two terms are the tangent line; the $t^2$ term, weighted by $\tfrac12 g''(0)$, is
+the leading correction — the *curvature* of $g$ at $0$. The remainder $R$ shrinks faster
+than $t^2$, so for small $t$ the quadratic on the right is an excellent stand-in for $g$.
+This is the only fact from above the floor that we import, and it is just Calc-1 Taylor.
+
+**The walk.** Pick a base point $x_0 \in \mathbb{R}^n$ and a displacement direction $\Delta
+x \in \mathbb{R}^n$. Define a single-variable function that records the height of $f$ as we
+slide from $x_0$ along $\Delta x$:
+$$
+g(t) \;=\; f\big(x_0 + t\,\Delta x\big), \qquad t \in \mathbb{R} .
+$$
+At $t = 0$ we are at $x_0$; at $t = 1$ we are at $x_0 + \Delta x$. So $f(x_0 + \Delta x) =
+g(1)$, and if we Taylor-expand $g$ about $t=0$ and then plug in $t=1$, we will have expanded
+$f$ about $x_0$. The only work is to compute $g'(0)$ and $g''(0)$ in terms of $f$.
+
+**First derivative of $g$.** The point $x_0 + t\,\Delta x$ has $k$-th coordinate $x_{0,k} +
+t\,\Delta x_k$, so as $t$ changes, every coordinate moves at rate $\Delta x_k$. By the
+multivariable chain rule from [GEOM-22] — differentiate $f$ through each coordinate and sum
+the contributions —
+$$
+g'(t) = \frac{d}{dt}\, f\big(x_0 + t\,\Delta x\big)
+= \sum_{k=1}^{n} \frac{\partial f}{\partial x_k}\big(x_0 + t\,\Delta x\big)\cdot \frac{d}{dt}\big(x_{0,k} + t\,\Delta x_k\big)
+= \sum_{k=1}^{n} \frac{\partial f}{\partial x_k}\big(x_0 + t\,\Delta x\big)\,\Delta x_k .
+$$
+The last sum is exactly a dot product of the gradient with $\Delta x$, so in vector form
+$$
+g'(t) = \nabla f\big(x_0 + t\,\Delta x\big)^\top \Delta x .
+$$ {#eq-gprime}
+Evaluating at $t=0$ gives $g'(0) = \nabla f(x_0)^\top \Delta x$ — the directional derivative
+of [GEOM-23], as it must be.
+
+**Second derivative of $g$.** Differentiate @eq-gprime with respect to $t$ again. Write it
+out as the sum $g'(t) = \sum_k \big(\partial f/\partial x_k\big)\,\Delta x_k$; each $\Delta
+x_k$ is a constant, so we only differentiate the partial $\partial f/\partial x_k$ with
+respect to $t$. But $\partial f / \partial x_k$ is itself a scalar function of the moving
+point, so it obeys the same chain rule as $f$ did:
+$$
+\frac{d}{dt}\,\frac{\partial f}{\partial x_k}\big(x_0 + t\,\Delta x\big)
+= \sum_{j=1}^{n} \frac{\partial}{\partial x_j}\!\left(\frac{\partial f}{\partial x_k}\right)\!\big(x_0 + t\,\Delta x\big)\,\Delta x_j
+= \sum_{j=1}^{n} \frac{\partial^2 f}{\partial x_j \, \partial x_k}\,\Delta x_j .
+$$
+Substituting back and collecting,
+$$
+g''(t) = \sum_{k=1}^{n} \left( \sum_{j=1}^{n} \frac{\partial^2 f}{\partial x_j \, \partial x_k}\,\Delta x_j \right) \Delta x_k
+= \sum_{j=1}^{n}\sum_{k=1}^{n} \Delta x_j\, \frac{\partial^2 f}{\partial x_j\,\partial x_k}\, \Delta x_k .
+$$
+That double sum is precisely the expanded form of the quadratic form $\Delta x^\top H\,
+\Delta x$ — recall from [GEOM-17] that $u^\top A u = \sum_j \sum_k u_j A_{jk} u_k$ — with $A
+= H$. So in vector form,
+$$
+g''(t) = \Delta x^\top H\big(x_0 + t\,\Delta x\big)\, \Delta x ,
+$$ {#eq-gprimeprime}
+and at $t = 0$, $g''(0) = \Delta x^\top H(x_0)\, \Delta x$. The Hessian has appeared not as
+a grid we look up but as the thing the second derivative of a one-dimensional walk *is*.
+
+**Assemble.** Put $g'(0)$ and $g''(0)$ into the Calc-1 Taylor formula @eq-taylor-1d and
+evaluate at $t = 1$:
+$$
+\boxed{\;
+f(x_0 + \Delta x)
+\;=\; f(x_0)
+\;+\; \nabla f(x_0)^\top \Delta x
+\;+\; \tfrac{1}{2}\,\Delta x^\top H(x_0)\, \Delta x
+\;+\; R(\Delta x),
+\;}
+$$ {#eq-taylor-2}
+where the remainder $R$ shrinks faster than $\|\Delta x\|^2$ as $\Delta x \to 0$. This is
+the **second-order Taylor expansion** of a multivariable function. Read its three pieces
+against the one-variable original:
+
+- $f(x_0)$ — the **height** at the base point, the constant term.
+- $\nabla f(x_0)^\top \Delta x$ — the **linear** (tangent-plane) term; this is the
+  best-fitting flat sheet through the surface at $x_0$, exactly the first-order picture of
+  [GEOM-23].
+- $\tfrac12\,\Delta x^\top H(x_0)\,\Delta x$ — the **quadratic** (curvature) term; this is
+  the leading way the surface departs from its tangent plane. It is the multivariable $\tfrac12
+  g''(0)\,t^2$, with the scalar $g''$ replaced by the matrix $H$ acting as a quadratic form.
+
+::: {.callout-tip title="You might be asked"}
+*"Where does the factor of $\tfrac12$ come from?"* Straight from the Calc-1 Taylor series:
+the coefficient of the $t^2$ term is $g''(0)/2!= g''(0)/2$, the $2!$ being the factorial in
+the general Taylor coefficient $g^{(m)}(0)/m!$. It survives the lift to many variables
+untouched because we expanded the *single-variable* $g(t)$ and only then substituted the
+matrix expression for $g''$. Forgetting the $\tfrac12$ is the most common slip; it is the
+difference between $H$ and $2H$ in everything downstream (including, as [GEOM-25] shows, the
+factor in the gradient of a quadratic form).
+:::
+
+## At a critical point, only the curvature survives {#sec-at-critical}
+
+The whole reason we built @eq-taylor-2 is to use it *at a critical point*. Suppose $x_0$ is
+critical, so $\nabla f(x_0) = 0$. The linear term in @eq-taylor-2 vanishes identically, and
+for small displacements the surface is described — to leading order — by the constant plus
+the curvature term alone:
+$$
+f(x_0 + \Delta x) \;\approx\; f(x_0) \;+\; \tfrac{1}{2}\,\Delta x^\top H(x_0)\, \Delta x .
+$$ {#eq-near-critical}
+Everything about whether $x_0$ is a min, a max, or a saddle is now encoded in the sign of
+the quadratic form $\Delta x^\top H \,\Delta x$ as $\Delta x$ ranges over all directions:
+
+- If $\tfrac12 \Delta x^\top H \Delta x > 0$ for **every** nonzero $\Delta x$, then $f(x_0 +
+  \Delta x) > f(x_0)$ for all small displacements — every direction goes *up* — so $x_0$ is
+  a **local minimum**.
+- If it is $< 0$ for every nonzero $\Delta x$, every direction goes *down* and $x_0$ is a
+  **local maximum**.
+- If it is $> 0$ for some directions and $< 0$ for others, $x_0$ goes up some ways and down
+  others — a **saddle point**.
+
+But "$\Delta x^\top H \,\Delta x > 0$ for all $\Delta x \neq 0$" is the *definition* of $H$
+being **positive-definite** from [GEOM-18]. We have walked straight into the definiteness
+classification. The next section states it as a theorem and reads the answer off the
+eigenvalues.
+
+# The second-derivative test {#sec-test}
+
+## Definiteness decides the shape {#sec-definiteness}
+
+[GEOM-18] proved the equivalence we now lean on: a symmetric matrix is positive-definite if
+and only if all its eigenvalues are positive; negative-definite iff all eigenvalues are
+negative; **indefinite** (positive for some directions, negative for others) iff it has
+both a positive and a negative eigenvalue. Combined with @eq-near-critical, this is the
+second-derivative test.
+
+::: {#thm-2nd-deriv}
+**Theorem (second-derivative test).** Let $f$ be twice continuously differentiable and let
+$x_0$ be a critical point, $\nabla f(x_0) = 0$. Let $H = H(x_0)$ be the Hessian there, with
+eigenvalues $\lambda_1, \dots, \lambda_n$, which are real because $H$ is symmetric
+(@thm-clairaut) and the spectral theorem ([GEOM-16]) gives a real symmetric matrix real
+eigenvalues. Then:
+
+1. If $H$ is **positive-definite** (all $\lambda_i > 0$), $x_0$ is a strict **local
+   minimum**.
+2. If $H$ is **negative-definite** (all $\lambda_i < 0$), $x_0$ is a strict **local
+   maximum**.
+3. If $H$ is **indefinite** (some $\lambda_i > 0$ and some $\lambda_j < 0$), $x_0$ is a
+   **saddle point** — neither a min nor a max.
+4. If $H$ is **semidefinite but singular** (all $\lambda_i \geq 0$ with at least one
+   $\lambda_i = 0$, or the all-$\leq 0$ mirror), the test is **inconclusive**: the curvature
+   term is flat in the zero-eigenvalue direction, and the third-order behavior decides.
+:::
+
+::: {.proof}
+We prove case 1; cases 2 and 3 follow by the same argument, and case 4 we discuss
+separately below because it is the honest gap in the test.
+
+Assume $H$ is positive-definite. By the spectral theorem ([GEOM-16]), $H$ has an orthonormal
+eigenbasis $q_1, \dots, q_n$ with $H q_i = \lambda_i q_i$ and all $\lambda_i > 0$. Let
+$\lambda_{\min} = \min_i \lambda_i > 0$ be the smallest eigenvalue. Write any displacement in
+the eigenbasis, $\Delta x = \sum_i c_i q_i$, where $c_i = q_i^\top \Delta x$ are its
+coordinates; because the basis is orthonormal, $\|\Delta x\|^2 = \sum_i c_i^2$ (the
+generalized Pythagoras of [GEOM-05]). Then, exactly as in [GEOM-17]'s diagonalization of a
+quadratic form,
+$$
+\Delta x^\top H\, \Delta x
+= \Big(\sum_i c_i q_i\Big)^{\!\top} H \Big(\sum_j c_j q_j\Big)
+= \sum_i \sum_j c_i c_j\, q_i^\top (\lambda_j q_j)
+= \sum_i \lambda_i c_i^2 ,
+$$
+where the cross terms died because $q_i^\top q_j = 0$ for $i \neq j$ (orthonormality) and
+$q_i^\top q_i = 1$. Since every $\lambda_i \geq \lambda_{\min} > 0$,
+$$
+\Delta x^\top H\, \Delta x = \sum_i \lambda_i c_i^2 \;\geq\; \lambda_{\min} \sum_i c_i^2 = \lambda_{\min}\,\|\Delta x\|^2 .
+$$ {#eq-pd-bound}
+Now feed this into the Taylor expansion @eq-taylor-2 at the critical point (where the linear
+term is gone):
+$$
+f(x_0 + \Delta x) - f(x_0) = \tfrac12\,\Delta x^\top H\,\Delta x + R(\Delta x)
+\;\geq\; \tfrac{\lambda_{\min}}{2}\,\|\Delta x\|^2 + R(\Delta x) .
+$$
+The remainder satisfies $R(\Delta x)/\|\Delta x\|^2 \to 0$, so for all $\Delta x$ small
+enough we have $|R(\Delta x)| < \tfrac{\lambda_{\min}}{4}\|\Delta x\|^2$ (the curvature term
+eventually dominates the remainder, because the curvature term is order $\|\Delta x\|^2$ and
+$R$ is smaller order). For such $\Delta x \neq 0$,
+$$
+f(x_0 + \Delta x) - f(x_0) \;\geq\; \tfrac{\lambda_{\min}}{2}\|\Delta x\|^2 - \tfrac{\lambda_{\min}}{4}\|\Delta x\|^2 = \tfrac{\lambda_{\min}}{4}\|\Delta x\|^2 \;>\; 0 .
+$$
+So $f(x_0 + \Delta x) > f(x_0)$ for every small nonzero displacement: $x_0$ is a strict
+local minimum. Case 2 is identical with all inequalities reversed (use $\lambda_{\max} < 0$).
+For case 3, pick the eigenvector $q_+$ of a positive eigenvalue and the eigenvector $q_-$ of
+a negative one; walking along $q_+$ makes the curvature term positive (height rises) and
+along $q_-$ makes it negative (height falls), so $x_0$ is below the surface in one direction
+and above it in another — a saddle. $\qquad\blacksquare$
+:::
+
+The key inequality @eq-pd-bound deserves a sentence of interpretation: it says positive
+definiteness gives not just "every direction curves up" but a *uniform* lower bound on how
+much — the surface sits above a genuine bowl $\tfrac{\lambda_{\min}}{2}\|\Delta x\|^2$, and
+the flattest direction is the one with eigenvalue $\lambda_{\min}$. That flattest-direction
+curvature is precisely what governs how hard the surface is to optimize, the conditioning
+story of [GEOM-26].
+
+## The $2\times 2$ test you can do by hand {#sec-2x2}
+
+For two variables the test has a famous closed form that avoids computing eigenvalues
+explicitly, and it is worth deriving because it is the version that shows up on every exam.
+Let
+$$
+H = \begin{pmatrix} a & b \\ b & c \end{pmatrix},
+\qquad a = f_{x_1 x_1},\ b = f_{x_1 x_2} = f_{x_2 x_1},\ c = f_{x_2 x_2},
+$$
+symmetric by @thm-clairaut. Its eigenvalues $\lambda_1, \lambda_2$ satisfy two relations
+straight from linear algebra: their product is the determinant and their sum is the trace,
+$$
+\lambda_1 \lambda_2 = \det H = ac - b^2, \qquad \lambda_1 + \lambda_2 = \operatorname{tr} H = a + c .
+$$
+(The product-equals-determinant and sum-equals-trace facts are proved in [GEOM-14] from the
+characteristic polynomial; we use them as named ingredients.) Now reason about signs:
+
+- If $\det H = \lambda_1 \lambda_2 > 0$, the two eigenvalues have the **same sign** (a
+  positive product cannot come from one positive and one negative factor). Which sign?
+  Read it off the trace: $\lambda_1 + \lambda_2 = a + c$, and since two same-sign numbers
+  sum to a value of that same sign, the eigenvalues are positive exactly when $a + c > 0$
+  and negative exactly when $a + c < 0$. We can equally read it off $a$ alone: $\det H =
+  ac - b^2 > 0$ forces $ac > b^2 \geq 0$, so $ac > 0$, which means $a$ and $c$ share a
+  sign and are both nonzero — hence the eigenvalues take *that* sign too. So if $a > 0$
+  both eigenvalues are positive (a minimum), and if $a < 0$ both are negative (a maximum);
+  the trace and the $a$-test agree because $a$, $c$, and $a+c$ all carry the one shared
+  sign.
+- If $\det H = \lambda_1 \lambda_2 < 0$, the eigenvalues have **opposite signs** — one
+  positive, one negative — so $H$ is indefinite and $x_0$ is a **saddle**, regardless of $a$.
+- If $\det H = 0$, at least one eigenvalue is zero: the test is **inconclusive** (case 4).
+
+So the hand recipe is:
+$$
+\boxed{\;
+\det H = ac - b^2 :
+\begin{cases}
+> 0,\ a > 0 & \Rightarrow \text{local minimum},\\
+> 0,\ a < 0 & \Rightarrow \text{local maximum},\\
+< 0 & \Rightarrow \text{saddle point},\\
+= 0 & \Rightarrow \text{inconclusive}.
+\end{cases}
+\;}
+$$ {#eq-2x2-test}
+This is exactly the second-derivative test you may remember from multivariable calculus,
+usually written with the "discriminant" $D = f_{x_1 x_1} f_{x_2 x_2} - f_{x_1 x_2}^2$. We
+have now *derived* it: $D$ is the determinant of the Hessian, and the rule is nothing but
+the sign analysis of two eigenvalues whose product is $D$. Notice that this $2\times 2$ rule
+is precisely **Sylvester's criterion** for definiteness — the leading principal minors
+$a$ and $ac - b^2$ must both be positive for positive-definiteness — specialized to two
+dimensions; [GEOM-18] proved the general version, and we are reaping it here.
+
+::: {.callout-warning title="Pitfall"}
+**Do not check definiteness by looking only at the diagonal of $H$.** A common error is to
+see positive diagonal entries ($a > 0$ and $c > 0$, i.e. the surface cups up along both
+axes) and conclude "minimum." That is wrong: the off-diagonal $b$ (the twist between the
+axes) can still make the matrix indefinite. For instance $H = \big(\begin{smallmatrix} 1 & 3
+\\ 3 & 1 \end{smallmatrix}\big)$ has positive diagonal but $\det H = 1 - 9 = -8 < 0$, so it
+is a *saddle* — the surface curves up along each axis but curves down along the diagonal
+direction $(1,-1)$. Curvature in the coordinate directions does not determine curvature in
+every direction; only the full matrix (its eigenvalues, or @eq-2x2-test) does.
+:::
+
+We can see this saddle-hiding-in-positive-diagonals directly. @fig-twist plots $f(x,y) =
+x^2 + y^2 + 6xy$ near the origin, whose Hessian is exactly that matrix.
+
+```{python}
+#| label: fig-twist
+#| fig-cap: "A saddle with a positive diagonal. The surface $f = x^2 + y^2 + 6xy$ has Hessian $\\big(\\begin{smallmatrix}2 & 6\\\\ 6 & 2\\end{smallmatrix}\\big)$ at the origin: both diagonal entries are positive, yet $\\det H = 4 - 36 < 0$, so it is a saddle. Walking along the axes (blue) the surface rises; walking along the anti-diagonal $(1,-1)$ (red) it falls. The off-diagonal twist, not the diagonal, decides the shape."
+g = np.linspace(-1.2, 1.2, 80)
+X, Y = np.meshgrid(g, g)
+Z = X**2 + Y**2 + 6 * X * Y
+fig = plt.figure(figsize=(6.6, 4.6))
+ax = fig.add_subplot(111, projection="3d")
+ax.plot_surface(X, Y, Z, cmap="coolwarm", alpha=0.85, linewidth=0, antialiased=True)
+t = np.linspace(-1.2, 1.2, 50)
+ax.plot(t, np.zeros_like(t), t**2, color=VEC, lw=3, label="along $x$-axis (up)")
+ax.plot(t, -t, t**2 + t**2 - 6*t*t, color=GRAD, lw=3, label="along $(1,-1)$ (down)")
+ax.scatter([0], [0], [0], color="black", s=40, depthshade=False)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$"); ax.set_zlabel("$f$")
+ax.set_title("Positive diagonal, negative determinant: a saddle")
+ax.legend(loc="upper left", fontsize=9)
+ax.view_init(elev=24, azim=-58)
+plt.tight_layout()
+```
+
+## Why the test is inconclusive when $H$ is singular {#sec-inconclusive}
+
+Case 4 of @thm-2nd-deriv is the honest limitation, and an interviewer will probe it. When
+$H$ has a zero eigenvalue, there is a direction $q_0$ (its eigenvector) along which the
+curvature term $\Delta x^\top H \Delta x$ is *flat* — it contributes nothing. Along $q_0$
+the quadratic approximation @eq-near-critical says the surface is level to second order, and
+what happens next is governed by the *third*-order term that our expansion threw into the
+remainder. The same flat second-order behavior can hide a minimum, a maximum, or neither.
+
+The cleanest one-variable illustration (which lifts directly, since the flat direction is
+effectively one-dimensional): all three of $f = x^4$ (minimum at $0$), $f = -x^4$ (maximum),
+and $f = x^3$ (neither — an inflection) have $f''(0) = 0$. The second derivative is zero in
+all three, so a second-order test *cannot* tell them apart; you must look further. The
+multivariable version is identical along the zero-eigenvalue direction. @fig-inconclusive
+draws the three.
+
+```{python}
+#| label: fig-inconclusive
+#| fig-cap: "When the second-derivative test fails. All three curves are flat *and* have zero curvature ($f'' = 0$) at the origin, so a second-order test is silent — yet $x^4$ has a minimum, $-x^4$ a maximum, and $x^3$ neither. A zero eigenvalue of the Hessian creates exactly this ambiguity along its eigenvector direction, which is why case 4 of the test is inconclusive: third-order behavior, invisible to the Hessian, decides."
+x = np.linspace(-1.1, 1.1, 200)
+fig, ax = plt.subplots(figsize=(6.4, 4.0))
+ax.plot(x, x**4,  color=ACCENT, label="$x^4$  (minimum)")
+ax.plot(x, -x**4, color=GRAD,   label="$-x^4$  (maximum)")
+ax.plot(x, x**3,  color=VEC,    label="$x^3$  (neither)")
+ax.scatter([0], [0], color="black", s=35, zorder=5)
+ax.axhline(0, color=GREY, lw=0.8)
+ax.set_xlabel("$x$"); ax.set_ylabel("$f(x)$")
+ax.set_title("$f''(0)=0$ in all three: the second-order test is silent")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+So the practitioner's rule: a positive-*definite* Hessian (no zero eigenvalue) certifies a
+minimum cleanly; a merely positive-*semidefinite* Hessian (a zero eigenvalue present) is a
+warning that you have a flat direction and the local picture is undecided to second order.
+This distinction — definite versus merely semidefinite — is exactly the [GEOM-18] boundary,
+and it is the same boundary that separates a strictly convex problem (unique minimum) from a
+flat-bottomed one (a valley of equally good minima), which we will meet again in
+optimization.
+
+# Worked examples {#sec-examples}
+
+We run the test on real-feeling surfaces, including one near the edge of applicability where
+it goes silent.
+
+## Example 1 — a least-squares loss: the bowl optimization lives in {#sec-ex-loss}
+
+The most important Hessian in this series is the one belonging to a regression loss, because
+its curvature is what makes least squares solvable and governs how fast an optimizer
+converges. Consider fitting an intercept-and-slope line to data by minimizing squared error,
+the objective of [REGR-01],
+$$
+L(\beta_0, \beta_1) = \sum_{i=1}^{n} \big(y_i - \beta_0 - \beta_1 x_i\big)^2 .
+$$
+From [GEOM-22] / [REGR-01] the second partials are
+$$
+\frac{\partial^2 L}{\partial \beta_0^2} = 2n, \qquad
+\frac{\partial^2 L}{\partial \beta_1^2} = 2\sum_i x_i^2, \qquad
+\frac{\partial^2 L}{\partial \beta_0\, \partial \beta_1} = 2\sum_i x_i ,
+$$
+so the Hessian is the **constant** matrix (independent of $\beta$, the special structure
+[GEOM-25] explains)
+$$
+H = 2\begin{pmatrix} n & \sum_i x_i \\ \sum_i x_i & \sum_i x_i^2 \end{pmatrix} .
+$$
+Apply the hand test @eq-2x2-test. The top-left entry $2n > 0$, and
+$$
+\det H = 4\Big(n\sum_i x_i^2 - \big(\textstyle\sum_i x_i\big)^2\Big) = 4n\sum_i (x_i - \bar x)^2 = 4n\,S_{xx} ,
+$$
+using the centering identity $n\sum x_i^2 - (\sum x_i)^2 = n \sum (x_i - \bar x)^2$ from
+[REGR-01]. So $\det H > 0$ exactly when $S_{xx} > 0$ — when the predictor actually varies.
+Whenever the data are non-degenerate, $H$ is positive-definite, the loss is a genuine bowl,
+and its single critical point (the normal-equations solution) is the unique global minimum.
+This is the curvature underwriting [REGR-01]'s claim that there is *one* best line.
+@fig-loss-bowl shows the bowl and its constant curvature.
+
+```{python}
+#| label: fig-loss-bowl
+#| fig-cap: "The least-squares loss surface $L(\\beta_0, \\beta_1)$ for a small dataset, with its elliptical contours below. The Hessian is constant and positive-definite (here $S_{xx} > 0$), so the surface is a perfect bowl with a single minimum (red dot). The contours are *ellipses*, not circles, because the two eigenvalues of $H$ differ — the bowl is steeper in one direction than the other, the seed of the conditioning story in GEOM-26."
+rng = np.random.default_rng(7)
+xi = np.linspace(1, 9, 9)
+yi = 2.0 + 0.8 * xi + rng.normal(0, 1.0, size=xi.size)
+n = xi.size
+b0g = np.linspace(-2, 6, 90)
+b1g = np.linspace(-0.4, 2.0, 90)
+B0, B1 = np.meshgrid(b0g, b1g)
+L = np.zeros_like(B0)
+for a in range(B0.shape[0]):
+    for b in range(B0.shape[1]):
+        L[a, b] = np.sum((yi - B0[a, b] - B1[a, b] * xi) ** 2)
+# minimum via normal equations
+xbar, ybar = xi.mean(), yi.mean()
+b1s = np.sum((xi - xbar) * (yi - ybar)) / np.sum((xi - xbar) ** 2)
+b0s = ybar - b1s * xbar
+Ls = np.sum((yi - b0s - b1s * xi) ** 2)
+
+fig = plt.figure(figsize=(8.8, 3.8))
+ax1 = fig.add_subplot(1, 2, 1, projection="3d")
+ax1.plot_surface(B0, B1, L, cmap="viridis", alpha=0.85, linewidth=0, antialiased=True)
+ax1.scatter([b0s], [b1s], [Ls], color=GRAD, s=45, depthshade=False)
+ax1.set_xlabel(r"$\beta_0$"); ax1.set_ylabel(r"$\beta_1$"); ax1.set_zlabel("$L$")
+ax1.set_title("Loss surface (a bowl)"); ax1.view_init(elev=28, azim=-128)
+
+ax2 = fig.add_subplot(1, 2, 2)
+cs = ax2.contour(B0, B1, L, levels=18, cmap="viridis")
+ax2.scatter([b0s], [b1s], color=GRAD, s=55, zorder=5, label="minimum")
+ax2.set_xlabel(r"$\beta_0$"); ax2.set_ylabel(r"$\beta_1$")
+ax2.set_title("Elliptical contours"); ax2.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+```
+
+## Example 2 — a genuine saddle in a two-product profit model {#sec-ex-saddle}
+
+Saddles are not exotic; they are everywhere a quantity rises in one variable and falls in
+another. Take a stylized profit model for a firm setting the prices $p_1, p_2$ of two
+products that compete for the same customers (raising one product's price pushes some buyers
+to the other). A simple form capturing that interaction is
+$$
+\Pi(p_1, p_2) = -p_1^2 - p_2^2 + 4 p_1 p_2 + 2 p_1 + 2 p_2 .
+$$
+The own-price terms $-p_1^2, -p_2^2$ say profit eventually falls if you price either product
+too high alone; the cross term $+4 p_1 p_2$ says the two prices reinforce each other (a
+classic complementary/substitution interaction). Find the critical point and classify it.
+
+Gradient (set to zero):
+$$
+\frac{\partial \Pi}{\partial p_1} = -2 p_1 + 4 p_2 + 2 = 0, \qquad
+\frac{\partial \Pi}{\partial p_2} = -2 p_2 + 4 p_1 + 2 = 0 .
+$$
+Adding the two equations gives $2(p_1 + p_2) = 4$ after cancellation; subtracting gives $p_1
+= p_2$. The unique solution is $p_1 = p_2 = 1$. Now the Hessian:
+$$
+H = \begin{pmatrix} \partial^2\Pi/\partial p_1^2 & \partial^2\Pi/\partial p_1 \partial p_2 \\ \partial^2\Pi/\partial p_2 \partial p_1 & \partial^2\Pi/\partial p_2^2 \end{pmatrix}
+= \begin{pmatrix} -2 & 4 \\ 4 & -2 \end{pmatrix} .
+$$
+Apply @eq-2x2-test: $\det H = (-2)(-2) - 4^2 = 4 - 16 = -12 < 0$. Negative determinant means
+the eigenvalues have opposite signs — **a saddle**. We can confirm the eigenvalues directly:
+for $\big(\begin{smallmatrix} a & b \\ b & a \end{smallmatrix}\big)$ they are $a \pm b$, here
+$-2 \pm 4 = \{2, -6\}$, indeed one positive and one negative. So $(1,1)$ is *not* a profit
+maximum — there is a direction (the eigenvector for $\lambda = 2$, namely $(1,1)$: raise both
+prices together) along which profit keeps climbing. A manager who found this critical point
+and stopped would be sitting at a mountain pass, leaving money on the table. The Hessian is
+what flags that the flat spot is a trap, not a peak. @fig-saddle-profit draws it.
+
+```{python}
+#| label: fig-saddle-profit
+#| fig-cap: "The two-product profit surface and its critical point at $(1,1)$. The Hessian $\\big(\\begin{smallmatrix}-2 & 4\\\\ 4 & -2\\end{smallmatrix}\\big)$ has eigenvalues $\\{2, -6\\}$ — one positive, one negative — so the flat spot is a *saddle*, not a maximum. Profit falls along the $(1,-1)$ direction (price the products apart) but rises along $(1,1)$ (raise both together). The gradient alone, being zero here, would have wrongly suggested an optimum."
+g = np.linspace(-1.0, 3.0, 80)
+P1, P2 = np.meshgrid(g, g)
+Pi = -P1**2 - P2**2 + 4 * P1 * P2 + 2 * P1 + 2 * P2
+fig = plt.figure(figsize=(8.6, 3.8))
+ax1 = fig.add_subplot(1, 2, 1, projection="3d")
+ax1.plot_surface(P1, P2, Pi, cmap="coolwarm", alpha=0.85, linewidth=0, antialiased=True)
+ax1.scatter([1], [1], [-1 - 1 + 4 + 2 + 2], color="black", s=45, depthshade=False)
+ax1.set_xlabel("$p_1$"); ax1.set_ylabel("$p_2$"); ax1.set_zlabel(r"$\Pi$")
+ax1.set_title("Profit surface (a saddle)"); ax1.view_init(elev=26, azim=-52)
+
+ax2 = fig.add_subplot(1, 2, 2)
+ax2.contour(P1, P2, Pi, levels=20, cmap="coolwarm")
+ax2.scatter([1], [1], color="black", s=55, zorder=5, label="critical point $(1,1)$")
+ax2.annotate("", xy=(2.0, 2.0), xytext=(1, 1),
+             arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.4))
+ax2.annotate("", xy=(2.0, 0.0), xytext=(1, 1),
+             arrowprops=dict(arrowstyle="-|>", color=GRAD, lw=2.4))
+ax2.text(2.05, 2.05, r"$\uparrow$ profit  $(1,1)$", color=ACCENT, fontsize=9)
+ax2.text(2.05, -0.1, r"$\downarrow$ profit  $(1,-1)$", color=GRAD, fontsize=9)
+ax2.set_xlabel("$p_1$"); ax2.set_ylabel("$p_2$")
+ax2.set_title("Contours: up one way, down the other"); ax2.legend(loc="lower left", fontsize=8)
+plt.tight_layout()
+```
+
+## Example 3 — the edge of applicability: a flat direction the test cannot read {#sec-ex-edge}
+
+Now the honest edge case, where the Hessian goes silent. Consider the **monkey saddle**
+$$
+f(x, y) = x^3 - 3 x y^2 ,
+$$
+a surface beloved in textbooks because it has *three* descending valleys around the origin
+(room for two legs and a tail — hence "monkey"). Its gradient is $\nabla f = (3x^2 - 3y^2,\,
+-6xy)$, which vanishes at the origin, so $(0,0)$ is a critical point. The Hessian:
+$$
+H = \begin{pmatrix} 6x & -6y \\ -6y & -6x \end{pmatrix}
+\xrightarrow{\ (x,y)=(0,0)\ }
+\begin{pmatrix} 0 & 0 \\ 0 & 0 \end{pmatrix} .
+$$
+The Hessian at the origin is the **zero matrix** — every eigenvalue is zero, $\det H = 0$,
+and @thm-2nd-deriv case 4 declares the test **inconclusive**. And it genuinely is: the
+second-order Taylor model of this surface at the origin is just the flat plane $f \approx 0$,
+which says nothing, because all the structure lives in the *cubic* term $x^3 - 3xy^2$ that
+the Hessian cannot see. The origin is neither a min nor a max nor an ordinary saddle — it is
+a degenerate critical point whose character only the third-order term reveals.
+
+This is the boundary of the tool. **When the Hessian is singular at a critical point, the
+second-derivative test is the wrong instrument** and you must reach for something else:
+higher-order Taylor terms, a direct examination of $f$ along candidate directions, or — in
+practice — a global view of the function rather than a purely local one. @fig-monkey shows
+why the local quadratic is helpless here.
+
+```{python}
+#| label: fig-monkey
+#| fig-cap: "The monkey saddle $f = x^3 - 3xy^2$, the edge case where the Hessian fails. **Left:** the surface near the origin, with three descending and three ascending sectors. **Right:** its contours through the origin (black dot). The Hessian at the origin is the zero matrix, so the second-order model is a flat plane that captures *none* of this structure — the test is silent, and the cubic term it ignores is the whole story. A singular Hessian is the signal to stop trusting the second-derivative test."
+g = np.linspace(-1.3, 1.3, 90)
+X, Y = np.meshgrid(g, g)
+Z = X**3 - 3 * X * Y**2
+fig = plt.figure(figsize=(8.6, 3.8))
+ax1 = fig.add_subplot(1, 2, 1, projection="3d")
+ax1.plot_surface(X, Y, Z, cmap="terrain", alpha=0.9, linewidth=0, antialiased=True)
+ax1.scatter([0], [0], [0], color=GRAD, s=40, depthshade=False)
+ax1.set_xlabel("$x$"); ax1.set_ylabel("$y$"); ax1.set_zlabel("$f$")
+ax1.set_title("Monkey saddle (Hessian $=0$ at origin)"); ax1.view_init(elev=26, azim=-60)
+
+ax2 = fig.add_subplot(1, 2, 2)
+ax2.contour(X, Y, Z, levels=np.linspace(-3, 3, 25), cmap="terrain")
+ax2.scatter([0], [0], color="black", s=50, zorder=5)
+ax2.set_xlabel("$x$"); ax2.set_ylabel("$y$")
+ax2.set_title("Three valleys: invisible to a quadratic")
+ax2.set_aspect("equal")
+plt.tight_layout()
+```
+
+# Failure modes and applicability {#sec-failure}
+
+The second-derivative test is sharp where it applies and silent where it does not. Gather
+the boundaries.
+
+- **It is purely local.** Definiteness of $H$ at a critical point certifies a *local*
+  minimum, not a global one. A function can have many local minima, each with a
+  positive-definite Hessian, only one of which is the deepest. The Hessian never sees beyond
+  an infinitesimal neighborhood; for global guarantees you need a global property such as
+  **convexity** — and a function is convex exactly when its Hessian is positive-semidefinite
+  *everywhere*, not just at one point. (That global convexity story belongs to Optimization,
+  which builds on this article's pointwise curvature.)
+- **It needs a true critical point.** The classification in @thm-2nd-deriv assumed $\nabla
+  f(x_0) = 0$. Away from a critical point the linear term dominates and the Hessian's sign
+  tells you about curvature but not about being an extremum — you are on a slope, not at a
+  flat spot.
+- **Singular Hessians defeat it (case 4).** As in @sec-ex-edge, a zero eigenvalue makes the
+  second-order model flat in some direction and the test inconclusive. This is not rare in
+  machine learning: over-parameterized models routinely have flat directions (whole valleys
+  of equally good parameters), so their Hessians at a minimum are positive-*semidefinite*,
+  not definite, and the clean "unique minimum" picture softens into "a flat-bottomed basin."
+- **It assumes smoothness.** Everything rested on twice-continuous differentiability — needed
+  for the Hessian to exist and (via @thm-clairaut) to be symmetric. Losses with kinks (an
+  absolute-value or hinge term, the $\ell_1$ penalty, a ReLU) are *not* twice differentiable
+  at the kink, and the Hessian simply does not exist there; you reach for subgradient or
+  proximal methods instead.
+
+::: {.callout-tip title="You might be asked"}
+*"When would you actually compute a Hessian in practice, and when would you avoid it?"* The
+honest practitioner answer:
+
+- **Reach for it** when (a) you want to *certify* a critical point as a min/max/saddle —
+  there is no substitute for the curvature; (b) you are running a **second-order optimizer**
+  (Newton's method steps $-H^{-1}\nabla f$, using the Hessian to rescale the gradient by the
+  local curvature) on a modest number of parameters; or (c) you need the curvature *as the
+  answer* — in statistics the Hessian of the negative log-likelihood is the **observed Fisher
+  information**, and its inverse is the asymptotic covariance of your estimates (the
+  [INFR-B3]/[INFR-B4] connection: flatter log-likelihood = less information = wider error
+  bars).
+- **Avoid forming it** when $n$ is large: the Hessian is $n \times n$, so it costs $O(n^2)$
+  memory and computing it (let alone inverting it for Newton, $O(n^3)$) is hopeless for the
+  millions of parameters in a neural network. There you use first-order methods (gradient
+  descent), or **quasi-Newton** methods (BFGS, L-BFGS) that build a cheap *approximation* to
+  $H^{-1}$ from gradients alone, or **Hessian-vector products** $H v$ that never form the
+  matrix. Knowing that the Hessian is the right concept but the wrong thing to materialize is
+  exactly the judgment an interviewer is checking.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-23] (The Gradient as a Direction in Space)**, which gave you the
+gradient and the first-order condition $\nabla f = 0$ but could not classify the critical
+points it found. This article supplied the missing curvature: the **Hessian** $\nabla^2 f$,
+the **second-order Taylor expansion** that exhibits $\tfrac12\Delta x^\top H \Delta x$ as the
+curvature term, and the **second-derivative test** that reads min/max/saddle off the
+definiteness of $H$. The two ideas it leaned on hardest — **quadratic forms** ([GEOM-17])
+and **positive-definiteness** ([GEOM-18]) — are exactly the ones that made the test fall out
+rather than be invented. From here:
+
+- **[GEOM-25] — The Gradient and Hessian of a Quadratic Form.** We saw in @sec-ex-loss that
+  a least-squares loss has a *constant* Hessian. That is no accident: for the canonical
+  function $f(x) = \tfrac12 x^\top A x - b^\top x$, the gradient is $Ax - b$ and the Hessian
+  is exactly $A$, constant everywhere. GEOM-25 derives this and shows that minimizing the
+  quadratic *is* solving $Ax = b$ — fusing the Hessian (here), the inverse ([GEOM-11]), and
+  positive-definiteness ([GEOM-18]) into one result.
+- **[GEOM-26] — Condition Number and Numerical Stability.** The eigenvalues of the Hessian
+  are the curvatures along its eigendirections; their *ratio* $\lambda_{\max}/\lambda_{\min}$
+  — how much steeper the steepest direction is than the flattest — is the condition number,
+  which governs how slowly gradient descent crawls across an elongated bowl. The elliptical
+  contours of @fig-loss-bowl were the first sight of it.
+- **Beyond the track.** Optimization consumes this curvature in **Newton's method** (the
+  step $-H^{-1}\nabla f$) and in the convexity test (PD Hessian everywhere); Statistical
+  Inference builds the **Fisher information matrix** ([INFR-B3], [INFR-B4]) on the Hessian of
+  the log-likelihood. Both link back here rather than re-deriving the curvature.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The named theorem.** Equality of mixed partials is variously called **Clairaut's
+  theorem** or **Schwarz's theorem**; Alexis Clairaut used it in the 1740s and Hermann
+  Schwarz gave a rigorous statement of the continuity hypothesis. The standard
+  counterexample — a function whose mixed partials disagree at the origin because its second
+  partials are discontinuous there — is worth working through once to feel why the continuity
+  hypothesis of @thm-clairaut is load-bearing, not decorative.
+- **The eponym.** Ludwig Otto Hesse introduced the determinant of the matrix of second
+  partials (the "Hessian determinant") in his 1857 work on plane curves; the matrix itself
+  inherited his name. The connection to curvature of surfaces traces back through Gauss's
+  *Disquisitiones generales circa superficies curvas* (1827), the foundation of the
+  differential geometry of surfaces.
+- **Open threads deliberately deferred.** *What is the Hessian of the specific function
+  $\tfrac12 x^\top A x - b^\top x$, and why is it constant?* — [GEOM-25]. *How does the ratio
+  of the Hessian's eigenvalues control optimization speed?* — [GEOM-26]. *How does Newton's
+  method use $H^{-1}$, and what does it cost?* — the Optimization track. *Why is the Hessian
+  of the negative log-likelihood the information in a sample?* — [INFR-B3] and [INFR-B4].

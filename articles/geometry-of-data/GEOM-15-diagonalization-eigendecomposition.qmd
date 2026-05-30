@@ -1,0 +1,1132 @@
+---
+title: "Diagonalization and the Eigendecomposition"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / input directions
+HILITE = "#c1121f"   # first eigen-direction / highlights
+ACCENT = "#0a7d4d"   # second eigen-direction
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the second article of **Movement IV —
+> Eigenstructure and the Spectral Picture**, and it pays off the promise made at the end of
+> [GEOM-14]. It assumes you have met the definition $A\mathbf v = \lambda\mathbf v$, can
+> find eigenvalues as roots of $\det(A-\lambda I)=0$, can read eigenvectors off the null
+> space of $A-\lambda I$, and understand the difference between *algebraic* and *geometric*
+> multiplicity and what makes a matrix **defective** ([GEOM-14]). It also leans on the
+> inverse and what makes a matrix invertible ([GEOM-11]), the four-subspaces / independence
+> picture ([GEOM-12], [GEOM-03]), and the reading of a matrix as a map whose columns say
+> where the axes land ([GEOM-08], [GEOM-09]). Here we ask: *when can a matrix be rewritten as
+> "change to the eigenbasis, scale, change back," and what does that buy us?* It sets up
+> [GEOM-16] (the symmetric case, where the change-of-basis matrix becomes a clean rotation),
+> and motivates [GEOM-20] (the SVD — the decomposition that exists for **every** matrix,
+> precisely because diagonalization sometimes fails).
+
+## Abstract {.unnumbered}
+
+[GEOM-14] found the eigenvectors — the directions a matrix only stretches. This article
+*assembles* them. If an $n\times n$ matrix $A$ has $n$ independent eigenvectors, we stack
+them as the columns of a matrix $V$ and put the eigenvalues on the diagonal of a matrix
+$\Lambda$, and a single line of algebra delivers the **eigendecomposition**
+$$
+A = V\Lambda V^{-1}.
+$$
+We derive this from $A\mathbf v_i = \lambda_i\mathbf v_i$ with nothing hidden, then read
+it as a sentence: $V^{-1}$ rewrites a vector in eigen-coordinates, $\Lambda$ scales each
+coordinate independently, and $V$ translates the result back. From that one factorization
+the matrix's hardest questions become trivial — most dramatically $A^k = V\Lambda^k
+V^{-1}$, which collapses a hundred matrix products into a hundred scalar powers and lays
+bare the long-run behavior of any repeated linear process (Markov chains, power iteration,
+PageRank). The single claim the article defends is that **diagonalization is a change of
+viewpoint, not a computation**: in the eigenbasis the matrix is simply $\Lambda$, and
+every fact about $A$ is a fact about $\Lambda$ read in a tilted coordinate system. We are
+equally honest about the boundary: a **defective** matrix has too few eigenvectors, $V^{-1}$
+does not exist, and the decomposition fails — which is exactly why the next movements reach
+for the spectral theorem ([GEOM-16]) and the always-available SVD ([GEOM-20]).
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+If a matrix $A$ has a full set of $n$ independent eigenvectors, put them in the columns of
+$V$ and their eigenvalues on the diagonal of $\Lambda$. Then
+$$
+A = V\Lambda V^{-1},
+$$
+which says: to apply $A$, **change to the eigenbasis ($V^{-1}$), scale each axis by its
+eigenvalue ($\Lambda$), and change back ($V$).** In that coordinate system the matrix is
+diagonal — the simplest object in linear algebra. Powers cost nothing,
+$A^k = V\Lambda^k V^{-1}$, because raising a diagonal matrix to a power just raises each
+diagonal entry. The decomposition exists exactly when the eigenvectors span the space; when
+they do not (a *defective* matrix), it does not exist at all.
+:::
+
+Everything below orbits that box. The formula $A = V\Lambda V^{-1}$ will fall out of one
+substitution, but the payoff is conceptual: a generic matrix tangles its coordinates
+together, and $V$ is the change of viewpoint that un-tangles them. We earn the formula in
+@sec-formal, see *why* powers become trivial in @sec-powers, run it on honest data and one
+matrix where it breaks in @sec-examples, and mark the boundary it cannot cross in
+@sec-defective.
+
+# Why we are doing this: the problem that forces the question {#sec-why}
+
+Keep one question in view for the whole article: **once we know a matrix's eigenvectors,
+how do we use them as a coordinate system — and what does that simplify?** Every algebraic
+move below answers some piece of that.
+
+## What we have, and the gap it leaves
+
+[GEOM-14] handed us, for a well-behaved matrix, a complete set of special directions:
+vectors $\mathbf v_1,\dots,\mathbf v_n$ with $A\mathbf v_i = \lambda_i\mathbf v_i$. Along
+each one the matrix does nothing but multiply by a number. That is a powerful *local* fact
+— but it describes $A$ one direction at a time. We do not yet have a single object that
+says "*this* is what $A$ does, globally, in the language of its own axes." We have the
+pieces of a coordinate system but have not built it.
+
+The gap is most painful exactly where [GEOM-14] left us: the repeated-application problem.
+Recall the setup of that article's @fig-power — a process that applies the same linear step
+over and over, so the state after $k$ steps is $A^k\mathbf x_0$. We argued, informally, that
+the dominant eigenvector wins in the long run. But we did it by *iterating numerically* and
+watching. We never wrote down $A^k$ in closed form, and we could not, because $A^k$ by
+direct multiplication is a churn of entries with no visible structure. Eigenvectors promised
+to make $A^k\mathbf v_i = \lambda_i^k\mathbf v_i$ trivial *along each eigen-direction* — but
+a starting vector is not an eigenvector, it is a mix of them. We need the bookkeeping that
+turns "trivial along each axis" into "trivial for every vector."
+
+## The idea that closes the gap
+
+Here is the move, in plain words before any symbols. Suppose the eigenvectors form a basis
+— suppose *any* vector $\mathbf x$ can be written as a combination of them,
+$$
+\mathbf x = c_1\mathbf v_1 + c_2\mathbf v_2 + \cdots + c_n\mathbf v_n .
+$$
+Then applying $A$ is easy, because $A$ is linear and each piece is an eigenvector:
+$$
+A\mathbf x = c_1 A\mathbf v_1 + \cdots + c_n A\mathbf v_n
+= c_1\lambda_1\mathbf v_1 + \cdots + c_n\lambda_n\mathbf v_n .
+$$
+The recipe is: *decompose $\mathbf x$ into eigen-pieces, multiply each piece's coefficient
+by its eigenvalue, reassemble.* Applying $A$ a hundred times multiplies each coefficient by
+$\lambda_i^{100}$ — and that is all. The confusing global map has become $n$ independent
+one-dimensional stretches, run in parallel.
+
+The eigendecomposition $A = V\Lambda V^{-1}$ is nothing more than this three-step recipe
+written as matrices. $V^{-1}$ does the "decompose into eigen-pieces" step (it computes the
+coordinates $c_i$); $\Lambda$ does the "multiply each by its eigenvalue" step; $V$ does the
+"reassemble" step. The entire article is: make that precise, prove it, and harvest the
+consequences.
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what does diagonalization give you that you didn't already have from the
+eigenvectors?"* A single closed-form object, $A = V\Lambda V^{-1}$, that turns *every*
+vector's fate under $A$ (not just the eigenvectors') into independent scalings — which is
+what makes powers, inverses, exponentials, and long-run behavior computable by hand. The
+eigenvectors are the ingredients; diagonalization is the assembled machine.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+The cleanest way to feel diagonalization is to watch the *same map* in two coordinate
+systems. Take a matrix that is not diagonal — it shears and stretches — and apply it to a
+square grid. In the standard axes the action looks like a confusing tilt. But draw the grid
+*along the eigenvectors* instead, and the same map becomes a pure stretch: each
+eigen-gridline simply gets longer or shorter, none of them tilt. @fig-two-views shows both
+pictures of one matrix.
+
+```{python}
+#| label: fig-two-views
+#| fig-cap: "One matrix, two coordinate systems. **Left:** the standard grid (grey) and its image under $A=\\bigl[\\begin{smallmatrix}2&1\\\\1&2\\end{smallmatrix}\\bigr]$ (blue). The image is sheared — the grid lines tilt, and it is hard to say what the map 'is.' **Right:** the *same* map drawn on the eigenbasis grid (the red and green eigenvector directions). Now the image grid is just the eigen-grid stretched — red lines scaled by $\\lambda=1$ (unchanged), green lines by $\\lambda=3$ (tripled) — with no tilting at all. Diagonalization is choosing the right grid."
+A = np.array([[2.0, 1.0], [1.0, 2.0]])
+# eigenvectors: lambda=1 -> [-1,1]/sqrt2 ; lambda=3 -> [1,1]/sqrt2
+v1 = np.array([-1.0, 1.0]) / np.sqrt(2)
+v2 = np.array([1.0, 1.0]) / np.sqrt(2)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.6))
+
+# --- standard grid ---
+ts = np.linspace(-2, 2, 9)
+for t in ts:
+    # vertical and horizontal standard lines
+    line_v = np.stack([np.full_like(ts, t), ts]); img_v = A @ line_v
+    line_h = np.stack([ts, np.full_like(ts, t)]); img_h = A @ line_h
+    axL.plot(line_v[0], line_v[1], color=GREY, lw=0.8, alpha=0.6)
+    axL.plot(line_h[0], line_h[1], color=GREY, lw=0.8, alpha=0.6)
+    axL.plot(img_v[0], img_v[1], color=PALE, lw=1.4)
+    axL.plot(img_h[0], img_h[1], color=PALE, lw=1.4)
+axL.set_title("Standard grid: the map looks like a shear")
+axL.set_aspect("equal"); axL.set_xlim(-6, 6); axL.set_ylim(-6, 6)
+
+# --- eigenbasis grid ---
+for t in ts:
+    # lines along v1 (varying v2-amount = t) and along v2
+    base1 = np.stack([t * v2 + s * v1 for s in ts]).T   # lines parallel to v1
+    base2 = np.stack([t * v1 + s * v2 for s in ts]).T   # lines parallel to v2
+    img1 = A @ base1; img2 = A @ base2
+    axR.plot(base1[0], base1[1], color=GREY, lw=0.8, alpha=0.6)
+    axR.plot(base2[0], base2[1], color=GREY, lw=0.8, alpha=0.6)
+    axR.plot(img1[0], img1[1], color=PALE, lw=1.4)
+    axR.plot(img2[0], img2[1], color=PALE, lw=1.4)
+draw_vec(axR, (0, 0), 2.2 * v1, color=HILITE, lw=2.6, z=8)
+draw_vec(axR, (0, 0), 2.2 * v2, color=ACCENT, lw=2.6, z=8)
+axR.set_title("Eigen-grid: the same map is a pure stretch")
+axR.set_aspect("equal"); axR.set_xlim(-6, 6); axR.set_ylim(-6, 6)
+plt.tight_layout()
+```
+
+The slogan to carry is: **a matrix is only complicated because we are looking at it in the
+wrong coordinate system.** Its eigenvectors *are* the right coordinate system, the one in
+which it is diagonal. Diagonalization is the formal statement that this change of viewpoint
+is always available — when there are enough eigenvectors to build a coordinate system at
+all. That last clause is the whole catch, and we will not lose sight of it.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the matrix actually different in the eigenbasis, or does it just look different?"* It
+is the *same* linear map — the same physical action on vectors. What changes is the **matrix
+of numbers** we use to describe it, because a matrix is a map *expressed in a chosen basis*.
+In the standard basis the map's matrix is $A$; in the eigenbasis its matrix is the diagonal
+$\Lambda$. $A = V\Lambda V^{-1}$ is precisely the dictionary translating between the two
+descriptions of one map. This "same map, different matrix" relationship has a name —
+*similarity* — and we make it precise in @sec-similarity.
+:::
+
+# The formal development {#sec-formal}
+
+## Stacking the eigen-equations into one matrix equation {#sec-stack}
+
+We have, for each $i=1,\dots,n$, a separate equation
+$$
+A\mathbf v_i = \lambda_i\mathbf v_i .
+$$ {#eq-each}
+The goal is to write all $n$ of these as a *single* matrix equation. The trick is to make
+the eigenvectors the columns of one matrix and watch what $A$ times that matrix does.
+
+Define the $n\times n$ matrix $V$ whose columns are the eigenvectors, and the $n\times n$
+**diagonal** matrix $\Lambda$ whose diagonal entries are the corresponding eigenvalues:
+$$
+V = \begin{bmatrix} | & | & & | \\ \mathbf v_1 & \mathbf v_2 & \cdots & \mathbf v_n \\
+| & | & & | \end{bmatrix},
+\qquad
+\Lambda = \begin{bmatrix} \lambda_1 & & & \\ & \lambda_2 & & \\ & & \ddots & \\
+& & & \lambda_n \end{bmatrix}.
+$$ {#eq-V-Lambda}
+(The blank entries of $\Lambda$ are zeros. The order is a *choice*: the $i$-th column of $V$
+must be the eigenvector for the $i$-th diagonal entry of $\Lambda$ — pair them consistently
+and the ordering is otherwise free.)
+
+Now compute $AV$. From [GEOM-09], multiplying a matrix $A$ by a matrix $V$ acts **column by
+column**: the $i$-th column of the product $AV$ is $A$ times the $i$-th column of $V$. The
+$i$-th column of $V$ is $\mathbf v_i$, so the $i$-th column of $AV$ is $A\mathbf v_i$, which
+by @eq-each is $\lambda_i\mathbf v_i$:
+$$
+AV = \begin{bmatrix} | & & | \\ A\mathbf v_1 & \cdots & A\mathbf v_n \\ | & & | \end{bmatrix}
+= \begin{bmatrix} | & & | \\ \lambda_1\mathbf v_1 & \cdots & \lambda_n\mathbf v_n \\
+| & & | \end{bmatrix}.
+$$ {#eq-AV}
+
+Next compute $V\Lambda$ and check it gives the *same* thing. Multiplying $V$ on the right by
+the diagonal $\Lambda$ scales each column of $V$ by the corresponding diagonal entry — and
+this is worth verifying rather than asserting, since it is the linchpin. The $i$-th column
+of the product $V\Lambda$ is $V$ times the $i$-th column of $\Lambda$. The $i$-th column of
+$\Lambda$ is $\lambda_i\mathbf e_i$ (zeros except $\lambda_i$ in position $i$, because
+$\Lambda$ is diagonal). And $V$ times $\lambda_i\mathbf e_i$ is $\lambda_i$ times ($V$ times
+$\mathbf e_i$), which is $\lambda_i$ times the $i$-th column of $V$, namely
+$\lambda_i\mathbf v_i$. So
+$$
+V\Lambda = \begin{bmatrix} | & & | \\ \lambda_1\mathbf v_1 & \cdots & \lambda_n\mathbf v_n \\
+| & & | \end{bmatrix}.
+$$ {#eq-VLambda}
+
+The right-hand sides of @eq-AV and @eq-VLambda are identical, column for column. Therefore
+$$
+AV = V\Lambda .
+$$ {#eq-AV-VL}
+
+This identity is already useful, and it required *no* assumption beyond having the
+eigenpairs — it holds whether or not $V$ is invertible. The next step is where the
+"enough eigenvectors" condition enters.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is it $V\Lambda$ and not $\Lambda V$ — does the side matter?"* It matters completely.
+Multiplying a matrix by a diagonal matrix on the **right** scales its **columns** (what we
+just used); on the **left** it would scale its **rows**. We need to scale the columns of $V$
+(each eigenvector by its eigenvalue), so $\Lambda$ must sit on the right. Writing
+$\Lambda V$ would scale the rows of $V$, which is not what the eigen-equations say, and the
+identity $AV = \Lambda V$ is simply false in general. This is a classic interview trap —
+diagonal-on-the-right scales columns, diagonal-on-the-left scales rows.
+:::
+
+## The decomposition, and the condition it needs {#sec-decomp}
+
+To turn @eq-AV-VL into a formula for $A$ alone, we want to peel $V$ off the left. We can do
+that *if and only if* $V$ has an inverse. Multiply @eq-AV-VL on the right by $V^{-1}$
+(assuming for the moment it exists):
+$$
+AVV^{-1} = V\Lambda V^{-1}
+\;\Longrightarrow\;
+A I = V\Lambda V^{-1}
+\;\Longrightarrow\;
+A = V\Lambda V^{-1},
+$$
+using $VV^{-1} = I$ ([GEOM-11]) and $AI = A$. So everything hinges on one question: **is
+$V$ invertible?** From [GEOM-11]–[GEOM-12], a square matrix is invertible exactly when its
+columns are linearly independent. The columns of $V$ are the eigenvectors. So:
+$$
+V \text{ is invertible} \iff \text{the } n \text{ eigenvectors are linearly independent}
+\iff \text{they form a basis of } \mathbb R^n .
+$$
+This is precisely the "enough eigenvectors" condition we have been circling. It deserves a
+name and a formal statement.
+
+::: {#def-diagonalizable}
+**Definition (diagonalizable).** An $n\times n$ matrix $A$ is **diagonalizable** if there
+exists an invertible matrix $V$ and a diagonal matrix $\Lambda$ such that
+$A = V\Lambda V^{-1}$. Equivalently (as we are about to prove), $A$ is diagonalizable iff it
+has $n$ linearly independent eigenvectors.
+:::
+
+::: {#thm-eigendecomp}
+**Theorem (the eigendecomposition).** An $n\times n$ matrix $A$ is diagonalizable if and
+only if it has $n$ linearly independent eigenvectors $\mathbf v_1,\dots,\mathbf v_n$. In
+that case, with $V = [\,\mathbf v_1\;\cdots\;\mathbf v_n\,]$ and $\Lambda =
+\operatorname{diag}(\lambda_1,\dots,\lambda_n)$,
+$$
+A = V\Lambda V^{-1},
+\qquad\text{equivalently}\qquad
+\Lambda = V^{-1}A V .
+$$ {#eq-eigendecomp}
+:::
+
+::: {.proof}
+We prove both directions, every step shown.
+
+**($\Leftarrow$) Enough eigenvectors imply the decomposition.** Suppose $A$ has $n$
+independent eigenvectors $\mathbf v_1,\dots,\mathbf v_n$ with eigenvalues
+$\lambda_1,\dots,\lambda_n$. Build $V$ and $\Lambda$ as in @eq-V-Lambda. The derivation of
+@sec-stack gives $AV = V\Lambda$ with no extra hypothesis. Because the columns of $V$ are
+independent, $V$ is invertible ([GEOM-12]: a square matrix with independent columns has
+trivial null space, hence is invertible by the equivalences of [GEOM-11]). Right-multiply
+$AV = V\Lambda$ by $V^{-1}$:
+$$
+AV V^{-1} = V\Lambda V^{-1} \;\Longrightarrow\; A = V\Lambda V^{-1}.
+$$
+The equivalent form $\Lambda = V^{-1}AV$ comes from left-multiplying by $V^{-1}$ and
+right-multiplying by $V$: $V^{-1}A V = V^{-1}(V\Lambda V^{-1})V = (V^{-1}V)\Lambda(V^{-1}V)
+= \Lambda$.
+
+**($\Rightarrow$) The decomposition implies enough eigenvectors.** Suppose conversely that
+$A = V\Lambda V^{-1}$ for some invertible $V$ and diagonal $\Lambda =
+\operatorname{diag}(\lambda_1,\dots,\lambda_n)$. Right-multiply by $V$:
+$$
+AV = V\Lambda V^{-1}V = V\Lambda .
+$$
+This is @eq-AV-VL read backwards. Comparing columns (the column-by-column rule of
+[GEOM-09], exactly as in @sec-stack), the $i$-th column gives $A\mathbf v_i =
+\lambda_i\mathbf v_i$, where $\mathbf v_i$ is the $i$-th column of $V$. So each column of $V$
+is an eigenvector of $A$ with eigenvalue $\lambda_i$. And because $V$ is invertible its
+columns are independent ([GEOM-12]), so these are $n$ independent eigenvectors. $\qquad
+\blacksquare$
+:::
+
+The two readings in @eq-eigendecomp are the two halves of the Core's sentence:
+
+- $A = V\Lambda V^{-1}$ reads **right to left** as *do $A$*: take a vector, apply $V^{-1}$
+  (express it in eigen-coordinates), apply $\Lambda$ (scale each coordinate), apply $V$
+  (translate back to standard coordinates).
+- $\Lambda = V^{-1}AV$ reads as *what $A$ becomes in the eigenbasis*: sandwich $A$ between
+  the change-of-basis matrices and it turns into the diagonal $\Lambda$.
+
+## Reading the formula as three moves {#sec-three-moves}
+
+Let us make the "decompose, scale, reassemble" reading airtight, because it is the
+conceptual heart and it is easy to wave at. Apply $A = V\Lambda V^{-1}$ to a vector
+$\mathbf x$ and track it through, right to left:
+$$
+A\mathbf x = V\,\Lambda\,V^{-1}\mathbf x
+= V\Bigl(\Lambda\bigl(\underbrace{V^{-1}\mathbf x}_{\text{step 1}}\bigr)\Bigr).
+$$
+
+**Step 1 — $V^{-1}\mathbf x$ finds the eigen-coordinates.** Write $\mathbf c = V^{-1}
+\mathbf x$. Multiply both sides by $V$: $V\mathbf c = \mathbf x$, i.e.
+$$
+\mathbf x = V\mathbf c = c_1\mathbf v_1 + c_2\mathbf v_2 + \cdots + c_n\mathbf v_n ,
+$$
+because $V\mathbf c$ is a linear combination of $V$'s columns with weights $c_i$ ([GEOM-08]).
+So $\mathbf c = V^{-1}\mathbf x$ is exactly the list of coefficients that expresses
+$\mathbf x$ in the eigenbasis. *That* is what $V^{-1}$ computes — the decomposition we
+hand-wrote in @sec-why.
+
+**Step 2 — $\Lambda\mathbf c$ scales each coordinate.** Since $\Lambda$ is diagonal,
+$$
+\Lambda\mathbf c = \begin{bmatrix} \lambda_1 c_1 \\ \lambda_2 c_2 \\ \vdots \\
+\lambda_n c_n \end{bmatrix}.
+$$
+Each eigen-coordinate is multiplied by its own eigenvalue, with no mixing between
+coordinates. This is the one-dimensional-stretch-per-axis behavior, made literal.
+
+**Step 3 — $V(\Lambda\mathbf c)$ reassembles.** Multiplying by $V$ turns the scaled
+coordinates back into a combination of eigenvectors:
+$$
+V(\Lambda\mathbf c) = \lambda_1 c_1\mathbf v_1 + \cdots + \lambda_n c_n\mathbf v_n
+= A\mathbf x ,
+$$
+matching exactly the hand computation of @sec-why ($A\mathbf x = \sum_i c_i\lambda_i
+\mathbf v_i$). The matrix formula and the by-hand recipe are the same thing. @fig-three-moves
+draws the round trip.
+
+```{python}
+#| label: fig-three-moves
+#| fig-cap: "The three moves of $A = V\\Lambda V^{-1}$ on a single input $\\mathbf x$ (black), for $A=\\bigl[\\begin{smallmatrix}2&1\\\\1&2\\end{smallmatrix}\\bigr]$. **Left:** $\\mathbf x$ resolved into its eigen-components $c_1\\mathbf v_1$ (red) and $c_2\\mathbf v_2$ (green) — this is what $V^{-1}$ reads off. **Middle:** each component scaled by its eigenvalue ($\\lambda_1=1$ leaves red alone, $\\lambda_2=3$ triples green) — this is $\\Lambda$. **Right:** the scaled components summed back to $A\\mathbf x$ (blue) — this is $V$. The map never mixes the two eigen-axes; it only stretches along each."
+A = np.array([[2.0, 1.0], [1.0, 2.0]])
+v1 = np.array([-1.0, 1.0]) / np.sqrt(2)   # lambda 1
+v2 = np.array([1.0, 1.0]) / np.sqrt(2)    # lambda 3
+lam = np.array([1.0, 3.0])
+V = np.column_stack([v1, v2])
+x = np.array([1.4, 0.6])
+c = np.linalg.solve(V, x)                 # eigen-coordinates
+
+comp1, comp2 = c[0] * v1, c[1] * v2
+scomp1, scomp2 = lam[0] * comp1, lam[1] * comp2
+Ax = A @ x
+
+fig, axes = plt.subplots(1, 3, figsize=(10.2, 3.7))
+for ax in axes:
+    ax.set_aspect("equal"); ax.set_xlim(-1.0, 3.4); ax.set_ylim(-1.6, 3.0)
+    ax.axhline(0, color="k", lw=0.5); ax.axvline(0, color="k", lw=0.5)
+
+draw_vec(axes[0], (0, 0), x, color="k", lw=2.6)
+draw_vec(axes[0], (0, 0), comp1, color=HILITE, lw=2.2)
+draw_vec(axes[0], comp1, comp1 + comp2, color=ACCENT, lw=2.2)
+axes[0].set_title("1. resolve  ($V^{-1}$)")
+
+draw_vec(axes[1], (0, 0), scomp1, color=HILITE, lw=2.2)
+draw_vec(axes[1], scomp1, scomp1 + scomp2, color=ACCENT, lw=2.2)
+axes[1].set_title(r"2. scale  ($\Lambda$)")
+
+draw_vec(axes[2], (0, 0), scomp1, color=HILITE, lw=1.4, ls=":")
+draw_vec(axes[2], scomp1, scomp1 + scomp2, color=ACCENT, lw=1.4, ls=":")
+draw_vec(axes[2], (0, 0), Ax, color=VEC, lw=2.8)
+axes[2].set_title("3. reassemble  ($V$) $= A\\mathbf{x}$")
+plt.tight_layout()
+print(f"x in eigen-coords c = {c.round(3)}")
+print(f"V Lambda V^-1 x = {(V @ np.diag(lam) @ np.linalg.inv(V) @ x).round(3)}")
+print(f"A x            = {Ax.round(3)}   (match confirms the decomposition)")
+```
+
+## Similarity: same map, different clothes {#sec-similarity}
+
+We promised in @sec-intuition to make "same map, different matrix" precise. The relationship
+in @eq-eigendecomp is an instance of a general one.
+
+::: {#def-similar}
+**Definition (similar matrices).** Two $n\times n$ matrices $A$ and $B$ are **similar** if
+there is an invertible matrix $P$ with $B = P^{-1}AP$. Similar matrices represent the *same
+linear map* written in two different bases; $P$ is the change-of-basis matrix between them.
+:::
+
+With $P = V$, the eigendecomposition $\Lambda = V^{-1}AV$ says exactly that **$A$ is similar
+to the diagonal matrix $\Lambda$** — and a matrix is diagonalizable precisely when it is
+similar to a diagonal matrix, which is where the word comes from. Similarity preserves the
+quantities that describe the *map* rather than the chosen coordinates, and this is why the
+eigendecomposition is so informative.
+
+::: {#lem-similarity-invariants}
+**Lemma (similar matrices share eigenvalues, trace, and determinant).** If $B = P^{-1}AP$,
+then $A$ and $B$ have the same characteristic polynomial, hence the same eigenvalues; and
+$\operatorname{tr}B = \operatorname{tr}A$, $\det B = \det A$.
+:::
+
+::: {.proof}
+For the characteristic polynomial, compute $\det(B - \lambda I)$ and use the multiplicative
+property $\det(XY)=\det X\det Y$ from [GEOM-13]. First rewrite $B-\lambda I$ with the same
+sandwich, using $\lambda I = P^{-1}(\lambda I)P$ (the identity commutes with everything, and
+$P^{-1}IP = I$):
+$$
+B - \lambda I = P^{-1}AP - P^{-1}(\lambda I)P = P^{-1}(A - \lambda I)P .
+$$
+Take determinants and split the product:
+$$
+\det(B-\lambda I) = \det(P^{-1})\,\det(A-\lambda I)\,\det(P).
+$$
+Now $\det(P^{-1})\det(P) = \det(P^{-1}P) = \det(I) = 1$ (again $\det(XY)=\det X\det Y$,
+[GEOM-13]), so the two outer factors cancel:
+$$
+\det(B-\lambda I) = \det(A-\lambda I) .
+$$
+Identical characteristic polynomials means identical roots, i.e. identical eigenvalues. The
+trace and determinant statements then follow from [GEOM-14]'s @thm-trace-det (which we
+re-use as an imported result): the trace is the sum of the eigenvalues and the determinant
+is their product, and both lists of eigenvalues are the same. (The determinant equality also
+follows directly: setting $\lambda=0$ in the displayed identity gives $\det B = \det A$.)
+$\qquad\blacksquare$
+:::
+
+This lemma is the rigorous content of "the eigenbasis description $\Lambda$ knows everything
+about $A$ that does not depend on coordinates." In particular, reading the trace and
+determinant straight off $\Lambda$ recovers $\operatorname{tr}A = \sum_i\lambda_i$ and
+$\det A = \prod_i\lambda_i$ instantly, since for a diagonal matrix the trace is the sum of
+the diagonal and the determinant is the product of the diagonal.
+
+::: {.callout-tip title="You might be asked"}
+*"Do similar matrices have the same eigenvectors?"* No — and this is the subtlety the lemma
+does **not** claim. They have the same eigen*values*, but their eigen*vectors* are related by
+the change of basis: if $A\mathbf v = \lambda\mathbf v$ and $B = P^{-1}AP$, then
+$B(P^{-1}\mathbf v) = P^{-1}A P P^{-1}\mathbf v = P^{-1}A\mathbf v = \lambda(P^{-1}\mathbf v)$,
+so $P^{-1}\mathbf v$ is the matching eigenvector of $B$. The eigenvalue is a property of the
+map; the eigenvector's *coordinates* depend on the basis you write them in. $\Lambda$'s own
+eigenvectors are the standard basis vectors $\mathbf e_i$, which is the whole point — in the
+eigenbasis, the eigenvectors are the axes.
+:::
+
+# Why powers (and inverses, and functions) become trivial {#sec-powers}
+
+This section is the payoff the motivation promised: with $A = V\Lambda V^{-1}$ in hand, the
+operations that are expensive or opaque for a generic matrix become one-liners.
+
+## Powers {#sec-powers-proper}
+
+::: {#thm-powers}
+**Theorem (powers of a diagonalizable matrix).** If $A = V\Lambda V^{-1}$, then for every
+integer $k\ge 1$,
+$$
+A^k = V\Lambda^k V^{-1},
+$$ {#eq-powers}
+where $\Lambda^k = \operatorname{diag}(\lambda_1^k,\dots,\lambda_n^k)$ — each diagonal entry
+raised to the $k$.
+:::
+
+::: {.proof}
+The key cancellation: in any product $AA\cdots A$, adjacent factors of $V^{-1}$ and $V$ meet
+and annihilate. Watch it for $k=2$, then see the pattern:
+$$
+A^2 = (V\Lambda V^{-1})(V\Lambda V^{-1})
+= V\Lambda \underbrace{(V^{-1}V)}_{=\,I}\Lambda V^{-1}
+= V\Lambda\,I\,\Lambda V^{-1}
+= V\Lambda^2 V^{-1},
+$$
+using associativity of matrix multiplication ([GEOM-09]) to regroup, $V^{-1}V = I$
+([GEOM-11]), and $\Lambda I\Lambda = \Lambda^2$. The same interior cancellation happens
+$k-1$ times for the $k$-fold product. Formally, by induction: the base case $k=1$ is the
+decomposition itself; assuming $A^{k-1} = V\Lambda^{k-1}V^{-1}$,
+$$
+A^k = A^{k-1}A = (V\Lambda^{k-1}V^{-1})(V\Lambda V^{-1})
+= V\Lambda^{k-1}\underbrace{(V^{-1}V)}_{=\,I}\Lambda V^{-1}
+= V\Lambda^{k}V^{-1}.
+$$
+Finally, a diagonal matrix raised to a power is the entrywise power of its diagonal: since
+$\Lambda$ has no off-diagonal entries to mix, multiplying $\Lambda$ by itself multiplies
+each diagonal entry by itself, so $\Lambda^k = \operatorname{diag}(\lambda_1^k,\dots,
+\lambda_n^k)$. $\qquad\blacksquare$
+:::
+
+This is the structural reason eigenvectors make repeated processes transparent. Computing
+$A^{100}$ directly is ninety-nine matrix multiplications; via @eq-powers it is one
+diagonalization plus raising $n$ scalars to the hundredth power plus two matrix products. And
+beyond the *cost*, it makes the long run *legible*: $\Lambda^k$ is dominated by the largest
+$|\lambda_i|^k$, which is exactly why the dominant eigenvector won in [GEOM-14]'s @fig-power.
+We make that explicit on real numbers in @sec-ex-fib and @sec-ex-markov.
+
+## The inverse {#sec-power-inverse}
+
+The same cancellation runs backward. If every $\lambda_i\neq 0$ (equivalently $A$ is
+invertible, since $\det A = \prod_i\lambda_i\neq 0$ by @lem-similarity-invariants), then
+$$
+A^{-1} = V\Lambda^{-1}V^{-1},
+\qquad \Lambda^{-1} = \operatorname{diag}\!\Bigl(\tfrac1{\lambda_1},\dots,\tfrac1{\lambda_n}\Bigr).
+$$
+To verify, multiply by $A$ and watch everything collapse:
+$$
+(V\Lambda^{-1}V^{-1})(V\Lambda V^{-1})
+= V\Lambda^{-1}(V^{-1}V)\Lambda V^{-1}
+= V\Lambda^{-1}\Lambda V^{-1}
+= V I V^{-1} = I .
+$$
+The inverse of a diagonal matrix is the reciprocal of each diagonal entry (since
+$\operatorname{diag}(d_i)\operatorname{diag}(1/d_i) = \operatorname{diag}(1) = I$), which is
+why $\Lambda^{-1}$ takes that form. Inverting reduces to inverting scalars — and it instantly
+shows why a *zero* eigenvalue makes $A$ singular: one diagonal entry has no reciprocal, the
+direction it governs was crushed to nothing, and nothing can un-crush it. Formula @eq-powers
+even extends to negative integers $k$ with this $\Lambda^{-1}$.
+
+## Polynomials and functions of a matrix {#sec-matrix-functions}
+
+Once powers are free, so is any *polynomial* in $A$. For $p(A) = a_0 I + a_1 A + a_2 A^2 +
+\cdots + a_m A^m$, substitute @eq-powers term by term and factor out the common $V$ and
+$V^{-1}$ (using $I = VIV^{-1}$ for the constant term):
+$$
+p(A) = V\bigl(a_0 I + a_1\Lambda + \cdots + a_m\Lambda^m\bigr)V^{-1}
+= V\,p(\Lambda)\,V^{-1},
+$$
+and $p(\Lambda) = \operatorname{diag}\bigl(p(\lambda_1),\dots,p(\lambda_n)\bigr)$ because a
+polynomial of a diagonal matrix applies the polynomial entrywise. The eigenvalues of $p(A)$
+are just $p(\lambda_i)$ — the function evaluated at each eigenvalue. This is the gateway to
+the **matrix exponential** $e^{A} = \sum_{k\ge 0}A^k/k! = V e^{\Lambda}V^{-1}$ with
+$e^{\Lambda} = \operatorname{diag}(e^{\lambda_i})$, the object that solves systems of linear
+differential equations $\dot{\mathbf x} = A\mathbf x$ — but those live in their consuming
+tracks; here we register only that *every* function of a diagonalizable matrix is the
+function applied to its eigenvalues, sandwiched by $V$ and $V^{-1}$.
+
+::: {.callout-tip title="You might be asked"}
+*"What are the eigenvalues of $A^2$? Of $A^{-1}$? Of $A + cI$?"* You should answer instantly
+from the decomposition. $A^2 = V\Lambda^2 V^{-1}$ has eigenvalues $\lambda_i^2$ (same
+eigenvectors). $A^{-1}$ has eigenvalues $1/\lambda_i$ (same eigenvectors). And $A + cI =
+V\Lambda V^{-1} + cVIV^{-1} = V(\Lambda + cI)V^{-1}$ has eigenvalues $\lambda_i + c$ (same
+eigenvectors) — *shifting* a matrix by a multiple of the identity shifts every eigenvalue by
+that constant and leaves the eigenvectors fixed. This last fact is exactly why ridge
+regression's $X^\top X + \lambda I$ is better conditioned than $X^\top X$ ([REGR-07],
+[GEOM-26]): adding $\lambda I$ lifts every eigenvalue by $\lambda$, pulling the small ones
+away from zero.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the decomposition on honest cases: a small matrix carried fully by hand, a famous
+integer sequence whose closed form *is* an eigendecomposition, a real Markov process where
+the decomposition explains the steady state, and — at the edge of applicability — a defective
+matrix where it breaks and a near-defective one where it is numerically dangerous.
+
+## Example 1 — a $2\times2$ decomposition, by hand and verified {#sec-ex-2x2}
+
+Take the symmetric matrix from [GEOM-14]'s Example 1, whose eigenstructure we already found:
+$$
+A = \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix},
+\qquad \lambda_1 = 1,\ \mathbf v_1 = \begin{bmatrix}-1\\1\end{bmatrix},
+\qquad \lambda_2 = 3,\ \mathbf v_2 = \begin{bmatrix}1\\1\end{bmatrix}.
+$$
+The eigenvalues are distinct, so by [GEOM-14]'s @thm-distinct the eigenvectors are
+independent — $A$ is diagonalizable. Assemble $V$ and $\Lambda$:
+$$
+V = \begin{bmatrix} -1 & 1 \\ 1 & 1 \end{bmatrix},
+\qquad \Lambda = \begin{bmatrix} 1 & 0 \\ 0 & 3 \end{bmatrix}.
+$$
+We need $V^{-1}$. For a $2\times2$ matrix $\begin{bmatrix}a&b\\c&d\end{bmatrix}$ the inverse
+is $\frac1{ad-bc}\begin{bmatrix}d&-b\\-c&a\end{bmatrix}$ ([GEOM-11]). Here $ad-bc = (-1)(1) -
+(1)(1) = -2$, so
+$$
+V^{-1} = \frac{1}{-2}\begin{bmatrix} 1 & -1 \\ -1 & -1 \end{bmatrix}
+= \begin{bmatrix} -\tfrac12 & \tfrac12 \\[2pt] \tfrac12 & \tfrac12 \end{bmatrix}.
+$$
+Now verify $V\Lambda V^{-1} = A$ by multiplying out, left to right. First $V\Lambda$ scales
+the columns of $V$ by $1$ and $3$:
+$$
+V\Lambda = \begin{bmatrix} -1 & 1 \\ 1 & 1 \end{bmatrix}
+\begin{bmatrix} 1 & 0 \\ 0 & 3 \end{bmatrix}
+= \begin{bmatrix} -1 & 3 \\ 1 & 3 \end{bmatrix}.
+$$
+Then $(V\Lambda)V^{-1}$:
+$$
+\begin{bmatrix} -1 & 3 \\ 1 & 3 \end{bmatrix}
+\begin{bmatrix} -\tfrac12 & \tfrac12 \\[2pt] \tfrac12 & \tfrac12 \end{bmatrix}
+= \begin{bmatrix} (-1)(-\tfrac12)+3(\tfrac12) & (-1)(\tfrac12)+3(\tfrac12) \\[2pt]
+(1)(-\tfrac12)+3(\tfrac12) & (1)(\tfrac12)+3(\tfrac12) \end{bmatrix}
+= \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix} = A . \checkmark
+$$
+The decomposition reproduces $A$ exactly. As a bonus, raising to a power is now free — say
+$A^5$: by @eq-powers it is $V\operatorname{diag}(1^5, 3^5)V^{-1} = V\operatorname{diag}(1,
+243)V^{-1}$, no repeated multiplication of $A$ required.
+
+```{python}
+#| label: fig-ex2x2-power
+#| fig-cap: "Example 1 verified numerically, and powers made cheap. The bars compare $A^k$ computed two ways for $k=1,\\dots,6$: by direct repeated multiplication (solid) and by $V\\Lambda^k V^{-1}$ (hatched). They agree to machine precision. The inset shows the entries of $A^k$ growing like $3^k$ — the dominant eigenvalue — which the eigendecomposition predicts at a glance without ever multiplying matrices."
+A = np.array([[2.0, 1.0], [1.0, 2.0]])
+lam, V = np.array([1.0, 3.0]), np.array([[-1.0, 1.0], [1.0, 1.0]])
+Vinv = np.linalg.inv(V)
+
+ks = np.arange(1, 7)
+direct = []
+viaeig = []
+P = np.eye(2)
+for k in ks:
+    P = P @ A
+    direct.append(P[0, 0])
+    viaeig.append((V @ np.diag(lam**k) @ Vinv)[0, 0])
+direct, viaeig = np.array(direct), np.array(viaeig)
+
+fig, ax = plt.subplots(figsize=(6.4, 4.0))
+w = 0.38
+ax.bar(ks - w/2, direct, width=w, color=VEC, label=r"direct $A^k$ (entry $[0,0]$)")
+ax.bar(ks + w/2, viaeig, width=w, color=HILITE, hatch="//", alpha=0.7,
+       label=r"$V\Lambda^k V^{-1}$ (entry $[0,0]$)")
+ax.plot(ks, 0.5 * 3.0**ks, "o--", color=ACCENT, lw=1.4, ms=5,
+        label=r"$\frac{1}{2}\,3^k$ (dominant growth)")
+ax.set_xlabel("power $k$"); ax.set_ylabel(r"$(A^k)_{0,0}$")
+ax.set_yscale("log")
+ax.set_title("Powers via eigendecomposition match — and grow like $3^k$")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print("max abs difference between the two methods:",
+      f"{np.max(np.abs(direct - viaeig)):.2e}")
+```
+
+## Example 2 — Fibonacci: a closed form that is secretly an eigendecomposition {#sec-ex-fib}
+
+The Fibonacci numbers $F_0=0,\ F_1=1,\ F_{k+1}=F_k+F_{k-1}$ are defined by *repeated
+application* of a fixed rule — exactly the setting @sec-powers was built for. Stack two
+consecutive terms into a state vector and the recurrence becomes a matrix multiply:
+$$
+\begin{bmatrix} F_{k+1} \\ F_k \end{bmatrix}
+= \begin{bmatrix} 1 & 1 \\ 1 & 0 \end{bmatrix}
+\begin{bmatrix} F_k \\ F_{k-1} \end{bmatrix},
+\qquad \text{so}\qquad
+\begin{bmatrix} F_{k+1} \\ F_k \end{bmatrix}
+= A^k \begin{bmatrix} F_1 \\ F_0 \end{bmatrix},
+\quad A = \begin{bmatrix} 1 & 1 \\ 1 & 0 \end{bmatrix}.
+$$
+Check the matrix multiply reproduces the rule by expanding the two rows. The top row gives
+$F_{k+1} = 1\cdot F_k + 1\cdot F_{k-1}$, which is the recurrence itself. The bottom row gives
+$F_k = 1\cdot F_k + 0\cdot F_{k-1} = F_k$, an identity whose only job is to carry the second
+component of the state forward unchanged — it slides the two-term window one step so the new
+state $[F_{k+1}, F_k]^\top$ holds the next consecutive pair. So $F_k$ is an entry of $A^k$
+applied to $[F_1, F_0]^\top$ — and @eq-powers turns that into a *formula*.
+
+Diagonalize $A$. By [GEOM-14]'s @eq-2x2-charpoly, $p_A(\lambda) = \lambda^2 -
+(\operatorname{tr}A)\lambda + \det A = \lambda^2 - \lambda - 1$. The quadratic formula
+gives the roots
+$$
+\lambda = \frac{1 \pm\sqrt{1+4}}{2} = \frac{1\pm\sqrt5}{2},
+\qquad
+\varphi = \frac{1+\sqrt5}{2}\approx 1.618,\quad
+\psi = \frac{1-\sqrt5}{2}\approx -0.618 .
+$$
+The larger root $\varphi$ is the **golden ratio**. Because $|\varphi| > |\psi|$, $\varphi^k$
+dominates $\psi^k$ as $k$ grows, and @eq-powers ($A^k = V\Lambda^k V^{-1}$) shows the
+Fibonacci entry must grow like $\varphi^k$ — i.e. $F_{k+1}/F_k \to \varphi$. Now let us
+carry the full $V\Lambda^k V^{-1}$ through by hand, every step, to the closed form — there
+is no need to defer it.
+
+**The eigenvectors.** For eigenvalue $\lambda$, an eigenvector solves $(A-\lambda
+I)\mathbf v = \mathbf 0$, i.e.
+$$
+\begin{bmatrix} 1-\lambda & 1 \\ 1 & -\lambda \end{bmatrix}
+\begin{bmatrix} v_1 \\ v_2 \end{bmatrix} = \begin{bmatrix} 0 \\ 0 \end{bmatrix}.
+$$
+The bottom row reads $v_1 - \lambda v_2 = 0$, so $v_1 = \lambda v_2$; taking $v_2 = 1$ gives
+the eigenvector $[\lambda, 1]^\top$. (The top row, $(1-\lambda)v_1 + v_2 = 0$, is then
+automatically satisfied — substitute $v_1=\lambda$, $v_2=1$ to get $(1-\lambda)\lambda + 1
+= \lambda - \lambda^2 + 1 = -(\lambda^2-\lambda-1) = 0$, which is exactly the characteristic
+equation. The two rows are not independent, as they must not be when $\lambda$ is an
+eigenvalue.) So the eigenvectors are $\mathbf v_\varphi = [\varphi, 1]^\top$ and
+$\mathbf v_\psi = [\psi, 1]^\top$.
+
+**The recipe, not the matrix inverse.** Rather than assemble $V^{-1}$ and multiply three
+matrices, we use the three-move reading of @sec-three-moves directly: decompose the start
+vector into eigen-pieces, scale each by $\lambda^k$, reassemble. The start vector is
+$\mathbf x_0 = [F_1, F_0]^\top = [1, 0]^\top$. Write it in the eigenbasis,
+$$
+\begin{bmatrix} 1 \\ 0 \end{bmatrix} = a\,\mathbf v_\varphi + b\,\mathbf v_\psi
+= a\begin{bmatrix}\varphi\\1\end{bmatrix} + b\begin{bmatrix}\psi\\1\end{bmatrix},
+$$
+which is two scalar equations: the bottom gives $a + b = 0$, so $b = -a$; the top gives
+$a\varphi + b\psi = 1$. Substituting $b=-a$,
+$$
+a\varphi - a\psi = a(\varphi - \psi) = 1
+\;\Longrightarrow\;
+a = \frac{1}{\varphi - \psi}.
+$$
+The denominator is $\varphi - \psi = \tfrac{1+\sqrt5}{2} - \tfrac{1-\sqrt5}{2} =
+\tfrac{2\sqrt5}{2} = \sqrt5$, so $a = 1/\sqrt5$ and $b = -1/\sqrt5$.
+
+**Scale and reassemble.** Applying $A^k$ multiplies the $\varphi$-piece by $\varphi^k$ and
+the $\psi$-piece by $\psi^k$ (each is an eigenvector, exactly @sec-powers):
+$$
+A^k\begin{bmatrix}1\\0\end{bmatrix}
+= a\,\varphi^k\begin{bmatrix}\varphi\\1\end{bmatrix}
++ b\,\psi^k\begin{bmatrix}\psi\\1\end{bmatrix}.
+$$
+We want $F_k$, the **bottom** entry of $A^k\mathbf x_0$ (from @eq-each's stacking, the bottom
+entry of $\begin{bmatrix}F_{k+1}\\F_k\end{bmatrix}$). The bottom component of
+$\mathbf v_\varphi$ and of $\mathbf v_\psi$ is $1$ in each, so the bottom entry is simply
+$a\varphi^k + b\psi^k$. With $a = 1/\sqrt5$, $b = -1/\sqrt5$ this is **Binet's formula**
+$$
+F_k = a\varphi^k + b\psi^k = \frac{\varphi^k - \psi^k}{\sqrt5},
+$$
+a closed form for the $k$-th Fibonacci number with *no iteration at all*. The eigenvalues
+are the entire story: the growth rate $\varphi$, the convergence of the ratio, and the exact
+formula all fall out of $A^k = V\Lambda^k V^{-1}$.
+
+```{python}
+#| label: fig-fibonacci
+#| fig-cap: "Fibonacci is an eigendecomposition in disguise. **Left:** the ratio $F_{k+1}/F_k$ (blue) converges to the golden ratio $\\varphi=(1+\\sqrt5)/2$ (green dashed) — the dominant eigenvalue of $A=\\bigl[\\begin{smallmatrix}1&1\\\\1&0\\end{smallmatrix}\\bigr]$ — because $A^k$ is governed by $\\varphi^k$. **Right:** Binet's closed form $(\\varphi^k-\\psi^k)/\\sqrt5$, derived from $A^k=V\\Lambda^k V^{-1}$, reproduces the integer Fibonacci numbers exactly (the difference is pure floating-point rounding)."
+A = np.array([[1.0, 1.0], [1.0, 0.0]])
+phi = (1 + np.sqrt(5)) / 2
+psi = (1 - np.sqrt(5)) / 2
+
+# integer recurrence (ground truth)
+F = [0, 1]
+for _ in range(18):
+    F.append(F[-1] + F[-2])
+F = np.array(F)
+ks = np.arange(1, len(F) - 1)
+ratios = F[2:] / F[1:-1]
+
+# Binet from the eigendecomposition
+binet = (phi**np.arange(len(F)) - psi**np.arange(len(F))) / np.sqrt(5)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.8))
+axL.plot(ks, ratios, "o-", color=VEC, ms=4, label=r"$F_{k+1}/F_k$")
+axL.axhline(phi, color=ACCENT, ls="--", label=fr"$\varphi={phi:.5f}$ (dominant eigenvalue)")
+axL.set_xlabel("$k$"); axL.set_ylabel("consecutive ratio")
+axL.set_title("Ratio $\\to$ dominant eigenvalue $\\varphi$")
+axL.legend(fontsize=9, framealpha=0.9)
+
+axR.plot(np.arange(len(F)), F, "o", color=VEC, ms=5, label="integer recurrence")
+axR.plot(np.arange(len(F)), binet, "-", color=HILITE, lw=1.6,
+         label=r"Binet $(\varphi^k-\psi^k)/\sqrt{5}$")
+axR.set_xlabel("$k$"); axR.set_ylabel("$F_k$"); axR.set_yscale("log")
+axR.set_title("Binet's formula = eigendecomposition")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print("Binet vs recurrence, max abs error:", f"{np.max(np.abs(binet - F)):.2e}")
+print(f"golden ratio phi = {phi:.6f}   (dominant eigenvalue of A)")
+```
+
+## Example 3 — a Markov chain: the steady state is an eigenvector {#sec-ex-markov}
+
+A genuinely useful application. Model how a subscription service's customers move each month
+among three states — **Active**, **Lapsed**, **Churned** — with a *transition matrix* $T$
+whose column $j$ holds the probabilities of moving *from* state $j$ to each other state (so
+each column sums to $1$, a **column-stochastic** matrix). The population distribution after
+$k$ months is $\mathbf p_k = T^k\mathbf p_0$. The eigendecomposition tells us where it
+settles.
+
+A column-stochastic matrix always has $\lambda=1$ as an eigenvalue (we verify numerically),
+and its eigenvector — normalized to sum to $1$ — is the **steady-state distribution**: the
+mix that $T$ leaves unchanged, $T\mathbf p_\star = \mathbf p_\star$. Every other eigenvalue
+has $|\lambda| < 1$ here, so in $\Lambda^k$ those coordinates decay to zero while the
+$\lambda=1$ coordinate persists. By @eq-powers, *whatever* the starting mix, $T^k\mathbf p_0$
+converges to the steady state — the eigendecomposition makes the convergence and its limit
+exact, not just plausible.
+
+```{python}
+#| label: fig-markov
+#| fig-cap: "A 3-state customer Markov chain, explained by its eigendecomposition. **Left:** three different starting distributions (Active/Lapsed/Churned), iterated under the transition matrix $T$, all converge to the same steady state (dashed lines) — the $\\lambda=1$ eigenvector of $T$. **Right:** the eigenvalues of $T$ in the complex plane; one sits exactly at $1$ (the steady state) and the others lie strictly inside the unit circle, so their contributions to $T^k$ decay. The slowest decay rate is the second-largest $|\\lambda|$, which sets how fast the chain mixes."
+# columns = "from" state; rows = "to" state.  Columns sum to 1.
+#            from A   from L   from C
+T = np.array([[0.80,   0.30,   0.00],    # to Active
+              [0.15,   0.50,   0.05],    # to Lapsed
+              [0.05,   0.20,   0.95]])   # to Churned
+w, Vc = np.linalg.eig(T)
+
+# steady state = eigenvector for eigenvalue closest to 1, normalized to sum 1
+idx = np.argmin(np.abs(w - 1.0))
+steady = np.real(Vc[:, idx]); steady = steady / steady.sum()
+
+starts = {
+    "all Active":  np.array([1.0, 0.0, 0.0]),
+    "all Lapsed":  np.array([0.0, 1.0, 0.0]),
+    "mixed":       np.array([0.2, 0.5, 0.3]),
+}
+labels = ["Active", "Lapsed", "Churned"]
+cols3 = [HILITE, ACCENT, VEC]
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 3.9))
+months = np.arange(0, 25)
+for name, p0 in starts.items():
+    traj = [p0]
+    p = p0.copy()
+    for _ in months[1:]:
+        p = T @ p
+        traj.append(p.copy())
+    traj = np.array(traj)
+    for s in range(3):
+        axL.plot(months, traj[:, s], color=cols3[s], lw=1.2, alpha=0.75)
+for s in range(3):
+    axL.axhline(steady[s], color=cols3[s], ls="--", lw=1.4)
+    axL.text(24.3, steady[s], labels[s], color=cols3[s], va="center", fontsize=9)
+axL.set_xlabel("month"); axL.set_ylabel("population fraction")
+axL.set_title("All starts converge to the steady state")
+
+theta = np.linspace(0, 2*np.pi, 200)
+axR.plot(np.cos(theta), np.sin(theta), color=GREY, lw=1.0)
+axR.scatter(np.real(w), np.imag(w), color=HILITE, s=70, zorder=5)
+axR.axhline(0, color="k", lw=0.5); axR.axvline(0, color="k", lw=0.5)
+axR.set_aspect("equal"); axR.set_xlim(-1.2, 1.2); axR.set_ylim(-1.2, 1.2)
+axR.set_xlabel("Re $\\lambda$"); axR.set_ylabel("Im $\\lambda$")
+axR.set_title("Eigenvalues of $T$ (one at $1$, rest inside)")
+plt.tight_layout()
+print(f"eigenvalues of T: {np.sort_complex(w).round(4)}")
+print(f"steady-state distribution (lambda=1 eigenvector): {steady.round(4)}")
+print(f"check T @ steady - steady = {np.abs(T @ steady - steady).max():.2e}  (≈0)")
+```
+
+The steady state is not a fixed point we guessed and checked — it is *read off* the
+eigendecomposition as the $\lambda=1$ eigenvector, and the rate the chain approaches it is
+set by the second-largest $|\lambda|$ (the **spectral gap**, $1 - |\lambda_2|$). This is the
+identical mechanism behind PageRank from [GEOM-14]'s @fig-power: the web's link matrix has a
+dominant eigenvector that *is* the ranking, and power iteration finds it. The probabilistic
+theory of Markov chains is owned by the Probability track; here we supply the linear-algebra
+fact that the long run *is* the dominant eigenvector.
+
+## Example 4 — the edge of applicability: a defective matrix has no decomposition {#sec-defective}
+
+Now the honest boundary. Not every matrix is diagonalizable, and the obstruction is exactly
+the **defective** matrices of [GEOM-14]'s @sec-defective: too few independent eigenvectors,
+so $V$ has dependent columns and $V^{-1}$ does not exist. Take the shear
+$$
+J = \begin{bmatrix} 2 & 1 \\ 0 & 2 \end{bmatrix},
+$$
+the canonical defective matrix. Its characteristic polynomial is $(2-\lambda)^2$, so
+$\lambda=2$ is a double root (algebraic multiplicity $2$), but [GEOM-14] showed its
+eigenspace is the single line spanned by $\begin{bmatrix}1\\0\end{bmatrix}$ — geometric
+multiplicity $1$. There is only **one** independent eigenvector, so we cannot build a $2\times
+2$ invertible $V$ from eigenvectors. The eigendecomposition simply does not exist. Let us see
+*why* it must fail, not just assert it.
+
+::: {#thm-defective-fail}
+**Theorem (defective $\Rightarrow$ not diagonalizable).** If $A$ has fewer than $n$
+independent eigenvectors, then there is no invertible $V$ and diagonal $\Lambda$ with $A =
+V\Lambda V^{-1}$.
+:::
+
+::: {.proof}
+This is the contrapositive of the ($\Rightarrow$) direction of @thm-eigendecomp, which we
+re-run for emphasis. Suppose, for contradiction, that $A = V\Lambda V^{-1}$ with $V$
+invertible. The argument of @thm-eigendecomp showed every column of $V$ is then an
+eigenvector of $A$, and $V$ being invertible forces those $n$ columns to be independent
+([GEOM-12]). That produces $n$ independent eigenvectors — contradicting the hypothesis that
+$A$ has fewer. Hence no such $V$ exists. $\qquad\blacksquare$
+:::
+
+For $J$ specifically: suppose $J = V\operatorname{diag}(\lambda_1,\lambda_2)V^{-1}$. By
+@lem-similarity-invariants the diagonal entries would have to be $J$'s eigenvalues, both $2$,
+so $\Lambda = 2I$. But then $J = V(2I)V^{-1} = 2VV^{-1} = 2I$ — which is false, since $J$ has
+a $1$ in the corner. The only diagonal matrix $J$ could be similar to is $2I$, and it is not
+$2I$. So $J$ is genuinely not diagonalizable: there is no coordinate system in which the
+shear becomes a pure scaling.
+
+```{python}
+#| label: fig-defective
+#| fig-cap: "The defective matrix $J=\\bigl[\\begin{smallmatrix}2&1\\\\0&2\\end{smallmatrix}\\bigr]$ has no eigendecomposition. A ring of input directions (faint) maps under $J$ (bold). Only the horizontal line (red) is an eigen-direction — every other direction is *sheared* off its own line, and the would-be 'second eigenvector' simply does not exist. With a single eigen-direction in a 2-D space, the eigenvectors cannot form a basis, so $V$ is not invertible and $V\\Lambda V^{-1}$ cannot be formed."
+J = np.array([[2.0, 1.0], [0.0, 2.0]])
+thetas = np.linspace(0, 2*np.pi, 28, endpoint=False)
+units = np.stack([np.cos(thetas), np.sin(thetas)])
+imgs = J @ units
+
+fig, ax = plt.subplots(figsize=(5.8, 5.6))
+for k in range(units.shape[1]):
+    u = units[:, k]; img = imgs[:, k]
+    collinear = abs(u[1]) < 1e-9
+    draw_vec(ax, (0, 0), u, color=PALE, lw=1.2, z=2)
+    draw_vec(ax, (0, 0), img, color=(HILITE if collinear else GREY), lw=2.0, z=4)
+draw_vec(ax, (0, 0), [3.2, 0], color=HILITE, lw=1.0, ls=":", z=1)
+draw_vec(ax, (0, 0), [-3.2, 0], color=HILITE, lw=1.0, ls=":", z=1)
+ax.text(2.6, 0.3, "the only\neigen-direction", color=HILITE, fontsize=10)
+ax.set_xlim(-3.6, 3.6); ax.set_ylim(-3.6, 3.6); ax.set_aspect("equal")
+ax.axhline(0, color="k", lw=0.6); ax.axvline(0, color="k", lw=0.6)
+ax.set_title("A shear: one eigen-direction, no decomposition")
+plt.tight_layout()
+w, V = np.linalg.eig(J)
+print(f"eigenvalues of J: {w.round(4)}   (both 2 -> algebraic mult 2)")
+print("eigenvectors (columns) returned by numpy:")
+print(V.round(4), "  <- the two columns are (nearly) identical: only 1 real direction")
+print(f"rank of eigenvector matrix: {np.linalg.matrix_rank(V)}  (< 2 -> not invertible -> defective)")
+```
+
+::: {.callout-warning title="Pitfall"}
+**`numpy.linalg.eig` does not warn you that a matrix is defective — it returns two columns
+anyway.** For $J$ above it hands back two eigenvectors that are (up to rounding) the *same*
+direction, so the matrix of eigenvectors is rank-deficient and *not invertible*. If you
+blindly form `V @ diag(w) @ inv(V)` you will either get an error or, worse, silently amplified
+floating-point garbage. The lesson: diagonalizability is **not** something to assume from a
+successful `eig` call. Check whether the eigenvectors are actually independent (e.g. the rank
+or condition number of $V$). This is one more reason the SVD ([GEOM-20]), which *always*
+exists and *always* has an honest orthonormal $U$ and $V$, is the safer master tool when you
+have no guarantee of a full eigenbasis.
+:::
+
+## Example 5 — the near-defective case: diagonalization that is numerically dangerous {#sec-near-defective}
+
+Worse than the clean failure of @sec-defective is the *near* failure, because it does not
+announce itself. Consider a matrix whose two eigenvectors are distinct but *almost* parallel:
+$$
+A_\epsilon = \begin{bmatrix} 1 & 1 \\ 0 & 1+\epsilon \end{bmatrix},
+$$
+which for small $\epsilon$ has eigenvalues $1$ and $1+\epsilon$ (distinct, so technically
+diagonalizable) with eigenvectors $\begin{bmatrix}1\\0\end{bmatrix}$ and
+$\begin{bmatrix}1\\\epsilon\end{bmatrix}$ — and the second tilts toward the first as
+$\epsilon\to 0$. The eigenvector matrix $V$ becomes nearly singular, so $V^{-1}$ has huge
+entries, and any computation routed through $V^{-1}$ amplifies floating-point error. The
+decomposition *exists* but is *ill-conditioned*: a tiny perturbation of $A_\epsilon$ swings
+the eigenvectors wildly. @fig-near-defective measures the damage.
+
+```{python}
+#| label: fig-near-defective
+#| fig-cap: "Diagonalization degrades smoothly toward the defective limit. As $\\epsilon\\to0$ the two eigenvectors of $A_\\epsilon=\\bigl[\\begin{smallmatrix}1&1\\\\0&1+\\epsilon\\end{smallmatrix}\\bigr]$ become nearly parallel, so the eigenvector matrix $V$ is nearly singular and its condition number $\\kappa(V)$ (blue, the error-amplification factor — see [GEOM-26]) explodes like $1/\\epsilon$. The technically-diagonalizable matrix is, for practical purposes, as bad as the defective one. This is the honest reason symmetric matrices ([GEOM-16], where $V$ is a perfectly conditioned rotation, $\\kappa=1$) and the SVD are preferred when stability matters."
+eps_vals = np.logspace(-1, -8, 30)
+kappas = []
+for eps in eps_vals:
+    Ae = np.array([[1.0, 1.0], [0.0, 1.0 + eps]])
+    w, V = np.linalg.eig(Ae)
+    kappas.append(np.linalg.cond(V))
+kappas = np.array(kappas)
+
+fig, ax = plt.subplots(figsize=(6.4, 4.0))
+ax.loglog(eps_vals, kappas, "o-", color=VEC, ms=4, label=r"$\kappa(V)$ (numerical)")
+ax.loglog(eps_vals, 2.0 / eps_vals, "--", color=ACCENT, lw=1.4, label=r"$\propto 1/\epsilon$")
+ax.set_xlabel(r"eigenvector separation $\epsilon$")
+ax.set_ylabel(r"condition number $\kappa(V)$")
+ax.set_title("Near-defective: $V$'s conditioning blows up as $\\epsilon\\to0$")
+ax.invert_xaxis()
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"epsilon = 1e-1 -> kappa(V) = {kappas[0]:.1f}")
+print(f"epsilon = 1e-7 -> kappa(V) = {kappas[-2]:.3e}   (V nearly singular)")
+```
+
+The takeaway is a graded one: *diagonalizable* is yes/no, but *well-diagonalizable* is a
+spectrum. A matrix with nearly-parallel eigenvectors is on paper decomposable and in practice
+treacherous, and the warning sign is the condition number of $V$ — the same conditioning idea
+that governs solving $Ax=b$ ([GEOM-11]) and gets its full treatment in [GEOM-26]. Symmetric
+matrices sidestep the entire problem: their eigenvectors are *orthogonal* ([GEOM-16]), so
+$V$ is a rotation with $\kappa(V)=1$, the best possible. That is the single biggest reason
+data science leans so hard on symmetric matrices.
+
+# When to reach for this — and when not to {#sec-applicability}
+
+The eigendecomposition is the right tool exactly when you have a **square** matrix that you
+trust to be **diagonalizable** and you want to (a) understand or compute its repeated action
+$A^k$, (b) understand its long-run / steady-state behavior, or (c) build functions of it
+(inverse, polynomial, exponential). Markov chains, linear recurrences, linear dynamical
+systems, PageRank-style processes, and stability analysis all live here.
+
+It is the **wrong** tool, or a dangerous one, in three situations you should be able to name:
+
+- **The matrix is not square.** Eigenvalues are only defined for square matrices ($A\mathbf v$
+  and $\mathbf v$ must live in the same space). A rectangular data matrix — $n$ observations
+  by $p$ features — has no eigendecomposition at all. Reach for the **SVD** ([GEOM-20]),
+  which generalizes the whole picture to any shape.
+- **The matrix is (near-)defective.** As @sec-defective and @sec-near-defective showed, a
+  deficient or nearly-deficient eigenbasis makes $V$ singular or ill-conditioned, and the
+  decomposition fails or amplifies error. Again the **SVD** — always exists, always
+  well-conditioned bases — is the dependable substitute.
+- **You only need the dominant eigenvector, and the matrix is huge.** Full diagonalization
+  computes *all* $n$ eigenpairs at $O(n^3)$ cost. If you only want the steady state or top
+  direction (PageRank, the leading principal component), **power iteration** ([GEOM-14]'s
+  @sec-ex-power) or a Krylov method (Lanczos/Arnoldi) gets the dominant eigenvector far more
+  cheaply and never forms $V^{-1}$.
+
+::: {.callout-tip title="You might be asked"}
+*"When would you choose the eigendecomposition over the SVD, given the SVD always exists?"*
+When the matrix is square *and* you specifically want its eigenvalues — its **invariant
+directions and growth rates** under repeated self-application. The SVD's singular values are
+*not* the eigenvalues (they are the eigenvalues of $\sqrt{A^\top A}$, a different object),
+and the SVD's left and right singular vectors are different bases, so it cannot directly
+answer "what does $A^{100}$ do" the way $A^k = V\Lambda^k V^{-1}$ does. For dynamics,
+recurrences, and Markov steady states you want eigenvalues. The two decompositions agree
+only for symmetric positive-semidefinite matrices ([GEOM-16], [GEOM-20]) — there the
+eigenvalues are real and non-negative, the eigenvectors are orthonormal, and you can read
+$A = Q\Lambda Q^\top$ as a singular value decomposition with the eigenvalues serving as
+the singular values. There, and only there, the eigendecomposition *is* the SVD.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You never form the
+eigendecomposition by hand past $3\times3$, and — as [GEOM-14]'s implementation note
+stressed — never by rooting the characteristic polynomial. In practice:
+
+- `w, V = numpy.linalg.eig(A)` returns the eigenvalues `w` and the eigenvectors as the
+  *columns* of `V`, computed by the iterative QR algorithm. To get $A = V\Lambda V^{-1}$
+  explicitly you would form `Lambda = np.diag(w)` and `Vinv = np.linalg.inv(V)`.
+- For **powers**, do *not* assemble $V^{-1}$ if you can avoid it; `numpy.linalg.matrix_power`
+  and, better, library routines for $A^k\mathbf x$ exploit structure. But for understanding,
+  $V\,\operatorname{diag}(w^k)\,V^{-1}$ is the formula.
+- For **symmetric** matrices — covariance, Gram $A^\top A$, Hessians — always use
+  `numpy.linalg.eigh`, which returns *real* eigenvalues and a genuinely *orthonormal* $V$
+  (so $V^{-1} = V^\top$, no inverse needed and no conditioning worry). This is the
+  decomposition of [GEOM-16] and the one you will reach for far more often than the general
+  `eig`, precisely because the symmetric case escapes every pathology of @sec-defective and
+  @sec-near-defective.
+
+The general `eig` is the right mental model and the right tool for genuinely non-symmetric
+square matrices (transition matrices, dynamics). For anything symmetric, jump straight to
+`eigh`; for anything rectangular or untrustworthy, jump to the SVD. Knowing *which* routine
+to call — and why — is exactly the judgment this article is meant to install.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-14] *Eigenvalues and Eigenvectors***, which found the special
+directions and warned, at its close, that distinct eigenvalues guarantee a full eigenbasis
+while repeated ones may not. This article assembled those directions into $A = V\Lambda
+V^{-1}$, proved exactly when the assembly succeeds (a full set of independent eigenvectors),
+and harvested the payoff (powers, inverses, functions, steady states). Movement IV now
+finishes:
+
+- **[GEOM-16] *Symmetric Matrices and the Spectral Theorem*** — the happy ending. For a
+  symmetric matrix the eigenvectors are not just independent but *orthogonal*, so $V$ becomes
+  an orthogonal matrix $Q$ with $Q^{-1}=Q^\top$, and the decomposition is the perfectly
+  conditioned $A = Q\Lambda Q^\top$. Every pathology of @sec-defective and
+  @sec-near-defective vanishes. This is the engine under PCA, quadratic forms, and
+  second-order optimization.
+- **[GEOM-17]–[GEOM-18] *Quadratic Forms and Positive-Definite Matrices*** — once $A =
+  Q\Lambda Q^\top$, the quadratic form $\mathbf x^\top A\mathbf x$ becomes $\sum_i\lambda_i
+  z_i^2$ in eigen-coordinates, and the *signs* of the eigenvalues decide bowl, saddle, or
+  ridge. Diagonalization is what makes that reading possible.
+- **[GEOM-20] *The Singular Value Decomposition*** — the decomposition for *every* matrix,
+  square or not, defective or not. It is built precisely to dodge the failure of
+  @sec-defective, and it reduces to the eigendecomposition exactly for symmetric PSD matrices.
+- **[GEOM-26] *Condition Number and Numerical Stability*** — the conditioning story of
+  @sec-near-defective, made quantitative; it discharges Regression's [REGR-07]
+  multicollinearity prerequisite and explains why ridge's $X^\top X + \lambda I$ helps
+  (the eigenvalue-shift fact from @sec-matrix-functions).
+:::
+
+Beyond this track, $A^k = V\Lambda^k V^{-1}$ is the spine of Markov-chain steady states and
+mixing (Probability), PageRank and spectral graph methods, the stability of linear dynamical
+systems, and the convergence-rate analysis of iterative optimizers (Optimization, via the
+eigenvalues of the Hessian).
+
+# Going deeper {#sec-deeper}
+
+- **The geometric core.** The one picture to keep is @fig-two-views: a matrix is complicated
+  only because we view it in the wrong basis; its eigenvectors are the basis in which it is
+  the diagonal $\Lambda$. Everything else — powers, inverses, functions — is that diagonal
+  read through the change-of-basis $V$.
+- **The honest boundary.** Diagonalization is *not* universal. Defective matrices
+  (@sec-defective) have no decomposition, and near-defective ones (@sec-near-defective) have a
+  numerically poisonous one. These limits are the entire reason [GEOM-16] (symmetry rescues
+  the picture) and [GEOM-20] (the SVD replaces it for every matrix) exist.
+- **Open threads deliberately deferred.** *What if a matrix is defective — is there any
+  canonical form?* Yes: the **Jordan canonical form**, $A = VJV^{-1}$ with $J$ "block
+  diagonal" rather than diagonal, the best you can do when eigenvectors run short. It is a
+  beautiful structure but rarely used numerically (it is wildly ill-conditioned, the very
+  problem of @sec-near-defective) — which is why this track routes around it to the SVD. *Why
+  are symmetric matrices guaranteed a clean orthogonal $V$?* — the spectral theorem,
+  [GEOM-16]. *What is the analogue for rectangular matrices?* — singular values, [GEOM-20].
+- **Primary thread.** Binet's formula (@sec-ex-fib) is the classic "an eigendecomposition in
+  disguise," and the Markov steady state (@sec-ex-markov) is the classic "the long run is an
+  eigenvector" — both are worth re-deriving from scratch once on paper, because every step is
+  an instance of $A^k = V\Lambda^k V^{-1}$, the one formula this article exists to install.

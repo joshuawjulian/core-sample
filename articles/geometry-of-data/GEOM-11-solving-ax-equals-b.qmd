@@ -1,0 +1,1101 @@
+---
+title: "Solving $A\\mathbf{x}=\\mathbf{b}$: The Inverse, Singularity, and the No-Solution Case"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / data
+HILITE = "#c1121f"   # the highlighted vector / target b
+ACCENT = "#0a7d4d"   # columns / solution / highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+PURPLE = "#6a4c93"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the third article of **Movement III —
+> Matrices as Maps**, the read-as-a-pair sibling of [GEOM-09 *Matrix Multiplication as
+> Composition*] and [GEOM-10 *The Transpose*]. It assumes [GEOM-08 *Matrices as Linear
+> Maps*] — the single idea that a matrix *does something to space*, and that $A\mathbf{x}$
+> is a **linear combination of $A$'s columns** with the entries of $\mathbf{x}$ as the
+> weights — and [GEOM-09], where $AB$ means "do $B$, then $A$" and the row-times-column rule
+> fell out of that requirement. It leans on [GEOM-10] for the identities of the transpose,
+> and on the span/subspace picture from [GEOM-02 *Span and Subspaces*]. Its job is to answer
+> the most basic question you can ask about a linear map: *can you run it backwards?* When
+> can we solve $A\mathbf{x}=\mathbf{b}$, when can't we, and what does each verdict mean as a
+> picture in space. It sets up [GEOM-12 *Rank and the Four Fundamental Subspaces*] (which
+> names the spaces that decide the verdict), [GEOM-13 *The Determinant*] (the single number
+> that flags singularity), [GEOM-19 *Cholesky*] and [GEOM-21 *The Pseudoinverse*] (the
+> stable, always-defined replacements for the inverse), and it directly feeds **Regression
+> R5**, where the object $(X^\top X)^{-1}$ is the whole game.
+
+## Abstract {.unnumbered}
+
+A linear system $A\mathbf{x}=\mathbf{b}$ asks: *which input $\mathbf{x}$ does the map $A$
+send to the target $\mathbf{b}$?* Because $A\mathbf{x}$ is a linear combination of $A$'s
+columns, this is the same as asking *how to build $\mathbf{b}$ out of the columns of $A$*.
+That single rephrasing settles everything. If the columns of $A$ reach $\mathbf{b}$ in
+exactly one way, there is a unique solution and $A$ has an **inverse** $A^{-1}$ that undoes
+it. If they cannot reach $\mathbf{b}$ at all — $\mathbf{b}$ lies outside the **column
+space** — there is **no solution**, and the honest thing to do is settle for the closest
+reachable point, which is the projection of [GEOM-06] and the least-squares problem of
+Regression. If they reach $\mathbf{b}$ in more than one way, there are **infinitely many**
+solutions, all differing by a vector the map crushes to zero (the **null space**). We
+derive the inverse from Gaussian elimination, prove $(AB)^{-1}=B^{-1}A^{-1}$ and
+$(A^\top)^{-1}=(A^{-1})^\top$, and tie the three outcomes to the geometry of the columns.
+The single claim this article defends is that **solvability is not algebra to memorize but
+a question about whether $\mathbf{b}$ lives in the span of $A$'s columns — and that the
+practitioner's reflex "solve, don't invert" follows directly from understanding what the
+inverse actually is.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The system $A\mathbf{x}=\mathbf{b}$ asks you to **write $\mathbf{b}$ as a combination of
+the columns of $A$**. There are exactly three possible answers, and which one you get is
+pure geometry:
+
+- **Exactly one way** — $A$ is **invertible**, $\mathbf{x}=A^{-1}\mathbf{b}$ is the unique
+  solution, and the map can be run backwards.
+- **No way at all** — $\mathbf{b}$ lies **outside the column space**; there is *no*
+  solution, and the best you can do is the closest reachable point (projection /
+  least squares).
+- **More than one way** — the map has a nontrivial **null space**; there are *infinitely
+  many* solutions, all differing by a direction $A$ collapses to $\mathbf{0}$.
+
+The inverse exists if and only if the columns are a basis: they span the whole space and
+do so without redundancy. Everything else in this article is a consequence of that one
+sentence.
+:::
+
+Everything below orbits that box. The symbol $A^{-1}$ will look like an algebraic gadget
+you compute by row-reduction, but by the end you should see it as the *name for "the map
+$A$ run backwards,"* an operation that exists only when running it backwards is
+unambiguous. And you should leave with a working practitioner's instinct: on a computer you
+almost never *form* $A^{-1}$, you *solve the system* — and @sec-solve-dont-invert explains,
+in full, why.
+
+# Why we are doing this: the oldest problem in the subject {#sec-why}
+
+Keep one question in view for the whole article: **when can a linear map be undone, and
+what is the meaning of each way it can fail?** Every derivation below answers a piece of
+that.
+
+## The problem that predates "linear algebra"
+
+Solving simultaneous linear equations is older than almost any other piece of mathematics
+we still teach. The Chinese text *Jiuzhang Suanshu* (*The Nine Chapters on the Mathematical
+Art*, compiled by roughly 200 BCE) devotes its eighth chapter, *Fangcheng* ("rectangular
+arrays"), to systems like "three bundles of good grain, two of mediocre, one of poor, yield
+39 *dou*; ..." — and solves them by laying the coefficients out in a rectangular array of
+counting rods and eliminating one unknown at a time. That elimination procedure is, line
+for line, the algorithm we now call **Gaussian elimination**, named for Gauss's
+nineteenth-century use of it in least-squares astronomy but two millennia older than him.
+
+The reason the problem is foundational is that *almost everything linear reduces to it*.
+Fitting a regression line, balancing a chemical reaction, finding the currents in a circuit
+(Kirchhoff's laws are linear), solving the discretized version of a differential equation,
+computing the stationary distribution of a Markov chain — each is, at its core, "find the
+$\mathbf{x}$ with $A\mathbf{x}=\mathbf{b}$." The matrix $A$ encodes how the unknowns
+combine; the vector $\mathbf{b}$ encodes what they must add up to. So the question "when can
+I solve it, and when can't I" is the question of when these problems have answers at all.
+
+## What "linear algebra" added to "solve the equations"
+
+The old methods *computed* a solution when one existed but were silent about *why* it
+existed, or what to do when it did not. Linear algebra's contribution — the contribution
+this whole track is built on — was to stop treating $A\mathbf{x}=\mathbf{b}$ as a tangle of
+scalar equations and start reading it as **a statement about vectors in space**. From
+[GEOM-08] we have the reading that turns the lock:
+
+$$
+A\mathbf{x}
+= \begin{bmatrix} | & | & & | \\ \mathbf{a}_1 & \mathbf{a}_2 & \cdots & \mathbf{a}_n \\ | & | & & | \end{bmatrix}
+\begin{bmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{bmatrix}
+= x_1\mathbf{a}_1 + x_2\mathbf{a}_2 + \cdots + x_n\mathbf{a}_n,
+$$ {#eq-columns}
+
+where $\mathbf{a}_j$ is the $j$-th **column** of $A$ and $x_j$ is the $j$-th entry of
+$\mathbf{x}$. (We re-derive this in @sec-columns-reading because it is the load-bearing
+idea of the article.) Read this way, $A\mathbf{x}=\mathbf{b}$ no longer asks "what numbers
+satisfy these equations" but "**with what weights $x_j$ do I combine the column-arrows
+$\mathbf{a}_j$ to land on $\mathbf{b}$?**" Once you see the question in that form, all three
+possible answers — one, none, or infinitely many — become statements about *where
+$\mathbf{b}$ sits relative to the column-arrows*, which we can draw. That is the whole
+article.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is $A\mathbf{x}=\mathbf{b}$ such a big deal — isn't it just simultaneous equations
+from high school?"* It is, and that is exactly the point: an enormous fraction of applied
+mathematics is *secretly* a linear system, and the language of linear algebra lets you
+answer the existence-and-uniqueness question **without solving** — by inspecting the
+geometry of $A$'s columns. High-school algebra can grind out a solution when one exists;
+linear algebra tells you *in advance* whether one exists, whether it is unique, and what to
+do when it is not. That predictive power is what you are buying.
+:::
+
+# Intuition before symbols: three pictures {#sec-intuition}
+
+Before any elimination, look at the three outcomes as pictures in the plane, where
+$A$ is $2\times 2$ and its two columns $\mathbf{a}_1,\mathbf{a}_2$ are arrows.
+
+The target $\mathbf{b}$ is some point. We are asked to reach it by walking $x_1$ steps
+along $\mathbf{a}_1$ and $x_2$ steps along $\mathbf{a}_2$. Three things can happen.
+
+1. **The two columns point in genuinely different directions.** Then they span the whole
+   plane: *any* $\mathbf{b}$ is reachable, and reachable in exactly one way (one choice of
+   $x_1$ and $x_2$). Unique solution. This is the invertible case.
+2. **The two columns are parallel** (one is a scalar multiple of the other). Then every
+   combination $x_1\mathbf{a}_1+x_2\mathbf{a}_2$ lands on the *single line* through both.
+   If $\mathbf{b}$ is off that line, you can never reach it — **no solution**. If
+   $\mathbf{b}$ happens to lie *on* that line, you can reach it, but in infinitely many ways
+   (trade steps along one column for steps along the parallel other) — **infinitely many
+   solutions**.
+
+@fig-three-cases draws all three.
+
+```{python}
+#| label: fig-three-cases
+#| fig-cap: "The three outcomes of $A\\mathbf{x}=\\mathbf{b}$ in the plane, read as 'combine the column-arrows to reach $\\mathbf{b}$.' **Left:** independent columns span the plane — every target is reached exactly one way (invertible). **Center:** parallel columns span only a line; a target off that line (red) is unreachable — no solution. **Right:** parallel columns and a target *on* their line — reachable, but in infinitely many ways (two example combinations shown), so the solution is not unique."
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 3.5))
+
+# --- Left: independent columns, unique solution ---
+ax = axes[0]
+a1 = np.array([2.0, 0.5]); a2 = np.array([0.5, 2.0])
+b  = np.array([2.5, 2.5])
+# solve for the weights
+x = np.linalg.solve(np.column_stack([a1, a2]), b)
+draw_vec(ax, (0, 0), a1, color=ACCENT, label=r"$\mathbf{a}_1$", label_offset=(0.25, -0.2))
+draw_vec(ax, (0, 0), a2, color=ACCENT, label=r"$\mathbf{a}_2$", label_offset=(-0.35, 0.2))
+draw_vec(ax, (0, 0), b, color=HILITE, label=r"$\mathbf{b}$", label_offset=(0.3, 0.2))
+# show the parallelogram path
+draw_vec(ax, (0, 0), x[0]*a1, color=GREY, lw=1.4, ls="--")
+draw_vec(ax, x[0]*a1, b, color=GREY, lw=1.4, ls="--")
+ax.set_title("Independent columns\n(unique solution)", fontsize=10)
+ax.set_xlim(-0.5, 3.5); ax.set_ylim(-0.5, 3.5); ax.set_aspect("equal")
+
+# --- Center: parallel columns, b off the line, no solution ---
+ax = axes[1]
+a1 = np.array([2.0, 1.0]); a2 = np.array([1.0, 0.5])  # a2 = 0.5 a1
+b  = np.array([1.0, 2.2])
+ts = np.linspace(-1.5, 2.0, 50)
+line = np.outer(ts, a1)
+ax.plot(line[:, 0], line[:, 1], color=PALE, lw=6, alpha=0.7, zorder=0,
+        label="reachable line")
+draw_vec(ax, (0, 0), a1, color=ACCENT, label=r"$\mathbf{a}_1$", label_offset=(0.25, -0.25))
+draw_vec(ax, (0, 0), a2, color=ACCENT, label=r"$\mathbf{a}_2$", label_offset=(0.3, -0.25))
+draw_vec(ax, (0, 0), b, color=HILITE, label=r"$\mathbf{b}$", label_offset=(0.3, 0.2))
+ax.set_title("Parallel columns,\n$\\mathbf{b}$ off the line (no solution)", fontsize=10)
+ax.set_xlim(-1.0, 3.5); ax.set_ylim(-0.5, 3.0); ax.set_aspect("equal")
+
+# --- Right: parallel columns, b on the line, infinitely many ---
+ax = axes[2]
+a1 = np.array([2.0, 1.0]); a2 = np.array([1.0, 0.5])
+b  = np.array([3.0, 1.5])   # = 1.5 * a1 (on the line)
+ts = np.linspace(-1.0, 2.2, 50)
+line = np.outer(ts, a1)
+ax.plot(line[:, 0], line[:, 1], color=PALE, lw=6, alpha=0.7, zorder=0,
+        label="reachable line")
+draw_vec(ax, (0, 0), a1, color=ACCENT, label=r"$\mathbf{a}_1$", label_offset=(0.25, -0.25))
+draw_vec(ax, (0, 0), b, color=HILITE, label=r"$\mathbf{b}$", label_offset=(0.3, 0.25))
+ax.set_title("Parallel columns,\n$\\mathbf{b}$ on the line ($\\infty$ solutions)", fontsize=10)
+ax.set_xlim(-1.0, 3.7); ax.set_ylim(-0.5, 2.5); ax.set_aspect("equal")
+
+plt.tight_layout()
+```
+
+The entire formal development is the precise, $n$-dimensional version of this picture. The
+words we will make exact — *span*, *independent*, *column space*, *null space* — are just
+the bookkeeping that lets us say which case we are in when we cannot draw the arrows.
+
+# The formal development {#sec-formal}
+
+## The column reading, made precise {#sec-columns-reading}
+
+We are given a matrix $A$ with $m$ rows and $n$ columns (an $m\times n$ matrix), an unknown
+vector $\mathbf{x}\in\mathbb{R}^n$, and a target $\mathbf{b}\in\mathbb{R}^m$. The product
+$A\mathbf{x}$ was defined in [GEOM-08] in two equivalent ways; we need the
+*column* reading and we re-derive it here so nothing is taken on faith.
+
+Write $A$ by its columns, $A=[\mathbf{a}_1\ \mathbf{a}_2\ \cdots\ \mathbf{a}_n]$, where
+each $\mathbf{a}_j\in\mathbb{R}^m$. By the definition of the matrix–vector product, the
+$i$-th entry of $A\mathbf{x}$ is the dot product of the $i$-th *row* of $A$ with
+$\mathbf{x}$:
+
+$$
+(A\mathbf{x})_i = \sum_{j=1}^{n} A_{ij}\,x_j .
+$$
+
+Now read that sum the other way — group by $j$ instead of evaluating per $i$. The number
+$A_{ij}$ is the $i$-th entry of the $j$-th column $\mathbf{a}_j$. So the whole vector
+$A\mathbf{x}$, stacked over all rows $i$, is
+
+$$
+A\mathbf{x}
+= \begin{bmatrix} \sum_j A_{1j}x_j \\ \sum_j A_{2j}x_j \\ \vdots \\ \sum_j A_{mj}x_j \end{bmatrix}
+= \sum_{j=1}^{n} x_j \begin{bmatrix} A_{1j} \\ A_{2j} \\ \vdots \\ A_{mj} \end{bmatrix}
+= \sum_{j=1}^{n} x_j\,\mathbf{a}_j ,
+$$
+
+which is exactly @eq-columns. The middle step is just the distributive law: a sum over $i$
+*and* $j$ can be regrouped to sum the $j$-th column scaled by $x_j$. So:
+
+::: {#def-system}
+**Definition (the system, read geometrically).** Solving $A\mathbf{x}=\mathbf{b}$ for
+$\mathbf{x}\in\mathbb{R}^n$ is *exactly* the problem of finding weights $x_1,\dots,x_n$ such
+that
+
+$$
+x_1\mathbf{a}_1 + x_2\mathbf{a}_2 + \cdots + x_n\mathbf{a}_n = \mathbf{b}.
+$$
+:::
+
+This recasting is the single most useful sentence in the article. It turns "solve the
+equations" into "is $\mathbf{b}$ a linear combination of the columns, and if so with what
+weights." The set of *all* linear combinations of the columns is, by definition from
+[GEOM-02], the **column space** of $A$:
+
+$$
+\operatorname{Col}(A) = \operatorname{span}\{\mathbf{a}_1,\dots,\mathbf{a}_n\}
+= \{A\mathbf{x} : \mathbf{x}\in\mathbb{R}^n\} \subseteq \mathbb{R}^m .
+$$ {#eq-colspace}
+
+The second equality is again @eq-columns: as $\mathbf{x}$ ranges over all of
+$\mathbb{R}^n$, $A\mathbf{x}$ ranges over all combinations of the columns. We can now state
+the existence question in one line.
+
+::: {#thm-existence}
+**Theorem (existence).** The system $A\mathbf{x}=\mathbf{b}$ has *at least one* solution if
+and only if $\mathbf{b}\in\operatorname{Col}(A)$ — that is, if and only if $\mathbf{b}$ can
+be written as a combination of the columns of $A$.
+:::
+
+::: {.proof}
+This is immediate from @def-system, but we spell out both directions. **($\Rightarrow$)** If
+some $\mathbf{x}$ solves the system, then $\mathbf{b}=A\mathbf{x}=\sum_j x_j\mathbf{a}_j$ by
+@eq-columns, which is a combination of the columns, so $\mathbf{b}\in\operatorname{Col}(A)$.
+**($\Leftarrow$)** If $\mathbf{b}\in\operatorname{Col}(A)$, then by the definition of the
+column space @eq-colspace there exist scalars $x_1,\dots,x_n$ with
+$\mathbf{b}=\sum_j x_j\mathbf{a}_j$; collecting them into the vector
+$\mathbf{x}=(x_1,\dots,x_n)$ gives $A\mathbf{x}=\mathbf{b}$ by @eq-columns. So a solution
+exists. $\qquad\blacksquare$
+:::
+
+The *no-solution* case of the Core is precisely the failure of @thm-existence:
+$\mathbf{b}\notin\operatorname{Col}(A)$. We come back to it in @sec-no-solution. First we
+handle the cleanest case — when there is exactly one solution and the map can be inverted.
+
+## Gaussian elimination is a sequence of linear maps {#sec-elimination}
+
+To *find* the solution (when it exists) we use elimination, the algorithm from the *Nine
+Chapters*. The geometric insight that makes it modern — and that builds straight to the
+inverse — is that **each elimination step is itself a linear map**, i.e. left-multiplication
+by a matrix. We will use this to manufacture $A^{-1}$ for free.
+
+Work with a square $A$ ($m=n$) for now; the rectangular case is @sec-rectangular. The three
+operations elimination performs on the rows of $A$ (and simultaneously on $\mathbf{b}$) are:
+
+1. **Add a multiple of one row to another.** Replace row $i$ by (row $i$) $+\ c\cdot$(row
+   $k$).
+2. **Scale a row** by a nonzero constant.
+3. **Swap two rows.**
+
+Each of these can be written as left-multiplication by an **elementary matrix** $E$, namely
+the identity with that one operation applied to it. We show this for operation 1; the others
+are identical in spirit. Let $E$ be the identity matrix $I$ with an extra $c$ placed in row
+$i$, column $k$ (so $E_{ik}=c$, off the diagonal). Then for any matrix $M$, the product $EM$
+has the same rows as $M$ except that row $i$ becomes
+
+$$
+(EM)_{i\cdot} = \sum_{p} E_{ip}\,M_{p\cdot}
+= \underbrace{1\cdot M_{i\cdot}}_{\text{from } E_{ii}=1}
+  + \underbrace{c\cdot M_{k\cdot}}_{\text{from } E_{ik}=c}
+= M_{i\cdot} + c\,M_{k\cdot},
+$$
+
+which is exactly operation 1. Here $M_{i\cdot}$ denotes the $i$-th row of $M$, and the sum
+collapses because $E$'s $i$-th row has only two nonzero entries: the $1$ on the diagonal and
+the $c$ in column $k$. So performing an elimination step on the system is the same as
+multiplying both sides on the left by an elementary matrix $E$:
+
+$$
+A\mathbf{x}=\mathbf{b}
+\quad\Longrightarrow\quad
+EA\mathbf{x}=E\mathbf{b}.
+$$
+
+This does not change the solution set: $E$ is invertible (we can undo "add $c$ times row
+$k$ to row $i$" by "subtract $c$ times row $k$ from row $i$," another elementary matrix), so
+$EA\mathbf{x}=E\mathbf{b}$ holds for the same $\mathbf{x}$ as $A\mathbf{x}=\mathbf{b}$.
+Elimination applies a sequence $E_1, E_2, \dots, E_K$ until the left side becomes the
+identity:
+
+$$
+E_K\cdots E_2 E_1 A = I .
+$$ {#eq-elim-to-I}
+
+When elimination *succeeds* in reaching $I$ — when there is a pivot in every row and
+column, no zero ever blocking the way — the matrix $A$ is invertible, and @eq-elim-to-I
+hands us the inverse directly.
+
+## The inverse, defined and computed {#sec-inverse}
+
+::: {#def-inverse}
+**Definition (inverse matrix).** A square matrix $A$ ($n\times n$) is **invertible** (or
+**nonsingular**) if there is a matrix $A^{-1}$ of the same size with
+
+$$
+A^{-1}A = I \qquad\text{and}\qquad A A^{-1} = I,
+$$ {#eq-inverse-def}
+
+where $I$ is the $n\times n$ identity (ones on the diagonal, zeros elsewhere: the matrix of
+the map that leaves every vector fixed, since $I\mathbf{x}=\mathbf{x}$). If no such matrix
+exists, $A$ is **singular** (non-invertible).
+:::
+
+The meaning is the whole point: $A$ takes $\mathbf{x}$ to $A\mathbf{x}$; $A^{-1}$ takes it
+back. The map $A^{-1}$ *undoes* $A$. That is why @eq-inverse-def reads "do $A$ then $A^{-1}$
+and you are back where you started" ($A^{-1}A=I$), and "do $A^{-1}$ then $A$ and likewise"
+($AA^{-1}=I$). Once $A^{-1}$ exists, the system solves itself: left-multiply
+$A\mathbf{x}=\mathbf{b}$ by $A^{-1}$,
+
+$$
+A^{-1}(A\mathbf{x}) = A^{-1}\mathbf{b}
+\;\Longrightarrow\;
+(A^{-1}A)\mathbf{x} = A^{-1}\mathbf{b}
+\;\Longrightarrow\;
+I\mathbf{x} = A^{-1}\mathbf{b}
+\;\Longrightarrow\;
+\boxed{\;\mathbf{x} = A^{-1}\mathbf{b}.\;}
+$$ {#eq-solve}
+
+The middle steps use only associativity of matrix multiplication (proved in [GEOM-09]) and
+the definition $A^{-1}A=I$, $I\mathbf{x}=\mathbf{x}$. And the solution is **unique**: if
+$\mathbf{x}_1$ and $\mathbf{x}_2$ both solved the system, then
+$A\mathbf{x}_1=A\mathbf{x}_2=\mathbf{b}$, so $A(\mathbf{x}_1-\mathbf{x}_2)=\mathbf{0}$;
+left-multiplying by $A^{-1}$ gives $\mathbf{x}_1-\mathbf{x}_2 = A^{-1}\mathbf{0}=\mathbf{0}$,
+hence $\mathbf{x}_1=\mathbf{x}_2$.
+
+**Where does $A^{-1}$ come from?** From @eq-elim-to-I. Set $B = E_K\cdots E_2 E_1$, the
+product of all the elimination steps. Then @eq-elim-to-I says $BA=I$. For square matrices
+this one-sided identity already forces $B=A^{-1}$ — we prove that in @lem-onesided below —
+so $A^{-1} = E_K\cdots E_2 E_1$. This is the recipe behind the standard **Gauss–Jordan**
+computation: write $A$ and $I$ side by side as $[\,A \mid I\,]$, run elimination until the
+left block becomes $I$, and whatever the right block became is $A^{-1}$ — because the same
+product $B$ that turned $A$ into $I$ turned $I$ into $BI=B=A^{-1}$.
+
+::: {#lem-onesided}
+**Lemma (a one-sided inverse of a square matrix is the inverse).** If $A$ and $B$ are
+$n\times n$ and $BA=I$, then also $AB=I$, so $B=A^{-1}$.
+:::
+
+::: {.proof}
+First, $BA=I$ forces the columns of $A$ to be linearly independent: if $A\mathbf{v}
+=\mathbf{0}$ then $\mathbf{v}=I\mathbf{v}=(BA)\mathbf{v}=B(A\mathbf{v})=B\mathbf{0}
+=\mathbf{0}$, so the only vector $A$ sends to $\mathbf{0}$ is $\mathbf{0}$ itself. By
+@thm-uniqueness (next section) that independence means every system $A\mathbf{x}=\mathbf{c}$
+has *at most* one solution; and because $A$ is $n\times n$ with $n$ independent columns,
+those columns are a basis of $\mathbb{R}^n$ (a set of $n$ independent vectors in
+$\mathbb{R}^n$ spans it — the basis fact from [GEOM-03]), so every $\mathbf{c}$ is reachable
+and the solution *exists*. Thus $A\mathbf{x}=\mathbf{c}$ has a unique solution for every
+$\mathbf{c}$; collecting the solutions of $A\mathbf{x}=\mathbf{e}_j$ for the standard basis
+vectors $\mathbf{e}_j$ into the columns of a matrix $C$ gives $AC=I$. Now both $BA=I$ and
+$AC=I$ hold, and associativity gives $B = B(AC) = (BA)C = C$, so $AB=AC=I$. Hence $B$ is a
+genuine two-sided inverse. $\qquad\blacksquare$
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Does a matrix ever have a left inverse but not a right inverse?"* For a **square** matrix,
+no — @lem-onesided shows a one-sided inverse is automatically two-sided. For a **rectangular**
+matrix it absolutely can: a tall $m\times n$ matrix ($m>n$) with independent columns has a
+left inverse $(A^\top A)^{-1}A^\top$ but no right inverse (it cannot be onto a bigger space).
+That left inverse *is* the least-squares solver — it reappears in @sec-rectangular and is
+the heart of Regression R5. Knowing that the square one-sided result does **not** extend to
+rectangular matrices is exactly the kind of edge an interviewer probes.
+:::
+
+## Uniqueness and the null space {#sec-uniqueness}
+
+Existence (@thm-existence) is about $\mathbf{b}$ reaching the column space. *Uniqueness* is
+a separate question, and it is about $A$ alone, not $\mathbf{b}$. The object that governs it
+is the **null space**.
+
+::: {#def-nullspace}
+**Definition (null space).** The **null space** (or kernel) of $A$ is the set of vectors the
+map crushes to the origin:
+
+$$
+\operatorname{Null}(A) = \{\mathbf{v}\in\mathbb{R}^n : A\mathbf{v}=\mathbf{0}\}.
+$$
+:::
+
+The null space always contains $\mathbf{0}$ (since $A\mathbf{0}=\mathbf{0}$). The question is
+whether it contains *anything else*.
+
+::: {#thm-uniqueness}
+**Theorem (uniqueness).** Suppose $A\mathbf{x}=\mathbf{b}$ has at least one solution
+$\mathbf{x}_0$. Then the *complete* set of solutions is
+
+$$
+\{\mathbf{x}_0 + \mathbf{v} : \mathbf{v}\in\operatorname{Null}(A)\}.
+$$
+
+Consequently the solution is **unique if and only if $\operatorname{Null}(A)=\{\mathbf{0}\}$**
+— i.e. the only vector $A$ sends to zero is zero itself, equivalently the columns of $A$ are
+linearly independent.
+:::
+
+::: {.proof}
+Let $\mathbf{x}_0$ be one solution, so $A\mathbf{x}_0=\mathbf{b}$. Take any other vector
+$\mathbf{x}$ and write $\mathbf{v}=\mathbf{x}-\mathbf{x}_0$. Then, using linearity of the map
+($A(\mathbf{p}+\mathbf{q})=A\mathbf{p}+A\mathbf{q}$, from [GEOM-08]),
+
+$$
+A\mathbf{x} = A(\mathbf{x}_0+\mathbf{v}) = A\mathbf{x}_0 + A\mathbf{v}
+= \mathbf{b} + A\mathbf{v}.
+$$
+
+So $\mathbf{x}$ is a solution ($A\mathbf{x}=\mathbf{b}$) *if and only if* $A\mathbf{v}
+=\mathbf{0}$, i.e. $\mathbf{v}\in\operatorname{Null}(A)$. That is precisely the claimed
+solution set. For the uniqueness statement: if $\operatorname{Null}(A)=\{\mathbf{0}\}$ the
+only allowed $\mathbf{v}$ is $\mathbf{0}$, leaving the single solution $\mathbf{x}_0$;
+conversely if $\operatorname{Null}(A)$ contains some $\mathbf{v}\neq\mathbf{0}$ then
+$\mathbf{x}_0$ and $\mathbf{x}_0+\mathbf{v}$ are two distinct solutions. Finally, the
+equivalence "$\operatorname{Null}(A)=\{\mathbf{0}\}$ iff the columns are independent" is
+just @eq-columns read as a definition: $A\mathbf{v}=\mathbf{0}$ means
+$\sum_j v_j\mathbf{a}_j=\mathbf{0}$, and the only such combination being the trivial one
+($\mathbf{v}=\mathbf{0}$) is the *definition* of linear independence of the columns
+([GEOM-03]). $\qquad\blacksquare$
+:::
+
+This theorem is the engine behind the "infinitely many" branch of the Core. If the columns
+are dependent — one is a redundant combination of the others — then $\operatorname{Null}(A)$
+is more than just the origin: it contains a whole line (or plane, or higher) of directions
+the map collapses. For any reachable $\mathbf{b}$, you can take a solution and slide it
+along that direction and still solve the system, because $A$ does not see the slide. **The
+solutions form a copy of the null space, shifted to pass through any one solution.**
+@fig-solution-set shows it.
+
+```{python}
+#| label: fig-solution-set
+#| fig-cap: "When the columns are dependent the solution set is a *line*, not a point. Here $A$ has a one-dimensional null space (the dashed direction $\\mathbf{v}$, which $A$ crushes to $\\mathbf{0}$). Any particular solution $\\mathbf{x}_0$ plus any multiple of $\\mathbf{v}$ is still a solution: the full solution set is the green line $\\mathbf{x}_0 + t\\,\\mathbf{v}$. Uniqueness fails precisely because the null space is bigger than the single point $\\mathbf{0}$."
+fig, ax = plt.subplots(figsize=(5.6, 4.6))
+x0 = np.array([1.0, 0.5])
+v  = np.array([1.0, 1.4])   # null-space direction
+ts = np.linspace(-1.6, 1.8, 50)
+sol = x0[:, None] + np.outer(v, ts)
+ax.plot(sol[0], sol[1], color=ACCENT, lw=3, label=r"solution set $\mathbf{x}_0 + t\,\mathbf{v}$")
+ax.scatter(*x0, color=HILITE, s=70, zorder=5, label=r"a particular solution $\mathbf{x}_0$")
+# draw the null-space direction as an arrow at origin
+draw_vec(ax, (0, 0), v, color=GREY, lw=2.0, ls="--", label=r"$\mathbf{v}\in\mathrm{Null}(A)$",
+         label_offset=(0.3, 0.15))
+ax.scatter(0, 0, color="black", s=30, zorder=5)
+ax.text(0.05, -0.28, r"$\mathbf{0}$", fontsize=12)
+ax.set_xlim(-1.5, 3.0); ax.set_ylim(-2.0, 3.0); ax.set_aspect("equal")
+ax.set_title("Dependent columns: infinitely many solutions")
+ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## The full verdict: one theorem ties existence and uniqueness together {#sec-verdict}
+
+For a **square** $A$ the two questions collapse into one, and this is the cleanest result of
+the article.
+
+::: {#thm-invertible}
+**Theorem (invertibility = full rank, square case).** For an $n\times n$ matrix $A$, the
+following are equivalent:
+
+1. $A$ is invertible (an $A^{-1}$ exists).
+2. The columns of $A$ are linearly independent.
+3. The columns of $A$ span all of $\mathbb{R}^n$ (so $\operatorname{Col}(A)=\mathbb{R}^n$).
+4. $\operatorname{Null}(A)=\{\mathbf{0}\}$.
+5. $A\mathbf{x}=\mathbf{b}$ has a *unique* solution for **every** $\mathbf{b}$.
+:::
+
+::: {.proof}
+We show the equivalences by chaining what we already have. **(2)$\Leftrightarrow$(4)** is
+the last line of @thm-uniqueness. **(2)$\Leftrightarrow$(3):** $n$ vectors in
+$\mathbb{R}^n$ are independent if and only if they form a basis, i.e. if and only if they
+also span $\mathbb{R}^n$ — this is the basis-counting fact from [GEOM-03] (in a space of
+dimension $n$, any $n$ independent vectors span, and any $n$ spanning vectors are
+independent). **(3)$\Rightarrow$ existence for every $\mathbf{b}$:** if the columns span
+$\mathbb{R}^n$ then every $\mathbf{b}\in\mathbb{R}^n$ lies in $\operatorname{Col}(A)$, so by
+@thm-existence a solution exists. Combined with **(4)** (uniqueness), this gives **(5)**:
+existence-and-uniqueness for every $\mathbf{b}$. **(5)$\Rightarrow$(1):** if every
+$A\mathbf{x}=\mathbf{e}_j$ has a unique solution $\mathbf{c}_j$ (for the standard basis
+vectors $\mathbf{e}_1,\dots,\mathbf{e}_n$), collect the $\mathbf{c}_j$ as the columns of a
+matrix $C$; then $AC=I$ by construction, and by @lem-onesided this $C$ is a genuine
+two-sided inverse, so $A$ is invertible. **(1)$\Rightarrow$(5):** shown already at
+@eq-solve (existence $\mathbf{x}=A^{-1}\mathbf{b}$ and the uniqueness argument right after
+it). The cycle closes, so all five are equivalent. $\qquad\blacksquare$
+:::
+
+This is why the Core could say it in one breath: *the inverse exists if and only if the
+columns are a basis.* Independent (no redundancy, condition 2) **and** spanning (reach
+everything, condition 3) are the two halves of "basis," and for a square matrix each implies
+the other. We will meet two more equivalent conditions later in the track and only **flag**
+them here, because each is built properly in its own article:
+
+- **"$A$ has full rank $n$"** — the rank is the dimension of the column space ([GEOM-12]),
+  and full rank $n$ for an $n\times n$ matrix is exactly condition 3.
+- **"$\det A \neq 0$"** — the determinant is the signed volume of the image of the unit cube
+  ([GEOM-13]); it is zero precisely when the map collapses space, which is exactly the
+  failure of conditions 2–3.
+
+These are genuinely the *same* condition wearing three costumes (rank, determinant, the
+basis property). We are not deferring the *explanation* — @thm-invertible is complete on its
+own — we are only naming the two equivalent diagnostics that other articles build.
+
+## The algebra of inverses: two identities, proved {#sec-inverse-algebra}
+
+The inverse interacts with products and transposes in ways we will use constantly
+downstream (the normal equations of Regression are built from exactly these moves). We prove
+both from the definition @eq-inverse-def — nothing is asserted.
+
+::: {#thm-inverse-product}
+**Theorem (inverse of a product).** If $A$ and $B$ are invertible $n\times n$ matrices, then
+$AB$ is invertible and
+
+$$
+(AB)^{-1} = B^{-1}A^{-1}.
+$$
+:::
+
+::: {.proof}
+To show a matrix $M$ is the inverse of $AB$, we need only check $M(AB)=I$ (then @lem-onesided
+gives the other side automatically). Take $M=B^{-1}A^{-1}$ and compute, using associativity
+([GEOM-09]) to regroup and the definitions $A^{-1}A=I$, $B^{-1}B=I$, $IB=B$:
+
+$$
+(B^{-1}A^{-1})(AB)
+= B^{-1}(A^{-1}A)B
+= B^{-1} I B
+= B^{-1}B
+= I.
+$$
+
+So $B^{-1}A^{-1}$ is the inverse of $AB$. $\qquad\blacksquare$
+:::
+
+The order-reversal is not an algebraic accident; it is the geometry of "undo." If you put on
+socks ($B$) then shoes ($A$), undoing means taking off shoes first ($A^{-1}$) then socks
+($B^{-1}$): $(AB)^{-1}=B^{-1}A^{-1}$. You undo composed maps in reverse order — exactly the
+order-reversal that the transpose obeys in [GEOM-10], for the same structural reason.
+
+::: {#thm-inverse-transpose}
+**Theorem (inverse of a transpose).** If $A$ is invertible, so is $A^\top$, and
+
+$$
+(A^\top)^{-1} = (A^{-1})^\top .
+$$
+:::
+
+::: {.proof}
+We use the transpose-of-a-product identity $(MN)^\top = N^\top M^\top$ proved in [GEOM-10],
+and the fact that $I^\top = I$ (the identity is symmetric — flipping it across the diagonal
+changes nothing). Start from the defining relation $A^{-1}A=I$ and transpose both sides:
+
+$$
+(A^{-1}A)^\top = I^\top
+\;\Longrightarrow\;
+A^\top (A^{-1})^\top = I .
+$$
+
+This says $(A^{-1})^\top$ is a *right* inverse of $A^\top$. Doing the same to $AA^{-1}=I$
+gives $(A^{-1})^\top A^\top = I$, a left inverse. Having both, $(A^{-1})^\top$ is the inverse
+of $A^\top$. $\qquad\blacksquare$
+:::
+
+The notation $A^{-\top}$ is common shorthand for this single object $(A^\top)^{-1}=(A^{-1})^\top$.
+The two operations — invert and transpose — commute, so the order you apply them in does not
+matter.
+
+# The no-solution case: the bridge back to projection {#sec-no-solution}
+
+We have handled "exactly one" (invertible) and "infinitely many" (nontrivial null space).
+The third outcome — **no solution** — is the one that, far from being a dead end, opens the
+door to the most important construction in the whole track. It is worth the most care.
+
+By @thm-existence, no solution means $\mathbf{b}\notin\operatorname{Col}(A)$: the target is
+not reachable by any combination of the columns. This is the *normal* situation in data
+science, not a pathology. Whenever you have **more equations than unknowns** — more data
+points than parameters, the **over-determined** case ($m>n$, a tall thin $A$) — the column
+space is a low-dimensional slice of a high-dimensional $\mathbb{R}^m$, and a noisy
+$\mathbf{b}$ will almost surely miss it. Three measurements of a quantity that should agree
+never quite do; the system "all three equal the true value" has no exact solution. That is
+the over-determined problem that *birthed* least squares, the same one Legendre and Gauss
+faced (and the opening of the Regression exemplar, REGR-01).
+
+So what do we do when we cannot hit $\mathbf{b}$? **We hit the closest point we can.** We
+replace the unsolvable $A\mathbf{x}=\mathbf{b}$ with the solvable
+
+$$
+A\hat{\mathbf{x}} = \mathbf{b}^\star, \qquad
+\mathbf{b}^\star = \text{the point of } \operatorname{Col}(A) \text{ closest to } \mathbf{b},
+$$
+
+and accept the unavoidable gap $\mathbf{b}-\mathbf{b}^\star$. That closest point
+$\mathbf{b}^\star$ is the **orthogonal projection** of $\mathbf{b}$ onto the column space,
+the keystone construction of [GEOM-06]. @fig-no-solution draws the geometry in
+$\mathbb{R}^3$: a two-dimensional column-space plane, a target $\mathbf{b}$ floating off it,
+and the perpendicular dropped to the nearest reachable point.
+
+```{python}
+#| label: fig-no-solution
+#| fig-cap: "The no-solution case, and its repair. The columns of a tall $A$ span a plane (the column space) inside $\\mathbb{R}^3$. The target $\\mathbf{b}$ (red) sits *off* the plane, so $A\\mathbf{x}=\\mathbf{b}$ has no solution. The honest response is to solve $A\\hat{\\mathbf{x}}=\\mathbf{b}^\\star$ where $\\mathbf{b}^\\star$ (green) is the closest point of the plane to $\\mathbf{b}$ — its orthogonal projection. The leftover $\\mathbf{b}-\\mathbf{b}^\\star$ (dashed) is perpendicular to the plane: it is the residual that least squares minimizes."
+fig = plt.figure(figsize=(6.6, 5.2))
+ax = fig.add_subplot(111, projection="3d")
+
+# two columns spanning a plane through the origin
+a1 = np.array([1.0, 0.2, 0.0])
+a2 = np.array([0.3, 1.0, 0.0])
+# the plane (rotate it a bit so it isn't axis-aligned)
+R = np.array([[1, 0, 0],
+              [0, np.cos(0.5), -np.sin(0.5)],
+              [0, np.sin(0.5),  np.cos(0.5)]])
+a1 = R @ a1; a2 = R @ a2
+ss = np.linspace(-1.4, 1.8, 12); tt = np.linspace(-1.4, 1.8, 12)
+S, T = np.meshgrid(ss, tt)
+P = (S[..., None] * a1 + T[..., None] * a2)
+ax.plot_surface(P[..., 0], P[..., 1], P[..., 2], alpha=0.30, color=PALE,
+                linewidth=0, zorder=0)
+
+# target b off the plane
+b = np.array([1.2, 0.7, 1.3])
+# projection of b onto span(a1, a2): solve normal equations for the picture
+Acol = np.column_stack([a1, a2])
+xhat = np.linalg.solve(Acol.T @ Acol, Acol.T @ b)
+bstar = Acol @ xhat
+
+ax.quiver(0, 0, 0, *a1, color=ACCENT, arrow_length_ratio=0.12, lw=2)
+ax.quiver(0, 0, 0, *a2, color=ACCENT, arrow_length_ratio=0.12, lw=2)
+ax.quiver(0, 0, 0, *b, color=HILITE, arrow_length_ratio=0.10, lw=2.5)
+ax.quiver(0, 0, 0, *bstar, color=ACCENT, arrow_length_ratio=0.12, lw=2.5)
+ax.plot([b[0], bstar[0]], [b[1], bstar[1]], [b[2], bstar[2]],
+        color=GREY, ls="--", lw=2)
+
+ax.text(*(a1 * 1.15), r"$\mathbf{a}_1$", color=ACCENT)
+ax.text(*(a2 * 1.15), r"$\mathbf{a}_2$", color=ACCENT)
+ax.text(*(b * 1.08), r"$\mathbf{b}$", color=HILITE)
+ax.text(*(bstar * 1.10 + np.array([0, 0, -0.15])), r"$\mathbf{b}^\star$", color=ACCENT)
+ax.text(*((b + bstar) / 2 + np.array([0.15, 0, 0.1])), "residual", color=GREY, fontsize=9)
+ax.set_title("No solution: project $\\mathbf{b}$ onto the column space")
+ax.set_xlabel("x"); ax.set_ylabel("y"); ax.set_zlabel("z")
+ax.view_init(elev=22, azim=-60)
+ax.set_box_aspect((1, 1, 0.8))
+plt.tight_layout()
+```
+
+The condition that pins down $\mathbf{b}^\star$ is that the residual $\mathbf{b}-A\hat{\mathbf{x}}$
+must be **orthogonal to every column** of $A$ — "perpendicular to the plane." Writing
+"orthogonal to every column" as a single matrix equation (the columns of $A$ dotted with the
+residual all vanish, i.e. $A^\top(\mathbf{b}-A\hat{\mathbf{x}})=\mathbf{0}$) gives the
+**normal equations**
+
+$$
+A^\top A\,\hat{\mathbf{x}} = A^\top \mathbf{b},
+$$ {#eq-normal-eq}
+
+and, *when $A^\top A$ is invertible*, the least-squares solution
+
+$$
+\hat{\mathbf{x}} = (A^\top A)^{-1} A^\top \mathbf{b}.
+$$ {#eq-lsq}
+
+We are not deriving the projection here — that derivation, including *why* orthogonality of
+the residual is equivalent to closeness, is the entire content of [GEOM-06], and we honor the
+track's ownership by pointing there rather than re-running it. What this article contributes
+is the *connection*: the unsolvable system has a best-possible stand-in, and computing that
+stand-in is itself a solvable square system @eq-normal-eq in the smaller matrix $A^\top A$.
+The object $(A^\top A)^{-1}$ in @eq-lsq is exactly the $(X^\top X)^{-1}$ that Regression R5
+revolves around; everything we proved about inverses applies to it, and the condition for it
+to exist ($A$ has independent columns, so $A^\top A$ is invertible — proved in [GEOM-18] via
+positive-definiteness) is the very full-rank condition of @thm-invertible applied to the
+slimmer matrix.
+
+::: {.callout-tip title="You might be asked"}
+*"If $A\mathbf{x}=\mathbf{b}$ has no solution, what does $A^{-1}$ even mean — and what does
+your software return?"* If $A$ is rectangular (the usual over-determined case), $A^{-1}$ does
+not exist at all — only square matrices can have inverses, because @eq-inverse-def needs
+$A^{-1}A$ and $AA^{-1}$ to both be the *same-size* identity. What the least-squares machinery
+returns in @eq-lsq is the **left inverse** $(A^\top A)^{-1}A^\top$ (a wide $n\times m$
+matrix). It satisfies $\big[(A^\top A)^{-1}A^\top\big]A = I_n$ but *not* the other order. The
+fully general object that works for *any* shape and *any* rank — square or not, full rank or
+not — is the **Moore–Penrose pseudoinverse** $A^{+}$, built from the SVD in [GEOM-21]; for a
+tall full-rank $A$ it reduces to exactly $(A^\top A)^{-1}A^\top$, and `numpy.linalg.pinv`
+computes it. Saying "$A$ has no inverse, but it has a pseudoinverse that gives the
+least-squares/minimum-norm solution" is the answer that shows you understand all three cases
+at once.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run all three outcomes on honest numbers, and include an example at the **edge of
+applicability** — a system that is technically invertible but numerically a trap, which
+motivates the practitioner's rule in @sec-solve-dont-invert.
+
+## Example 1 — a well-posed $3\times 3$ system: mixing a fertilizer blend {#sec-ex-fertilizer}
+
+A genuinely linear, genuinely invertible problem. A grower has three stock fertilizers and
+needs a blend hitting a target nutrient profile. Stock 1 is $(N,P,K)=(10,5,5)$ percent by
+weight; stock 2 is $(4,10,6)$; stock 3 is $(6,4,12)$. Mixing $x_1, x_2, x_3$ kilograms of
+each delivers nutrients $x_1\mathbf{a}_1 + x_2\mathbf{a}_2 + x_3\mathbf{a}_3$ — a linear
+combination of the columns, *exactly* @def-system. The target is $\mathbf{b}=(86,77,94)$ (in
+the same percent-kilograms units). We solve $A\mathbf{x}=\mathbf{b}$.
+
+```{python}
+#| label: tbl-fertilizer
+#| echo: true
+import numpy as np
+A = np.array([[10.0, 4.0, 6.0],    # Nitrogen row
+              [ 5.0, 10.0, 4.0],   # Phosphorus row
+              [ 5.0, 6.0, 12.0]])  # Potassium row
+b = np.array([86.0, 77.0, 94.0])
+
+# The recommended way: SOLVE, do not form the inverse (see section on this).
+x = np.linalg.solve(A, b)
+print("solution x (kg of each stock):", np.round(x, 4))
+
+# Verify by reconstruction: A x should reproduce b.
+print("A @ x reproduces b? ", np.allclose(A @ x, b), "  ->", np.round(A @ x, 3))
+
+# For illustration only, the inverse exists and gives the same answer:
+Ainv = np.linalg.inv(A)
+print("same x via A^{-1} b:", np.round(Ainv @ b, 4))
+print("A^{-1} A = I? ", np.allclose(Ainv @ A, np.eye(3)))
+```
+
+The columns point in three genuinely different nutrient directions, so they span
+$\mathbb{R}^3$: every reachable profile is reachable in exactly one way (@thm-invertible).
+The solver returns the unique blend, and reconstruction confirms it. The code also forms
+$A^{-1}$ *for illustration* and recovers the same $\mathbf{x}$ — but note we led with
+`solve`, not `inv`, for the reason developed in @sec-solve-dont-invert. The verdict here is
+the clean one: independent columns, trivial null space, unique solution.
+
+## Example 2 — no solution: an over-determined sensor reconciliation {#sec-ex-overdetermined}
+
+Now the data-science default. Four temperature sensors are placed along a thin metal rod and
+report readings; physics says the temperature should be **linear in position**,
+$T(p)=c_0 + c_1 p$, so the model has only $n=2$ unknowns $(c_0,c_1)$ but $m=4$ noisy
+equations. The design matrix $A$ stacks $[1, p_i]$ rows; $\mathbf{b}$ is the four readings.
+With noise, no straight line passes through all four points: $\mathbf{b}$ lies *off* the
+two-dimensional column space, and $A\mathbf{x}=\mathbf{b}$ has **no exact solution**.
+
+```{python}
+#| label: fig-overdetermined
+#| fig-cap: "An over-determined system ($m=4$ equations, $n=2$ unknowns) with no exact solution. **Left:** four noisy sensor readings; no line hits all four, so $A\\mathbf{x}=\\mathbf{b}$ is unsolvable. The least-squares line (red) solves the normal equations $A^\\top A\\hat{\\mathbf{x}}=A^\\top\\mathbf{b}$ instead — the best reachable stand-in. **Right:** the residuals $\\mathbf{b}-A\\hat{\\mathbf{x}}$, the unavoidable gap between the target and the column space. They sum to zero and are uncorrelated with position — the orthogonality condition of the normal equations, made visible."
+pos = np.array([0.0, 1.0, 2.0, 3.0])
+read = np.array([20.1, 22.4, 23.3, 25.9])     # noisy, not collinear
+A = np.column_stack([np.ones_like(pos), pos])  # 4 x 2 design matrix
+b = read
+
+# No exact solution: confirm b is not reachable.
+# Least-squares stand-in via the normal equations (square 2x2 solve).
+xhat = np.linalg.solve(A.T @ A, A.T @ b)
+fitted = A @ xhat
+resid = b - fitted
+ps = np.linspace(-0.3, 3.3, 50)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.7))
+axL.scatter(pos, read, color=VEC, s=55, zorder=3, label="sensor readings $\\mathbf{b}$")
+axL.plot(ps, xhat[0] + xhat[1] * ps, color=HILITE,
+         label=f"LSQ line $T={xhat[0]:.2f}+{xhat[1]:.2f}p$")
+for p, r, f in zip(pos, read, fitted):
+    axL.plot([p, p], [r, f], color=GREY, lw=1.4)
+axL.set_xlabel("position $p$"); axL.set_ylabel("temperature $T$")
+axL.set_title("No exact solution -> best reachable line")
+axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+axR.axhline(0, color=GREY, lw=1.2)
+axR.scatter(pos, resid, color=VEC, s=55, zorder=3)
+for p, r in zip(pos, resid):
+    axR.plot([p, p], [0, r], color=GREY, lw=1.4)
+axR.set_xlabel("position $p$"); axR.set_ylabel("residual")
+axR.set_title("Residual = gap to the column space")
+plt.tight_layout()
+
+print("normal-equation solution xhat (c0, c1):", np.round(xhat, 4))
+print("sum of residuals            :", f"{resid.sum(): .3e}  (~0, orthogonal to the all-ones column)")
+print("sum of position * residual  :", f"{np.dot(pos, resid): .3e}  (~0, orthogonal to the position column)")
+```
+
+The two printed checks are @eq-normal-eq made operational: the residual is orthogonal to
+both columns of $A$ (the all-ones column and the position column), so the two dot products
+vanish. There was no $\mathbf{x}$ with $A\mathbf{x}=\mathbf{b}$ — but there is a unique
+$\hat{\mathbf{x}}$ making $A\hat{\mathbf{x}}$ the *closest* point of the column space to
+$\mathbf{b}$. This is the no-solution branch of the Core, and it is the entire reason
+least-squares regression exists. Reading it the geometry way: $\mathbf{b}\in\mathbb{R}^4$
+could not be reached from a 2-dimensional plane, so we settled for the foot of the
+perpendicular.
+
+## Example 3 — infinitely many: an under-determined / rank-deficient system {#sec-ex-underdetermined}
+
+The third branch. Suppose two of our "independent" predictors are secretly the same
+information in different units — say a length recorded once in meters and once in feet, so
+column 2 is exactly $3.281\times$ column 1. The columns are then **dependent**: the null
+space is nontrivial, and any solvable target is solved in infinitely many ways.
+
+```{python}
+#| label: fig-underdetermined
+#| fig-cap: "A rank-deficient system: column 2 is a scalar multiple of column 1 (the same feature in different units). Its null space is the dashed line of weight-vectors $\\mathbf{x}$ that $A$ crushes to $\\mathbf{0}$ — trade weight off column 1 against column 2 in the fixed ratio and the prediction never changes. Every dot on the green line is an exact solution of $A\\mathbf{x}=\\mathbf{b}$; the minimum-norm one (filled) is what the pseudoinverse returns."
+# A: 3 rows, 2 columns; column 2 = 3.281 * column 1  => rank 1, dependent.
+col1 = np.array([1.0, 2.0, 0.5])
+A = np.column_stack([col1, 3.281 * col1])      # 3 x 2, rank 1
+# pick a b that IS reachable (in the column space) so solutions exist
+x_true = np.array([2.0, -0.3])
+b = A @ x_true
+
+# Null space direction: A v = 0  <=>  v1 col1 + v2 (3.281 col1) = 0
+# => v1 + 3.281 v2 = 0  => v = (3.281, -1) up to scale.
+v = np.array([3.281, -1.0]); v = v / np.linalg.norm(v)
+
+# minimum-norm solution via the pseudoinverse
+x_min = np.linalg.pinv(A) @ b
+
+ts = np.linspace(-3, 3, 50)
+sols = x_min[:, None] + np.outer(v, ts)
+
+fig, ax = plt.subplots(figsize=(5.8, 4.8))
+ax.plot(sols[0], sols[1], color=ACCENT, lw=3, label=r"all solutions $\mathbf{x}_0+t\mathbf{v}$")
+ax.scatter(*x_true, color=VEC, s=55, zorder=5, label="one solution")
+ax.scatter(*x_min, color=HILITE, s=80, zorder=6, label="minimum-norm solution")
+draw_vec(ax, (0, 0), v * 2, color=GREY, lw=1.8, ls="--",
+         label=r"$\mathbf{v}\in\mathrm{Null}(A)$", label_offset=(0.35, 0.2))
+ax.scatter(0, 0, color="black", s=25, zorder=5)
+ax.set_aspect("equal")
+ax.set_xlabel(r"$x_1$ (weight on meters column)")
+ax.set_ylabel(r"$x_2$ (weight on feet column)")
+ax.set_title("Dependent columns: a whole line of solutions")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+print("rank of A           :", np.linalg.matrix_rank(A), " (out of 2 columns -> rank deficient)")
+print("a particular x_true :", np.round(x_true, 3), "  -> A x =", np.round(A @ x_true, 3))
+x_alt = x_true + 1.7 * v
+print("a different solution:", np.round(x_alt, 3), "  -> A x =", np.round(A @ x_alt, 3), " (same b!)")
+print("minimum-norm  x     :", np.round(x_min, 3))
+```
+
+Two different weight vectors produce the *identical* prediction $\mathbf{b}$, because they
+differ by a null-space direction $A$ ignores. This is the geometry of @thm-uniqueness: the
+solution set is the green line $\mathbf{x}_0 + t\mathbf{v}$. In a regression context this is
+**perfect multicollinearity** — the model cannot decide how to split credit between two
+identical predictors, so $(A^\top A)^{-1}$ does not even exist and the coefficients are not
+identified. The honest fixes (drop the redundant column, or pick the unique minimum-norm
+solution via the pseudoinverse, @sec-no-solution callout) live in [GEOM-21] and in
+Regression R7; the *diagnosis* — a nontrivial null space — is what this article gives you.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+## The honest edge: invertible on paper, useless in practice {#sec-ill-conditioned}
+
+A matrix can be perfectly invertible — full rank, nonzero determinant, every theorem in
+@sec-verdict satisfied — and still give a *garbage* answer on a computer. This is the most
+important practitioner caveat in the article, and it is the case at the edge of
+applicability that the constitution demands. The trouble is **near**-singularity: columns
+that are not parallel but *almost* parallel. The map then squashes one direction nearly (but
+not quite) to zero, and inverting it *blows that direction back up* by a huge factor —
+amplifying the tiny floating-point and measurement errors in $\mathbf{b}$ into enormous
+errors in $\mathbf{x}$.
+
+```{python}
+#| label: fig-illcond
+#| fig-cap: "An invertible-but-treacherous system. The two columns of $A$ are *almost* parallel (the column space is a thin sliver), so $A$ is technically invertible yet nearly singular. **Left:** the columns and two nearby targets $\\mathbf{b}$ and $\\mathbf{b}+\\delta$ differing by a tiny perturbation. **Right:** their solutions $\\mathbf{x}$ are wildly far apart — a minuscule change in $\\mathbf{b}$ swings the answer enormously. This is large condition number $\\kappa(A)$ (GEOM-26): the reason 'invertible' is not the same as 'safe to invert.'"
+# nearly-parallel columns
+A = np.array([[1.0, 1.0],
+              [1.0, 1.0 + 1e-3]])
+b  = np.array([2.0, 2.0])
+db = np.array([0.0, 1e-3])           # tiny perturbation of b
+x  = np.linalg.solve(A, b)
+x2 = np.linalg.solve(A, b + db)
+kappa = np.linalg.cond(A)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.8))
+# left: the two near-parallel columns
+draw_vec(axL, (0, 0), A[:, 0], color=ACCENT, label=r"$\mathbf{a}_1$", label_offset=(0.06, -0.12))
+draw_vec(axL, (0, 0), A[:, 1], color=PURPLE, label=r"$\mathbf{a}_2$", label_offset=(0.06, 0.12))
+axL.set_title(f"Almost-parallel columns\n$\\kappa(A)\\approx{kappa:.0f}$", fontsize=10)
+axL.set_xlim(-0.2, 1.4); axL.set_ylim(-0.2, 1.4); axL.set_aspect("equal")
+
+# right: the two solutions, far apart
+axR.scatter(*x, color=VEC, s=70, zorder=4, label=r"$\mathbf{x}$ for $\mathbf{b}$")
+axR.scatter(*x2, color=HILITE, s=70, zorder=4, label=r"$\mathbf{x}$ for $\mathbf{b}+\delta$")
+axR.annotate("", xy=x2, xytext=x,
+             arrowprops=dict(arrowstyle="-|>", color=GREY, lw=1.6))
+axR.set_title("Tiny change in $\\mathbf{b}$ -> huge change in $\\mathbf{x}$", fontsize=10)
+axR.set_xlabel(r"$x_1$"); axR.set_ylabel(r"$x_2$")
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print("solution for b        :", np.round(x, 4))
+print("solution for b + delta:", np.round(x2, 4))
+print(f"||delta b|| / ||b|| = {np.linalg.norm(db)/np.linalg.norm(b):.2e}   (input wiggle)")
+print(f"||delta x|| / ||x|| = {np.linalg.norm(x2-x)/np.linalg.norm(x):.2e}   (output swing)")
+print(f"condition number kappa(A) = {kappa:.1f}")
+```
+
+A relative wiggle of $10^{-3}$ in the input produces a relative swing of order $1$ in the
+output — the error was amplified roughly $\kappa(A)$-fold, where $\kappa(A)$ is the
+**condition number**. This is not a bug in the solver; it is intrinsic to the *problem*. The
+condition number is the single number that quantifies it, and it gets its full geometric
+derivation (as the ratio of the largest to smallest singular value) in [GEOM-26]. The lesson
+for now: **"$A$ is invertible" is a yes/no fact; "the inverse can be trusted" is a matter of
+degree**, governed by $\kappa$.
+
+::: {.callout-warning title="Pitfall"}
+**Never test singularity with $\det A \approx 0$, and never decide a system is "fine"
+because $\det A \neq 0$.** The determinant scales with the *units* and *size* of the matrix:
+a perfectly well-conditioned matrix can have a determinant of $10^{-30}$ (just scale a
+clean matrix by $0.1$ in a $30$-dimensional space), and a near-singular matrix can have
+$\det = 1$. The determinant answers the *binary* question "exactly singular?" but says
+almost nothing about the *practical* question "safe to invert?". The right diagnostic is the
+**condition number** $\kappa(A)$ ([GEOM-26]), not the determinant. We flag this here because
+it is the single most common beginner mistake with linear systems.
+:::
+
+## Solve, don't invert {#sec-solve-dont-invert}
+
+This is the practitioner's rule the whole article has been building toward, and now we can
+justify it completely. Suppose you must solve $A\mathbf{x}=\mathbf{b}$. You have two
+options:
+
+1. **Form $A^{-1}$, then multiply:** $\mathbf{x} = A^{-1}\mathbf{b}$.
+2. **Solve the system directly** (Gaussian elimination / LU factorization, or for special
+   structure a Cholesky ([GEOM-19]) or QR solve), never naming $A^{-1}$.
+
+Option 2 is faster, more accurate, and more memory-frugal — for reasons that follow directly
+from what we have proved, not from any deep numerical mysticism:
+
+- **Cost.** Solving one system by elimination costs about $\tfrac{1}{3}n^3$ arithmetic
+  operations. *Forming* $A^{-1}$ amounts to solving $n$ systems (one per column of $I$, as in
+  @lem-onesided) and costs about $n^3$ — three times as much — and then you *still* have to
+  multiply $A^{-1}\mathbf{b}$ on top. You paid triple to compute an object you did not need.
+- **Accuracy.** Every entry of the explicit $A^{-1}$ is itself a computed, rounded number;
+  multiplying $A^{-1}\mathbf{b}$ then accumulates *those* rounding errors on top of the
+  arithmetic. Direct solving keeps the original $A$ (whose entries are exact data) in play
+  longer and provably produces a smaller error. The gap widens precisely when $A$ is
+  ill-conditioned — exactly when you can least afford it.
+- **Sparsity.** If $A$ is large and *sparse* (mostly zeros — the norm for graphs, grids, and
+  big regressions), its inverse is almost always **dense** (mostly nonzero). Forming
+  $A^{-1}$ can turn a matrix you could store in megabytes into one that needs terabytes. A
+  direct solve preserves and exploits the sparsity.
+
+So the rule **"solve, don't invert"** is not folklore: $A^{-1}$ is the *name for the
+backwards map*, a beautiful theoretical object (and we needed it to *prove* @eq-solve and
+@thm-invertible), but you rarely want to *build* it. When you see $A^{-1}\mathbf{b}$ in a
+formula — including the $(X^\top X)^{-1}X^\top\mathbf{y}$ of Regression R5 — read it as "the
+$\mathbf{x}$ solving $A\mathbf{x}=\mathbf{b}$," and compute it with a solver.
+
+::: {.callout-tip title="You might be asked"}
+*"Your derivation literally produced $\mathbf{x}=A^{-1}\mathbf{b}$ — so why do you tell me
+not to compute $A^{-1}$?"* Because $A^{-1}\mathbf{b}$ is a *mathematical expression*, not an
+*algorithm*. The expression is correct and indispensable for reasoning (it is how we proved
+existence, uniqueness, and the product/transpose identities). But the cheapest, most
+accurate way to *evaluate* that expression is to solve the system, never materializing the
+matrix $A^{-1}$. The distinction between an expression and the algorithm that evaluates it is
+exactly what a strong interviewer is checking — and it generalizes: you also never form
+$(X^\top X)^{-1}$ in regression; you solve the normal equations (better still, you skip them
+and use QR or SVD on $X$ directly, because forming $X^\top X$ squares the condition number,
+[GEOM-26]).
+:::
+
+## When is the inverse the right tool at all? {#sec-when-inverse}
+
+A compact applicability summary, the kind you should be able to recite:
+
+- **Use the (concept of the) inverse** to *reason*: to know whether a square system has a
+  unique solution, to manipulate matrix equations symbolically, to state results like
+  @eq-lsq cleanly. The inverse is the right *idea* whenever you are asking "can this map be
+  undone, and is the answer unique."
+- **Actually solve, never invert,** to *compute*: use `numpy.linalg.solve` /
+  `scipy.linalg.solve` (or a structure-aware Cholesky/QR/LU) rather than `inv`. The only
+  time forming $A^{-1}$ is justified is when you genuinely need *the whole inverse matrix as
+  an object* — e.g. the full covariance matrix of regression estimates, $\sigma^2(X^\top
+  X)^{-1}$, where every entry is wanted — and even then you compute it from a factorization,
+  not by `inv`.
+- **Reach for the pseudoinverse** ([GEOM-21]) when $A$ is rectangular or rank-deficient, i.e.
+  the no-solution or infinitely-many cases: it gives the least-squares (and minimum-norm)
+  answer that the plain inverse cannot.
+- **Reach for an iterative solver** (conjugate gradient and friends, owned by the
+  Optimization track) when $A$ is enormous and sparse and even one direct factorization is
+  too expensive; these never touch $A^{-1}$ either.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the read-as-a-pair cluster **[GEOM-08]–[GEOM-10]**: a matrix is a map
+([GEOM-08]), composing maps is matrix multiplication ([GEOM-09]), and the transpose is the
+adjoint that slides across a dot product ([GEOM-10]). This article asked the inverse
+question — *can the map be run backwards?* — and answered it three ways. From here the trunk
+continues, and every promissory note we left ("full rank," "$\det\neq 0$," "project onto the
+column space," "minimum-norm solution," "condition number") is discharged downstream:
+
+- **[GEOM-12 *Rank and the Four Fundamental Subspaces*]** — names the column space and null
+  space we used informally, proves the rank–nullity theorem (which makes the
+  existence/uniqueness count exact for *rectangular* $A$), and shows how the four subspaces
+  pair $A$ with $A^\top$.
+- **[GEOM-13 *The Determinant*]** — the single number that flags singularity (condition in
+  @thm-invertible), as signed volume.
+- **[GEOM-06 *Orthogonal Projection*]** — the keystone behind the no-solution repair of
+  @sec-no-solution; derives why "drop a perpendicular" is the closest point and where the
+  normal equations @eq-normal-eq come from.
+- **[GEOM-19 *Cholesky*]** and **[GEOM-21 *The Pseudoinverse*]** — the stable, always-defined
+  replacements for $A^{-1}$ in the well-posed and the ill-/over-/under-posed cases
+  respectively.
+- **[GEOM-26 *Condition Number and Numerical Stability*]** — makes the "invertible but
+  untrustworthy" edge of @sec-ill-conditioned quantitative, and proves the "solve, don't
+  invert" rule's numerical half.
+- **Downstream of the track:** this article directly feeds **Regression R5**, where the
+  multiple-regression normal equations $X^\top X\hat{\boldsymbol\beta}=X^\top\mathbf{y}$ and
+  the object $(X^\top X)^{-1}$ are precisely @eq-normal-eq and @eq-lsq specialized to a
+  design matrix.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The original algorithm.** *Jiuzhang Suanshu* (*The Nine Chapters on the Mathematical
+  Art*), chapter 8 *Fangcheng*, ~200 BCE — Gaussian elimination two thousand years before
+  Gauss. A modern annotated translation is Shen, Crossley & Lun, *The Nine Chapters on the
+  Mathematical Art* (Oxford, 1999).
+- **The modern geometric telling.** Gilbert Strang, *Introduction to Linear Algebra* — the
+  "column picture vs. row picture" framing of @sec-columns-reading and the four-subspaces
+  view this article previews are his pedagogical signature.
+- **The numerical reality.** Trefethen & Bau, *Numerical Linear Algebra* (1997) — the
+  authoritative source for "solve, don't invert," conditioning, and why factorizations beat
+  explicit inverses. Lecture 1's epigraph is essentially @sec-solve-dont-invert.
+- **Open threads this article deliberately deferred.** *How many solutions exactly, for a
+  rectangular $A$?* — the rank–nullity count, [GEOM-12]. *What is the "closest point"
+  rigorously, and why orthogonal?* — [GEOM-06]. *How do we solve safely when $A$ is nearly
+  singular?* — factorizations and conditioning, [GEOM-19], [GEOM-26]. *What is the one object
+  that solves every shape and rank at once?* — the SVD-built pseudoinverse, [GEOM-20]–[GEOM-21].

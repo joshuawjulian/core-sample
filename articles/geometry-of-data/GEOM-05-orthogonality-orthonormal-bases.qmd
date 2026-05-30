@@ -32,16 +32,16 @@ PURPLE = "#6a4c93"    # third direction / complement
 
 > **Where this sits in the track.** This is the fifth article in the **Geometry of Data**
 > track and the second half of its length-and-angle movement. It assumes
-> [GEOM-3 *Linear Independence, Basis, and Dimension*] (a basis is a minimal spanning set;
+> [GEOM-03 *Linear Independence, Basis, and Dimension*] (a basis is a minimal spanning set;
 > dimension is the invariant count of directions a subspace has) and, above all,
-> [GEOM-4 *The Dot Product: Length and Angle*], which gave us the dot product
+> [GEOM-04 *The Dot Product: Length and Angle*], which gave us the dot product
 > $\mathbf x^\top\mathbf y = \sum_i x_i y_i$, the norm $\lVert\mathbf x\rVert =
 > \sqrt{\mathbf x^\top\mathbf x}$ as length, and the angle relation
 > $\mathbf x^\top\mathbf y = \lVert\mathbf x\rVert\lVert\mathbf y\rVert\cos\theta$. Here we
 > follow the single most consequential special case of that angle relation — $\theta =
 > 90^\circ$, where the dot product is zero — all the way to the bottom. It sets up the
-> keystone [GEOM-6 *Orthogonal Projection onto a Subspace*] (the split this article proves
-> *exists and is unique* is the object GEOM-6 computes), [GEOM-7 *Gram–Schmidt and QR*]
+> keystone [GEOM-06 *Orthogonal Projection onto a Subspace*] (the split this article proves
+> *exists and is unique* is the object GEOM-06 computes), [GEOM-07 *Gram–Schmidt and QR*]
 > (the machine that manufactures the orthonormal bases we praise here), and
 > [GEOM-16 *Symmetric Matrices and the Spectral Theorem*] (whose payoff is an orthonormal
 > eigenbasis — the best of both worlds).
@@ -95,7 +95,7 @@ perfectly well?** Every derivation below is, at bottom, an answer to that questi
 
 ## What came before, and why it was not enough
 
-By [GEOM-3] we already have everything we *need* to describe a subspace: pick a basis —
+By [GEOM-03] we already have everything we *need* to describe a subspace: pick a basis —
 any linearly independent spanning set — and every vector in the space has a unique list of
 coordinates relative to it. That sounds like the end of the story. It is not, and the
 reason is purely practical.
@@ -168,8 +168,8 @@ the Cartesian coordinate system Descartes drew in 1637 — perpendicular axes, e
 and the reason it became the default picture of space is precisely the one we are about to
 make rigorous: it is the grid in which measurement is trivial.
 
-The deeper historical engine is the same one that drove [REGR-1] and will drive the
-keystone [GEOM-6]: **Fourier**, in the early 1800s, found that a complicated periodic
+The deeper historical engine is the same one that drove [REGR-01] and will drive the
+keystone [GEOM-06]: **Fourier**, in the early 1800s, found that a complicated periodic
 signal could be written as a sum of sines and cosines, and that the coefficient of each
 sine was obtained by a single integral — a continuous dot product — *against that sine
 alone*, with no interference from the others. That miracle ("just integrate against the
@@ -185,7 +185,7 @@ orthonormal."* For describing all of $\mathbb R^n$, you often can. But two situa
 a *different* orthonormal basis on you. (1) You are working **inside a subspace** — a plane
 in $\mathbb R^3$, the column space of a data matrix in $\mathbb R^n$ — and the standard
 axes do not lie in it; you need an orthonormal basis *of that subspace*, which Gram–Schmidt
-([GEOM-7]) builds. (2) The natural directions of a problem are not the coordinate axes:
+([GEOM-07]) builds. (2) The natural directions of a problem are not the coordinate axes:
 the principal axes of a data cloud, the eigenvectors of a symmetric matrix ([GEOM-16]). In
 both cases we want the *computational comfort* of an orthonormal basis aligned with the
 geometry of the problem, not with the arbitrary axes the data happened to be recorded in.
@@ -207,7 +207,7 @@ with "any two orthogonal vectors in $\mathbb R^n$" and the same statement holds 
 **Picture two: a coordinate is a shadow.** Stand a vector $\mathbf x$ up and shine a light
 straight down onto a unit axis $\mathbf q$. The length of the shadow $\mathbf x$ casts on
 that axis is how far $\mathbf x$ reaches in the $\mathbf q$ direction — its coordinate. From
-[GEOM-4], the length of that shadow is exactly $\mathbf q^\top\mathbf x$ (because
+[GEOM-04], the length of that shadow is exactly $\mathbf q^\top\mathbf x$ (because
 $\mathbf q^\top\mathbf x = \lVert\mathbf q\rVert\lVert\mathbf x\rVert\cos\theta =
 \lVert\mathbf x\rVert\cos\theta$ when $\mathbf q$ is a unit vector, and
 $\lVert\mathbf x\rVert\cos\theta$ is precisely the adjacent side — the shadow length). When
@@ -216,11 +216,11 @@ on $\mathbf q_1$ ignores $\mathbf q_2$ entirely. So we can collect all the coord
 shadow at a time, independently. That is the whole reason @sec-coords works.
 
 @fig-shadow shows the shadow picture for a single axis; keep it in mind, because the
-coordinate formula and the projection of [GEOM-6] are both just "measure the shadow."
+coordinate formula and the projection of [GEOM-06] are both just "measure the shadow."
 
 ```{python}
 #| label: fig-shadow
-#| fig-cap: "A coordinate is the length of a shadow. The vector $\\mathbf{x}$ (black) casts a perpendicular shadow onto the unit direction $\\mathbf{q}$ (red). The shadow's signed length is $\\mathbf{q}^\\top\\mathbf{x} = \\lVert\\mathbf{x}\\rVert\\cos\\theta$ — this single number is $\\mathbf{x}$'s coordinate along $\\mathbf{q}$. The dashed segment, from the tip of $\\mathbf{x}$ down to the axis, meets $\\mathbf{q}$ at a right angle: that perpendicularity is what makes the shadow the *correct* measure of reach, and it is the seed of orthogonal projection (GEOM-6)."
+#| fig-cap: "A coordinate is the length of a shadow. The vector $\\mathbf{x}$ (black) casts a perpendicular shadow onto the unit direction $\\mathbf{q}$ (red). The shadow's signed length is $\\mathbf{q}^\\top\\mathbf{x} = \\lVert\\mathbf{x}\\rVert\\cos\\theta$ — this single number is $\\mathbf{x}$'s coordinate along $\\mathbf{q}$. The dashed segment, from the tip of $\\mathbf{x}$ down to the axis, meets $\\mathbf{q}$ at a right angle: that perpendicularity is what makes the shadow the *correct* measure of reach, and it is the seed of orthogonal projection (GEOM-06)."
 fig, ax = plt.subplots(figsize=(6.0, 4.2))
 q = np.array([1.0, 0.0])
 x = np.array([2.3, 1.7])
@@ -264,7 +264,7 @@ Two things deserve immediate comment, because they are exactly the questions a c
 reader raises.
 
 First, **why is this the right definition of "perpendicular"?** It is not a fresh
-assumption — it is forced by the angle relation we already proved in [GEOM-4],
+assumption — it is forced by the angle relation we already proved in [GEOM-04],
 $$
 \mathbf x^\top\mathbf y = \lVert\mathbf x\rVert\,\lVert\mathbf y\rVert\cos\theta ,
 $$ {#eq-angle}
@@ -290,7 +290,7 @@ independent (we prove this next, in @thm-orth-indep), but independent vectors ne
 orthogonal — the skewed basis $\{\mathbf v_1,\mathbf v_2\}$ of @fig-skewed-vs-square is
 independent yet plainly not perpendicular. Independence says "none is a combination of the
 others"; orthogonality says "they meet at right angles." Every orthogonal set is
-independent; the converse fails. The whole point of Gram–Schmidt ([GEOM-7]) is to *upgrade*
+independent; the converse fails. The whole point of Gram–Schmidt ([GEOM-07]) is to *upgrade*
 a merely-independent basis into an orthonormal one.
 :::
 
@@ -322,7 +322,7 @@ vectors $\{\mathbf u_1,\dots,\mathbf u_k\}$ is linearly independent.
 :::
 
 ::: {.proof}
-By the definition of linear independence from [GEOM-3], we must show that the only way to
+By the definition of linear independence from [GEOM-03], we must show that the only way to
 combine the vectors into the zero vector is with all-zero coefficients. So suppose some
 scalars $c_1,\dots,c_k$ satisfy
 $$
@@ -331,7 +331,7 @@ $$
 We will show every $c_j$ must be $0$. The trick is the entire moral of the article: **probe
 the equation by dotting it with one basis vector at a time, and orthogonality kills every
 term but one.** Fix any index $j$ and take the dot product of both sides with $\mathbf u_j$.
-The dot product is linear in its second argument (proved in [GEOM-4]:
+The dot product is linear in its second argument (proved in [GEOM-04]:
 $\mathbf u_j^\top(\mathbf a + \mathbf b) = \mathbf u_j^\top\mathbf a + \mathbf u_j^\top\mathbf b$
 and $\mathbf u_j^\top(c\,\mathbf a) = c\,\mathbf u_j^\top\mathbf a$), so it distributes across
 the sum:
@@ -349,7 +349,7 @@ c_j\,\mathbf u_j^\top\mathbf u_j = 0,
 \qquad\text{i.e.}\qquad
 c_j\,\lVert\mathbf u_j\rVert^2 = 0 ,
 $$
-using $\mathbf u_j^\top\mathbf u_j = \lVert\mathbf u_j\rVert^2$ from [GEOM-4]. Here is where
+using $\mathbf u_j^\top\mathbf u_j = \lVert\mathbf u_j\rVert^2$ from [GEOM-04]. Here is where
 we spend the *nonzero* hypothesis: $\mathbf u_j\neq\mathbf 0$ means
 $\lVert\mathbf u_j\rVert^2 > 0$, so we may divide by it, forcing $c_j = 0$. The index $j$
 was arbitrary, so $c_1 = c_2 = \dots = c_k = 0$. The only combination giving $\mathbf 0$ is
@@ -358,7 +358,7 @@ the trivial one, which is precisely linear independence. $\qquad\blacksquare$
 
 This little proof is worth more than its modest theorem. The move "dot the equation with
 $\mathbf u_j$ and watch all but one term die" is the engine of the coordinate formula
-(@sec-coords), the projection formula (GEOM-6), and Fourier coefficients alike. Learn it
+(@sec-coords), the projection formula (GEOM-06), and Fourier coefficients alike. Learn it
 once here; you will see it for the rest of the series.
 
 ::: {.callout-tip title="You might be asked"}
@@ -367,7 +367,7 @@ vectors be orthogonal?"* No, and the asymmetry is the reason orthonormal bases a
 rather than automatic. There are infinitely many independent bases of a plane, but only
 the perpendicular-unit ones earn the computational gifts below. @thm-orth-indep is a
 one-way street: orthogonality is a *bonus structure* on top of independence, and most
-bases do not have it until you manufacture it (Gram–Schmidt, [GEOM-7]).
+bases do not have it until you manufacture it (Gram–Schmidt, [GEOM-07]).
 :::
 
 ## The generalized Pythagorean theorem {#sec-pythagoras}
@@ -390,10 +390,10 @@ $$ {#eq-pythagoras-general}
 
 ::: {.proof}
 Start from the definition of the norm via the dot product, $\lVert\mathbf v\rVert^2 =
-\mathbf v^\top\mathbf v$ (this *is* the norm, from [GEOM-4]), applied to
+\mathbf v^\top\mathbf v$ (this *is* the norm, from [GEOM-04]), applied to
 $\mathbf v = \mathbf x + \mathbf y$. The dot product distributes over addition in each slot
 — exactly the FOIL expansion, valid because $\mathbf a^\top\mathbf b$ is linear in both
-arguments (GEOM-4):
+arguments (GEOM-04):
 $$
 \lVert\mathbf x + \mathbf y\rVert^2
 = (\mathbf x + \mathbf y)^\top(\mathbf x + \mathbf y)
@@ -401,7 +401,7 @@ $$
 + \mathbf y^\top\mathbf y .
 $$
 The dot product is **symmetric**, $\mathbf x^\top\mathbf y = \mathbf y^\top\mathbf x$
-(both equal $\sum_i x_i y_i$; proved in GEOM-4), so the two cross terms are equal and
+(both equal $\sum_i x_i y_i$; proved in GEOM-04), so the two cross terms are equal and
 combine:
 $$
 \lVert\mathbf x + \mathbf y\rVert^2
@@ -473,7 +473,7 @@ plt.tight_layout()
 
 ::: {.callout-tip title="You might be asked"}
 *"Where does this Pythagorean identity actually show up in data science?"* Constantly,
-usually disguised. In least squares ([REGR-4], [GEOM-6]) the data vector splits into a
+usually disguised. In least squares ([REGR-04], [GEOM-06]) the data vector splits into a
 fitted part and an orthogonal residual part, and @eq-pythagoras becomes the **decomposition
 of total sum of squares** $\text{TSS} = \text{ESS} + \text{RSS}$ — the $R^2$ identity is
 Pythagoras. In probability, the variance of a sum of *uncorrelated* random variables is the
@@ -503,7 +503,7 @@ $$ {#eq-onb-coords}
 :::
 
 ::: {.proof}
-Because $\{\mathbf q_i\}$ is a basis of $W$ and $\mathbf x\in W$, [GEOM-3] guarantees that
+Because $\{\mathbf q_i\}$ is a basis of $W$ and $\mathbf x\in W$, [GEOM-03] guarantees that
 *some* unique coefficients $c_1,\dots,c_k$ exist with $\mathbf x = \sum_{i} c_i\mathbf q_i$.
 We do not yet know their values — that is what we are solving for. Use the same probe as in
 @thm-orth-indep: dot both sides with a fixed basis vector $\mathbf q_j$ and let
@@ -557,7 +557,7 @@ $$
 $$
 where $\lVert c_i\mathbf q_i\rVert^2 = c_i^2\lVert\mathbf q_i\rVert^2$ uses the
 scaling rule for norms ($\lVert c\mathbf v\rVert = |c|\,\lVert\mathbf v\rVert$, from
-GEOM-4), and the final step uses $\lVert\mathbf q_i\rVert = 1$. Substituting
+GEOM-04), and the final step uses $\lVert\mathbf q_i\rVert = 1$. Substituting
 $c_i = \mathbf q_i^\top\mathbf x$ gives the right-hand form. $\qquad\blacksquare$
 :::
 
@@ -620,7 +620,7 @@ print(f"Q^T Q (should be identity):\n{np.round(Q.T @ Q, 6)}")
 
 ## The orthogonal complement and the decomposition theorem {#sec-complement}
 
-The final stage is the bridge to the keystone [GEOM-6]. So far we have worked *inside* a
+The final stage is the bridge to the keystone [GEOM-06]. So far we have worked *inside* a
 subspace. Now we ask how a subspace sits inside the whole space — and the answer is the
 single fact least squares stands on.
 
@@ -650,7 +650,7 @@ a *basis* $\{\mathbf w_1,\dots,\mathbf w_m\}$ of $W$, not against every vector o
 
 ::: {.proof}
 **(a)** A subspace must contain $\mathbf 0$ and be closed under addition and scalar
-multiplication ([GEOM-2]). First, $\mathbf 0\in W^\perp$ because
+multiplication ([GEOM-02]). First, $\mathbf 0\in W^\perp$ because
 $\mathbf 0^\top\mathbf w = 0$ for all $\mathbf w$. Next, take
 $\mathbf z_1,\mathbf z_2\in W^\perp$ and any scalars $a,b$. For every $\mathbf w\in W$,
 linearity of the dot product gives
@@ -676,7 +676,7 @@ products suffices. $\qquad\blacksquare$
 
 Part (b) is the practical workhorse — it means "perpendicular to a plane" can be verified
 against two spanning vectors instead of the infinitely many vectors of the plane, and it is
-exactly the trick the normal equations of [GEOM-6] use ("residual orthogonal to every
+exactly the trick the normal equations of [GEOM-06] use ("residual orthogonal to every
 column" rather than "to the whole column space"). Now the theorem the keystone is built on.
 
 ::: {#thm-decomposition}
@@ -692,11 +692,11 @@ The piece $\mathbf w$ is called the **orthogonal projection** of $\mathbf x$ ont
 ::: {.proof}
 There are two claims — *existence* (such a split is possible) and *uniqueness* (there is
 only one). We prove both constructively, and the construction is exactly the coordinate
-formula @eq-onb-coords, which is why this article had to come before GEOM-6.
+formula @eq-onb-coords, which is why this article had to come before GEOM-06.
 
 **Existence.** Let $k = \dim W$. Choose an orthonormal basis
 $\{\mathbf q_1,\dots,\mathbf q_k\}$ of $W$. (Such a basis *exists*: any subspace has a basis
-by [GEOM-3], and Gram–Schmidt, [GEOM-7], converts any basis into an orthonormal one — we
+by [GEOM-03], and Gram–Schmidt, [GEOM-07], converts any basis into an orthonormal one — we
 flag that machine here and build it next in the track; nothing in this proof needs its
 internals, only that an orthonormal basis of $W$ exists.) Define
 $$
@@ -705,7 +705,8 @@ $$
 \mathbf z = \mathbf x - \mathbf w .
 $$
 By construction $\mathbf w$ is a linear combination of the $\mathbf q_i$, so
-$\mathbf w\in W$, and $\mathbf x = \mathbf w + \mathbf z$ trivially. The work is showing
+$\mathbf w\in W$, and $\mathbf w + \mathbf z = \mathbf w + (\mathbf x - \mathbf w) = \mathbf x$
+holds by the very definition $\mathbf z = \mathbf x - \mathbf w$. The work is showing
 $\mathbf z\in W^\perp$. By @lem-complement-basics(b) it is enough to check $\mathbf z$ is
 orthogonal to each basis vector $\mathbf q_j$. Compute, using linearity and then
 orthonormality $\mathbf q_j^\top\mathbf q_i = \delta_{ji}$:
@@ -736,23 +737,23 @@ vector $\mathbf d\in W^\perp$. A vector lying in both $W$ and $W^\perp$ must be 
 to itself: $\mathbf d\in W^\perp$ means $\mathbf d$ is orthogonal to everything in $W$, and
 $\mathbf d\in W$, so in particular $\mathbf d^\top\mathbf d = 0$. But
 $\mathbf d^\top\mathbf d = \lVert\mathbf d\rVert^2$, and the only vector with zero length is
-$\mathbf 0$ (from GEOM-4: $\lVert\mathbf d\rVert = 0\Rightarrow\mathbf d=\mathbf 0$). Hence
+$\mathbf 0$ (from GEOM-04: $\lVert\mathbf d\rVert = 0\Rightarrow\mathbf d=\mathbf 0$). Hence
 $\mathbf d = \mathbf 0$, which forces $\mathbf w_1 = \mathbf w_2$ and
 $\mathbf z_1 = \mathbf z_2$. The two splits were the same; the decomposition is unique.
 $\qquad\blacksquare$
 :::
 
-This is the theorem the rest of the series cashes in. The keystone [GEOM-6] will ask: given
+This is the theorem the rest of the series cashes in. The keystone [GEOM-06] will ask: given
 a point $\mathbf x$ and a subspace $W$, what is the *closest* point of $W$ to $\mathbf x$?
 @thm-decomposition already names the answer — it is $\mathbf w$, the in-$W$ piece — and
 the perpendicular piece $\mathbf z$ is the *residual*, the part of $\mathbf x$ that $W$
-cannot reach. GEOM-6 proves $\mathbf w$ is genuinely the nearest point (using Pythagoras,
+cannot reach. GEOM-06 proves $\mathbf w$ is genuinely the nearest point (using Pythagoras,
 @eq-pythagoras, on the residual) and packages the computation as the projection matrix. We
 have built the foundation; the building goes up next door.
 
 ```{python}
 #| label: fig-complement
-#| fig-cap: "Orthogonal decomposition in $\\mathbb R^3$. The subspace $W$ is a plane through the origin (grey); its orthogonal complement $W^\\perp$ is the normal line (purple). An arbitrary vector $\\mathbf{x}$ (black) splits uniquely as $\\mathbf{x}=\\mathbf{w}+\\mathbf{z}$: the in-plane part $\\mathbf{w}\\in W$ (green) and the perpendicular part $\\mathbf{z}\\in W^\\perp$ (red), which meet $W$ at a right angle. $\\mathbf{w}$ is the closest point of the plane to $\\mathbf{x}$ — the projection the keystone GEOM-6 computes."
+#| fig-cap: "Orthogonal decomposition in $\\mathbb R^3$. The subspace $W$ is a plane through the origin (grey); its orthogonal complement $W^\\perp$ is the normal line (purple). An arbitrary vector $\\mathbf{x}$ (black) splits uniquely as $\\mathbf{x}=\\mathbf{w}+\\mathbf{z}$: the in-plane part $\\mathbf{w}\\in W$ (green) and the perpendicular part $\\mathbf{z}\\in W^\\perp$ (red), which meet $W$ at a right angle. $\\mathbf{w}$ is the closest point of the plane to $\\mathbf{x}$ — the projection the keystone GEOM-06 computes."
 rng = np.random.default_rng(1)
 # Plane W = span(w1, w2), orthonormalized
 B = rng.standard_normal((3, 2))
@@ -951,7 +952,7 @@ Watch what happens.
 
 ```{python}
 #| label: fig-edge
-#| fig-cap: "The edge: orthogonalizing nearly-parallel directions is numerically violent. Two feature vectors $\\mathbf{a},\\mathbf{b}$ point almost the same way (angle $\\approx 2.6^\\circ$, left). Gram–Schmidt subtracts $\\mathbf{a}$'s shadow from $\\mathbf{b}$ to make the second orthonormal vector $\\mathbf{q}_2$ (right, purple): because the shadow is almost all of $\\mathbf{b}$, $\\mathbf{q}_2$ is the *tiny leftover difference*, hugely amplified to unit length. Its direction is dominated by noise/rounding in the data — the orthonormal basis exists, but $\\mathbf{q}_2$ is meaningless. This is the geometric face of multicollinearity and ill-conditioning."
+#| fig-cap: "The edge: orthogonalizing nearly-parallel directions is numerically violent. Two feature vectors $\\mathbf{a},\\mathbf{b}$ point almost the same way (angle $\\approx 1.4^\\circ$, left). Gram–Schmidt subtracts $\\mathbf{a}$'s shadow from $\\mathbf{b}$ to make the second orthonormal vector $\\mathbf{q}_2$ (right, purple): because the shadow is almost all of $\\mathbf{b}$, $\\mathbf{q}_2$ is the *tiny leftover difference*, hugely amplified to unit length. Its direction is dominated by noise/rounding in the data — the orthonormal basis exists, but $\\mathbf{q}_2$ is meaningless. This is the geometric face of multicollinearity and ill-conditioning."
 rng = np.random.default_rng(42)
 base = np.array([3.0, 2.0])
 a = base + np.array([0.0, 0.0])
@@ -1001,7 +1002,7 @@ orthonormal coordinates of any vector along $\mathbf q_2$ are numerically untrus
 not create information that was not there — it just relocates the instability into one
 fragile basis vector. When features are near-collinear, the right responses are not "make
 them orthogonal and proceed" but: **regularize** (ridge regression adds $\lambda I$ to
-stabilize the solve — [REGR-7], [REGR-14]), **drop or combine** the redundant feature, or
+stabilize the solve — [REGR-07], [REGR-14]), **drop or combine** the redundant feature, or
 use the **SVD** ([GEOM-20], [GEOM-21]), which exposes exactly which directions are
 well-determined and which are noise by their singular values, and lets you discard the
 fragile ones honestly. The condition number that quantifies all of this is [GEOM-26]. The
@@ -1047,7 +1048,7 @@ non-orthogonal basis (the original features carry interpretation that orthogonal
 destroys), or (b) the directions are near-collinear, where orthogonalization manufactures a
 fragile basis (Example 3). And note that for the single most common task — projecting onto
 a subspace for least squares — you do not *need* an explicit orthonormal basis at all; the
-normal equations of [GEOM-6] work in the original basis, and an orthonormal basis is the
+normal equations of [GEOM-06] work in the original basis, and an orthonormal basis is the
 *optional* upgrade that makes the projection $P = QQ^\top$ instead of
 $P = A(A^\top A)^{-1}A^\top$. Cheaper and stabler, but a choice, not a requirement.
 :::
@@ -1064,17 +1065,17 @@ inner product*, never an absolute.
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[GEOM-4 *The Dot Product*]**, which gave length, angle, and the relation
+You arrived from **[GEOM-04 *The Dot Product*]**, which gave length, angle, and the relation
 $\mathbf x^\top\mathbf y = \lVert\mathbf x\rVert\lVert\mathbf y\rVert\cos\theta$. This
 article followed the special case $\theta = 90^\circ$ to three results — Pythagoras,
 orthonormal coordinates as dot products, and the unique orthogonal decomposition. From
 here:
 
-- **[GEOM-6 *Orthogonal Projection onto a Subspace*]** — the keystone. It takes the in-$W$
+- **[GEOM-06 *Orthogonal Projection onto a Subspace*]** — the keystone. It takes the in-$W$
   piece $\mathbf w$ of @thm-decomposition, proves it is the *nearest* point of $W$ to
   $\mathbf x$ (via Pythagoras on the residual), and builds the projection matrix. Least
-  squares ([REGR-4], [REGR-5]) *is* this projection.
-- **[GEOM-7 *Gram–Schmidt and the QR Decomposition*]** — the machine that builds the
+  squares ([REGR-04], [REGR-05]) *is* this projection.
+- **[GEOM-07 *Gram–Schmidt and the QR Decomposition*]** — the machine that builds the
   orthonormal bases we assumed exist here, one projection at a time, and the $A = QR$
   factorization that bookkeeps it. The existence step of @thm-decomposition is discharged
   in full there.
@@ -1092,7 +1093,7 @@ here:
 - **The historical thread.** Fourier's 1822 *Théorie analytique de la chaleur* is the
   origin of "compute each coefficient by an independent integral against the basis
   function" — the coordinate formula @eq-onb-coords in an infinite-dimensional inner-product
-  space. Gram (1883) and Schmidt (1907) gave the orthogonalization process that [GEOM-7]
+  space. Gram (1883) and Schmidt (1907) gave the orthogonalization process that [GEOM-07]
   builds; the abstraction to general inner-product (Hilbert) spaces is Hilbert and von
   Neumann's, where Parseval's identity @eq-parseval becomes the defining feature of an
   orthonormal basis.
@@ -1103,8 +1104,8 @@ here:
   coupled quantities falls apart into independent ones. Keep that single mechanism in view
   and the rest of the linear-algebra track stops being a list of tricks.
 - **Open threads deliberately deferred.** *How do we actually manufacture an orthonormal
-  basis from a given one?* — Gram–Schmidt, [GEOM-7]. *How do we compute the nearest point in
-  a subspace, and is it really nearest?* — projection, [GEOM-6]. *Which matrices come with a
+  basis from a given one?* — Gram–Schmidt, [GEOM-07]. *How do we compute the nearest point in
+  a subspace, and is it really nearest?* — projection, [GEOM-06]. *Which matrices come with a
   ready-made orthonormal basis attached?* — the symmetric ones, [GEOM-16]. *What is the
   right orthonormal basis for a non-standard (weighted) inner product?* — generalized least
   squares and whitening, [REGR-11] and [GEOM-19].

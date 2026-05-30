@@ -13,34 +13,34 @@ The spine is: **what a vector is → how vectors combine and span space → leng
 ## The flow diagram
 
 ```
-                         [GEOM-0] What Is a Vector, Really? (an arrow and a row of data)
+                         [GEOM-00] What Is a Vector, Really? (an arrow and a row of data)
                                           │
                                           ▼
-                         [GEOM-1] Adding & Scaling: Linear Combinations
+                         [GEOM-01] Adding & Scaling: Linear Combinations
                                           │
                                           ▼
-                         [GEOM-2] Span & Subspaces (the set of places you can reach)
+                         [GEOM-02] Span & Subspaces (the set of places you can reach)
                                           │
                                           ▼
-                         [GEOM-3] Linear Independence, Basis & Dimension
+                         [GEOM-03] Linear Independence, Basis & Dimension
                                           │
                   ┌───────────────────────┼───────────────────────┐
                   ▼                                                ▼
-   [GEOM-4] The Dot Product: Length & Angle              [GEOM-5] Orthogonality & Orthonormal Bases
+   [GEOM-04] The Dot Product: Length & Angle              [GEOM-05] Orthogonality & Orthonormal Bases
                   │                                                │
                   └───────────────────────┬────────────────────────┘
                                           ▼
-                         [GEOM-6] Orthogonal Projection onto a Subspace  ◄── the keystone
+                         [GEOM-06] Orthogonal Projection onto a Subspace  ◄── the keystone
                                           │
                                           ▼
-                         [GEOM-7] Gram–Schmidt & the QR Decomposition
+                         [GEOM-07] Gram–Schmidt & the QR Decomposition
                                           │
                                           ▼
-                         [GEOM-8] Matrices as Linear Maps (columns are where the axes go)
+                         [GEOM-08] Matrices as Linear Maps (columns are where the axes go)
                                           │
                   ┌───────────────────────┼───────────────────────┐
                   ▼                        ▼                        ▼
-   [GEOM-9] Matrix Multiplication      [GEOM-10] Transpose &        [GEOM-11] Solving Ax=b:
+   [GEOM-09] Matrix Multiplication      [GEOM-10] Transpose &        [GEOM-11] Solving Ax=b:
    as Composition                  What It Means            Inverse, Singularity
                   │                        │                        │
                   └───────────────────────┼────────────────────────┘
@@ -91,94 +91,94 @@ Vector & Matrix Calculus         Direction in Space              the Curvature o
                          [GEOM-27] How These Tools Power Data Science (the bridge article)
 ```
 
-Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a single mostly-linear build with a handful of "read-as-a-pair" forks (GEOM-4/GEOM-5, GEOM-9–GEOM-11, GEOM-15/GEOM-16, GEOM-19/GEOM-20, GEOM-22–GEOM-24). The keystone is **GEOM-6 (projection)**; the two summits are **GEOM-20 (SVD)** and **GEOM-25 (gradient/Hessian of a quadratic form)**, which between them discharge the heaviest cross-track requests.
+Linear reading order: **GEOM-00 → GEOM-01 → … → GEOM-27.** The track is a single mostly-linear build with a handful of "read-as-a-pair" forks (GEOM-04/GEOM-05, GEOM-09–GEOM-11, GEOM-15/GEOM-16, GEOM-19/GEOM-20, GEOM-22–GEOM-24). The keystone is **GEOM-06 (projection)**; the two summits are **GEOM-20 (SVD)** and **GEOM-25 (gradient/Hessian of a quadratic form)**, which between them discharge the heaviest cross-track requests.
 
 ---
 
 ## Movement I — Vectors and the Space They Live In
 
-### GEOM-0 — What Is a Vector, Really?
+### GEOM-00 — What Is a Vector, Really?
 1. **The one question:** What *is* a vector — as a geometric arrow, as a list of numbers, and as a row of a dataset — and why are those the same object?
 2. **Scope / inside:**
    - The three faces of a vector: an arrow with magnitude and direction; an ordered tuple in `ℝⁿ`; one observation's feature values (one row of a data table).
    - Coordinates as "how far along each axis"; the zero vector; why a point and the arrow from the origin to it are interchangeable.
    - The leap past visual intuition: a 100-feature row *is* a point in `ℝ¹⁰⁰`, and we reason about it with the same rules even though we cannot draw it.
 3. **Assumes:** Only the floor (the Cartesian plane, ordered pairs, functions).
-4. **Sets up:** GEOM-1 (combining vectors), and the whole "a dataset is a cloud of points" framing the track runs on.
+4. **Sets up:** GEOM-01 (combining vectors), and the whole "a dataset is a cloud of points" framing the track runs on.
 5. **Depth:** short (~8–12). Motivational, picture-first.
 
-### GEOM-1 — Adding and Scaling: The Linear Combination
+### GEOM-01 — Adding and Scaling: The Linear Combination
 1. **The one question:** What are the only two operations linear algebra lets you do to vectors, and what do they look like geometrically?
 2. **Scope / inside:**
    - Vector addition (tip-to-tail / parallelogram) and scalar multiplication (stretch/flip) — defined componentwise, drawn geometrically.
    - The **linear combination** `c₁v₁ + … + c_k v_k` as the one move from which everything else is built; the eight vector-space rules stated *as the rules these two operations obey*, not as abstract axioms.
    - Worked example: combining feature vectors; a weighted average as a linear combination with coefficients summing to one.
-3. **Assumes:** GEOM-0.
-4. **Sets up:** GEOM-2 (span is "all linear combinations"), GEOM-8 (a matrix acts by taking linear combinations of its columns).
+3. **Assumes:** GEOM-00.
+4. **Sets up:** GEOM-02 (span is "all linear combinations"), GEOM-08 (a matrix acts by taking linear combinations of its columns).
 5. **Depth:** short–medium (~10–14).
 
-### GEOM-2 — Span and Subspaces: The Set of Places You Can Reach
+### GEOM-02 — Span and Subspaces: The Set of Places You Can Reach
 1. **The one question:** Given a handful of vectors, exactly which points in space can you build from them, and what shape does that set form?
 2. **Scope / inside:**
    - **Span** as the set of all linear combinations; building intuition from one vector (a line), two (a plane or a line), three, up.
    - **Subspace** defined by closure under addition and scaling; why every subspace contains the origin; lines and planes through the origin as the canonical pictures.
    - The honest edge case: vectors that *look* independent but span a lower-dimensional set (collinearity preview, ties to Regression's multicollinearity).
-3. **Assumes:** GEOM-1.
-4. **Sets up:** GEOM-3 (independence/basis), GEOM-6 (we project onto a subspace), GEOM-12 (column space and the four subspaces).
+3. **Assumes:** GEOM-01.
+4. **Sets up:** GEOM-03 (independence/basis), GEOM-06 (we project onto a subspace), GEOM-12 (column space and the four subspaces).
 5. **Depth:** medium (~12–18).
 
-### GEOM-3 — Linear Independence, Basis, and Dimension
+### GEOM-03 — Linear Independence, Basis, and Dimension
 1. **The one question:** When does a set of vectors carry redundant information, and what is the smallest set that still reaches every point in a subspace?
 2. **Scope / inside:**
    - **Linear independence** defined via the only-the-trivial-combination-gives-zero condition; the geometric reading (no vector lies in the span of the others).
    - **Basis** as a minimal spanning set; **dimension** as the (provably) invariant count; coordinates *relative to a basis*.
    - Worked example: detecting that one feature is a linear combination of others (a redundant column) and what that does to dimension.
-3. **Assumes:** GEOM-2.
-4. **Sets up:** GEOM-5 (orthonormal bases), GEOM-12 (rank = dimension of the column space), GEOM-14 (eigenvectors as a basis).
+3. **Assumes:** GEOM-02.
+4. **Sets up:** GEOM-05 (orthonormal bases), GEOM-12 (rank = dimension of the column space), GEOM-14 (eigenvectors as a basis).
 5. **Depth:** medium (~12–18).
 
 ---
 
 ## Movement II — Length, Angle, and the Keystone: Projection
 
-### GEOM-4 — The Dot Product: Length and Angle from Coordinates
+### GEOM-04 — The Dot Product: Length and Angle from Coordinates
 1. **The one question:** How do we recover geometric length and the angle between two vectors from nothing but their coordinates?
 2. **Scope / inside:**
    - The **dot product** `xᵀy = Σ xᵢyᵢ` defined; the **norm** `‖x‖ = √(xᵀx)` as length (Pythagoras in `n` dimensions, derived).
    - `xᵀy = ‖x‖‖y‖cosθ` derived via the law of cosines; the **Cauchy–Schwarz** inequality and what it guarantees.
    - The inner product as the general object (dot product is the standard one); data meaning: dot products measure alignment/similarity (cosine similarity preview).
-3. **Assumes:** GEOM-1; floor-level trig (`cos`, law of cosines — restated inline).
-4. **Sets up:** GEOM-5 (orthogonality is "dot product zero"), GEOM-6 (projection is built from dot products), GEOM-17 (quadratic forms generalize `xᵀx`).
+3. **Assumes:** GEOM-01; floor-level trig (`cos`, law of cosines — restated inline).
+4. **Sets up:** GEOM-05 (orthogonality is "dot product zero"), GEOM-06 (projection is built from dot products), GEOM-17 (quadratic forms generalize `xᵀx`).
 5. **Depth:** medium (~12–18).
 
-### GEOM-5 — Orthogonality and Orthonormal Bases
+### GEOM-05 — Orthogonality and Orthonormal Bases
 1. **The one question:** What does it mean for vectors to be perpendicular in `n` dimensions, and why are orthonormal bases the nicest coordinate systems to work in?
 2. **Scope / inside:**
    - **Orthogonality** as `xᵀy = 0`; orthogonal *sets*; the generalized **Pythagorean theorem** `‖x+y‖² = ‖x‖²+‖y‖²` when orthogonal, derived.
    - **Orthonormal** vectors; why coordinates in an orthonormal basis are just dot products (`cᵢ = qᵢᵀx`) — derived, and the headline reason orthonormal bases are computationally golden.
-   - **Orthogonal complement** of a subspace; every vector splits uniquely into "in the subspace" + "perpendicular to it" (the decomposition GEOM-6 exploits).
-3. **Assumes:** GEOM-3, GEOM-4.
-4. **Sets up:** GEOM-6 (projection), GEOM-7 (Gram–Schmidt produces orthonormal bases), GEOM-16 (spectral theorem gives an orthonormal eigenbasis).
+   - **Orthogonal complement** of a subspace; every vector splits uniquely into "in the subspace" + "perpendicular to it" (the decomposition GEOM-06 exploits).
+3. **Assumes:** GEOM-03, GEOM-04.
+4. **Sets up:** GEOM-06 (projection), GEOM-07 (Gram–Schmidt produces orthonormal bases), GEOM-16 (spectral theorem gives an orthonormal eigenbasis).
 5. **Depth:** medium (~12–18).
 
-### GEOM-6 — Orthogonal Projection onto a Subspace  ⟂ *(the keystone)*
+### GEOM-06 — Orthogonal Projection onto a Subspace  ⟂ *(the keystone)*
 1. **The one question:** Given a point and a subspace, what is the closest point in the subspace to it, and why is "drop a perpendicular" the answer?
 2. **Scope / inside:**
    - Projection onto a single vector derived from scratch (`(aᵀx / aᵀa) a`); the residual is orthogonal to `a` — proved.
    - Projection onto a general subspace = column space of `A`: the **normal equations** `AᵀA ĉ = Aᵀx` derived purely geometrically (residual ⟂ every column), giving the **projection matrix** `P = A(AᵀA)⁻¹Aᵀ`.
    - `P` is symmetric and idempotent (`P² = P`) — proved; projection as "the part of `x` that lives in the subspace"; the closest-point / least-distance characterization.
    - This is the article Regression's least-squares geometry stands on; the *why* is explicitly "least squares = projection."
-3. **Assumes:** GEOM-2, GEOM-3, GEOM-5; matrix notation for `A`, `Aᵀ`, `(AᵀA)⁻¹` is used lightly here and built properly in GEOM-8–GEOM-11 (forward-referenced; the geometry is self-contained, the algebra is named).
-4. **Sets up:** GEOM-7 (an orthonormal basis makes `P` trivial), GEOM-12 (column space), GEOM-20–GEOM-21 (SVD/pseudoinverse as the stable projection); **directly feeds Regression R4/R5**.
-5. **Depth:** deep (~20–28). **Split seam if needed:** cut after projection-onto-a-line into *GEOM-6a "Projection onto a Line"* and *GEOM-6b "Projection onto a Subspace & the Projection Matrix,"* at the single-vector / general-subspace boundary.
+3. **Assumes:** GEOM-02, GEOM-03, GEOM-05; matrix notation for `A`, `Aᵀ`, `(AᵀA)⁻¹` is used lightly here and built properly in GEOM-08–GEOM-11 (forward-referenced; the geometry is self-contained, the algebra is named).
+4. **Sets up:** GEOM-07 (an orthonormal basis makes `P` trivial), GEOM-12 (column space), GEOM-20–GEOM-21 (SVD/pseudoinverse as the stable projection); **directly feeds Regression R4/R5**.
+5. **Depth:** deep (~20–28). **Split seam if needed:** cut after projection-onto-a-line into *GEOM-06a "Projection onto a Line"* and *GEOM-06b "Projection onto a Subspace & the Projection Matrix,"* at the single-vector / general-subspace boundary.
 
-### GEOM-7 — Gram–Schmidt and the QR Decomposition
+### GEOM-07 — Gram–Schmidt and the QR Decomposition
 1. **The one question:** Given any basis, how do we manufacture an orthonormal one spanning the same space, and what factorization falls out for free?
 2. **Scope / inside:**
-   - The **Gram–Schmidt** process built one projection at a time (each new vector minus its projection onto the span so far) — derived using GEOM-6.
+   - The **Gram–Schmidt** process built one projection at a time (each new vector minus its projection onto the span so far) — derived using GEOM-06.
    - The **QR decomposition** `A = QR` (`Q` orthonormal columns, `R` upper-triangular) as Gram–Schmidt bookkept in matrix form; why `Q` makes projection `P = QQᵀ`.
    - Numerical aside (kept secondary): classical vs. modified Gram–Schmidt and why orthogonality decays — first taste of the numerical-stability theme that closes the track.
-3. **Assumes:** GEOM-5, GEOM-6.
+3. **Assumes:** GEOM-05, GEOM-06.
 4. **Sets up:** GEOM-11/GEOM-12 (QR as a way to solve least-squares stably), GEOM-26 (stability); offered to Regression as the numerically sound least-squares route.
 5. **Depth:** medium–deep (~16–22).
 
@@ -186,23 +186,23 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
 
 ## Movement III — Matrices as Maps
 
-### GEOM-8 — Matrices as Linear Maps: Columns Are Where the Axes Go
+### GEOM-08 — Matrices as Linear Maps: Columns Are Where the Axes Go
 1. **The one question:** What does a matrix *do* to space, and why is "the columns tell you where the basis vectors land" the whole story?
 2. **Scope / inside:**
    - A matrix as a **linear transformation** `x ↦ Ax`; `Ax` as a linear combination of `A`'s columns (the single most useful reading in the track).
    - The two equivalent views of `Ax`: combination-of-columns vs. row-by-row dot products; what linearity (`A(x+y)=Ax+Ay`, `A(cx)=cAx`) buys us.
    - Geometric gallery: rotation, scaling, shear, reflection, projection — each as a small matrix acting on a unit grid, drawn.
-3. **Assumes:** GEOM-1, GEOM-4.
-4. **Sets up:** GEOM-9 (composition), GEOM-14 (eigenvectors = directions a map only scales), the entire matrix half of the track.
+3. **Assumes:** GEOM-01, GEOM-04.
+4. **Sets up:** GEOM-09 (composition), GEOM-14 (eigenvectors = directions a map only scales), the entire matrix half of the track.
 5. **Depth:** medium (~12–18).
 
-### GEOM-9 — Matrix Multiplication as Composition of Maps
+### GEOM-09 — Matrix Multiplication as Composition of Maps
 1. **The one question:** Why is matrix multiplication defined by that row-times-column rule, and why isn't it commutative?
 2. **Scope / inside:**
    - `AB` = "do `B`, then `A`"; deriving the row-dot-column entry formula *from* the composition requirement (so the rule is inevitable, not arbitrary).
    - Dimensions and conformability; associativity (proved) vs. non-commutativity (counterexample with two rotations/shears, drawn).
    - Block multiplication and the outer-product view (`AB = Σ` column-times-row), which the SVD will reuse.
-3. **Assumes:** GEOM-8.
+3. **Assumes:** GEOM-08.
 4. **Sets up:** GEOM-10, GEOM-11, GEOM-20 (outer-product sum is the SVD), and every downstream derivation.
 5. **Depth:** medium (~12–18).
 
@@ -212,17 +212,17 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
    - Transpose defined; the identities `(AB)ᵀ = BᵀAᵀ`, `(Aᵀ)ᵀ = A` derived; the adjoint relation `⟨Ax, y⟩ = ⟨x, Aᵀy⟩` and what it says geometrically.
    - Why `AᵀA` (Gram matrix) is the natural object: it holds all pairwise dot products of columns; it is symmetric and (next track entry) positive semidefinite.
    - **Symmetric matrices** introduced as `A = Aᵀ`; preview of why they are special (spectral theorem in GEOM-16).
-3. **Assumes:** GEOM-4, GEOM-9.
-4. **Sets up:** GEOM-6's `AᵀA`, GEOM-12 (the four subspaces pair `A` with `Aᵀ`), GEOM-16, GEOM-17–GEOM-18 (`AᵀA` is PSD).
+3. **Assumes:** GEOM-04, GEOM-09.
+4. **Sets up:** GEOM-06's `AᵀA`, GEOM-12 (the four subspaces pair `A` with `Aᵀ`), GEOM-16, GEOM-17–GEOM-18 (`AᵀA` is PSD).
 5. **Depth:** medium (~12–16).
 
 ### GEOM-11 — Solving `Ax = b`: The Inverse, Singularity, and What "No Solution" Means
 1. **The one question:** When can we undo a linear map to solve `Ax = b`, when can't we, and what is the geometric meaning of each case?
 2. **Scope / inside:**
    - Gaussian elimination as a sequence of linear maps; the **inverse** `A⁻¹` defined and computed; `(AB)⁻¹ = B⁻¹A⁻¹`, `(Aᵀ)⁻¹ = (A⁻¹)ᵀ` derived.
-   - Three geometric outcomes: unique solution (invertible), no solution (`b` outside the column space — the bridge back to projection/least-squares in GEOM-6), infinitely many (nontrivial null space).
+   - Three geometric outcomes: unique solution (invertible), no solution (`b` outside the column space — the bridge back to projection/least-squares in GEOM-06), infinitely many (nontrivial null space).
    - When *not* to literally invert: solve, don't invert (numerical foreshadowing for GEOM-26); the inverse exists ⇔ full rank ⇔ nonzero determinant (pointers to GEOM-12/GEOM-13).
-3. **Assumes:** GEOM-8, GEOM-9, GEOM-10.
+3. **Assumes:** GEOM-08, GEOM-09, GEOM-10.
 4. **Sets up:** GEOM-12 (rank), GEOM-13 (determinant), GEOM-19 (Cholesky solve), GEOM-21 (pseudoinverse for the no-/many-solution cases); **feeds Regression R5** (the `(XᵀX)⁻¹` object).
 5. **Depth:** medium–deep (~16–22).
 
@@ -232,7 +232,7 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
    - **Rank** as the dimension of the column space = dimension of the row space (proved equal); full rank vs. rank-deficient, with the data reading (redundant features).
    - The **four subspaces**: column space, null space, row space, left null space; the **rank–nullity theorem** derived; the orthogonality pairing (row space ⟂ null space) drawn.
    - The honest tie-in: near-rank-deficiency is multicollinearity (Regression R7) and the thing the condition number (GEOM-26) measures.
-3. **Assumes:** GEOM-3, GEOM-6 (orthogonal complement), GEOM-8, GEOM-11.
+3. **Assumes:** GEOM-03, GEOM-06 (orthogonal complement), GEOM-08, GEOM-11.
 4. **Sets up:** GEOM-14/GEOM-15 (eigenstructure), GEOM-20 (SVD reads rank off the singular values), GEOM-26; **feeds Regression R5/R7**.
 5. **Depth:** deep (~18–24).
 
@@ -242,7 +242,7 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
    - The determinant as the **signed volume** of the image of the unit cube; `det = 0` ⇔ the map collapses space ⇔ singular — derived geometrically before any cofactor formula.
    - Key properties (`det(AB)=det A det B`, effect of row ops, `det(Aᵀ)=det A`) derived from the volume picture; `2×2`/`3×3` formulas as special cases.
    - Where it actually matters in data science (the change-of-variables Jacobian for densities — a hook for Probability/Inference) and where it's overrated (don't test singularity by `det≈0`; use the condition number — pointer to GEOM-26).
-3. **Assumes:** GEOM-8, GEOM-9, GEOM-11.
+3. **Assumes:** GEOM-08, GEOM-09, GEOM-11.
 4. **Sets up:** GEOM-14 (the characteristic polynomial `det(A−λI)=0`), the Jacobian hook for the Probability track.
 5. **Depth:** medium (~12–18).
 
@@ -253,10 +253,10 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
 ### GEOM-14 — Eigenvalues and Eigenvectors: The Directions a Map Only Stretches
 1. **The one question:** Are there special directions a matrix leaves pointing the same way, only scaled, and how do we find them?
 2. **Scope / inside:**
-   - **Eigenvector/eigenvalue** defined by `Av = λv`; the geometric picture (invariant directions of the transformation gallery from GEOM-8).
+   - **Eigenvector/eigenvalue** defined by `Av = λv`; the geometric picture (invariant directions of the transformation gallery from GEOM-08).
    - Finding them: the **characteristic polynomial** `det(A−λI)=0` (using GEOM-13), then the null space of `A−λI` for each `λ`; worked `2×2` and `3×3` by hand.
    - Honest complications: complex eigenvalues (rotation has none real), repeated eigenvalues, defective matrices that *can't* be diagonalized — stated so the reader knows the limits before GEOM-15.
-3. **Assumes:** GEOM-8, GEOM-11, GEOM-13.
+3. **Assumes:** GEOM-08, GEOM-11, GEOM-13.
 4. **Sets up:** GEOM-15 (diagonalization), GEOM-16 (symmetric case is clean), GEOM-18 (PD ⇔ positive eigenvalues), GEOM-26 (condition number = eigenvalue ratio).
 5. **Depth:** deep (~18–24). **Split seam if needed:** cut after the definition/geometry into *GEOM-14a "What Eigenvectors Are"* and *GEOM-14b "Finding Them via the Characteristic Polynomial."*
 
@@ -276,7 +276,7 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
    - **Spectral theorem**: a real symmetric matrix has real eigenvalues and an **orthonormal** eigenbasis, so `A = QΛQᵀ` — both claims proved (real eigenvalues; orthogonality of eigenvectors for distinct eigenvalues).
    - Geometric reading: a symmetric matrix acts by "rotate to the eigenaxes, scale along each, rotate back" — no shearing, ever; drawn on an ellipse.
    - Why this matters for data: covariance matrices, Gram matrices `AᵀA`, and Hessians are all symmetric — so this theorem is the engine behind PCA, quadratic forms, and second-order optimization.
-3. **Assumes:** GEOM-5 (orthonormal bases), GEOM-10 (symmetry), GEOM-15.
+3. **Assumes:** GEOM-05 (orthonormal bases), GEOM-10 (symmetry), GEOM-15.
 4. **Sets up:** GEOM-17 (diagonalizing a quadratic form), GEOM-18 (PD via eigenvalues), GEOM-20 (SVD built from `AᵀA`'s spectral decomposition); **feeds Unsupervised Learning's PCA** and **Inference's Fisher-information matrix**.
 5. **Depth:** deep (~18–24).
 
@@ -290,7 +290,7 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
    - **Quadratic form** `q(x) = xᵀAx` defined; symmetrizing `A` WLOG; expanding it in coordinates so the reader sees the squares and cross-terms.
    - Diagonalizing the form with the spectral theorem (`x = Qz` ⇒ `q = Σ λᵢ zᵢ²`): the eigenvalues' **signs** decide bowl (all `>0`), inverted bowl (all `<0`), or saddle (mixed) — drawn as level sets (ellipses/hyperbolas).
    - Data meaning: variance along a direction `uᵀΣu`, the squared Mahalanobis distance, the loss surface of least squares — all quadratic forms; this is the unifying picture for the rest of the track.
-3. **Assumes:** GEOM-4, GEOM-10, GEOM-16.
+3. **Assumes:** GEOM-04, GEOM-10, GEOM-16.
 4. **Sets up:** GEOM-18 (definiteness), GEOM-25 (gradient/Hessian of `xᵀAx`); **feeds Inference B3–B4** (Fisher info quadratic form) and **Optimization** (quadratic model of a loss).
 5. **Depth:** medium–deep (~16–22).
 
@@ -328,9 +328,9 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
 1. **The one question:** Once we have the SVD, how do we get the best low-rank approximation of a matrix and a "solve" for systems that have no inverse?
 2. **Scope / inside:**
    - **Eckart–Young**: truncating the SVD to the top `k` singular values gives the best rank-`k` approximation (in Frobenius/spectral norm) — stated and argued; the energy `Σσ²` and the variance-captured reading.
-   - The **Moore–Penrose pseudoinverse** `A⁺ = VΣ⁺Uᵀ`; how it gives the minimum-norm least-squares solution — the stable, always-defined version of GEOM-6's projection and GEOM-11's solve.
+   - The **Moore–Penrose pseudoinverse** `A⁺ = VΣ⁺Uᵀ`; how it gives the minimum-norm least-squares solution — the stable, always-defined version of GEOM-06's projection and GEOM-11's solve.
    - Worked applications kept honest and tied to owners: image/data compression, latent structure; explicitly flagged that the *statistical interpretation* (PCA as variance maximization on centered data) is **Unsupervised Learning's** to own — this article supplies the linear-algebra machinery, not the statistics.
-3. **Assumes:** GEOM-6, GEOM-11, GEOM-20.
+3. **Assumes:** GEOM-06, GEOM-11, GEOM-20.
 4. **Sets up:** the PCA hand-off to Unsupervised Learning; the pseudoinverse used by Regression for rank-deficient designs.
 5. **Depth:** deep (~18–24). **Split seam if needed:** cut into *GEOM-21a "Low-Rank Approximation"* and *GEOM-21b "The Pseudoinverse & Minimum-Norm Least Squares."*
 
@@ -344,17 +344,17 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
    - From the Calc-1 derivative to the **partial derivative** (built inline from the floor — "vary one coordinate, hold the rest fixed") and the gradient as the vector of partials.
    - Layout conventions and the core identities derived from scratch: `∇(aᵀx) = a`, `∇(xᵀx) = 2x`, and the chain rule for `f(Ax)`; the Jacobian for vector-valued functions.
    - The data reading: a loss is a scalar function of a parameter *vector*, so its derivative is a gradient — this is the object every training loop chases.
-3. **Assumes:** GEOM-4, GEOM-8; floor-level single-variable differentiation (restated inline). This article *builds* multivariable differentiation from the floor — the one place the track lifts calculus above Calc-1, done explicitly.
+3. **Assumes:** GEOM-04, GEOM-08; floor-level single-variable differentiation (restated inline). This article *builds* multivariable differentiation from the floor — the one place the track lifts calculus above Calc-1, done explicitly.
 4. **Sets up:** GEOM-23 (gradient geometry), GEOM-24 (Hessian), GEOM-25 (quadratic form); **supplies Inference B2** (multivariable critical point) and the gradient Optimization consumes.
 5. **Depth:** medium–deep (~16–22).
 
 ### GEOM-23 — The Gradient as a Direction in Space
 1. **The one question:** Why does the gradient point in the direction of steepest ascent, and why is it perpendicular to the level sets?
 2. **Scope / inside:**
-   - The **directional derivative** `∇f·u` derived; maximized when `u` aligns with `∇f` (Cauchy–Schwarz from GEOM-4) ⇒ steepest-ascent meaning, drawn on a contour plot.
+   - The **directional derivative** `∇f·u` derived; maximized when `u` aligns with `∇f` (Cauchy–Schwarz from GEOM-04) ⇒ steepest-ascent meaning, drawn on a contour plot.
    - Gradient ⟂ level set, proved; the **first-order optimality** condition `∇f = 0` and what it does/doesn't guarantee (critical point, not necessarily a min — sets up the Hessian).
    - Gradient descent previewed *only* as motivation (it belongs to **Optimization**); here we own the geometry, not the algorithm.
-3. **Assumes:** GEOM-4, GEOM-22.
+3. **Assumes:** GEOM-04, GEOM-22.
 4. **Sets up:** GEOM-24 (which kind of critical point?), GEOM-25; **the geometric foundation Optimization builds gradient descent on**.
 5. **Depth:** medium (~12–18).
 
@@ -394,7 +394,7 @@ Linear reading order: **GEOM-0 → GEOM-1 → … → GEOM-27.** The track is a 
    - A map from tool → consumer: projection → least squares; spectral theorem/SVD → PCA & covariance; PD/Cholesky → Gaussians & whitening; gradient/Hessian → optimization & Fisher information; condition number → multicollinearity & numerical care.
    - Two or three integrative worked examples that chain several tools end-to-end on a real dataset (e.g. center → covariance → spectral/SVD → project → reconstruct), with the honest "when does the geometric assumption break" discussion.
    - Interview-lens roundup: the standard linear-algebra interview questions across all the above, each answered, with applicability judgment.
-3. **Assumes:** the whole track (GEOM-0–GEOM-26).
+3. **Assumes:** the whole track (GEOM-00–GEOM-26).
 4. **Sets up:** terminal node — the explicit hand-off into Regression, Inference, Optimization, Classification, Unsupervised Learning, and Causal Inference.
 5. **Depth:** medium (~12–18).
 
@@ -418,9 +418,9 @@ This track is the **supplier** of linear algebra to the series, so most "overlap
 
 | Shared topic | **Owner** | Rationale / boundary |
 |---|---|---|
-| **Vectors, span, subspaces, inner products, orthogonality** | **Geometry of Data** (GEOM-0–GEOM-5) | Pure linear-algebra foundation; everyone consumes it. |
-| **Orthogonal projection / projection matrix** | **Geometry of Data** (GEOM-6) | The general geometric operation. **Regression R4** applies it as "least squares = projection" and links back. |
-| **Matrix mult / transpose / inverse / rank** | **Geometry of Data** (GEOM-8–GEOM-12) | Discharges **Regression R5**'s matrix-algebra prerequisite. |
+| **Vectors, span, subspaces, inner products, orthogonality** | **Geometry of Data** (GEOM-00–GEOM-05) | Pure linear-algebra foundation; everyone consumes it. |
+| **Orthogonal projection / projection matrix** | **Geometry of Data** (GEOM-06) | The general geometric operation. **Regression R4** applies it as "least squares = projection" and links back. |
+| **Matrix mult / transpose / inverse / rank** | **Geometry of Data** (GEOM-08–GEOM-12) | Discharges **Regression R5**'s matrix-algebra prerequisite. |
 | **Eigenvalues / eigenvectors / condition number** | **Geometry of Data** (GEOM-14, GEOM-26) | Discharges **Regression R7**. |
 | **Positive-definite matrices, Cholesky / matrix square root** | **Geometry of Data** (GEOM-18–GEOM-19) | Discharges **Regression R11** (GLS/whitening). |
 | **SVD & eigendecomposition** | **Geometry of Data** (GEOM-15, GEOM-20) | Discharges **Regression R14** (ridge in the SVD basis). Shared with **Unsupervised Learning** — see PCA below. |
@@ -436,9 +436,9 @@ This track is the **supplier** of linear algebra to the series, so most "overlap
 ---
 
 ### Design notes / opinionated calls
-- **Projection (GEOM-6) is the keystone, placed as early as the angle/orthogonality machinery allows.** It is the single operation the rest of the series leans on hardest (least squares, PCA reconstruction, the pseudoinverse), so it earns deep treatment up front and is paid off repeatedly (GEOM-7, GEOM-12, GEOM-20–GEOM-21, GEOM-25).
+- **Projection (GEOM-06) is the keystone, placed as early as the angle/orthogonality machinery allows.** It is the single operation the rest of the series leans on hardest (least squares, PCA reconstruction, the pseudoinverse), so it earns deep treatment up front and is paid off repeatedly (GEOM-07, GEOM-12, GEOM-20–GEOM-21, GEOM-25).
 - **The SVD (GEOM-20) is built from the spectral theorem, not parachuted in.** Ordering GEOM-16 (spectral) → GEOM-17–GEOM-18 (quadratic forms / PD) → GEOM-20 (SVD) means the SVD's existence is *derived*, and the "every matrix is rotate-scale-rotate" picture lands as a theorem, not a slogan.
 - **Vector calculus (GEOM-22–GEOM-25) comes last on purpose.** It needs matrices, quadratic forms, and definiteness already in hand, and placing it after the SVD lets GEOM-26 (conditioning) tie the optimization geometry back to the eigen/singular-value story in one stroke.
-- **GEOM-25 is deliberately the convergence point of the whole track:** it fuses projection (GEOM-6), the inverse (GEOM-11), positive-definiteness (GEOM-18), and the Hessian (GEOM-24) into the one result — minimizing `½xᵀAx − bᵀx` is solving `Ax=b` — that simultaneously discharges Regression's and Inference's heaviest cross-track requests.
+- **GEOM-25 is deliberately the convergence point of the whole track:** it fuses projection (GEOM-06), the inverse (GEOM-11), positive-definiteness (GEOM-18), and the Hessian (GEOM-24) into the one result — minimizing `½xᵀAx − bᵀx` is solving `Ax=b` — that simultaneously discharges Regression's and Inference's heaviest cross-track requests.
 
-This roadmap is **28 articles** (GEOM-0–GEOM-27), a single foundational build with a few read-as-a-pair forks. Several deep articles (GEOM-6, GEOM-14, GEOM-20, GEOM-21) carry pre-marked split seams should they push the 30-page ceiling during drafting.
+This roadmap is **28 articles** (GEOM-00–GEOM-27), a single foundational build with a few read-as-a-pair forks. Several deep articles (GEOM-06, GEOM-14, GEOM-20, GEOM-21) carry pre-marked split seams should they push the 30-page ceiling during drafting.

@@ -1,0 +1,1071 @@
+---
+title: "Eigenvalues and Eigenvectors"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / input directions
+HILITE = "#c1121f"   # eigenvectors / invariant directions
+ACCENT = "#0a7d4d"   # second eigenvector / highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This opens **Movement IV — Eigenstructure and the
+> Spectral Picture**. It assumes you can read a matrix as a map that sends the basis
+> vectors to its columns ([GEOM-08]), that you know when $A-\lambda I$ fails to be
+> invertible and what a nontrivial null space means ([GEOM-11], [GEOM-12]), and that you
+> have met the determinant as the signed-volume factor that vanishes exactly when a map
+> collapses space ([GEOM-13]). Here we ask the one question that organizes everything that
+> follows: *does a matrix leave any direction pointing the same way, only stretched?* It
+> sets up [GEOM-15] (diagonalization — writing $A = V\Lambda V^{-1}$ and making powers
+> trivial), [GEOM-16] (the spectral theorem, where symmetry makes the picture perfect),
+> [GEOM-18] (positive-definite $\Leftrightarrow$ positive eigenvalues), and [GEOM-26] (the
+> condition number as a ratio of eigenvalues). It also **discharges Regression's
+> eigenvalue/condition-number prerequisite ([REGR-07])**.
+
+## Abstract {.unnumbered}
+
+A matrix is a map: feed it a vector, it hands back another, usually pointing somewhere
+new. This article asks whether any input directions survive the map *un-rotated* — sent
+to a scalar multiple of themselves, $A\mathbf v = \lambda\mathbf v$. Such a $\mathbf v$ is
+an **eigenvector** and the stretch factor $\lambda$ its **eigenvalue**. We build the
+definition from the geometry of [GEOM-08]'s transformation gallery, then turn the
+search into algebra: $A\mathbf v = \lambda\mathbf v$ holds for some $\mathbf v\neq 0$
+exactly when $A-\lambda I$ is singular, i.e. when $\det(A-\lambda I)=0$ — the
+**characteristic polynomial**. We find every root, then read off the eigenvectors as the
+null space of $A-\lambda I$, working a $2\times2$ and a $3\times3$ entirely by hand. The
+single claim the article defends is that **eigenvectors are the natural coordinate axes of
+a linear map** — in those directions the map stops being a tangle of rotation-plus-shear
+and becomes pure scaling. We are equally honest about where this fails: rotations have *no*
+real eigenvectors, repeated roots can starve a matrix of enough eigenvectors to span the
+space, and such **defective** matrices cannot be diagonalized at all. Those limits are the
+exact reason the next articles exist.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Most directions, when you hit them with a matrix $A$, come out rotated *and* stretched.
+An **eigenvector** is a rare direction that comes out only **stretched** — same line,
+possibly flipped, scaled by a number $\lambda$ called its **eigenvalue**:
+$$
+A\mathbf v = \lambda\mathbf v, \qquad \mathbf v \neq \mathbf 0 .
+$$
+These special directions are the map's *own* axes. Along them the matrix does nothing but
+multiply by a number, so they are where the matrix's behavior is simplest to see, easiest
+to compute with, and most revealing of what the map "really does."
+:::
+
+Everything below orbits that box. The equation $A\mathbf v = \lambda\mathbf v$ looks like
+a definition to memorize, but by the end you should feel *why* it matters: a generic
+matrix mixes its coordinates together in a confusing way, and the eigenvectors are exactly
+the change of viewpoint that un-mixes them. Find the eigenvectors and you have found the
+coordinate system in which $A$ is diagonal — the cleanest description a linear map can
+have. That promise is cashed in [GEOM-15]; here we earn the directions themselves.
+
+# Why we are doing this: the problem that forces the question {#sec-why}
+
+Keep one question in view for the whole article: **which directions does a matrix leave
+alone, and why would we want them?** Every algebraic move below is an answer to some piece
+of that.
+
+## What came before, and the gap it leaves
+
+By [GEOM-08] we can read any matrix as a map $\mathbf x \mapsto A\mathbf x$, with the
+columns of $A$ telling us where the standard axes land. That view is complete but
+*opaque*: knowing where $\mathbf e_1$ and $\mathbf e_2$ go tells you, in principle,
+where every vector goes (by linearity), yet it gives almost no feel for the *character* of
+the map. Is it a rotation? A stretch? A shear? A collapse? Two matrices that look totally
+different in their columns can do nearly the same geometric thing, and two that look
+similar can behave wildly differently. The column picture answers "where does each axis
+go" but not "what is this map *like*."
+
+There is also a concrete computational pain. Suppose a process repeats a linear step over
+and over — a population redistributing each year, a Markov chain taking another step, an
+iterative numerical method grinding forward, the repeated application that the web's
+original PageRank reduced to. The state after $k$ steps is $A^k\mathbf x_0$. Computing
+$A^{100}$ by multiplying $A$ a hundred times is both expensive and uninformative: the
+entries churn into a mess that hides where the process is heading. We want a way to *see
+through* the repeated map to its long-run behavior, and to compute $A^k$ cheaply.
+
+## The idea that cracks both problems open
+
+Both pains have the same cure. Suppose — just suppose — there were directions $\mathbf v$
+in which $A$ acted as plain multiplication by a number:
+$$
+A\mathbf v = \lambda\mathbf v .
+$$
+Then applying $A$ again is trivial: $A^2\mathbf v = A(\lambda\mathbf v) = \lambda
+A\mathbf v = \lambda^2\mathbf v$, and in general $A^k\mathbf v = \lambda^k\mathbf v$. The
+hundredfold map, restricted to such a direction, is just multiplication by
+$\lambda^{100}$ — no matrix products at all. And if enough such directions exist to build
+*any* starting vector out of them, then the behavior of $A$ (and of $A^k$) on *every*
+vector reduces to scaling along each special direction separately. The confusing,
+coordinate-mixing map dissolves into a handful of independent one-dimensional stretches.
+
+That "if enough such directions exist" is the whole drama of Movement IV, and we will be
+honest about when it does and does not hold. But the prize is clear enough to justify the
+hunt: **find the directions a matrix only stretches, and you have found the coordinate
+system in which the matrix is simplest.** This article finds them. [GEOM-15] assembles
+them into the decomposition $A = V\Lambda V^{-1}$ that makes $A^k = V\Lambda^k V^{-1}$.
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, why do we care about eigenvectors?"* Because they are the directions in
+which a linear map is just multiplication by a number, so in the coordinate system built
+from them the matrix becomes diagonal — and a diagonal matrix is one you can read, raise
+to powers, invert, and reason about at a glance. Every downstream use (PCA's principal
+axes, a covariance matrix's directions of variance, the convergence rate of an optimizer,
+the stability of a dynamical system) is some specialization of that one sentence.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Take the cleanest possible non-trivial map and *watch* it act on a ring of input
+directions. Consider
+$$
+A = \begin{bmatrix} 2 & 1 \\ 0 & 3 \end{bmatrix},
+$$
+a shear-and-stretch. Send a whole circle of unit vectors through it. Most arrows come out
+both rotated and lengthened — the output arrow points somewhere different from the input.
+But two input directions are special: they come out pointing along the *same line* they
+went in on, merely longer. @fig-eigen-action shows this directly. The input directions are
+drawn faint; the same directions after the map are drawn bold; an arrow is colored red
+exactly when the output lies on the input's own line.
+
+```{python}
+#| label: fig-eigen-action
+#| fig-cap: "A matrix acting on a ring of input directions. Faint grey arrows are unit inputs; bold arrows are their images under $A=\\bigl[\\begin{smallmatrix}2&1\\\\0&3\\end{smallmatrix}\\bigr]$. Almost every direction is *rotated* by the map (its image points off the input's line). Two directions are not: the red horizontal eigenvector (eigenvalue $2$) and the green diagonal eigenvector (eigenvalue $3$) are sent straight back out along their own lines, only stretched. Those are the eigenvectors."
+A = np.array([[2.0, 1.0], [0.0, 3.0]])
+
+thetas = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+units = np.stack([np.cos(thetas), np.sin(thetas)])  # 2 x 24
+imgs = A @ units
+
+# Eigenvectors of this A: lambda=2 -> [1,0]; lambda=3 -> [1,1]/sqrt(2)
+ev1 = np.array([1.0, 0.0])
+ev2 = np.array([1.0, 1.0]) / np.sqrt(2)
+
+fig, ax = plt.subplots(figsize=(5.6, 5.6))
+for k in range(units.shape[1]):
+    u = units[:, k]
+    img = imgs[:, k]
+    # is the image collinear with the input? cross product near zero
+    collinear = abs(u[0] * img[1] - u[1] * img[0]) < 1e-9
+    draw_vec(ax, (0, 0), u, color=PALE, lw=1.4, z=2)
+    col = HILITE if collinear and u[0] >= 0 and abs(u[1]) < 1e-9 else (
+        ACCENT if collinear and u[0] > 0 and u[1] > 0 else GREY)
+    draw_vec(ax, (0, 0), img, color=col, lw=2.2, z=4)
+
+draw_vec(ax, (0, 0), 3.2 * ev1, color=HILITE, lw=1.0, ls=":", z=1)
+draw_vec(ax, (0, 0), 3.2 * ev2, color=ACCENT, lw=1.0, ls=":", z=1)
+ax.text(2.9, -0.35, r"$\lambda=2$", color=HILITE, fontsize=12)
+ax.text(2.1, 2.5, r"$\lambda=3$", color=ACCENT, fontsize=12)
+ax.set_xlim(-3.6, 3.6); ax.set_ylim(-3.6, 3.6)
+ax.set_aspect("equal")
+ax.axhline(0, color="k", lw=0.6); ax.axvline(0, color="k", lw=0.6)
+ax.set_title("Most directions rotate; two only stretch")
+plt.tight_layout()
+```
+
+Stare at the picture and the definition writes itself. An input $\mathbf v$ is special
+when its image $A\mathbf v$ lies on the same line through the origin as $\mathbf v$. "On
+the same line, through the origin" means "a scalar multiple": $A\mathbf v = \lambda
+\mathbf v$ for some number $\lambda$. The horizontal direction comes out twice as long
+($\lambda = 2$); the diagonal direction comes out three times as long ($\lambda = 3$).
+Every other direction gets knocked off its own line.
+
+Three quick observations we will make rigorous below:
+
+- **It is about a line, not a single arrow.** If $A\mathbf v = \lambda\mathbf v$, then for
+  any scalar $c\neq 0$, $A(c\mathbf v) = c\,A\mathbf v = c\lambda\mathbf v =
+  \lambda(c\mathbf v)$. So $c\mathbf v$ is an eigenvector too, with the *same* $\lambda$.
+  An eigenvector is really an **eigen-direction** (a whole line); the specific length is
+  ours to choose, and we usually normalize to length $1$.
+- **$\lambda$ can be negative or zero.** Negative $\lambda$ flips the arrow to the
+  opposite ray of the same line (still the same line). $\lambda = 0$ means $A\mathbf v =
+  \mathbf 0$: the direction is crushed to the origin — those eigenvectors are exactly the
+  null space of $A$ ([GEOM-12]).
+- **There may be none (real ones).** A pure rotation turns *every* direction off its line,
+  so it has no real eigenvectors at all. We will meet this honestly in @sec-rotation.
+
+::: {.callout-tip title="You might be asked"}
+*"Why must an eigenvector be nonzero, when $A\mathbf 0 = \lambda\mathbf 0$ holds for every
+$\lambda$?"* Exactly because it holds for *every* $\lambda$. The zero vector satisfies
+$A\mathbf 0 = \lambda\mathbf 0$ trivially for all $\lambda$, so it would make every number
+an eigenvalue and carry no information about $A$. We exclude it by fiat in the definition.
+Eigen*values*, by contrast, are allowed to be zero — that is a genuine, informative case
+($A$ collapses that direction).
+:::
+
+# The formal development {#sec-formal}
+
+## The definition {#sec-def}
+
+::: {#def-eigen}
+**Definition (eigenvalue, eigenvector).** Let $A$ be an $n\times n$ (square) matrix. A
+scalar $\lambda$ is an **eigenvalue** of $A$ if there exists a *nonzero* vector
+$\mathbf v\in\mathbb R^n$ with
+$$
+A\mathbf v = \lambda\mathbf v .
+$$ {#eq-eigen}
+Any such $\mathbf v$ is an **eigenvector** of $A$ associated with $\lambda$. The set of
+all eigenvectors for a fixed $\lambda$, together with $\mathbf 0$, is the **eigenspace** of
+$\lambda$, written $E_\lambda$.
+:::
+
+Every symbol earns its place. $A$ must be **square** ($n\times n$): @eq-eigen demands
+$A\mathbf v$ and $\mathbf v$ live in the same space so we can compare them, which forces
+the map to send $\mathbb R^n$ to $\mathbb R^n$. (Rectangular matrices have an analogous but
+distinct theory — *singular* values — built in [GEOM-20]; do not conflate the two.) The
+scalar $\lambda$ is the stretch factor; the nonzero $\mathbf v$ is the surviving direction.
+
+We should immediately confirm that the "eigenspace" really is a space and not just a
+loose collection of arrows, because we will reason about it as a subspace throughout.
+
+::: {#lem-eigenspace}
+**Lemma (the eigenspace is a subspace).** For a fixed eigenvalue $\lambda$ of $A$, the set
+$$
+E_\lambda = \{\mathbf v \in \mathbb R^n : A\mathbf v = \lambda\mathbf v\}
+$$
+is a subspace of $\mathbb R^n$ (closed under addition and scalar multiplication, and
+containing $\mathbf 0$).
+:::
+
+::: {.proof}
+We check the two closure properties; containing $\mathbf 0$ is immediate since $A\mathbf 0
+= \mathbf 0 = \lambda\mathbf 0$.
+
+*Closed under scaling.* Take $\mathbf v\in E_\lambda$ and a scalar $c$. Using linearity of
+the map (the rule $A(c\mathbf v)=cA\mathbf v$ from [GEOM-08]):
+$$
+A(c\mathbf v) = c\,A\mathbf v = c\,(\lambda\mathbf v) = \lambda\,(c\mathbf v),
+$$
+so $c\mathbf v\in E_\lambda$. (This is the "it's a whole line" observation made precise.)
+
+*Closed under addition.* Take $\mathbf v,\mathbf w\in E_\lambda$. Using
+$A(\mathbf v+\mathbf w)=A\mathbf v+A\mathbf w$ (also from [GEOM-08]):
+$$
+A(\mathbf v+\mathbf w) = A\mathbf v + A\mathbf w
+= \lambda\mathbf v + \lambda\mathbf w = \lambda(\mathbf v+\mathbf w),
+$$
+so $\mathbf v+\mathbf w\in E_\lambda$. Both closures hold, so $E_\lambda$ is a subspace.
+$\qquad\blacksquare$
+:::
+
+This is more than tidiness. It says that for a *repeated* eigenvalue the eigenvectors can
+fill a whole plane or higher-dimensional flat, not just a line — a fact we will need when
+we discuss whether there are "enough" eigenvectors (@sec-defective).
+
+## Turning the definition into something we can solve {#sec-rearrange}
+
+@eq-eigen has *two* unknowns tangled together — the scalar $\lambda$ and the vector
+$\mathbf v$ — and that is what makes it look hard. The decisive move is to get all the
+matrix action onto one side. Subtract $\lambda\mathbf v$ from both sides:
+$$
+A\mathbf v - \lambda\mathbf v = \mathbf 0 .
+$$
+We would like to factor out $\mathbf v$, but $A\mathbf v - \lambda\mathbf v$ is "matrix
+times vector minus scalar times vector," and a scalar and a matrix cannot be subtracted
+directly. The fix is the **identity matrix** $I$ (the $n\times n$ matrix with $1$'s on the
+diagonal and $0$'s elsewhere), which by definition satisfies $I\mathbf v = \mathbf v$ for
+every $\mathbf v$. Rewrite $\lambda\mathbf v = \lambda I\mathbf v = (\lambda I)\mathbf v$:
+$$
+A\mathbf v - (\lambda I)\mathbf v = \mathbf 0 .
+$$
+Now both terms are "(a matrix) times $\mathbf v$," so we factor $\mathbf v$ out on the
+right (the distributive law for matrix-vector products, $B\mathbf v - C\mathbf v = (B-C)
+\mathbf v$, which follows entrywise):
+$$
+(A - \lambda I)\,\mathbf v = \mathbf 0 .
+$$ {#eq-homog}
+
+This is a major simplification. @eq-homog is a **homogeneous linear system**: the matrix
+$A-\lambda I$ times the unknown vector $\mathbf v$ gives the zero vector. We met exactly
+this kind of equation in [GEOM-11] and [GEOM-12]. And now the question "is $\lambda$ an
+eigenvalue?" becomes a question about that system.
+
+## The condition on $\lambda$: a singular matrix {#sec-singular}
+
+@eq-homog *always* has the solution $\mathbf v = \mathbf 0$. But the definition demands a
+**nonzero** $\mathbf v$. So $\lambda$ is an eigenvalue precisely when the system
+$(A-\lambda I)\mathbf v = \mathbf 0$ has a solution *other than* the zero vector — i.e.
+when it has a **nontrivial null space**.
+
+When does a square system $M\mathbf v = \mathbf 0$ have a nonzero solution? From
+[GEOM-11]–[GEOM-12], the following are equivalent for a square matrix $M$: it has a
+nontrivial null space $\Leftrightarrow$ its columns are linearly dependent
+$\Leftrightarrow$ it is *not* invertible (singular) $\Leftrightarrow$ it does not have full
+rank. Apply this with $M = A-\lambda I$:
+$$
+\lambda \text{ is an eigenvalue of } A
+\iff
+A - \lambda I \text{ is singular (not invertible).}
+$$ {#eq-singular-cond}
+
+We have traded one hard question (find $\lambda$ *and* $\mathbf v$ together) for two
+easier ones in sequence: **first** find the $\lambda$'s that make $A-\lambda I$ singular,
+**then**, for each such $\lambda$, find the null space to get the eigenvectors. The first
+step needs a test for singularity that we can actually compute as a function of $\lambda$.
+That test is the determinant.
+
+## The characteristic polynomial {#sec-charpoly}
+
+In [GEOM-13] the determinant earned its meaning as the signed volume scaling of a map, and
+its headline property is that it vanishes exactly when the map collapses space — that is,
+**$\det M = 0 \iff M$ is singular.** Combine that with @eq-singular-cond:
+$$
+\boxed{\;\lambda \text{ is an eigenvalue of } A \iff \det(A-\lambda I) = 0.\;}
+$$ {#eq-char-eq}
+
+The left side is geometry (a surviving direction); the right side is a single scalar
+equation we can solve. Give the function a name.
+
+::: {#def-charpoly}
+**Definition (characteristic polynomial).** For an $n\times n$ matrix $A$, the
+**characteristic polynomial** is
+$$
+p_A(\lambda) = \det(A - \lambda I) .
+$$
+The equation $p_A(\lambda)=0$ is the **characteristic equation**; its roots are exactly the
+eigenvalues of $A$.
+:::
+
+Why call it a *polynomial*? Because the determinant of an $n\times n$ matrix is a sum of
+products, each product taking exactly one entry from each row and column ([GEOM-13]). In
+$A-\lambda I$, the variable $\lambda$ appears only on the diagonal, as $a_{ii}-\lambda$. So
+$\lambda$ enters each product at most $n$ times (once per diagonal entry it touches), and
+the whole determinant is a polynomial in $\lambda$ of degree exactly $n$. We will see the
+degree-$n$ claim concretely in the worked $2\times2$ next, and state the general structure
+right after.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does $\det(A-\lambda I)=0$, rather than $\det(\lambda I - A)=0$ — and does the sign
+matter?"* They have the *same roots*. Since $\lambda I - A = -(A-\lambda I)$ and scaling an
+$n\times n$ matrix by $-1$ multiplies its determinant by $(-1)^n$ ([GEOM-13]), the two
+characteristic polynomials differ only by the nonzero factor $(-1)^n$, which never changes
+where the polynomial equals zero. Texts pick whichever makes the leading coefficient
+$+1$: using $\det(\lambda I - A)$ gives a *monic* polynomial $\lambda^n - \cdots$, which is
+why it is common. We will use $\det(A-\lambda I)$ for derivations and not worry about the
+overall sign, since only the roots matter.
+:::
+
+## A worked $2\times2$, fully symbolic {#sec-2x2-symbolic}
+
+Let $A=\begin{bmatrix} a & b \\ c & d\end{bmatrix}$. Then
+$$
+A - \lambda I
+= \begin{bmatrix} a & b \\ c & d\end{bmatrix}
+- \begin{bmatrix} \lambda & 0 \\ 0 & \lambda\end{bmatrix}
+= \begin{bmatrix} a-\lambda & b \\ c & d-\lambda\end{bmatrix}.
+$$
+The $2\times2$ determinant is (top-left times bottom-right, minus the other diagonal — the
+formula from [GEOM-13]):
+$$
+p_A(\lambda) = \det(A-\lambda I) = (a-\lambda)(d-\lambda) - bc .
+$$
+Expand the product, being careful with every sign:
+$$
+(a-\lambda)(d-\lambda) = ad - a\lambda - d\lambda + \lambda^2
+= \lambda^2 - (a+d)\lambda + ad .
+$$
+Subtract $bc$:
+$$
+p_A(\lambda) = \lambda^2 - (a+d)\,\lambda + (ad - bc) .
+$$ {#eq-2x2-charpoly}
+
+Read the coefficients — they are not random, and recognizing them is worth genuine points
+on an exam:
+
+- The constant term $ad-bc$ is exactly $\det A$ (set $\lambda=0$: $p_A(0)=\det(A-0)=\det
+  A$). So **the product of the roots equals $\det A$** (for a monic quadratic
+  $\lambda^2 - s\lambda + p$, the product of roots is $p$).
+- The coefficient $a+d$ is the **trace** of $A$ — the sum of its diagonal entries, written
+  $\operatorname{tr}A$. So **the sum of the roots equals $\operatorname{tr}A$** (sum of
+  roots of a monic quadratic is $s$).
+
+These two facts — $\sum\lambda_i = \operatorname{tr}A$ and $\prod\lambda_i = \det A$ — hold
+for every $n$, not just $2\times2$, and they are the fastest sanity check in all of
+eigenvalue computation. We state the general version once we have the general structure.
+
+::: {.callout-tip title="You might be asked"}
+*"Without computing eigenvectors, how do you check your eigenvalues are right?"* Add them
+and compare to the trace; multiply them and compare to the determinant. If $A=
+\bigl[\begin{smallmatrix}2&1\\0&3\end{smallmatrix}\bigr]$ and you found $\lambda=2,3$:
+their sum is $5=\operatorname{tr}A=2+3$ ✓, and their product is $6=\det A = 2\cdot3-1\cdot0$
+✓. This two-second check catches most arithmetic slips and is the kind of fluency
+interviewers probe for.
+:::
+
+## The general structure: $n$ roots, counted with multiplicity {#sec-fundamental}
+
+For general $n$, expanding $\det(A-\lambda I)$ gives a degree-$n$ polynomial
+$$
+p_A(\lambda) = (-1)^n\bigl(\lambda^n - (\operatorname{tr}A)\,\lambda^{n-1}
++ \cdots + (-1)^n\det A\bigr),
+$$
+and the eigenvalues are its roots. How many roots does a degree-$n$ polynomial have? Here
+we must import one named result, because it sits above our Calc-1 floor and is genuinely a
+theorem of algebra, not of geometry.
+
+::: {.callout-note title="What we borrow: the Fundamental Theorem of Algebra"}
+**Fundamental Theorem of Algebra.** Every polynomial of degree $n\ge 1$ with real (or
+complex) coefficients has exactly $n$ roots in the **complex numbers**
+$\mathbb C$, counted with multiplicity. Equivalently, it factors completely as
+$p(\lambda) = c\,(\lambda-\lambda_1)(\lambda-\lambda_2)\cdots(\lambda-\lambda_n)$ over
+$\mathbb C$.
+
+This is a foundational result of algebra/analysis; we use only its *statement*. The key
+consequence for us: **an $n\times n$ matrix has exactly $n$ eigenvalues over $\mathbb C$,
+counted with multiplicity** — but some may be complex, and some may repeat. The two
+"defects" this allows (complex roots, repeated roots) are precisely the honest
+complications of @sec-complications.
+:::
+
+Two pieces of vocabulary we need for the rest of the article:
+
+- The **algebraic multiplicity** of an eigenvalue $\lambda_0$ is the number of times the
+  factor $(\lambda-\lambda_0)$ appears in $p_A$ — how many times it is repeated as a root.
+- The **geometric multiplicity** of $\lambda_0$ is $\dim E_{\lambda_0}$, the dimension of
+  its eigenspace — how many *independent* eigenvectors it actually supplies.
+
+The gap between these two numbers is the entire subject of @sec-defective and the reason
+[GEOM-15] is a separate article. For now, the general trace/determinant identities:
+
+::: {#thm-trace-det}
+**Theorem (sum and product of eigenvalues).** If $A$ is $n\times n$ with eigenvalues
+$\lambda_1,\dots,\lambda_n$ (over $\mathbb C$, counted with multiplicity), then
+$$
+\sum_{i=1}^n \lambda_i = \operatorname{tr}A, \qquad \prod_{i=1}^n \lambda_i = \det A .
+$$
+:::
+
+::: {.proof}
+We first pin down the factored form *with its exact sign*, since the whole proof rides on
+it. The Fundamental Theorem (in the callout above) factors any degree-$n$ polynomial as
+$p_A(\lambda) = c\,(\lambda-\lambda_1)\cdots(\lambda-\lambda_n)$, where $\lambda_1,\dots,
+\lambda_n$ are its roots — the eigenvalues — and $c$ is the leading coefficient (the
+coefficient of $\lambda^n$). We need that $c$. Look at where the highest power of $\lambda$
+can come from in $\det(A-\lambda I)$: the determinant is a sum of products, each product
+picking one entry from every row and column ([GEOM-13]), and $\lambda$ appears only on the
+diagonal of $A-\lambda I$, as $a_{ii}-\lambda$. To collect all $n$ powers of $\lambda$ we
+must take the diagonal entry from *every* row, i.e. the single product
+$\prod_{i=1}^n(a_{ii}-\lambda)$; any product that strays off the diagonal even once picks up
+at most $n-1$ factors of $\lambda$. The $\lambda^n$ term of $\prod_i(a_{ii}-\lambda)$ is
+$(-\lambda)^n=(-1)^n\lambda^n$, so the leading coefficient is
+$$
+c = (-1)^n .
+$$
+Therefore $p_A(\lambda) = (-1)^n\prod_{i=1}^n(\lambda-\lambda_i)$. Pulling one factor of
+$-1$ into each of the $n$ binomials — $(-1)(\lambda-\lambda_i) = (\lambda_i-\lambda)$, and
+there are exactly $n$ of them, absorbing the whole $(-1)^n$ — gives the sign-clean form we
+will use:
+$$
+\det(A-\lambda I) = (-1)^n\prod_{i=1}^n(\lambda-\lambda_i) = \prod_{i=1}^n (\lambda_i - \lambda).
+$$
+*Product.* Set $\lambda = 0$: the left side is $\det(A-0\cdot I)=\det A$, the right side is
+$\prod_i (\lambda_i - 0)=\prod_i \lambda_i$. Hence $\det A = \prod_i\lambda_i$.
+
+*Sum.* Expand the right side and track the coefficient of $\lambda^{n-1}$. Each factor
+contributes either $\lambda_i$ or $-\lambda$; a term of degree $n-1$ in $\lambda$ comes
+from choosing $-\lambda$ in $n-1$ factors and the constant $\lambda_j$ in the one remaining
+factor, summed over which factor is left out. Writing $[\lambda^{n-1}]P$ for "the
+coefficient of $\lambda^{n-1}$ in the polynomial $P$,"
+$$
+[\lambda^{n-1}]\prod_i(\lambda_i-\lambda)
+= \sum_{j=1}^n \lambda_j \cdot (-1)^{n-1}.
+$$
+On the left side, $\det(A-\lambda I)$: the only way to get a $\lambda^{n-1}$ term in the
+determinant expansion is the product of all $n$ diagonal entries $\prod_i(a_{ii}-\lambda)$
+(any off-diagonal choice kills at least two of the $-\lambda$'s, dropping the degree below
+$n-1$). Expanding $\prod_i(a_{ii}-\lambda)$ the same way, its $\lambda^{n-1}$ coefficient is
+$\sum_i a_{ii}\cdot(-1)^{n-1} = (\operatorname{tr}A)(-1)^{n-1}$. Matching the two
+coefficients and cancelling the common $(-1)^{n-1}$ gives $\sum_j\lambda_j =
+\operatorname{tr}A$. $\qquad\blacksquare$
+:::
+
+## Finding the eigenvectors once you have $\lambda$ {#sec-find-vecs}
+
+The eigenvalues are the roots of $p_A$; the eigenvectors come from @eq-homog. For each
+eigenvalue $\lambda_k$, the eigenvectors are precisely the **nonzero vectors in the null
+space of $A-\lambda_k I$**:
+$$
+E_{\lambda_k} = \operatorname{null}(A-\lambda_k I) = \{\mathbf v : (A-\lambda_k I)\mathbf v
+= \mathbf 0\}.
+$$
+We compute that null space exactly as in [GEOM-11]: substitute the number $\lambda_k$ into
+$A-\lambda I$, row-reduce, and read off the free directions. Because $\lambda_k$ was chosen
+to make $A-\lambda_k I$ singular, this null space is *guaranteed* to be nontrivial — there
+will always be at least one free variable, hence at least one eigenvector. We do this
+concretely in the worked examples next.
+
+::: {.callout-warning title="Pitfall"}
+**Eigenvectors are never unique, and that is not a mistake.** Because $E_\lambda$ is a
+subspace (@lem-eigenspace), any nonzero scalar multiple of an eigenvector is also an
+eigenvector for the same $\lambda$, and if the eigenspace is multidimensional any
+combination of a basis works. When a textbook or a library reports "the eigenvector," it
+has silently picked a *normalization* — usually unit length, $\|\mathbf v\|=1$, and even
+then the sign $\pm\mathbf v$ is a free choice. If your answer is a scalar multiple of the
+book's, you are not wrong. Reporting an eigenvector means reporting a *direction* (a basis
+for the eigenspace), not a unique arrow.
+:::
+
+# Worked examples {#sec-examples}
+
+We now compute eigenvalues and eigenvectors on real matrices, by hand first so the
+machinery is fully exposed, then on larger and messier objects where the geometry carries
+real meaning. We deliberately include the honest edge cases — a rotation with no real
+eigenvectors and a defective matrix that cannot be diagonalized — so the boundary of the
+technique is visible, not hidden.
+
+## Example 1 — a $2\times2$, every step by hand {#sec-ex-2x2}
+
+Take
+$$
+A = \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix},
+$$
+the symmetric matrix that appears constantly in data work (it is the structure of a
+$2\times2$ covariance matrix with equal variances and positive correlation). We find its
+eigenstructure with nothing but @eq-2x2-charpoly and a null-space computation.
+
+**Step 1 — characteristic polynomial.** Using @eq-2x2-charpoly with $a=d=2$, $b=c=1$:
+$$
+p_A(\lambda) = \lambda^2 - (a+d)\lambda + (ad-bc)
+= \lambda^2 - 4\lambda + (4-1) = \lambda^2 - 4\lambda + 3 .
+$$
+
+**Step 2 — roots (eigenvalues).** Factor the quadratic: $\lambda^2 - 4\lambda + 3 =
+(\lambda-1)(\lambda-3)$, so
+$$
+\lambda_1 = 1, \qquad \lambda_2 = 3 .
+$$
+Sanity check via @thm-trace-det: sum $1+3=4=\operatorname{tr}A$ ✓; product $1\cdot3=3=\det
+A = 4-1$ ✓.
+
+**Step 3 — eigenvector for $\lambda_1=1$.** Form $A-1\cdot I$ and find its null space:
+$$
+A - I = \begin{bmatrix} 2-1 & 1 \\ 1 & 2-1\end{bmatrix}
+= \begin{bmatrix} 1 & 1 \\ 1 & 1\end{bmatrix}.
+$$
+Solve $(A-I)\mathbf v = \mathbf 0$, i.e. $\begin{bmatrix}1&1\\1&1\end{bmatrix}
+\begin{bmatrix}v_1\\v_2\end{bmatrix} = \begin{bmatrix}0\\0\end{bmatrix}$. Both rows say the
+same thing, $v_1 + v_2 = 0$, so $v_1 = -v_2$. Pick the free variable $v_2 = 1$:
+$$
+\mathbf v_1 = \begin{bmatrix} -1 \\ 1 \end{bmatrix}
+\quad\text{(or any nonzero multiple).}
+$$
+Verify: $A\mathbf v_1 = \begin{bmatrix}2&1\\1&2\end{bmatrix}\begin{bmatrix}-1\\1\end{bmatrix}
+= \begin{bmatrix}-2+1\\-1+2\end{bmatrix} = \begin{bmatrix}-1\\1\end{bmatrix} = 1\cdot
+\mathbf v_1$ ✓.
+
+**Step 4 — eigenvector for $\lambda_2=3$.** Form $A-3I$:
+$$
+A - 3I = \begin{bmatrix} 2-3 & 1 \\ 1 & 2-3\end{bmatrix}
+= \begin{bmatrix} -1 & 1 \\ 1 & -1\end{bmatrix}.
+$$
+The system $(A-3I)\mathbf v = \mathbf 0$ gives $-v_1 + v_2 = 0$, so $v_1 = v_2$. Pick
+$v_2 = 1$:
+$$
+\mathbf v_2 = \begin{bmatrix} 1 \\ 1 \end{bmatrix}.
+$$
+Verify: $A\mathbf v_2 = \begin{bmatrix}2+1\\1+2\end{bmatrix} = \begin{bmatrix}3\\3\end{bmatrix}
+= 3\,\mathbf v_2$ ✓.
+
+Notice the eigenvectors $\begin{bmatrix}-1\\1\end{bmatrix}$ and
+$\begin{bmatrix}1\\1\end{bmatrix}$ are **perpendicular** (their dot product is
+$-1\cdot1+1\cdot1=0$). That is not luck: it is the spectral theorem at work — *symmetric*
+matrices always have orthogonal eigenvectors — and it is the subject of [GEOM-16].
+@fig-ex1 confirms the whole computation visually and numerically.
+
+```{python}
+#| label: fig-ex1
+#| fig-cap: "Example 1, the symmetric matrix $A=\\bigl[\\begin{smallmatrix}2&1\\\\1&2\\end{smallmatrix}\\bigr]$. The two eigenvectors (red, eigenvalue $1$; green, eigenvalue $3$) are drawn as faint dotted lines; the bold arrows are their images under $A$. Each image lies exactly on its eigenvector's own line — the red one unchanged in length (stretch $1$), the green one tripled (stretch $3$). The unit circle (grey) maps to the ellipse (blue), whose axes are precisely the eigenvector directions: symmetric matrices map circles to axis-aligned-in-the-eigenbasis ellipses."
+A = np.array([[2.0, 1.0], [1.0, 2.0]])
+w, V = np.linalg.eig(A)            # numerical check of our by-hand answer
+
+th = np.linspace(0, 2 * np.pi, 200)
+circle = np.stack([np.cos(th), np.sin(th)])
+ellipse = A @ circle
+
+v1 = np.array([-1.0, 1.0]) / np.sqrt(2)   # lambda = 1
+v2 = np.array([1.0, 1.0]) / np.sqrt(2)    # lambda = 3
+
+fig, ax = plt.subplots(figsize=(5.6, 5.6))
+ax.plot(circle[0], circle[1], color=GREY, lw=1.2, label="unit circle")
+ax.plot(ellipse[0], ellipse[1], color=PALE, lw=2.0, label=r"image $A\cdot$circle")
+for v, lam, col in [(v1, 1, HILITE), (v2, 3, ACCENT)]:
+    draw_vec(ax, (0, 0), 3.2 * v, color=col, lw=1.0, ls=":", z=1)
+    draw_vec(ax, (0, 0), -3.2 * v, color=col, lw=1.0, ls=":", z=1)
+    draw_vec(ax, (0, 0), v, color=col, lw=1.6, z=4)        # the eigenvector
+    draw_vec(ax, (0, 0), A @ v, color=col, lw=2.8, z=5)    # its image = lam * v
+ax.set_xlim(-3.6, 3.6); ax.set_ylim(-3.6, 3.6); ax.set_aspect("equal")
+ax.axhline(0, color="k", lw=0.6); ax.axvline(0, color="k", lw=0.6)
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+ax.set_title("Eigenvectors are the axes of the image ellipse")
+plt.tight_layout()
+print("by hand:  eigenvalues 1, 3")
+print(f"numpy:    eigenvalues {np.sort(w).round(4)}")
+print(f"numpy eigenvectors (columns):\n{V.round(4)}")
+```
+
+The printed `numpy` output matches our hand computation up to the usual sign/normalization
+freedom flagged in the Pitfall above: the library returns unit-length eigenvectors, and may
+return $-\mathbf v$ where we wrote $\mathbf v$.
+
+## Example 2 — a $3\times3$ with a clean factorization {#sec-ex-3x3}
+
+The mechanics scale to any size; only the polynomial gets longer. Take an upper-triangular
+matrix because its eigenvalues can be read off directly — and that fact is itself worth
+proving, since triangular systems are everywhere (LU, QR, Cholesky).
+
+::: {#lem-triangular}
+**Lemma (eigenvalues of a triangular matrix).** If $A$ is triangular (all entries below —
+or all above — the main diagonal are zero), its eigenvalues are exactly its diagonal
+entries.
+:::
+
+::: {.proof}
+If $A$ is triangular then so is $A-\lambda I$ (subtracting $\lambda$ from the diagonal
+leaves the zero pattern intact). The determinant of a triangular matrix is the product of
+its diagonal entries ([GEOM-13]). Hence
+$$
+p_A(\lambda) = \det(A-\lambda I) = \prod_{i=1}^n (a_{ii}-\lambda),
+$$
+whose roots are $\lambda = a_{11}, a_{22},\dots,a_{nn}$ — the diagonal entries.
+$\qquad\blacksquare$
+:::
+
+Consider
+$$
+A = \begin{bmatrix} 4 & 2 & 0 \\ 0 & 1 & 3 \\ 0 & 0 & 1 \end{bmatrix}.
+$$
+By @lem-triangular the eigenvalues are the diagonal entries $4, 1, 1$ — so $\lambda=1$ is
+repeated (algebraic multiplicity $2$). This will let us *see* the algebraic-vs-geometric
+multiplicity question concretely. We find the eigenvectors directly.
+
+**$\lambda = 4$.** Compute $A - 4I$ and solve $(A-4I)\mathbf v=\mathbf 0$:
+$$
+A - 4I = \begin{bmatrix} 0 & 2 & 0 \\ 0 & -3 & 3 \\ 0 & 0 & -3 \end{bmatrix}.
+$$
+Row 3 gives $-3v_3 = 0\Rightarrow v_3=0$. Row 1 gives $2v_2=0\Rightarrow v_2=0$. Row 2 then
+holds automatically. $v_1$ is free; take $v_1=1$:
+$$
+\mathbf v_{(4)} = \begin{bmatrix} 1 \\ 0 \\ 0 \end{bmatrix}.
+$$
+
+**$\lambda = 1$ (the repeated one).** Compute $A - I$ and solve:
+$$
+A - I = \begin{bmatrix} 3 & 2 & 0 \\ 0 & 0 & 3 \\ 0 & 0 & 0 \end{bmatrix}.
+$$
+Row 2 gives $3v_3=0\Rightarrow v_3=0$. Row 1 gives $3v_1+2v_2=0\Rightarrow
+v_1=-\tfrac23 v_2$. So $v_2$ is the single free variable; take $v_2=3$ (to clear the
+fraction):
+$$
+\mathbf v_{(1)} = \begin{bmatrix} -2 \\ 3 \\ 0 \end{bmatrix}.
+$$
+Here is the crucial observation. The eigenvalue $\lambda=1$ has algebraic multiplicity
+**$2$** (it is a double root) but geometric multiplicity **$1$** (its eigenspace is a
+single line — only one free variable). The matrix is "one eigenvector short": with only two
+independent eigenvectors total ($\mathbf v_{(4)}$ and $\mathbf v_{(1)}$) it cannot supply a
+basis of $\mathbb R^3$. This is a **defective** matrix — the precise obstruction to
+diagonalization, which @sec-defective dissects and [GEOM-15] resolves.
+
+```{python}
+#| label: fig-ex3x3
+#| fig-cap: "Example 2 in 3-D: the matrix $A$ with eigenvalues $4,1,1$. The eigenvector for $\\lambda=4$ (red) is sent to four times its length; the single eigenvector for the doubly-repeated $\\lambda=1$ (green) is fixed in place. There is no third independent eigenvector — the matrix is *defective*. The dashed grey arrow is a generic vector that is *not* an eigenvector, shown rotating off its line under the map."
+A = np.array([[4.0, 2.0, 0.0],
+              [0.0, 1.0, 3.0],
+              [0.0, 0.0, 1.0]])
+w, V = np.linalg.eig(A)
+
+v4 = np.array([1.0, 0.0, 0.0])
+v1 = np.array([-2.0, 3.0, 0.0]); v1 = v1 / np.linalg.norm(v1)
+g = np.array([0.4, 0.4, 0.8]); g = g / np.linalg.norm(g)   # generic, not an eigenvector
+
+fig = plt.figure(figsize=(6.2, 5.4))
+ax = fig.add_subplot(111, projection="3d")
+def arr(a, b, color, lw, ls="-"):
+    ax.quiver(0, 0, 0, b[0]-a[0], b[1]-a[1], b[2]-a[2], color=color, lw=lw,
+              arrow_length_ratio=0.12, linestyle=ls)
+arr((0,0,0), v4, HILITE, 1.4, ":"); arr((0,0,0), A@v4/4, HILITE, 2.6)  # show direction
+arr((0,0,0), A@v4, HILITE, 1.0, ":")
+arr((0,0,0), v1, ACCENT, 2.6)
+arr((0,0,0), A@v1, ACCENT, 1.0, ":")
+arr((0,0,0), g, GREY, 1.8, "--"); arr((0,0,0), A@g/np.linalg.norm(A@g)*2, GREY, 1.0, ":")
+ax.text(*(1.05*v4), r"$v_{\lambda=4}$", color=HILITE)
+ax.text(*(1.1*v1), r"$v_{\lambda=1}$", color=ACCENT)
+ax.text(*(1.1*g), "generic", color=GREY)
+ax.set_xlim(-1, 4); ax.set_ylim(-1, 4); ax.set_zlim(-1, 3)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$"); ax.set_zlabel("$z$")
+ax.set_title("Two eigen-directions in 3-D — one short of a basis")
+ax.view_init(elev=22, azim=-60)
+plt.tight_layout()
+print(f"eigenvalues (numpy): {np.sort(w).round(4)}")
+print("algebraic mult of lambda=1: 2   |   geometric mult (eigenspace dim): 1  -> defective")
+```
+
+## Example 3 — a real data matrix: eigenvectors as directions of variance {#sec-ex-cov}
+
+The most important place eigenvectors appear in data science is the **covariance matrix**.
+A covariance matrix $\Sigma$ is symmetric and summarizes how a cloud of data points
+spreads. Its eigenvectors are the *principal axes* of the cloud — the directions of
+greatest and least spread — and its eigenvalues are the variances along those axes. This is
+the linear-algebra heart of PCA (whose *statistical* interpretation belongs to Unsupervised
+Learning, which links back here for the machinery). We do not assume the probabilistic
+meaning; we treat $\Sigma$ as a concrete symmetric matrix and read its geometry.
+
+We generate a correlated 2-D cloud, form its sample covariance matrix, and compute its
+eigenstructure. The eigenvectors should land on the visible long and short axes of the
+cloud.
+
+```{python}
+#| label: fig-cov-eigen
+#| fig-cap: "Eigenvectors of a covariance matrix are the principal axes of the data cloud. A correlated cloud of $n=400$ points (grey) has a $2\\times2$ sample covariance matrix $\\Sigma$. Its eigenvectors (red = largest eigenvalue, green = smallest) point along the directions of greatest and least spread; each is drawn scaled by $\\sqrt{\\lambda}$, the standard deviation along that axis. The dotted ellipse is the one-standard-deviation contour, whose axes *are* the eigenvectors. This is exactly the picture PCA exploits."
+rng = np.random.default_rng(42)
+# A genuinely correlated cloud (not rigged): tilt + unequal spread.
+base = rng.normal(size=(400, 2)) * np.array([3.0, 1.0])
+theta = np.deg2rad(30)
+R = np.array([[np.cos(theta), -np.sin(theta)],
+              [np.sin(theta),  np.cos(theta)]])
+X = base @ R.T
+X = X - X.mean(axis=0)            # center the cloud
+
+Sigma = np.cov(X.T)              # 2x2 sample covariance matrix
+w, V = np.linalg.eigh(Sigma)     # eigh: symmetric solver, ascending eigenvalues
+order = np.argsort(w)[::-1]      # largest first
+w, V = w[order], V[:, order]
+
+fig, ax = plt.subplots(figsize=(5.8, 5.8))
+ax.scatter(X[:, 0], X[:, 1], s=10, color=GREY, alpha=0.5)
+for k, col in zip(range(2), (HILITE, ACCENT)):
+    vec = V[:, k] * np.sqrt(w[k])         # scale by std dev along the axis
+    draw_vec(ax, (0, 0), 2 * vec, color=col, lw=3.0, z=6)
+    draw_vec(ax, (0, 0), -2 * vec, color=col, lw=3.0, z=6)
+# 1-sd ellipse
+tt = np.linspace(0, 2*np.pi, 200)
+ell = (V @ np.diag(np.sqrt(w)) @ np.stack([np.cos(tt), np.sin(tt)]))
+ax.plot(ell[0], ell[1], color=VEC, lw=1.6, ls=":")
+ax.set_aspect("equal")
+ax.axhline(0, color="k", lw=0.5); ax.axvline(0, color="k", lw=0.5)
+ax.set_title("Covariance eigenvectors = principal axes of the cloud")
+ax.set_xlabel("feature 1"); ax.set_ylabel("feature 2")
+plt.tight_layout()
+print(f"covariance matrix:\n{Sigma.round(3)}")
+print(f"eigenvalues (variances along axes): {w.round(3)}")
+print(f"top eigenvector (long axis):        {V[:,0].round(3)}")
+print(f"check tr(Sigma) = sum eig: {np.trace(Sigma):.3f} = {w.sum():.3f}")
+```
+
+The eigenvector for the *largest* eigenvalue lies along the cloud's long axis: it is the
+single direction that captures the most variance, and projecting the data onto it is the
+first principal component. The eigenvalues are the variances captured along each axis, and
+their sum equals $\operatorname{tr}\Sigma$ — the total variance — confirming @thm-trace-det
+on real data. This is the bridge to [GEOM-16] (why a covariance matrix is *guaranteed* an
+orthonormal eigenbasis) and to Unsupervised Learning's PCA.
+
+## Example 4 — repeated application: where the dominant eigenvector wins {#sec-ex-power}
+
+Recall the motivating pain: understanding $A^k\mathbf x_0$ for large $k$. Eigenvectors make
+the long-run behavior transparent. Consider a simple two-state transition that nudges a
+population between two cities each year, encoded by a matrix $M$ acting on the state vector
+$\mathbf x_k = M\mathbf x_{k-1} = M^k\mathbf x_0$. If $\mathbf x_0 = c_1\mathbf v_1 +
+c_2\mathbf v_2$ in the eigenbasis, then
+$$
+M^k\mathbf x_0 = c_1\lambda_1^k\mathbf v_1 + c_2\lambda_2^k\mathbf v_2 .
+$$
+Whichever $|\lambda|$ is largest dominates as $k$ grows: the state aligns with the
+**dominant eigenvector** regardless of where it started. We verify by iterating and
+watching the direction converge.
+
+```{python}
+#| label: fig-power
+#| fig-cap: "Repeated application drives any start toward the dominant eigenvector. A transition matrix $M$ is applied repeatedly to several different starting vectors (faint paths). All of them, normalized at each step, converge to the same direction — the eigenvector of the largest-magnitude eigenvalue (red). This is the geometry behind power iteration, steady states of Markov chains, and PageRank: the long run is governed by one eigenvector."
+M = np.array([[0.85, 0.20],
+              [0.15, 0.80]])   # column-stochastic-ish transition
+w, V = np.linalg.eig(M)
+dom = V[:, np.argmax(np.abs(w))]
+dom = dom / np.linalg.norm(dom) * np.sign(dom[0])
+
+fig, ax = plt.subplots(figsize=(5.8, 5.6))
+starts = [np.array([1.0, 0.0]), np.array([0.0, 1.0]),
+          np.array([1.0, 1.0]), np.array([-0.5, 1.0])]
+for s in starts:
+    v = s / np.linalg.norm(s)
+    pts = [v.copy()]
+    for _ in range(12):
+        v = M @ v
+        v = v / np.linalg.norm(v)
+        pts.append(v.copy())
+    pts = np.array(pts)
+    ax.plot(pts[:, 0], pts[:, 1], "-o", color=PALE, ms=3, lw=1.2, alpha=0.9)
+    draw_vec(ax, (0, 0), pts[0], color=GREY, lw=1.2, z=3)
+draw_vec(ax, (0, 0), dom, color=HILITE, lw=3.0, z=6)
+draw_vec(ax, (0, 0), -dom, color=HILITE, lw=3.0, z=6)
+ax.text(*(1.05*dom), "dominant\neigenvector", color=HILITE, fontsize=10)
+ax.set_xlim(-1.2, 1.2); ax.set_ylim(-1.2, 1.2); ax.set_aspect("equal")
+ax.axhline(0, color="k", lw=0.5); ax.axvline(0, color="k", lw=0.5)
+ax.set_title("Every start converges to the dominant eigenvector")
+plt.tight_layout()
+print(f"eigenvalues: {w.round(4)}   dominant: {w[np.argmax(np.abs(w))]:.4f}")
+print(f"dominant eigenvector direction: {dom.round(4)}")
+```
+
+This is more than a curiosity: **power iteration** — repeatedly multiplying by $A$ and
+renormalizing — is one of the cheapest ways to extract the dominant eigenvector of a huge
+matrix, and it is precisely how the original PageRank ranked the web. The eigenvector is
+not an abstraction; it is the steady state of the process.
+
+# The honest complications {#sec-complications}
+
+The Fundamental Theorem guaranteed $n$ eigenvalues *over the complex numbers, counted with
+multiplicity*. Both of those qualifiers are warnings, and a graduate-level command of the
+subject means knowing exactly what they cost. This section is the edge of applicability.
+
+## Complex eigenvalues: a rotation has no real eigenvectors {#sec-rotation}
+
+A pure rotation turns every direction, so geometrically it should have *no* eigenvectors —
+nothing survives un-rotated. The algebra agrees by producing complex roots. Take the
+$90^\circ$ rotation
+$$
+R = \begin{bmatrix} 0 & -1 \\ 1 & 0 \end{bmatrix}.
+$$
+Its characteristic polynomial, from @eq-2x2-charpoly with $a=d=0$, $b=-1$, $c=1$:
+$$
+p_R(\lambda) = \lambda^2 - 0\cdot\lambda + (0\cdot0 - (-1)\cdot1) = \lambda^2 + 1 .
+$$
+The roots solve $\lambda^2 = -1$, so $\lambda = \pm i$ — **no real eigenvalues at all**. A
+real matrix can have complex eigenvalues, and when it does, it has no real eigenvectors:
+geometrically it is rotating, and a rotation fixes no real direction. The complex
+eigenvalues still carry meaning (their modulus is the per-step scaling and their argument is
+the rotation angle), but there is no real line that the map merely stretches.
+
+```{python}
+#| label: fig-rotation
+#| fig-cap: "The honest edge case: a rotation has no real eigenvectors. Every input direction (faint) is turned $90^\\circ$ by $R=\\bigl[\\begin{smallmatrix}0&-1\\\\1&0\\end{smallmatrix}\\bigr]$ (bold), so *no* arrow comes out on its own line. The characteristic polynomial $\\lambda^2+1$ has roots $\\pm i$ — complex, not real — which is the algebra's way of reporting 'there is no surviving real direction.'"
+R = np.array([[0.0, -1.0], [1.0, 0.0]])
+thetas = np.linspace(0, 2*np.pi, 16, endpoint=False)
+units = np.stack([np.cos(thetas), np.sin(thetas)])
+imgs = R @ units
+fig, ax = plt.subplots(figsize=(5.4, 5.4))
+for k in range(units.shape[1]):
+    draw_vec(ax, (0, 0), units[:, k], color=PALE, lw=1.2, z=2)
+    draw_vec(ax, (0, 0), imgs[:, k], color=GREY, lw=2.0, z=4)
+ax.set_xlim(-1.4, 1.4); ax.set_ylim(-1.4, 1.4); ax.set_aspect("equal")
+ax.axhline(0, color="k", lw=0.5); ax.axvline(0, color="k", lw=0.5)
+ax.set_title(r"Rotation by $90^\circ$: no direction is preserved")
+plt.tight_layout()
+print("eigenvalues of R:", np.linalg.eigvals(R).round(4))
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Can a real matrix have complex eigenvalues? Do they have a pattern?"* Yes — and because
+the characteristic polynomial has real coefficients, **complex eigenvalues of a real matrix
+always come in conjugate pairs** $a\pm bi$. (If $p(\lambda)$ has real coefficients and
+$p(z)=0$, then taking the complex conjugate of the whole equation gives $p(\bar z)=0$ too.)
+So a $3\times3$ real matrix has either three real eigenvalues or one real and one conjugate
+pair — never exactly two complex ones. A real matrix with complex eigenvalues is doing some
+rotation; it cannot be diagonalized over the reals, though it can over the complex numbers.
+*Symmetric* real matrices escape this entirely — they always have real eigenvalues
+([GEOM-16]).
+:::
+
+## Repeated eigenvalues and defective matrices {#sec-defective}
+
+The second qualifier — "counted with multiplicity" — opens the gap we already saw in
+@sec-ex-3x3. When an eigenvalue repeats, the question becomes: does it supply as many
+independent eigenvectors as its multiplicity demands? Define the two multiplicities
+introduced in @sec-fundamental:
+
+- **algebraic multiplicity** $a_\lambda$: how many times $\lambda$ is a root of $p_A$.
+- **geometric multiplicity** $g_\lambda = \dim E_\lambda$: how many independent
+  eigenvectors $\lambda$ actually has.
+
+It is always true that $1 \le g_\lambda \le a_\lambda$ (at least one eigenvector, never more
+than the multiplicity). When $g_\lambda < a_\lambda$ for some $\lambda$ — strictly fewer
+eigenvectors than the multiplicity demands — the matrix is **defective**: it does not have
+$n$ independent eigenvectors, so its eigenvectors *cannot* form a basis for $\mathbb R^n$.
+
+The canonical small example is the shear
+$$
+J = \begin{bmatrix} 2 & 1 \\ 0 & 2 \end{bmatrix}.
+$$
+Its characteristic polynomial is $(2-\lambda)^2$, so $\lambda=2$ with algebraic
+multiplicity $2$. The eigenvectors solve $(J-2I)\mathbf v=\mathbf 0$:
+$$
+J - 2I = \begin{bmatrix} 0 & 1 \\ 0 & 0\end{bmatrix},
+\qquad (J-2I)\mathbf v = \mathbf 0 \;\Rightarrow\; v_2 = 0 .
+$$
+Only $v_1$ is free, so the eigenspace is the single line spanned by
+$\begin{bmatrix}1\\0\end{bmatrix}$: geometric multiplicity $1 < 2 = $ algebraic. $J$ is
+defective. There is genuinely no second eigen-direction; the shear tilts everything off the
+non-horizontal lines, leaving only one survivor.
+
+::: {.callout-warning title="Pitfall"}
+**A repeated eigenvalue does not by itself mean trouble — a deficient eigenspace does.**
+The identity matrix $I$ has $\lambda=1$ with algebraic multiplicity $n$, yet *every* vector
+is an eigenvector ($I\mathbf v = \mathbf v$), so its geometric multiplicity is also $n$ and
+it is perfectly diagonalizable (it is already diagonal). The danger is only when the
+eigenspace is *smaller* than the multiplicity, $g_\lambda < a_\lambda$. Symmetric matrices
+*never* suffer this — for them $g_\lambda = a_\lambda$ always ([GEOM-16]) — which is one
+more reason symmetric matrices are the well-behaved ones data science relies on. Defective
+matrices are why the eigendecomposition does not always exist, and why the SVD ([GEOM-20]),
+which *always* exists, is the more dependable tool when you are not guaranteed symmetry.
+:::
+
+## Independence of eigenvectors from distinct eigenvalues {#sec-distinct-indep}
+
+The bridge to the next article is one clean fact: when eigenvalues differ, their
+eigenvectors are automatically independent, so distinct eigenvalues never cause a
+deficiency. This is exactly what makes the "diagonalizable" question in [GEOM-15] turn
+entirely on the *repeated* eigenvalues.
+
+::: {#thm-distinct}
+**Theorem (eigenvectors of distinct eigenvalues are independent).** If
+$\mathbf v_1,\dots,\mathbf v_m$ are eigenvectors of $A$ with *distinct* eigenvalues
+$\lambda_1,\dots,\lambda_m$ (all different), then $\mathbf v_1,\dots,\mathbf v_m$ are
+linearly independent.
+:::
+
+::: {.proof}
+We argue by contradiction using a minimal dependent set. Suppose the vectors are
+*dependent*; among all dependence relations, take one with the fewest nonzero coefficients,
+say
+$$
+c_1\mathbf v_1 + c_2\mathbf v_2 + \cdots + c_r\mathbf v_r = \mathbf 0,
+$$ {#eq-dep}
+with all $c_1,\dots,c_r\neq 0$ and $r$ as small as possible. Note $r\ge 2$, since a single
+eigenvector is nonzero and cannot satisfy $c_1\mathbf v_1=\mathbf 0$ with $c_1\neq0$.
+
+Apply $A$ to @eq-dep. Using $A\mathbf v_i = \lambda_i\mathbf v_i$:
+$$
+c_1\lambda_1\mathbf v_1 + c_2\lambda_2\mathbf v_2 + \cdots + c_r\lambda_r\mathbf v_r
+= \mathbf 0 .
+$$ {#eq-dep-A}
+Now multiply the original @eq-dep by $\lambda_1$ and subtract it from @eq-dep-A. The
+$\mathbf v_1$ term cancels ($c_1\lambda_1 - c_1\lambda_1 = 0$), leaving
+$$
+c_2(\lambda_2-\lambda_1)\mathbf v_2 + \cdots + c_r(\lambda_r-\lambda_1)\mathbf v_r
+= \mathbf 0 .
+$$
+This is a dependence relation among $\mathbf v_2,\dots,\mathbf v_r$ — *fewer* vectors than
+before. Its coefficients are $c_i(\lambda_i-\lambda_1)$. Each $c_i\neq 0$ (from our
+relation) and each $\lambda_i-\lambda_1\neq 0$ (the eigenvalues are distinct), so every
+coefficient is nonzero. That is a nonzero dependence relation shorter than the minimal one
+— a contradiction. Hence no dependence relation exists: the eigenvectors are independent.
+$\qquad\blacksquare$
+:::
+
+The immediate corollary, which @sec-ex-3x3 and @sec-defective already foreshadowed:
+
+::: {#thm-distinct-cor}
+**Corollary.** If an $n\times n$ matrix has $n$ *distinct* eigenvalues, it has $n$
+independent eigenvectors, which therefore form a basis of $\mathbb R^n$ (or $\mathbb C^n$).
+Such a matrix is diagonalizable.
+:::
+
+This is the green light for [GEOM-15]: distinct eigenvalues guarantee a full eigenbasis.
+Defectiveness can *only* arise from a repeated eigenvalue whose eigenspace is too small. The
+whole subtlety of diagonalization lives in that one situation.
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note — and here it carries a real
+warning, because the by-hand method is *not* how a computer does it. Finding eigenvalues as
+roots of the characteristic polynomial is numerically catastrophic for anything but the
+smallest matrices: polynomial roots are wildly sensitive to tiny coefficient errors, and
+forming $\det(A-\lambda I)$ symbolically is hopeless past $4\times4$. No serious library
+does it that way.
+
+In practice you call `numpy.linalg.eig(A)` (general matrices) or `numpy.linalg.eigh(A)`
+(symmetric/Hermitian — faster, guaranteed real eigenvalues, orthonormal eigenvectors, and
+the right tool for any covariance, Gram, or Hessian matrix). Internally these run iterative
+algorithms — the **QR algorithm** and its relatives, descendants of the power iteration we
+saw in @sec-ex-power — that converge to the eigenvalues without ever touching the
+characteristic polynomial. `eig` returns the eigenvalues as an array and the eigenvectors as
+the *columns* of a matrix, each normalized to unit length (with the sign/phase left
+arbitrary, exactly the freedom flagged in @sec-find-vecs).
+
+The characteristic polynomial remains the right tool for *understanding* and for hand
+computation on $2\times2$ and $3\times3$ matrices, and the trace/determinant checks
+(@thm-trace-det) are how you sanity-test any output, by hand or by machine. But when the
+matrix is large, "find the roots of $\det(A-\lambda I)$" is a definition, not an algorithm.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-13 *The Determinant*]**, which gave us the one scalar that detects
+singularity — the exact tool we needed to turn "$A-\lambda I$ is singular" into the
+solvable equation $\det(A-\lambda I)=0$. With eigenvalues and eigenvectors now in hand,
+Movement IV continues:
+
+- **[GEOM-15] *Diagonalization and the Eigendecomposition*** — assemble the eigenvectors
+  into a matrix $V$ and the eigenvalues into a diagonal $\Lambda$ to write $A = V\Lambda
+  V^{-1}$, making $A^k = V\Lambda^k V^{-1}$ and the long-run behavior of @sec-ex-power
+  transparent. The defective matrices of @sec-defective are exactly the ones this cannot
+  reach.
+- **[GEOM-16] *Symmetric Matrices and the Spectral Theorem*** — the happy ending: symmetric
+  matrices (covariance, Gram, Hessian) always have *real* eigenvalues and an *orthonormal*
+  eigenbasis, escaping both complications of @sec-complications. This is the engine under
+  PCA and quadratic forms.
+- **[GEOM-18] *Positive-Definite Matrices*** — "all eigenvalues positive" turns out to mean
+  "the quadratic form is a bowl with a unique bottom," tying eigenvalues to optimization.
+- **[GEOM-26] *Condition Number and Numerical Stability*** — the ratio
+  $\lambda_{\max}/\lambda_{\min}$ predicts when a solve goes wrong; this is what
+  **discharges Regression's [REGR-07]** multicollinearity prerequisite.
+:::
+
+Beyond this track, eigenvectors are the spine of PCA (Unsupervised Learning links back to
+@sec-ex-cov and [GEOM-16] for the machinery), the steady-state analysis of Markov chains and
+PageRank (@sec-ex-power), the stability analysis of dynamical systems, and the spectral view
+of graphs.
+
+# Going deeper {#sec-deeper}
+
+- **The geometric core.** The single picture to carry away is @fig-eigen-action: a matrix
+  rotates almost every direction, and the eigenvectors are the exceptions it merely
+  stretches. Everything in Movement IV is an elaboration of that one image.
+- **The honest boundaries.** Two phenomena limit the eigenpicture and motivate the rest of
+  the track: complex eigenvalues for rotating maps (@sec-rotation) and defective matrices
+  with too few eigenvectors (@sec-defective). Symmetric matrices ([GEOM-16]) escape both,
+  which is why data science leans on them so heavily; the SVD ([GEOM-20]) sidesteps both for
+  *every* matrix, square or not.
+- **Open threads deliberately deferred.** *How do we use the eigenvectors as a coordinate
+  system?* — diagonalization, [GEOM-15]. *Why are covariance/Gram/Hessian matrices
+  guaranteed real, orthogonal eigenstructure?* — the spectral theorem, [GEOM-16]. *What is
+  the analogue for non-square matrices?* — singular values, [GEOM-20]. *Why does the
+  eigenvalue ratio govern numerical accuracy?* — conditioning, [GEOM-26]. Each picks up a
+  thread this article opened and left honestly visible.
+- **Primary thread.** The numerical reality — that you never find eigenvalues by rooting
+  the characteristic polynomial, but by iterative QR-type algorithms descended from the
+  power iteration of @sec-ex-power — is the practical counterpart to the clean algebra here,
+  and the first taste of the stability theme that closes the track in [GEOM-26].

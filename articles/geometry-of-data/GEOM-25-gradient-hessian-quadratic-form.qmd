@@ -1,0 +1,1035 @@
+---
+title: "The Gradient and Hessian of a Quadratic Form"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / points
+GRAD   = "#c1121f"   # gradients / the descent direction
+ACCENT = "#0a7d4d"   # the minimizer / highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the **convergence point of the entire
+> Geometry-of-Data track** — the article where projection, the inverse, positive-definiteness,
+> the gradient, and the Hessian all collapse into one result. It assumes the **quadratic form**
+> $q(x) = x^\top A x$ and its diagonalization $q(Qz) = \sum_k \lambda_k z_k^2$ ([GEOM-17]); the
+> three **vector-differentiation identities** $\nabla(a^\top x) = a$, $\nabla(x^\top x) = 2x$,
+> and $\nabla(x^\top A x) = (A + A^\top)x$, every one of them proved component-by-component in
+> [GEOM-22]; the **gradient** as the direction of steepest ascent and the **first-order
+> optimality condition** $\nabla f = 0$ ([GEOM-23]); the **Hessian** as the matrix of second
+> partials and the second-derivative test by its definiteness ([GEOM-24]); and, for the
+> solve-and-uniqueness reading, the **inverse** ([GEOM-11]) and **positive-definite matrices**
+> ([GEOM-18]). The one question: *for the single most important function in applied
+> mathematics — $f(x) = \tfrac12 x^\top A x - b^\top x$ — what are its gradient and Hessian,
+> and where is its minimum?* The answer fuses everything: $\nabla f = Ax - b$, $\nabla^2 f = A$
+> (constant), and setting the gradient to zero turns *minimizing a quadratic* into *solving the
+> linear system* $Ax = b$, with a unique minimum exactly when $A$ is positive-definite. This
+> **discharges Regression R5's vector-differentiation prerequisite** (the normal equations as a
+> gradient set to zero), **Inference B3–B4's quadratic-form / Hessian need** ([INFR-B3],
+> [INFR-B4]), and hands Optimization the canonical objective every algorithm there is
+> benchmarked on.
+
+## Abstract {.unnumbered}
+
+Almost every objective worth minimizing in data science is, near its bottom, a quadratic:
+$$
+f(x) = \tfrac12\,x^\top A x - b^\top x + c .
+$$
+This article computes its derivatives once and for all and reads off everything they tell us.
+With $A$ symmetric, the **gradient is** $\nabla f(x) = Ax - b$ and the **Hessian is** $\nabla^2
+f(x) = A$, *constant everywhere* — a quadratic is the unique nontrivial function whose curvature
+does not depend on where you stand. We derive both two independent ways — by expanding the form
+in coordinates and differentiating each term with Calc-1 rules, and by applying the vector
+identities of [GEOM-22] — and confirm the two routes agree. Setting $\nabla f = 0$ gives $Ax =
+b$: **minimizing a quadratic form is solving a linear system.** The single claim the article
+defends is that this one identity is the hinge the whole series turns on — it makes
+least-squares' normal equations $X^\top X\hat\beta = X^\top y$ a special case, it explains why
+positive-definiteness is the dividing line between "a bowl with a unique bottom" and "no
+minimum at all," and it is the local model Newton's method and Fisher-information inference are
+built on.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+For the quadratic $f(x) = \tfrac12 x^\top A x - b^\top x + c$ with $A$ **symmetric**,
+$$
+\nabla f(x) = Ax - b, \qquad \nabla^2 f(x) = A .
+$$
+The gradient is *affine* in $x$ (a linear map plus a constant), and the Hessian is the matrix
+$A$ itself — **the same everywhere**, because a quadratic curves the same amount in every
+direction at every point. Setting the gradient to zero, $\nabla f = 0$, is therefore the linear
+system
+$$
+Ax = b ,
+$$
+so **finding the bottom of a quadratic bowl *is* solving a linear system.** That bottom exists,
+is unique, and is a genuine minimum **exactly when $A$ is positive-definite** — the moment the
+Hessian/curvature condition of [GEOM-24] meets the definiteness condition of [GEOM-18].
+:::
+
+Everything below orbits that box. The two formulas look almost too simple to need a whole
+article, but they are the place a dozen threads of the track tie together: the *gradient* says
+"the slope of a quadratic is linear in $x$," the *Hessian* says "its curvature is the constant
+matrix $A$," and *setting the gradient to zero* says "optimization and linear solving are the
+same act." By the end you should be able to derive the least-squares normal equations from
+scratch as nothing but "$\nabla f = 0$ for a quadratic," and to look at any $A$ and say
+immediately whether the bowl has a bottom.
+
+# Why we are doing this: the function that is everywhere {#sec-why}
+
+Keep one question in view for the whole article: **why is the quadratic
+$\tfrac12 x^\top A x - b^\top x$ the function applied mathematics keeps coming back to, and
+what do its derivatives buy us?** Every step below answers a piece of it. If a manipulation
+feels arbitrary, return here.
+
+## Where this function comes from
+
+Three of the largest workhorses in the series are *literally* this quadratic, and a fourth
+*becomes* it the moment you zoom in.
+
+**Least squares.** [REGR-01] derived the one-predictor line by minimizing a sum of squared
+errors; the multivariable version, with a design matrix $X$ (rows = observations, columns =
+predictors), an outcome vector $y$, and a coefficient vector $\beta$, minimizes
+$$
+\|y - X\beta\|^2 = (y - X\beta)^\top (y - X\beta) .
+$$
+We will expand this in @sec-leastsquares and watch it turn into exactly $\tfrac12 \beta^\top
+A\beta - b^\top\beta + c$ with $A = 2X^\top X$ and $b = 2X^\top y$. Minimizing it is the central
+computation of regression.
+
+**The quadratic model of any smooth loss.** [GEOM-24] established the second-order Taylor
+expansion of a general function $g$ around a point $x_0$:
+$$
+g(x_0 + \Delta x) \approx g(x_0) + \nabla g(x_0)^\top \Delta x
+   + \tfrac12\,\Delta x^\top H\,\Delta x ,
+$$
+where $H = \nabla^2 g(x_0)$ is the Hessian. As a function of the step $\Delta x$, the
+right-hand side is *exactly* our quadratic. So whatever loss a neural network or a logistic
+regression minimizes, **near a point it looks like $\tfrac12 \Delta x^\top H\,\Delta x +
+(\text{linear}) + (\text{const})$** — and Newton's method (Optimization's) replaces the true
+loss with this quadratic at every step and jumps to *its* minimum. Understanding the quadratic
+is understanding the local model every second-order method uses.
+
+**The energy of a physical system, and the negative log of a Gaussian.** A spring's potential
+energy is $\tfrac12 k x^2$; a network of springs has energy $\tfrac12 x^\top K x - b^\top x$
+with $K$ the stiffness matrix. The negative log-density of a Gaussian with covariance $\Sigma$
+is $\tfrac12 (x-\mu)^\top \Sigma^{-1}(x-\mu)$ plus a constant — a quadratic form, which is why
+the Mahalanobis distance and the Fisher-information matrix ([INFR-B3], [INFR-B4]) are
+quadratic-form objects. "Find the most probable configuration" and "find the lowest-energy
+configuration" both reduce to minimizing this same shape.
+
+So the quadratic is not one example among many; it is the *generic* local picture of a smooth
+objective and the *exact* global picture of the most important ones. Its derivatives are worth
+computing once, carefully, forever.
+
+::: {.callout-tip title="You might be asked"}
+*"Why the factor of $\tfrac12$ in front of $x^\top A x$? It looks like a fudge."* It is pure
+convenience and it pays for itself immediately. We will see in @sec-gradient that
+$\nabla(x^\top A x) = 2Ax$ for symmetric $A$ — the differentiation produces a factor of $2$,
+the vector analogue of $\frac{d}{dx}x^2 = 2x$. Putting a $\tfrac12$ out front cancels that $2$
+so the gradient comes out as the clean $Ax - b$ instead of $2Ax - b$. The minimizer is
+*identical* either way (scaling and shifting a function does not move its argmin), so the
+$\tfrac12$ costs nothing and buys a tidier formula. Physicists write $\tfrac12 k x^2$ for the
+same reason — the force $-kx$ has no stray factor of two.
+:::
+
+## What we are committing to {#sec-commit}
+
+We study the scalar-valued function of a vector $x \in \mathbb{R}^n$,
+$$
+f(x) = \tfrac12\, x^\top A x \;-\; b^\top x \;+\; c ,
+$$ {#eq-fdef}
+where $A$ is an $n\times n$ matrix, $b \in \mathbb{R}^n$ is a fixed vector, and $c \in
+\mathbb{R}$ is a fixed scalar. Reading the symbols: $x^\top A x = \sum_{i,j} A_{ij} x_i x_j$ is
+the **quadratic form** from [GEOM-17] (a single number, built from the matrix $A$ and the
+direction $x$); $b^\top x = \sum_i b_i x_i$ is the **dot product** of $b$ with $x$, a *linear*
+term ([GEOM-04]); and $c$ is a constant offset that shifts the whole surface up or down. The
+variable is the whole vector $x$; $A$, $b$, $c$ are fixed and known.
+
+We make one standing assumption that costs us nothing and simplifies everything: **$A$ is
+symmetric**, $A = A^\top$. The next subsection proves we may always assume this, so it is a
+genuine "without loss of generality," not a restriction.
+
+## We may always take $A$ symmetric {#sec-symmetrize}
+
+Suppose $A$ is *not* symmetric. Split it into a symmetric part and an antisymmetric part — an
+algebraic move that works for any square matrix:
+$$
+A = S + K, \qquad S = \tfrac12(A + A^\top), \qquad K = \tfrac12(A - A^\top) .
+$$ {#eq-split}
+Check that this adds back to $A$: $S + K = \tfrac12(A+A^\top) + \tfrac12(A-A^\top) = A$, since
+the $A^\top$ terms cancel. Check the names: $S^\top = \tfrac12(A^\top + A) = S$ (symmetric), and
+$K^\top = \tfrac12(A^\top - A) = -K$ (antisymmetric, i.e. it flips sign under transpose).
+
+Now the key fact: **the antisymmetric part contributes nothing to the quadratic form.** The
+quantity $x^\top K x$ is a single number ($1\times 1$), and a number equals its own transpose,
+so $x^\top K x = (x^\top K x)^\top$. Transpose the product right-to-left using $(uv)^\top =
+v^\top u^\top$ from [GEOM-10]:
+$$
+(x^\top K x)^\top = x^\top K^\top (x^\top)^\top = x^\top K^\top x = x^\top(-K)x = -\,x^\top K x .
+$$
+We used $K^\top = -K$ in the last step. So $x^\top K x = -\,x^\top K x$, which forces
+$2\,x^\top K x = 0$, i.e.
+$$
+x^\top K x = 0 \quad\text{for every } x .
+$$
+Therefore
+$$
+x^\top A x = x^\top(S+K)x = x^\top S x + x^\top K x = x^\top S x ,
+$$
+and the quadratic form *only sees the symmetric part $S$*. Replacing $A$ by $S = \tfrac12(A +
+A^\top)$ changes neither the value of $f$ nor its minimizer, so **from here on $A = A^\top$**
+and we lose nothing. (This is the same fact [GEOM-22] flagged when it warned that
+$\nabla(x^\top A x) = (A+A^\top)x$, not $2Ax$, for a general $A$; symmetrizing first is why we
+get to use the clean $2Ax$ throughout.)
+
+::: {.callout-tip title="You might be asked"}
+*"If $A$ is asymmetric, is it really safe to just symmetrize it?"* Yes — for the *quadratic
+form* $x^\top A x$ and hence for $f$ and its minimizer, because the antisymmetric part is
+invisible to the form, as just proved. The one thing you must not do is symmetrize and then
+claim the *gradient of the asymmetric original* was $2Ax$: that is the classic mistake. The
+honest statement is $\nabla(x^\top A x) = (A + A^\top)x$ always; symmetrizing **first** makes
+$A + A^\top = 2A$ and *then* $2Ax$ is correct. Same answer, but you must do the symmetrization
+out loud, not assume it.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before differentiating anything, picture the surface and what its derivatives must say.
+
+A quadratic form $\tfrac12 x^\top A x$ with symmetric $A$ is, by the diagonalization of
+[GEOM-17], a sum of scaled squares $\tfrac12\sum_k \lambda_k z_k^2$ in the eigen-coordinates
+$z = Q^\top x$, where the $\lambda_k$ are the eigenvalues of $A$. When all $\lambda_k > 0$ this
+is a **bowl** (an upward paraboloid); subtracting the linear term $b^\top x$ tilts the bowl and
+slides its bottom away from the origin, but a bowl it remains. @fig-surface shows the surface
+and its level sets.
+
+```{python}
+#| label: fig-surface
+#| fig-cap: "The quadratic $f(x) = \\tfrac12 x^\\top A x - b^\\top x$ for a positive-definite $A$. **Left:** the surface is a bowl (a tilted, stretched paraboloid). **Right:** its level sets are concentric ellipses, and the minimizer $x^\\star = A^{-1}b$ (green dot) sits at their common center. The gradient (red arrow) points *uphill*, straight out of the ellipses — it is zero only at the center, which is exactly the statement $\\nabla f = Ax - b = 0$."
+A = np.array([[3.0, 1.0], [1.0, 2.0]])     # symmetric, positive-definite
+b = np.array([2.0, -1.0])
+xstar = np.linalg.solve(A, b)              # the minimizer A^{-1} b
+
+def f(X1, X2):
+    return 0.5 * (A[0,0]*X1**2 + 2*A[0,1]*X1*X2 + A[1,1]*X2**2) - (b[0]*X1 + b[1]*X2)
+
+g1 = np.linspace(-3, 4, 80)
+g2 = np.linspace(-4, 3, 80)
+X1, X2 = np.meshgrid(g1, g2)
+Z = f(X1, X2)
+
+fig = plt.figure(figsize=(9.0, 3.9))
+axL = fig.add_subplot(1, 2, 1, projection="3d")
+axL.plot_surface(X1, X2, Z, cmap="viridis", alpha=0.85, linewidth=0, antialiased=True)
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$"); axL.set_zlabel("$f(x)$")
+axL.set_title("A quadratic bowl"); axL.view_init(elev=30, azim=-120)
+
+axR = fig.add_subplot(1, 2, 2)
+cs = axR.contour(X1, X2, Z, levels=18, cmap="viridis", linewidths=1.1)
+axR.scatter([xstar[0]], [xstar[1]], color=ACCENT, s=90, zorder=5,
+            edgecolor="white", linewidth=1.4, label=r"minimizer $x^\star=A^{-1}b$")
+# gradient at a sample point, drawn uphill
+p = np.array([-1.5, 1.8])
+grad = A @ p - b
+draw_vec(axR, p, p + 0.35*grad, color=GRAD, lw=2.6, label=r"$\nabla f$",
+         label_offset=(0.25, 0.25))
+axR.scatter([p[0]], [p[1]], color=VEC, s=35, zorder=5)
+axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$")
+axR.set_title("Level sets and the gradient"); axR.legend(loc="lower right", fontsize=8)
+axR.set_aspect("equal")
+plt.tight_layout()
+```
+
+Now anticipate the derivatives from the picture alone:
+
+- **The gradient must vanish at the center and grow as you move away.** At the bottom of the
+  bowl the surface is flat in every direction, so $\nabla f = 0$ there; off-center, the slope
+  grows. A vector field that is zero at one point and grows linearly with distance is an
+  *affine* field, $\nabla f(x) = A(x - x^\star)$ for some matrix $A$ and center $x^\star$. So we
+  should *expect* the gradient to be linear in $x$ — and it is.
+- **The curvature is the same everywhere.** A parabola $\tfrac12 k t^2$ has constant second
+  derivative $k$; its curvature does not depend on $t$. The multivariable analogue is that the
+  Hessian — the matrix of curvatures — should be a *constant matrix*. And it will be exactly
+  $A$.
+
+The whole formal development is just confirming these two anticipations with algebra that hides
+no step.
+
+# The formal development {#sec-formal}
+
+We compute $\nabla f$ first by brute-force component expansion (so nothing is hidden), then
+re-derive it in three lines from the [GEOM-22] identities, and check the two agree. Then the
+Hessian, the same two ways. Then we set the gradient to zero.
+
+## The gradient by component expansion {#sec-grad-components}
+
+We want $\nabla f$, the vector whose $k$-th entry is $\partial f/\partial x_k$. Recall the
+recipe from [GEOM-22]: a partial derivative is pure Calc 1 — differentiate with respect to one
+coordinate $x_k$, treating every *other* coordinate as a frozen constant. We do it for the
+three pieces of @eq-fdef separately, since the derivative of a sum is the sum of the
+derivatives.
+
+**Step 1: write the quadratic form as an explicit double sum.** By the definition of
+matrix–vector products ([GEOM-08]) and the dot product ([GEOM-04]),
+$$
+x^\top A x = \sum_{i=1}^n \sum_{j=1}^n A_{ij}\, x_i x_j .
+$$ {#eq-doublesum}
+This is just "multiply every pair of coordinates $x_i x_j$ by the matrix entry $A_{ij}$ and add
+them all up." We now differentiate this double sum with respect to a single coordinate $x_k$.
+
+**Step 2: differentiate the double sum with respect to $x_k$.** In the term $A_{ij}x_i x_j$,
+the coordinate $x_k$ appears only when $i = k$ or $j = k$ (and in both when $i = j = k$). We
+split the sum by where $x_k$ shows up. The product rule from Calc 1,
+$\frac{\partial}{\partial x_k}(x_i x_j) = \frac{\partial x_i}{\partial x_k} x_j + x_i
+\frac{\partial x_j}{\partial x_k}$, together with the fact that
+$\frac{\partial x_i}{\partial x_k} = 1$ if $i = k$ and $0$ otherwise (coordinates are
+independent), gives
+$$
+\frac{\partial}{\partial x_k}\bigl(x_i x_j\bigr)
+= [\,i = k\,]\,x_j + [\,j = k\,]\,x_i ,
+$$
+where $[\,\cdot\,]$ is $1$ when the condition holds and $0$ otherwise. Multiply by $A_{ij}$ and
+sum over all $i,j$:
+$$
+\frac{\partial}{\partial x_k}\,(x^\top A x)
+= \sum_{i,j} A_{ij}\Bigl([\,i=k\,]\,x_j + [\,j=k\,]\,x_i\Bigr)
+= \sum_{j} A_{kj}\,x_j \;+\; \sum_{i} A_{ik}\,x_i .
+$$
+In the first sum only $i = k$ survived (collapsing the $i$-sum), and in the second only $j = k$
+survived (collapsing the $j$-sum). Read each piece: $\sum_j A_{kj} x_j$ is the $k$-th entry of
+$Ax$ (row $k$ of $A$ dotted with $x$), and $\sum_i A_{ik} x_i$ is the $k$-th entry of $A^\top x$
+(column $k$ of $A$ dotted with $x$). So
+$$
+\frac{\partial}{\partial x_k}\,(x^\top A x) = (Ax)_k + (A^\top x)_k = \bigl((A + A^\top)x\bigr)_k .
+$$
+Stacking over $k = 1,\dots,n$ gives the vector identity
+$$
+\nabla(x^\top A x) = (A + A^\top)\,x ,
+$$ {#eq-grad-quad-general}
+which is exactly the [GEOM-22] result, re-derived here from the ground up so no link is load-
+bearing. Because we symmetrized in @sec-symmetrize, $A = A^\top$, so $A + A^\top = 2A$ and
+$$
+\nabla(x^\top A x) = 2Ax \qquad (A = A^\top) .
+$$ {#eq-grad-quad-sym}
+
+**Step 3: the linear term.** Differentiate $-b^\top x = -\sum_i b_i x_i$ with respect to $x_k$.
+Only the $i = k$ term contains $x_k$, and its derivative is $b_k$:
+$$
+\frac{\partial}{\partial x_k}\bigl(-b^\top x\bigr) = -b_k
+\;\;\Longrightarrow\;\;
+\nabla(-b^\top x) = -b .
+$$ {#eq-grad-linear}
+(This is the $\nabla(a^\top x) = a$ identity of [GEOM-22], with $a = -b$.)
+
+**Step 4: the constant.** A constant has zero derivative in every coordinate: $\nabla c = 0$.
+
+**Assemble.** Apply the $\tfrac12$ to @eq-grad-quad-sym and add the three pieces:
+$$
+\nabla f(x) = \tfrac12\,(2Ax) \;-\; b \;+\; 0 = Ax - b .
+$$
+$$
+\boxed{\;\nabla f(x) = Ax - b. \;}
+$$ {#eq-gradient}
+
+There is the first headline. The factor of $\tfrac12$ has done its job, cancelling the $2$ from
+the differentiation and leaving the clean affine field anticipated in @sec-intuition: a linear
+map $A$ applied to $x$, shifted by the constant $-b$.
+
+## The gradient, re-derived in three lines {#sec-grad-identities}
+
+The component grind proves the formula honestly, but in practice you would never expand the
+double sum. Here is the same result using the [GEOM-22] identities as black boxes — the way
+you would do it on a whiteboard — so you see both the slow-and-certain and the fast-and-fluent
+route, and watch them agree. Differentiate @eq-fdef term by term:
+$$
+\nabla f
+= \tfrac12\,\nabla(x^\top A x) \;-\; \nabla(b^\top x) \;+\; \nabla c
+= \tfrac12\,(2Ax) \;-\; b \;+\; 0
+= Ax - b ,
+$$
+using $\nabla(x^\top A x) = 2Ax$ (symmetric $A$), $\nabla(b^\top x) = b$, and $\nabla c = 0$.
+Identical to @eq-gradient. The two derivations are the same calculation at two zoom levels: the
+identities are exactly the component sums of @sec-grad-components, packaged.
+
+::: {.callout-tip title="You might be asked"}
+*"Quick — gradient of $\tfrac12 x^\top A x - b^\top x$, symmetric $A$?"* "$Ax - b$." Then be
+ready for the follow-up: *"and if $A$ is not symmetric?"* — "$\tfrac12(A + A^\top)x - b$,
+because only the symmetric part of $A$ shows up in the form." Knowing both, and saying *why*
+the asymmetric part drops (the $x^\top K x = 0$ argument of @sec-symmetrize), is what separates
+memorizing the formula from understanding it.
+:::
+
+## The Hessian by component expansion {#sec-hessian-components}
+
+The **Hessian** $\nabla^2 f$ is the $n\times n$ matrix of second partial derivatives, with
+entry $(k,\ell)$ equal to $\partial^2 f / \partial x_\ell \partial x_k$ — "differentiate the
+$k$-th first partial again, this time with respect to $x_\ell$" ([GEOM-24]). We already have the
+gradient's $k$-th entry from @eq-gradient:
+$$
+\frac{\partial f}{\partial x_k} = (Ax - b)_k = \sum_{j=1}^n A_{kj}x_j - b_k .
+$$
+Differentiate this with respect to $x_\ell$. The constant $b_k$ vanishes; in the sum
+$\sum_j A_{kj}x_j$, only the $j = \ell$ term contains $x_\ell$, and $\partial x_\ell/\partial
+x_\ell = 1$:
+$$
+\frac{\partial^2 f}{\partial x_\ell \partial x_k}
+= \frac{\partial}{\partial x_\ell}\Bigl(\sum_j A_{kj}x_j - b_k\Bigr)
+= A_{k\ell} .
+$$
+So the $(k,\ell)$ entry of the Hessian is $A_{k\ell}$ — *every* entry of $\nabla^2 f$ is the
+corresponding entry of $A$. Therefore
+$$
+\boxed{\;\nabla^2 f(x) = A. \;}
+$$ {#eq-hessian}
+
+Three things to notice, each one earned by the calculation:
+
+1. **The Hessian is constant.** No $x$ survived the second differentiation — the answer
+   $A_{k\ell}$ has no dependence on the point. This confirms the @sec-intuition anticipation: a
+   quadratic curves the same amount everywhere. It is the *defining* property of a quadratic, in
+   fact — the only functions with constant Hessian are quadratics (plus lower-order terms).
+2. **The Hessian is symmetric.** $\nabla^2 f = A$, and $A = A^\top$ by our standing assumption,
+   so the Hessian is symmetric. This is consistent with **Clairaut's theorem** ([GEOM-24]),
+   which guarantees the Hessian of any twice-continuously-differentiable function is symmetric
+   ($\partial^2 f/\partial x_\ell\partial x_k = \partial^2 f/\partial x_k\partial x_\ell$). Here
+   it falls straight out of $A = A^\top$.
+3. **The linear and constant terms left no trace.** Both $-b^\top x$ and $c$ have zero second
+   derivative — affine pieces are flat, they carry no curvature. *All* the curvature of $f$
+   lives in $A$.
+
+## The Hessian via the gradient identity {#sec-hessian-jacobian}
+
+The fast route: the Hessian is the **Jacobian of the gradient** — the matrix of partials of the
+vector field $\nabla f$ ([GEOM-24]). Our gradient is $\nabla f(x) = Ax - b$, an affine function
+of $x$. The Jacobian of an affine map $x \mapsto Ax - b$ is just the matrix $A$ (the constant
+$-b$ contributes nothing; the linear map $Ax$ has Jacobian $A$ — its $(k,\ell)$ partial is
+$\partial(Ax)_k/\partial x_\ell = A_{k\ell}$, exactly @sec-hessian-components). Hence
+$$
+\nabla^2 f = \frac{\partial}{\partial x}\bigl(Ax - b\bigr) = A ,
+$$
+agreeing with @eq-hessian. In one sentence: **the gradient of a quadratic is affine, so its
+slope — the Hessian — is the constant matrix $A$.**
+
+@fig-curvature makes "constant curvature" visible by reading the curvature off two different
+points of the surface and showing they match.
+
+```{python}
+#| label: fig-curvature
+#| fig-cap: "Constant curvature. Two slices of $f(x)=\\tfrac12 x^\\top A x - b^\\top x$ taken along the same direction $u$ but through two *different* base points (blue and orange). Each slice is a parabola; their curvatures (the second derivative along $u$, which equals $u^\\top A u$) are **identical** — the parabolas are translates of one another. The Hessian $\\nabla^2 f = A$ does not depend on where you stand."
+A = np.array([[3.0, 1.0], [1.0, 2.0]])
+b = np.array([2.0, -1.0])
+def fval(x):
+    return 0.5 * x @ A @ x - b @ x
+u = np.array([1.0, 0.4]); u = u / np.linalg.norm(u)   # a fixed slice direction
+t = np.linspace(-2.2, 2.2, 100)
+p1 = np.array([-1.0, 1.5]); p2 = np.array([1.5, -1.5])
+s1 = np.array([fval(p1 + tt*u) for tt in t])
+s2 = np.array([fval(p2 + tt*u) for tt in t])
+# re-center each slice on its own minimum so the shape (curvature) is comparable
+s1c = s1 - s1.min(); s2c = s2 - s2.min()
+
+fig, ax = plt.subplots(figsize=(6.2, 4.0))
+ax.plot(t, s1c, color=VEC,    label="slice through point $p_1$")
+ax.plot(t, s2c, color="#d97706", label="slice through point $p_2$", ls="--")
+ax.set_xlabel("step $t$ along direction $u$")
+ax.set_ylabel("$f$ along the slice (re-centered)")
+ax.set_title(r"Same parabola everywhere: curvature $u^\top A u$ is constant")
+ax.legend(loc="upper center", fontsize=9)
+plt.tight_layout()
+curv = u @ A @ u
+print(f"second derivative along u at p1 and p2 (= u^T A u) = {curv:.4f}  (identical)")
+```
+
+# Minimizing the quadratic: gradient zero is a linear system {#sec-minimize}
+
+Now the convergence point. We have a gradient and a Hessian; the first-order optimality
+condition of [GEOM-23] says any minimizer must satisfy $\nabla f = 0$, and the second-order
+test of [GEOM-24] uses the Hessian to confirm it is a minimum. Put both to work.
+
+## Setting the gradient to zero {#sec-setzero}
+
+A minimizer $x^\star$ must be a **stationary point**: every directional slope is zero there, so
+$\nabla f(x^\star) = 0$ ([GEOM-23]). From @eq-gradient,
+$$
+\nabla f(x^\star) = A x^\star - b = 0
+\quad\Longleftrightarrow\quad
+A x^\star = b .
+$$ {#eq-stationary}
+
+There it is, the identity the Core promised and the whole track was building toward:
+
+::: {#thm-min-is-solve}
+**Theorem (minimizing a quadratic is solving a linear system).** Let $f(x) = \tfrac12 x^\top A x
+- b^\top x + c$ with $A = A^\top$. Then $x^\star$ is a stationary point of $f$ if and only if it
+solves the linear system $A x^\star = b$. If in addition $A$ is **positive-definite**, the
+solution is unique and is the **global minimizer** $x^\star = A^{-1} b$, with minimum value
+$f(x^\star) = c - \tfrac12 b^\top A^{-1} b$.
+:::
+
+::: {.proof}
+The stationary-point equivalence is @eq-stationary: $\nabla f = Ax - b$ (proved in
+@sec-grad-components), and a stationary point is exactly a zero of the gradient ([GEOM-23]).
+
+**Uniqueness and existence of the solution.** If $A$ is positive-definite then $x^\top A x > 0$
+for all $x \neq 0$ ([GEOM-18]); in particular no nonzero $x$ satisfies $Ax = 0$ (if it did,
+$x^\top A x = x^\top 0 = 0$ with $x \neq 0$, contradicting positivity). So the only solution of
+$Ax = 0$ is $x = 0$, which means $A$ has trivial null space and is therefore invertible
+([GEOM-11]). Hence $Ax^\star = b$ has the one solution $x^\star = A^{-1}b$.
+
+**It is a minimum, not a max or saddle.** The Hessian is $\nabla^2 f = A$ everywhere
+(@eq-hessian). The second-order test ([GEOM-24]) says a stationary point with positive-definite
+Hessian is a local minimum. Because the Hessian is *constant and positive-definite everywhere*,
+the surface is convex (we prove this directly in @sec-global below) and the local minimum is in
+fact the unique global minimum.
+
+**The minimum value.** Substitute $x^\star = A^{-1}b$ into @eq-fdef. Using $Ax^\star = b$,
+$$
+f(x^\star) = \tfrac12 (x^\star)^\top A x^\star - b^\top x^\star + c
+= \tfrac12 (x^\star)^\top b - b^\top x^\star + c .
+$$
+Now $(x^\star)^\top b$ is a scalar equal to $b^\top x^\star$ (a dot product is symmetric,
+[GEOM-04]), so $\tfrac12 (x^\star)^\top b - b^\top x^\star = -\tfrac12 b^\top x^\star = -\tfrac12
+b^\top A^{-1}b$ (using $x^\star = A^{-1}b$ and the symmetry $A^{-1} = (A^{-1})^\top$ for
+symmetric $A$). Hence $f(x^\star) = c - \tfrac12 b^\top A^{-1}b$. $\qquad\blacksquare$
+:::
+
+This single theorem ties together four earlier articles: the gradient ([GEOM-22], [GEOM-23]),
+the Hessian and its definiteness test ([GEOM-24]), positive-definiteness ([GEOM-18]), and the
+inverse and the meaning of "invertible" ([GEOM-11]). "Find the bottom of the bowl" and "solve
+$Ax = b$" are not two problems — they are one problem written two ways.
+
+## Why positive-definiteness is exactly the dividing line {#sec-definiteness}
+
+@thm-min-is-solve assumed $A$ positive-definite for the clean answer. The eigenvalues of $A$
+tell the *complete* story, and it is worth seeing every case, because this is the honest
+boundary of the whole technique. The derivation is short and uses nothing we have not built.
+
+**Start from the displacement form.** The completing-the-square calculation of @sec-completing
+(next subsection) shows — for *any* stationary point $x^\star$, with no definiteness assumed in
+the algebra itself — that
+$$
+f(x) = f(x^\star) + \tfrac12\,d^\top A\,d, \qquad d = x - x^\star .
+$$ {#eq-disp-form}
+So the entire shape of $f$ around $x^\star$ is carried by the single quadratic form $d^\top A d$.
+
+**Diagonalize that form.** By the spectral theorem for the symmetric $A$ ([GEOM-16], applied to
+quadratic forms in [GEOM-17]), $A = Q\Lambda Q^\top$ with $Q$ **orthogonal** ($Q^\top Q = I$, its
+columns an orthonormal eigenbasis) and $\Lambda = \operatorname{diag}(\lambda_1,\dots,\lambda_n)$
+the eigenvalues of $A$ on the diagonal. Define the rotated displacement
+$$
+z = Q^\top d \qquad (\text{equivalently } d = Qz,\ \text{since } QQ^\top = I) .
+$$
+Substitute $A = Q\Lambda Q^\top$ into $d^\top A d$ and collapse the $Q$'s against $z$:
+$$
+d^\top A\, d
+= d^\top Q\,\Lambda\, Q^\top d
+= (Q^\top d)^\top \Lambda\,(Q^\top d)
+= z^\top \Lambda z
+= \sum_{k=1}^n \lambda_k z_k^2 ,
+$$
+where the last equality is just the definition of a diagonal quadratic form: $z^\top\Lambda z =
+\sum_{k,\ell} \Lambda_{k\ell} z_k z_\ell$, and $\Lambda_{k\ell}$ is zero off the diagonal, leaving
+$\sum_k \lambda_k z_k^2$. Putting this into @eq-disp-form gives the diagonalized surface
+$$
+f(x) = f(x^\star) + \tfrac12\sum_{k=1}^n \lambda_k z_k^2 , \qquad z = Q^\top(x - x^\star) .
+$$ {#eq-diag-form}
+The change of coordinates $z = Q^\top(x-x^\star)$ is a rigid rotation about the stationary point
+(orthogonal $Q$ preserves lengths and angles), so it does not distort the surface — it only lines
+the axes up with the eigendirections of $A$, in which the quadratic decouples into $n$ independent
+parabolas $\tfrac12\lambda_k z_k^2$. The shape is therefore decided entirely by the **signs of the
+eigenvalues** of the Hessian $A$:
+
+| Eigenvalues of $A$ | Definiteness | Surface | Minimizer? |
+|---|---|---|---|
+| all $\lambda_k > 0$ | positive-definite | bowl | unique global min $A^{-1}b$ |
+| all $\lambda_k \ge 0$, some $=0$ | positive-semidefinite | trough (flat valley) | a *line/plane* of minima, or none |
+| mixed signs | indefinite | saddle | no minimum (stationary point is a saddle) |
+| all $\lambda_k < 0$ | negative-definite | dome | a *maximum*, no minimum |
+
+Read down the table against @eq-diag-form. If some $\lambda_k > 0$ and some $\lambda_j < 0$, the
+sum $\tfrac12\sum_k \lambda_k z_k^2$ goes *up* as you move along the $k$-axis and *down* along
+the $j$-axis — a saddle, no bottom. If some $\lambda_k = 0$, moving along that axis changes
+$f$ not at all: a flat valley floor, so the minimizer is not unique (and if $b$ has a component
+along that flat direction, the gradient can never be zeroed there and there is *no* minimizer at
+all — the bowl runs downhill forever). Only when **every** $\lambda_k > 0$ is the surface a
+genuine bowl with a single lowest point. @fig-three-shapes draws the three qualitative cases.
+
+```{python}
+#| label: fig-three-shapes
+#| fig-cap: "The three faces of a quadratic, decided by the eigenvalues of $A$. **Left, positive-definite** ($\\lambda = 3, 1$): a bowl with one bottom — minimizing works. **Center, indefinite** ($\\lambda = 2, -1$): a saddle — the stationary point is neither a min nor a max, and $\\nabla f = 0$ has a solution that is not a minimizer. **Right, positive-semidefinite** ($\\lambda = 2, 0$): a trough — a whole flat line of minima, no unique answer. Only the bowl gives a well-posed minimization, which is exactly why positive-definiteness is the condition in @thm-min-is-solve."
+def quad_surface(ax, A, title):
+    g = np.linspace(-2.2, 2.2, 70)
+    X1, X2 = np.meshgrid(g, g)
+    Z = 0.5*(A[0,0]*X1**2 + 2*A[0,1]*X1*X2 + A[1,1]*X2**2)
+    ax.plot_surface(X1, X2, Z, cmap="viridis", alpha=0.9, linewidth=0, antialiased=True)
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+    ax.view_init(elev=28, azim=-122)
+
+fig = plt.figure(figsize=(9.4, 3.4))
+A_pd  = np.array([[2.0, 1.0], [1.0, 2.0]])   # eigenvalues 3, 1  -> bowl
+A_ind = np.array([[0.5, 1.5], [1.5, 0.5]])   # eigenvalues 2, -1 -> saddle
+A_psd = np.array([[1.0, 1.0], [1.0, 1.0]])   # eigenvalues 2, 0  -> trough
+for i, (Amat, ttl) in enumerate([(A_pd, "PD: bowl"), (A_ind, "indefinite: saddle"),
+                                  (A_psd, "PSD: trough")], start=1):
+    ax = fig.add_subplot(1, 3, i, projection="3d")
+    quad_surface(ax, Amat, f"{ttl}\n$\\lambda=$ {np.round(np.linalg.eigvalsh(Amat),2)}")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"I set the gradient to zero and solved $Ax = b$. Did I find a minimum?"* Only if the Hessian
+$A$ is positive-definite. Setting $\nabla f = 0$ finds a *stationary* point — it could be a
+minimum, a maximum, or a saddle. You must check the second-order condition: positive-definite
+Hessian $\Rightarrow$ minimum, negative-definite $\Rightarrow$ maximum, indefinite
+$\Rightarrow$ saddle ([GEOM-24]). For a quadratic this check is once-and-for-all, since the
+Hessian is the constant $A$ — there is no "near the point," it is definite or it is not. This is
+*the* reason convex optimization loves quadratics: stationary point and global minimum coincide
+the instant $A \succ 0$.
+:::
+
+## A direct proof of the minimum by completing the square {#sec-completing}
+
+The eigenvalue argument is geometric; here is a purely algebraic proof that $x^\star = A^{-1}b$
+is the global minimizer when $A \succ 0$, by **completing the square** — the multivariable
+version of the high-school trick, and the cleanest self-contained confirmation. Let $x^\star$ be
+*any* stationary point (so $A x^\star = b$); when $A \succ 0$ this is the unique $x^\star =
+A^{-1}b$, but the algebra below needs only $A x^\star = b$ and $A = A^\top$, which is why
+@sec-definiteness could lean on it for every case in the table, not just the definite one. Write
+any $x$ as the stationary point plus a displacement, $x = x^\star + d$ with $d = x - x^\star$.
+Substitute into @eq-fdef and expand, using $A = A^\top$ to merge cross terms:
+$$
+\begin{aligned}
+f(x^\star + d)
+&= \tfrac12 (x^\star + d)^\top A (x^\star + d) - b^\top(x^\star + d) + c \\
+&= \tfrac12\Bigl[(x^\star)^\top A x^\star + 2\,d^\top A x^\star + d^\top A d\Bigr]
+   - b^\top x^\star - b^\top d + c .
+\end{aligned}
+$$
+The cross term used $(x^\star)^\top A d = d^\top A x^\star$ (a scalar equals its transpose, and
+$A = A^\top$), so the two equal copies combine into $2\,d^\top A x^\star$. Now use the defining
+relation $A x^\star = b$ in the two terms that carry it:
+$$
+\tfrac12\cdot 2\, d^\top A x^\star = d^\top A x^\star = d^\top b = b^\top d ,
+$$
+which is the *exact negative* of the $-b^\top d$ term — they cancel. What remains is
+$$
+f(x^\star + d) = \underbrace{\Bigl[\tfrac12 (x^\star)^\top A x^\star - b^\top x^\star + c\Bigr]}_{=\,f(x^\star)}
+\;+\; \tfrac12\, d^\top A d .
+$$
+So for *any* displacement $d$,
+$$
+f(x) = f(x^\star) + \tfrac12\, d^\top A d, \qquad d = x - x^\star .
+$$ {#eq-completed}
+Because $A$ is positive-definite, $d^\top A d > 0$ for every $d \neq 0$ and $= 0$ only at $d =
+0$ ([GEOM-18]). Therefore $f(x) > f(x^\star)$ for all $x \neq x^\star$: the point $x^\star =
+A^{-1}b$ is the **strict global minimizer**, with no appeal to calculus at all. Equation
+@eq-completed is the displacement form @eq-disp-form that @sec-definiteness already diagonalized
+into @eq-diag-form via $d^\top A d = z^\top\Lambda z = \sum_k \lambda_k z_k^2$ — the algebraic and
+geometric views are the one identity seen twice. This *also* establishes the convexity claimed inside
+@thm-min-is-solve: $f$ lies above its value at $x^\star$ by the nonnegative bowl term $\tfrac12
+d^\top A d$.
+
+# Worked examples {#sec-examples}
+
+We run the formulas on three genuinely different objectives: a small quadratic worked
+by-hand-and-by-machine, the least-squares normal equations (the cross-track payoff), and an
+honest edge case where the technique breaks.
+
+## Example 1 — a 2-D quadratic, every number on the table {#sec-ex-2d}
+
+Take $A = \left[\begin{smallmatrix} 3 & 1 \\ 1 & 2 \end{smallmatrix}\right]$ (symmetric), $b =
+\left[\begin{smallmatrix} 2 \\ -1 \end{smallmatrix}\right]$, $c = 0$. We compute the gradient at a sample
+point, find the minimizer by solving $Ax = b$, and verify the minimum value formula — all three
+results of @thm-min-is-solve on one example.
+
+```{python}
+#| label: tbl-ex2d
+#| echo: false
+A = np.array([[3.0, 1.0], [1.0, 2.0]])
+b = np.array([2.0, -1.0]); c = 0.0
+def fval(x): return 0.5 * x @ A @ x - b @ x + c
+def grad(x): return A @ x - b
+
+lam = np.linalg.eigvalsh(A)
+print(f"eigenvalues of A          = {np.round(lam,4)}   -> both > 0, A is positive-definite")
+p = np.array([1.0, 1.0])
+print(f"gradient at p=(1,1):  Ap - b = {grad(p)}")
+xstar = np.linalg.solve(A, b)
+print(f"minimizer x* = A^(-1) b    = {np.round(xstar,6)}")
+print(f"gradient at x* (should be 0) = {np.round(grad(xstar), 12)}")
+fmin_direct = fval(xstar)
+fmin_formula = c - 0.5 * b @ np.linalg.solve(A, b)
+print(f"f(x*) by plugging in       = {fmin_direct:.6f}")
+print(f"f(x*) by c - 1/2 b^T A^-1 b = {fmin_formula:.6f}   (match)")
+print(f"Hessian = A (constant)     =\n{A}")
+```
+
+Walk the printout against the theory:
+
+- The eigenvalues are both positive, so $A \succ 0$: a bowl, and @thm-min-is-solve applies in
+  full.
+- At $p = (1,1)$ the gradient is $Ap - b = \left[\begin{smallmatrix}3+1\\1+2\end{smallmatrix}\right] -
+  \left[\begin{smallmatrix}2\\-1\end{smallmatrix}\right] = \left[\begin{smallmatrix}2\\4\end{smallmatrix}\right]$,
+  nonzero — we are uphill from the bottom, and this vector points the steepest-uphill way
+  ([GEOM-23]).
+- The minimizer solves $Ax = b$; the gradient there is zero to machine precision, the
+  operational form of $\nabla f(x^\star) = 0$.
+- The minimum value matches the closed form $c - \tfrac12 b^\top A^{-1}b$ exactly, confirming
+  @thm-min-is-solve's last clause.
+
+@fig-descent overlays the gradient field on the level sets so you can *see* every gradient
+pointing out of the ellipses and vanishing at the center.
+
+```{python}
+#| label: fig-descent
+#| fig-cap: "The gradient field of Example 1. Arrows are $\\nabla f(x) = Ax - b$, drawn at a grid of points and pointing *uphill* (out of the elliptical level sets). They shrink toward the minimizer (green) and are exactly zero there. The dashed line is the path of steepest **descent** $-\\nabla f$ from a start point — always crossing the contours at the locally steepest angle. This is the picture the Optimization track turns into the gradient-descent algorithm."
+g = np.linspace(-2.5, 3.5, 22)
+X1, X2 = np.meshgrid(g, g)
+U = A[0,0]*X1 + A[0,1]*X2 - b[0]
+V = A[1,0]*X1 + A[1,1]*X2 - b[1]
+gc = np.linspace(-2.5, 3.5, 80)
+CX1, CX2 = np.meshgrid(gc, gc)
+CZ = 0.5*(A[0,0]*CX1**2 + 2*A[0,1]*CX1*CX2 + A[1,1]*CX2**2) - (b[0]*CX1 + b[1]*CX2)
+
+fig, ax = plt.subplots(figsize=(6.2, 5.4))
+ax.contour(CX1, CX2, CZ, levels=16, cmap="viridis", linewidths=0.9, alpha=0.8)
+ax.quiver(X1, X2, U, V, color=GREY, alpha=0.55, width=0.004, scale=110)
+# a short steepest-descent path
+x = np.array([-2.0, 3.0]); path = [x.copy()]
+for _ in range(40):
+    x = x - 0.12 * (A @ x - b); path.append(x.copy())
+path = np.array(path)
+ax.plot(path[:,0], path[:,1], color=GRAD, ls="--", lw=2.0, label=r"steepest descent $-\nabla f$")
+ax.scatter([xstar[0]], [xstar[1]], color=ACCENT, s=110, zorder=6,
+           edgecolor="white", linewidth=1.4, label=r"minimizer $x^\star$")
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$"); ax.set_aspect("equal")
+ax.set_title(r"Gradient field $Ax-b$ and the descent path")
+ax.legend(loc="upper left", fontsize=8.5)
+plt.tight_layout()
+```
+
+## Example 2 — the least-squares normal equations, derived as $\nabla f = 0$ {#sec-leastsquares}
+
+This is the cross-track payoff the roadmap promised: the multivariable least-squares solution
+of [REGR-05] is *nothing but* "$\nabla f = 0$ for a quadratic," and we discharge it here, every
+step shown. Given a design matrix $X \in \mathbb{R}^{n\times p}$ (one row per observation, one
+column per predictor) and an outcome $y \in \mathbb{R}^n$, ordinary least squares minimizes the
+sum of squared residuals as a function of the coefficient vector $\beta \in \mathbb{R}^p$:
+$$
+f(\beta) = \|y - X\beta\|^2 = (y - X\beta)^\top (y - X\beta) .
+$$ {#eq-ls-obj}
+
+**Step 1: expand into a quadratic.** Multiply out the inner product, using $(u - v)^\top(u - v)
+= u^\top u - u^\top v - v^\top u + v^\top v$ with $u = y$, $v = X\beta$, and $(X\beta)^\top =
+\beta^\top X^\top$ from [GEOM-10]:
+$$
+f(\beta) = y^\top y - y^\top X\beta - \beta^\top X^\top y + \beta^\top X^\top X \beta .
+$$
+The two middle terms are scalars and equal each other: $y^\top X\beta = (y^\top X\beta)^\top =
+\beta^\top X^\top y$ (a $1\times 1$ quantity equals its transpose). So they combine:
+$$
+f(\beta) = \beta^\top (X^\top X)\,\beta \;-\; 2\,(X^\top y)^\top \beta \;+\; y^\top y .
+$$ {#eq-ls-quad}
+
+**Step 2: match it to the standard form.** Compare @eq-ls-quad with $f = \tfrac12 \beta^\top A
+\beta - b^\top\beta + c$. Reading off coefficients:
+$$
+A = 2\,X^\top X, \qquad b = 2\,X^\top y, \qquad c = y^\top y .
+$$
+The matrix $X^\top X$ is the **Gram matrix** ([GEOM-10]) — symmetric ($X^\top X)^\top = X^\top
+X$ and positive-*semi*definite always, positive-definite exactly when $X$ has full column rank
+([GEOM-18]). So $A = 2X^\top X$ is symmetric, and our whole machine applies.
+
+**Step 3: gradient, set to zero.** By @eq-gradient, $\nabla f(\beta) = A\beta - b = 2X^\top X
+\beta - 2X^\top y$. We can also get this straight from @eq-ls-quad without renaming, which is the
+form you will recognize from regression: the gradient of $\beta^\top(X^\top X)\beta$ is
+$2X^\top X\beta$ (symmetric quadratic, @eq-grad-quad-sym) and the gradient of $-2(X^\top
+y)^\top\beta$ is $-2X^\top y$ (linear term, @eq-grad-linear). Either way,
+$$
+\nabla f(\beta) = 2\bigl(X^\top X\,\beta - X^\top y\bigr) .
+$$
+Set it to zero and divide by $2$:
+$$
+\boxed{\;X^\top X\,\hat\beta = X^\top y. \;}
+$$ {#eq-normal-eqs}
+These are the **normal equations** of multiple regression. We did not pull them from a hat — they
+are $\nabla\|y - X\beta\|^2 = 0$, the bottom of a quadratic bowl, exactly the one-predictor
+result of [REGR-01] (where this was two scalar equations) now in matrix form for any number of
+predictors. When $X$ has full column rank, $X^\top X$ is positive-definite, hence invertible,
+and the unique minimizer is $\hat\beta = (X^\top X)^{-1}X^\top y$ — @thm-min-is-solve with $A =
+2X^\top X$, $b = 2X^\top y$.
+
+**Step 4: the Hessian confirms it is a minimum.** $\nabla^2 f = A = 2X^\top X$, constant. When
+$X$ is full column rank this is positive-definite, so the second-order test ([GEOM-24]) certifies
+$\hat\beta$ is the global minimum — not a saddle, not a maximum. We numerically confirm the whole
+chain on a small real-shaped regression below.
+
+```{python}
+#| label: fig-leastsquares
+#| fig-cap: "Least squares as quadratic minimization, $p=2$ predictors. **Left:** the data and the fitted plane $\\hat y = \\hat\\beta_1 x_1 + \\hat\\beta_2 x_2$. **Right:** the loss surface $f(\\beta) = \\|y - X\\beta\\|^2$ over the coefficient plane — a clean convex bowl, because $X^\\top X$ is positive-definite. The green dot is $\\hat\\beta = (X^\\top X)^{-1}X^\\top y$, found by solving the normal equations @eq-normal-eqs; it sits at the bottom of the bowl, where $\\nabla f = 0$."
+rng = np.random.default_rng(20240529)
+n = 60
+X = np.column_stack([rng.uniform(-2, 2, n), rng.uniform(-2, 2, n)])
+beta_true = np.array([1.5, -0.8])
+y = X @ beta_true + rng.normal(0, 0.6, n)
+
+# Solve the normal equations (X^T X) beta = X^T y
+G = X.T @ X
+betahat = np.linalg.solve(G, X.T @ y)
+grad_at_hat = 2 * (G @ betahat - X.T @ y)
+
+fig = plt.figure(figsize=(9.2, 3.9))
+axL = fig.add_subplot(1, 2, 1, projection="3d")
+axL.scatter(X[:,0], X[:,1], y, color=VEC, s=14, alpha=0.7)
+gg = np.linspace(-2, 2, 12); P1, P2 = np.meshgrid(gg, gg)
+PY = betahat[0]*P1 + betahat[1]*P2
+axL.plot_surface(P1, P2, PY, color=ACCENT, alpha=0.35, linewidth=0)
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$"); axL.set_zlabel("$y$")
+axL.set_title("Data and fitted plane"); axL.view_init(elev=22, azim=-60)
+
+axR = fig.add_subplot(1, 2, 2)
+b1g = np.linspace(betahat[0]-2, betahat[0]+2, 80)
+b2g = np.linspace(betahat[1]-2, betahat[1]+2, 80)
+B1, B2 = np.meshgrid(b1g, b2g)
+LOSS = np.zeros_like(B1)
+for i in range(B1.shape[0]):
+    for j in range(B1.shape[1]):
+        r = y - X @ np.array([B1[i,j], B2[i,j]])
+        LOSS[i,j] = r @ r
+axR.contour(B1, B2, LOSS, levels=18, cmap="viridis", linewidths=1.0)
+axR.scatter([betahat[0]], [betahat[1]], color=ACCENT, s=100, zorder=5,
+            edgecolor="white", linewidth=1.4, label=r"$\hat\beta$")
+axR.set_xlabel(r"$\beta_1$"); axR.set_ylabel(r"$\beta_2$")
+axR.set_title("Loss surface over coefficients"); axR.legend(fontsize=9)
+axR.set_aspect("equal")
+plt.tight_layout()
+print(f"true  beta            = {beta_true}")
+print(f"hat   beta (solve NE) = {np.round(betahat,4)}")
+print(f"gradient at hat beta  = {np.round(grad_at_hat, 10)}  (= 0, normal equations hold)")
+print(f"eigenvalues of X^T X  = {np.round(np.linalg.eigvalsh(G),3)}  (both > 0 -> PD -> bowl)")
+```
+
+The fitted coefficients land near the truth, the gradient at $\hat\beta$ is zero to machine
+precision (the normal equations hold), and $X^\top X$ has positive eigenvalues — a bowl with a
+unique bottom. **This is least squares, and it is one instance of @thm-min-is-solve.** Regression
+R5's "you need to differentiate a quadratic form" prerequisite is, with @eq-normal-eqs,
+discharged in full.
+
+::: {.callout-tip title="You might be asked"}
+*"Derive the OLS estimator from scratch."* The expected answer is exactly @sec-leastsquares:
+write the loss $\|y - X\beta\|^2$, expand it into the quadratic $\beta^\top X^\top X\beta -
+2(X^\top y)^\top\beta + y^\top y$, take the gradient $2(X^\top X\beta - X^\top y)$, set it to
+zero to get the normal equations $X^\top X\hat\beta = X^\top y$, and (if full rank) invert to
+$\hat\beta = (X^\top X)^{-1}X^\top y$. The Hessian $2X^\top X \succ 0$ certifies a minimum. If
+you can also say *why* you may symmetrize, *why* the $\tfrac12$ would have tidied it, and *what
+breaks when $X^\top X$ is singular*, you have shown command, not recall.
+:::
+
+## Example 3 — the edge of applicability: a singular Hessian {#sec-ex-edge}
+
+An honest boundary, not a flattering case. When the predictors are linearly dependent — one
+column of $X$ is a combination of the others (perfect **multicollinearity**) — the Gram matrix
+$X^\top X$ is only positive-*semi*definite: it has a zero eigenvalue, so it is singular and
+@thm-min-is-solve's uniqueness fails. The bowl degenerates into a **trough**: a whole line of
+$\beta$'s achieve the same minimum loss, and $(X^\top X)^{-1}$ does not exist. The math is not
+wrong — it is telling you the problem is under-determined.
+
+```{python}
+#| label: fig-trough
+#| fig-cap: "The edge of applicability. Two predictors with $x_2 = 2x_1$ exactly — perfectly collinear. The loss surface over $(\\beta_1,\\beta_2)$ is a **trough**, not a bowl: every $\\beta$ on the dashed valley line gives the identical minimum loss, so there is no unique minimizer. The zero eigenvalue of $X^\\top X$ is the flat direction. This is the geometric face of multicollinearity, and the reason we reach for ridge or the pseudoinverse."
+rng = np.random.default_rng(7)
+n = 50
+x1 = rng.uniform(-2, 2, n)
+x2 = 2.0 * x1                 # exact collinearity: rank-deficient design
+X = np.column_stack([x1, x2])
+y = 1.0 * x1 + rng.normal(0, 0.5, n)   # truth lives along the collinear direction
+G = X.T @ X
+eig = np.linalg.eigvalsh(G)
+
+b1g = np.linspace(-2, 4, 90); b2g = np.linspace(-2, 4, 90)
+B1, B2 = np.meshgrid(b1g, b2g)
+LOSS = np.zeros_like(B1)
+for i in range(B1.shape[0]):
+    for j in range(B1.shape[1]):
+        r = y - X @ np.array([B1[i,j], B2[i,j]])
+        LOSS[i,j] = r @ r
+
+fig, ax = plt.subplots(figsize=(6.2, 5.0))
+ax.contourf(B1, B2, LOSS, levels=25, cmap="viridis", alpha=0.92)
+# valley direction: null space of X^T X (the flat eigenvector)
+w, V = np.linalg.eigh(G)
+flat = V[:, np.argmin(w)]
+# a point on the valley: minimum-norm solution via pseudoinverse
+b_mn = np.linalg.pinv(X) @ y
+tline = np.linspace(-3, 3, 50)
+valley = b_mn[:, None] + flat[:, None] * tline[None, :]
+ax.plot(valley[0], valley[1], color=GRAD, ls="--", lw=2.2, label="line of minimizers")
+ax.set_xlabel(r"$\beta_1$"); ax.set_ylabel(r"$\beta_2$")
+ax.set_title("Singular Hessian: a trough, not a bowl")
+ax.legend(loc="upper left", fontsize=9); ax.set_aspect("equal")
+ax.set_xlim(-2, 4); ax.set_ylim(-2, 4)
+plt.tight_layout()
+print(f"eigenvalues of X^T X = {np.round(eig,4)}  (one is 0 -> singular -> PSD, not PD)")
+print(f"det(X^T X)           = {np.linalg.det(G):.3e}  (~0: not invertible)")
+print("=> X^T X beta = X^T y has infinitely many solutions; no unique OLS fit.")
+```
+
+The zero eigenvalue is the flat direction of the trough. Three honest responses, each owned by a
+neighboring article:
+
+- **Drop or combine the redundant predictor** so the design regains full rank — then $X^\top X
+  \succ 0$ and uniqueness returns.
+- **Ridge regression** adds $\lambda I$ ($\lambda > 0$) to the Hessian: minimize $\|y -
+  X\beta\|^2 + \lambda\|\beta\|^2$, whose Hessian is $2(X^\top X + \lambda I)$. That shift makes
+  *every* eigenvalue at least $2\lambda > 0$, so the bowl is restored and the solution is unique
+  again — the cleanest illustration of "the Hessian's eigenvalues are the curvature, and ridge
+  lifts the flat one." This is [REGR-14]'s subject; the linear-algebra mechanism is exactly the
+  one here.
+- **The pseudoinverse** $\beta = X^{+}y$ ([GEOM-21]) picks the *minimum-norm* point on the
+  trough's valley line — a principled choice among the infinitely many minimizers.
+
+::: {.callout-warning title="Pitfall"}
+**A zero gradient is necessary for a minimum, never sufficient — and for a quadratic the
+Hessian's definiteness decides everything.** It is tempting to treat "solve $Ax = b$" as
+synonymous with "minimize the quadratic," but that equivalence holds *only when $A$ is
+positive-definite*. If $A$ is indefinite, $Ax = b$ locates a **saddle** — a stationary point
+that is a minimum along some directions and a maximum along others, so nudging $x$ can *lower*
+$f$. If $A$ is singular (the case above), $Ax = b$ may have a whole subspace of solutions or
+none at all. Always certify with the eigenvalues of $A$ before calling the solution a minimum;
+for a quadratic this is a single, global check because the Hessian is constant.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary practical note. Two habits matter, and both come
+straight from @thm-min-is-solve.
+
+**Solve, do not invert.** To get the minimizer $x^\star = A^{-1}b$ you almost never form
+$A^{-1}$ explicitly. You *solve the linear system* $Ax = b$ — `numpy.linalg.solve(A, b)` — which
+is faster and far more numerically stable than computing the inverse and multiplying. For a
+positive-definite $A$ the right tool is the **Cholesky factorization** $A = LL^\top$ ([GEOM-19]),
+which `scipy.linalg.cho_solve` uses; it exploits exactly the positive-definiteness
+@thm-min-is-solve hands you. Forming $A^{-1}$ wastes work and amplifies rounding error — the
+"why" is the condition-number story of [GEOM-26].
+
+**For least squares, do not even form $X^\top X$.** Squaring the design to build the Gram matrix
+$X^\top X$ *squares its condition number* (it is the same matrix that appears in @sec-leastsquares),
+so a mildly ill-conditioned $X$ becomes a badly ill-conditioned $X^\top X$. The numerically sound
+route to $\hat\beta$ solves the least-squares problem directly through a **QR** ([GEOM-07]) or
+**SVD** ([GEOM-20]) factorization of $X$ — `numpy.linalg.lstsq` does this — never assembling the
+normal equations as written. The normal equations are the cleanest *derivation* of the answer
+(this article) and a poor *algorithm* for it; [GEOM-26] makes that trade-off precise.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+We have met the main boundary already (Example 3); here is the honest summary of when "minimize a
+quadratic = solve $Ax=b$" is the right tool and when it is not.
+
+- **Use it** when your objective genuinely *is* a quadratic with positive-definite $A$ — least
+  squares with full-rank design, a strictly convex penalized loss, the local Newton model of a
+  smooth convex function. Then it is unbeatable: one linear solve gives the exact, unique global
+  minimum in closed form, no iteration.
+- **The Hessian is only positive-*semi*definite (singular $A$).** The minimizer is not unique —
+  a flat valley of solutions (Example 3, multicollinearity). Reach for ridge regularization
+  ([REGR-14]) to restore strict convexity, or the pseudoinverse ([GEOM-21]) for the minimum-norm
+  solution. Do **not** call `solve`; it will fail or return garbage.
+- **The Hessian is indefinite.** There is *no* minimum — the stationary point is a saddle. This
+  is the generic situation for non-convex losses (deep networks) *away* from a local minimum, and
+  it is why second-order methods must use a *modified* Hessian (made positive-definite) rather
+  than the raw one. The quadratic model is still useful locally, but "solve $Ax=b$" no longer
+  means "minimize."
+- **The true objective is not quadratic.** Then $f(x) = \tfrac12 x^\top A x - b^\top x$ is only a
+  *local* model (the second-order Taylor expansion, [GEOM-24]), accurate near the expansion point
+  and wrong far from it. Newton's method (Optimization) re-fits a fresh quadratic at every step
+  for this reason; trusting one quadratic globally on a curved loss is the multivariable cousin of
+  the straight-line-through-curved-data failure of [REGR-01].
+
+::: {.callout-tip title="You might be asked"}
+*"When is the quadratic model exact, and when is it just an approximation?"* It is **exact** when
+the objective is genuinely a quadratic — least squares, a Gaussian negative-log-density, a
+spring-energy functional — and then the Hessian $A$ is constant and one solve is the global
+answer. It is an **approximation** for any other smooth $f$: the second-order Taylor expansion
+$g(x_0 + \Delta) \approx g(x_0) + \nabla g^\top\Delta + \tfrac12\Delta^\top H\Delta$ matches $g$
+only to second order at $x_0$, so its minimizer is a *Newton step*, not the true minimizer, and you
+iterate. The single fact that makes both cases tractable is the one this article proved: the
+gradient of a quadratic is affine and its Hessian is the constant matrix $A$.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-22]** (vector differentiation: the identities $\nabla(a^\top x)=a$,
+$\nabla(x^\top x)=2x$, $\nabla(x^\top A x)=(A+A^\top)x$), **[GEOM-23]** (the gradient as
+steepest ascent; $\nabla f = 0$ at a critical point), and **[GEOM-24]** (the Hessian as
+curvature; the second-derivative test by its definiteness). This article fused them with
+**[GEOM-17]** (the quadratic form), **[GEOM-18]** (positive-definiteness), and **[GEOM-11]** (the
+inverse) into one result: $\nabla f = Ax - b$, $\nabla^2 f = A$, and $\nabla f = 0 \Leftrightarrow
+Ax = b$.
+
+This is the **summit of Movement VI**. From here:
+
+- **[GEOM-26] Condition Number and Numerical Stability** — the next article. The minimizer is
+  $A^{-1}b$; *how accurately* can a computer find it? The condition number of the very $A$ we
+  differentiated decides, and it is why "solve, don't invert" and "don't form $X^\top X$" are
+  more than style.
+- **[GEOM-27] How These Tools Power Data Science** — the bridge, where this result is named as the
+  engine behind least squares, Newton's method, and Fisher information.
+- **[REGR-05] Multiple Regression** — consumes @eq-normal-eqs directly; this article *is* its
+  vector-calculus prerequisite, discharged.
+- **[INFR-B3], [INFR-B4]** — the Fisher-information matrix is the (negative expected) Hessian of a
+  log-likelihood, a quadratic-form / Hessian object built on exactly this machinery.
+- **Optimization** — the canonical quadratic $\tfrac12 x^\top A x - b^\top x$ is the objective
+  every method there (gradient descent, conjugate gradients, Newton) is first analyzed on, and its
+  conditioning (eigenvalues of $A$) governs their convergence speed.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The completing-the-square identity** $f(x) = f(x^\star) + \tfrac12(x-x^\star)^\top A
+  (x-x^\star)$ (@eq-completed) is worth memorizing as a self-contained proof of the minimum — it
+  needs no calculus, only positive-definiteness, and it generalizes to the "Schur complement"
+  manipulations that recur in Gaussian conditioning ([PROB-09], Inference).
+- **Conjugate gradients** solves $Ax = b$ for large sparse positive-definite $A$ by *minimizing*
+  the quadratic $\tfrac12 x^\top A x - b^\top x$ iteratively — the cleanest place to see "solving a
+  system" and "minimizing a quadratic" treated as literally the same algorithm. It belongs to
+  Optimization / numerical linear algebra; the equivalence it exploits is @thm-min-is-solve.
+- **Open thread deliberately deferred.** *How fast does gradient descent reach $A^{-1}b$?* The
+  answer is governed by the ratio of the largest to smallest eigenvalue of $A$ — the condition
+  number — which is [GEOM-26] and then Optimization's convergence theory. *What if $A$ changes with
+  $x$ (a non-quadratic loss)?* That is Newton's method, which re-linearizes the gradient at every
+  step using the local Hessian, and is Optimization's to own.

@@ -1,0 +1,1188 @@
+---
+title: "Matrix Multiplication as Composition of Maps"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"    # data points / generic vectors
+ARROW  = "#c1121f"    # the highlighted arrow / image
+ACCENT = "#0a7d4d"    # second highlight
+GREY   = "#6c757d"
+PURPLE = "#6a4c93"    # third color
+
+def unit_grid(n=6, lim=2.0):
+    """A set of horizontal and vertical lines forming a grid of the plane,
+    returned as a list of (xs, ys) line segments, used to *show* what a map
+    does to space."""
+    ts = np.linspace(-lim, lim, 2 * n + 1)
+    fine = np.linspace(-lim, lim, 200)
+    lines = []
+    for t in ts:                      # vertical lines x = t
+        lines.append((np.full_like(fine, t), fine))
+    for t in ts:                      # horizontal lines y = t
+        lines.append((fine, np.full_like(fine, t)))
+    return lines
+
+def apply_map(M, lines):
+    """Apply the 2x2 matrix M to every point of every grid line."""
+    out = []
+    for xs, ys in lines:
+        P = np.vstack([xs, ys])       # 2 x N stack of points
+        Q = M @ P                     # the map, column by column
+        out.append((Q[0], Q[1]))
+    return out
+
+def draw_grid(ax, lines, color, alpha=0.7, lw=1.0):
+    for xs, ys in lines:
+        ax.plot(xs, ys, color=color, alpha=alpha, lw=lw)
+```
+
+> **Where this sits in the track.** This is the ninth article in the **Geometry of
+> Data** track, and the first of the "read-as-a-pair" cluster
+> (GEOM-09 / [GEOM-10 *The Transpose*] / [GEOM-11 *Solving $A\mathbf x=\mathbf b$*]) that
+> turns matrices from pictures into an algebra. It assumes
+> [GEOM-08 *Matrices as Linear Maps*]: that a matrix $A$ *is* a function $\mathbf x \mapsto
+> A\mathbf x$, that $A\mathbf x$ is a **linear combination of $A$'s columns** with the
+> entries of $\mathbf x$ as the weights, and that this function is **linear**
+> ($A(\mathbf u + \mathbf v) = A\mathbf u + A\mathbf v$ and $A(c\mathbf u) = c\,A\mathbf
+> u$). It also leans on the **dot product** from [GEOM-04]. Everything else is built here.
+> Its single job is to explain *why* matrix multiplication is defined by that
+> peculiar row-times-column rule — and the answer is that the rule is **forced** the
+> moment you decide $AB$ should mean "do $B$, then $A$." It sets up [GEOM-10] (the
+> transpose, where $A^\top A$ first appears), [GEOM-11] (the inverse as the *undo* map),
+> and — through its closing **outer-product** view — [GEOM-20 *The Singular Value
+> Decomposition*], where a matrix is rebuilt as a sum of rank-one pieces.
+
+## Abstract {.unnumbered}
+
+A matrix is a linear map ([GEOM-08]). If $B$ sends space one way and $A$ sends it another,
+then **doing $B$ first and $A$ second** is again a linear map — and the matrix that
+represents it is what we *define* to be the product $AB$. This article does not hand you
+the row-times-column rule and ask you to trust it; it *derives* the rule from the
+composition requirement, so that
+
+$$
+(AB)_{ij} = \sum_{k} a_{ik}\,b_{kj}
+$$
+
+is revealed as the only possible answer, not an arbitrary convention. From that single
+derivation everything else falls out in order: the **conformability** condition (inner
+dimensions must match) is just "the output of $B$ has to be a legal input to $A$";
+**associativity** $(AB)C = A(BC)$ becomes the plain statement that "doing three things in a
+fixed order does not depend on how you parenthesize them"; and **non-commutativity** $AB \neq
+BA$ becomes the plain statement that *the order in which you do two things matters* — rotating
+then shearing is not shearing then rotating, and we will watch a grid prove it. The single claim
+this article defends is that **matrix multiplication is composition of functions wearing a
+coordinate disguise**, and that every one of its strange-looking properties is a plain
+statement about composing maps.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The product $AB$ is the matrix of the **composite map** "apply $B$, then apply $A$":
+$(AB)\mathbf x = A(B\mathbf x)$ for every $\mathbf x$. Demanding that one equation hold
+*forces* the entry formula $(AB)_{ij} = \sum_k a_{ik} b_{kj}$ — row $i$ of $A$ dotted with
+column $j$ of $B$. Read this way, the rule is inevitable: the columns must match up because
+the output of $B$ feeds the input of $A$ (conformability); the operation is associative
+because composing functions in a fixed order ignores parentheses; and it is **not**
+commutative because the order you apply two maps in changes where points land.
+:::
+
+Everything below orbits that box. The summation $\sum_k a_{ik} b_{kj}$ looks like a rule
+someone invented to make bookkeeping work. By the end of @sec-derive you should see it as
+something you could have *re-derived yourself* from one demand — that $AB$ undo into "$B$
+then $A$" — and never need to memorize again.
+
+# Why we are doing this: a rule that looks invented {#sec-why}
+
+Keep one question in view for the whole article: **why is matrix multiplication defined
+the way it is, and not the obvious, simpler way?** Hold onto that, because the obvious way
+is a genuine temptation and seeing why it is *wrong* is half the insight.
+
+## The temptation, and why it fails
+
+When you first meet two matrices of the same shape, the natural guess for their "product"
+is to multiply entry by entry, the way you add them:
+
+$$
+(A \odot B)_{ij} = a_{ij}\,b_{ij}.
+$$
+
+This operation is real — it is the **Hadamard product**, and it has its uses — but it is
+*not* what "matrix multiplication" means, and the reason is the entire point of this track.
+A matrix is not just a grid of numbers; from [GEOM-08] it is a **map**, a thing that *does
+something to space*. And the most fundamental thing you do with two functions is **chain
+them**: do one, then feed its output into the other. Entry-by-entry multiplication has
+nothing to do with chaining maps. The product we want is the one that answers:
+
+> If $B$ moves every point of space to a new location, and then $A$ moves *those* points
+> again, what single matrix accomplishes the whole journey in one step?
+
+That single matrix is the one we will *call* $AB$. The strange summation rule is not a
+definition handed down from on high — it is the *price* of demanding that the product
+represent composition. Everything in this article is the unpacking of that price.
+
+## The historical why {#sec-history}
+
+The notation and the rule are not coeval with the idea. People solved systems of linear
+equations for millennia — the Chinese *Nine Chapters on the Mathematical Art* (c. 100 BCE)
+already eliminates variables in a way we would recognize as row reduction. But the
+*objects* — rectangular arrays treated as algebraic quantities you can multiply — arrived
+only in 1858, when **Arthur Cayley** published *A Memoir on the Theory of Matrices*. Cayley
+was studying **substitutions**: changes of variables of the form
+
+$$
+\begin{aligned}
+x' &= a\,x + b\,y, \\
+y' &= c\,x + d\,y,
+\end{aligned}
+$$
+
+which take coordinates $(x,y)$ to new coordinates $(x',y')$. The question that forced the
+multiplication rule was: *if I follow one substitution by another, what is the combined
+substitution?* Cayley worked out that the coefficients of the composite are exactly the
+row-times-column sums, and — this is the move that created linear algebra — he chose to
+*define matrix product as that result*, so that "compose two substitutions" and "multiply
+their matrices" would be the same act. James Joseph Sylvester had coined the word *matrix*
+(Latin for *womb*, the array "from which" minors are born) a few years earlier in 1850;
+Cayley gave the womb an arithmetic.
+
+So the rule was reverse-engineered from composition from the very first day. We are not
+re-discovering history loosely — we are repeating Cayley's exact derivation, which is the
+honest reason the rule looks the way it does.
+
+::: {.callout-tip title="You might be asked"}
+*"Is there a product of matrices that multiplies entry by entry?"* Yes — the **Hadamard
+(elementwise) product** $A \odot B$, written `A * B` in NumPy, and it is genuinely useful
+(masking, gating in neural networks, weighting). The thing to be crisp about in an
+interview is *why it is a different operation*: $A \odot B$ does **not** represent doing
+one map after another, so it loses the one property — composition — that makes the
+ordinary product the backbone of linear algebra. When someone writes $AB$ they almost
+always mean composition; when they mean elementwise they say so. Confusing the two is a
+classic bug (in code, `@` vs `*`).
+:::
+
+# Intuition before symbols: two machines in series {#sec-intuition}
+
+Picture each matrix as a machine that takes a vector in and pushes a transformed vector
+out. The machine $B$ takes an input $\mathbf x$ and emits $B\mathbf x$. Now bolt a second
+machine $A$ onto the output pipe of the first: whatever $B$ produces immediately enters
+$A$, which emits $A(B\mathbf x)$. The two machines bolted in series form **one bigger
+machine**, and that bigger machine is also linear (we prove this in @sec-derive). Because
+it is linear, [GEOM-08] guarantees it too is *some* matrix. We name that matrix $AB$.
+
+That is the whole picture, and it already tells you three things before we have written a
+single index:
+
+- **Order is encoded in the writing.** $AB$ means "$B$ first, then $A$" — you read the
+  *action* right-to-left, the way nested function notation $A(B(\mathbf x))$ reads. This
+  feels backwards the first time and never stops feeling slightly backwards; it is the
+  price of agreeing that a matrix sits to the *left* of the vector it acts on.
+- **The pipe has to fit.** The output of $B$ is the input of $A$. If $B$ emits vectors
+  living in $\mathbb{R}^m$ but $A$ expects inputs from $\mathbb{R}^p$ with $p \neq m$, you
+  cannot connect the machines. This single physical fact *is* the conformability rule
+  (@sec-conformable).
+- **Reversing the machines changes the output.** Bolting $A$ first and then $B$ — the
+  product $BA$ — is a *different* compound machine that in general lands points somewhere
+  else. That is non-commutativity (@sec-noncommute), and it is not a quirk; it is the norm.
+
+@fig-pipeline draws the series-of-machines picture concretely, following one input vector
+through both stages.
+
+```{python}
+#| label: fig-pipeline
+#| fig-cap: "Composition as two machines in series. A single input vector $\\mathbf x=(1,1)$ (navy) enters $B$, a $90^\\circ$ rotation, and emerges as $B\\mathbf x$ (green). That output then enters $A$, a horizontal stretch by $2$, and emerges as $A(B\\mathbf x)$ (red). The compound machine — rotate, then stretch — is the single matrix $AB$. Reading the action right-to-left ($B$ first) is the price of writing the matrix to the left of the vector."
+B = np.array([[0., -1.], [1., 0.]])      # 90 deg rotation
+A = np.array([[2., 0.], [0., 1.]])       # horizontal stretch by 2
+x  = np.array([1., 1.])
+Bx = B @ x
+ABx = A @ Bx
+
+fig, ax = plt.subplots(figsize=(6.0, 5.0))
+def arrow(ax, vec, color, label, lw=2.4):
+    ax.add_patch(FancyArrowPatch((0, 0), tuple(vec), color=color,
+                 arrowstyle='-|>', mutation_scale=16, lw=lw, zorder=3))
+    ax.annotate(label, xy=tuple(vec), xytext=(vec[0]+0.08, vec[1]+0.12),
+                color=color, fontsize=11)
+arrow(ax, x,   POINT,  r"$\mathbf{x}=(1,1)$")
+arrow(ax, Bx,  ACCENT, r"$B\mathbf{x}$ (rotated)")
+arrow(ax, ABx, ARROW,  r"$A(B\mathbf{x})=(AB)\mathbf{x}$")
+ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+ax.set_xlim(-2.5, 2.5); ax.set_ylim(-0.5, 2.5)
+ax.set_aspect("equal")
+ax.set_title("Apply $B$ (rotate), then $A$ (stretch): the composite is $AB$")
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+plt.tight_layout()
+```
+
+# The formal development {#sec-formal}
+
+## What we are allowed to assume {#sec-assume}
+
+We carry exactly two facts from [GEOM-08], and we name them now so the derivation leans on
+nothing unstated.
+
+::: {#def-matrix-map}
+**(Matrix as map, from GEOM-08.)** An $m \times n$ matrix $A$ — $m$ rows, $n$ columns,
+entries $a_{ik}$ in row $i$, column $k$ — defines a function from $\mathbb{R}^n$ to
+$\mathbb{R}^m$ by
+
+$$
+(A\mathbf x)_i = \sum_{k=1}^{n} a_{ik}\,x_k,
+\qquad i = 1,\dots,m,
+$$ {#eq-matvec}
+
+i.e. the $i$-th output coordinate is **row $i$ of $A$ dotted with $\mathbf x$**. Equivalently
+(the column view, [GEOM-08]), $A\mathbf x = \sum_{k=1}^n x_k\,\mathbf a_k$ is the linear
+combination of $A$'s columns $\mathbf a_1,\dots,\mathbf a_n$ with weights $x_1,\dots,x_n$.
+:::
+
+Take a breath on the index ranges, because every later subscript depends on them. The
+matrix $A$ is $m \times n$. The input $\mathbf x$ has $n$ entries $x_1,\dots,x_n$ (one per
+*column* of $A$). The output $A\mathbf x$ has $m$ entries (one per *row* of $A$). The
+notation $a_{ik}$ always means "row $i$, column $k$" — row index first, exactly as you read
+a street address as (floor, apartment).
+
+::: {#def-linearity}
+**(Linearity, from GEOM-08.)** The map $\mathbf x \mapsto A\mathbf x$ is **linear**: for all
+vectors $\mathbf u, \mathbf v$ and scalars $c$,
+
+$$
+A(\mathbf u + \mathbf v) = A\mathbf u + A\mathbf v,
+\qquad
+A(c\,\mathbf u) = c\,(A\mathbf u).
+$$ {#eq-linear}
+:::
+
+These two properties are all of [GEOM-08] we need. We will *not* assume the product rule —
+that is what we are about to build.
+
+## A standard basis vector picks out a column {#sec-standard-basis}
+
+One small tool makes the whole derivation clean, so we build it now. Let $\mathbf e_j$
+denote the **$j$-th standard basis vector** of $\mathbb{R}^n$: the column of $n$ numbers
+that is $1$ in position $j$ and $0$ everywhere else. For $n=3$,
+
+$$
+\mathbf e_1 = \begin{bmatrix}1\\0\\0\end{bmatrix},\quad
+\mathbf e_2 = \begin{bmatrix}0\\1\\0\end{bmatrix},\quad
+\mathbf e_3 = \begin{bmatrix}0\\0\\1\end{bmatrix}.
+$$
+
+Now ask what a matrix $B$ does to $\mathbf e_j$. Use the column view from
+@def-matrix-map: $B\mathbf e_j$ is the linear combination of $B$'s columns with the
+entries of $\mathbf e_j$ as weights. But $\mathbf e_j$ has weight $1$ on position $j$ and
+$0$ on every other position, so the combination is just $1$ times column $j$ of $B$, plus
+nothing:
+
+$$
+B\,\mathbf e_j = \mathbf b_j \qquad(\text{column } j \text{ of } B).
+$$ {#eq-pick-column}
+
+In words: **feeding the $j$-th standard basis vector into a matrix returns its $j$-th
+column.** This is the probe we will use to read off the columns of an unknown matrix. It is
+worth pausing on, because it makes the slogan "the columns of a matrix are where the axes go"
+([GEOM-08]) literally true: $\mathbf e_j$ *is* the $j$-th coordinate axis direction, and
+$B\mathbf e_j$ is where that axis lands.
+
+::: {.callout-tip title="You might be asked"}
+*"How do you recover a matrix you can only access as a black-box function?"* Probe it with
+the standard basis vectors. If a routine computes $\mathbf x \mapsto T(\mathbf x)$ and you
+have been promised $T$ is linear, then $T(\mathbf e_1), T(\mathbf e_2), \dots, T(\mathbf
+e_n)$ are exactly the **columns** of the matrix of $T$, by @eq-pick-column. Stack them and
+you have reconstructed the matrix from $n$ function calls. This is not a parlor trick — it
+is how you extract a Jacobian numerically, how you sanity-check that an operator someone
+handed you really is linear, and the conceptual seed of the whole derivation below.
+:::
+
+## Deriving the product rule from composition {#sec-derive}
+
+Now the main event. We have two matrices, and we want their composite.
+
+**Setup and dimensions.** Let $B$ be $m \times p$, so $B$ maps $\mathbb{R}^p \to
+\mathbb{R}^m$. Let $A$ be $n \times m$, so $A$ maps $\mathbb{R}^m \to \mathbb{R}^n$. The
+output space of $B$ is $\mathbb{R}^m$, which is exactly the input space of $A$ — the pipe
+fits. We define the composite map
+
+$$
+C(\mathbf x) = A\bigl(B\mathbf x\bigr), \qquad \mathbf x \in \mathbb{R}^p,
+$$
+
+which takes $\mathbb{R}^p \to \mathbb{R}^n$.
+
+**Step 1: $C$ is linear.** Before we can call $C$ a matrix at all, we must check it obeys
+@eq-linear, because [GEOM-08] only promises a matrix for *linear* maps. Take any $\mathbf u,
+\mathbf v$ and scalar $c$. Using the linearity of $B$ first and then of $A$ — each is
+@eq-linear applied once:
+
+$$
+\begin{aligned}
+C(\mathbf u + \mathbf v)
+&= A\bigl(B(\mathbf u + \mathbf v)\bigr)
+&&\text{(definition of }C) \\
+&= A\bigl(B\mathbf u + B\mathbf v\bigr)
+&&\text{(}B\text{ linear)} \\
+&= A(B\mathbf u) + A(B\mathbf v)
+&&\text{(}A\text{ linear)} \\
+&= C(\mathbf u) + C(\mathbf v),
+\end{aligned}
+$$
+
+and likewise for scaling,
+
+$$
+C(c\,\mathbf u) = A\bigl(B(c\,\mathbf u)\bigr) = A\bigl(c\,B\mathbf u\bigr)
+= c\,A(B\mathbf u) = c\,C(\mathbf u).
+$$
+
+So $C$ is linear. By [GEOM-08], a linear map from $\mathbb{R}^p$ to $\mathbb{R}^n$ *is*
+some $n \times p$ matrix. **That matrix is what we name $AB$.** Note the shape already:
+$AB$ is $n \times p$ — it has $A$'s number of rows and $B$'s number of columns. We will see
+why in a moment.
+
+**Step 2: read off the columns of $AB$ with the basis-vector probe.** We now know $AB$ is a
+matrix; we want its entries. By @eq-pick-column, column $j$ of $AB$ is what the map does to
+$\mathbf e_j$:
+
+$$
+\bigl(AB\bigr)\mathbf e_j \;=\; C(\mathbf e_j) \;=\; A\bigl(B\,\mathbf e_j\bigr)
+\;=\; A\,\mathbf b_j,
+$$
+
+where the last equality used @eq-pick-column again on $B$ ($B\mathbf e_j = \mathbf b_j$,
+the $j$-th column of $B$). So:
+
+$$
+\boxed{\;\text{column } j \text{ of } AB \;=\; A\,\mathbf b_j \;=\; A\,(\text{column } j
+\text{ of } B).\;}
+$$ {#eq-cols-of-ab}
+
+This is already a complete, memorable description of the product: **to multiply $AB$, hit
+each column of $B$ with the matrix $A$.** It also instantly explains the shape — $AB$ has
+one column for each column of $B$ ($p$ of them), and each such column $A\mathbf b_j$ lives
+in $\mathbb{R}^n$ (it is $A$ acting on a vector), so $AB$ is $n \times p$.
+
+**Step 3: expand one entry to get the summation rule.** We want $(AB)_{ij}$, the entry in
+row $i$, column $j$. By Step 2, column $j$ of $AB$ is the vector $A\mathbf b_j$, so its
+$i$-th entry is the $i$-th entry of $A\mathbf b_j$. Apply the row-dot-vector formula
+@eq-matvec with the input vector being $\mathbf b_j$ (whose $k$-th entry is $b_{kj}$, the
+entry of $B$ in row $k$, column $j$):
+
+$$
+(AB)_{ij} \;=\; \bigl(A\,\mathbf b_j\bigr)_i
+\;=\; \sum_{k=1}^{m} a_{ik}\,(\mathbf b_j)_k
+\;=\; \sum_{k=1}^{m} a_{ik}\,b_{kj}.
+$$
+
+There it is — derived, not declared:
+
+$$
+\boxed{\;(AB)_{ij} \;=\; \sum_{k=1}^{m} a_{ik}\,b_{kj}.\;}
+$$ {#eq-product-rule}
+
+The summation index $k$ runs over the **shared middle dimension** $m$ — the number of
+columns of $A$, which is also the number of rows of $B$. Read @eq-product-rule out loud and
+it *is* "row $i$ of $A$ dotted with column $j$ of $B$": $a_{i1},a_{i2},\dots,a_{im}$ is row
+$i$ of $A$, and $b_{1j},b_{2j},\dots,b_{mj}$ is column $j$ of $B$, and we are summing their
+products term by term — the dot product from [GEOM-04].
+
+We have arrived at the rule everyone memorizes, but along a road where every turn was
+forced. Let us state it as a theorem so the logical status is unambiguous.
+
+::: {#thm-product}
+**(Matrix product = composition.)** Let $A$ be $n\times m$ and $B$ be $m\times p$. There is
+a unique $n \times p$ matrix $AB$ such that $(AB)\mathbf x = A(B\mathbf x)$ for all
+$\mathbf x \in \mathbb{R}^p$, and its entries are
+$\displaystyle (AB)_{ij} = \sum_{k=1}^{m} a_{ik} b_{kj}$.
+:::
+
+::: {.proof}
+*Existence and the formula* are Steps 1–3 above: the composite $C(\mathbf x)=A(B\mathbf x)$
+is linear (Step 1), hence equals multiplication by some matrix (GEOM-08), whose columns are
+$A\mathbf b_j$ (Step 2) and whose entries are therefore $\sum_k a_{ik}b_{kj}$ (Step 3).
+*Uniqueness:* suppose two matrices $M$ and $M'$ both satisfied $M\mathbf x = A(B\mathbf x) =
+M'\mathbf x$ for all $\mathbf x$. Then in particular $M\mathbf e_j = M'\mathbf e_j$ for
+every standard basis vector, i.e. (by @eq-pick-column) every column of $M$ equals the
+corresponding column of $M'$. Two matrices with identical columns are the same matrix.
+Hence the matrix representing the composite is unique. $\qquad\blacksquare$
+:::
+
+A worked $2\times 2$ by hand, so the abstract rule has a number behind it. Let
+$A=\begin{bmatrix}1&2\\3&4\end{bmatrix}$ and $B=\begin{bmatrix}5&6\\7&8\end{bmatrix}$. Entry
+$(1,1)$ is row $1$ of $A$ dotted with column $1$ of $B$: $1\cdot5 + 2\cdot7 = 5+14=19$.
+Entry $(1,2)$: $1\cdot6+2\cdot8=6+16=22$. Entry $(2,1)$: $3\cdot5+4\cdot7=15+28=43$. Entry
+$(2,2)$: $3\cdot6+4\cdot8=18+32=50$. So $AB=\begin{bmatrix}19&22\\43&50\end{bmatrix}$.
+
+```{python}
+#| label: check-2x2
+#| echo: true
+A = np.array([[1, 2], [3, 4]])
+B = np.array([[5, 6], [7, 8]])
+print("AB (row-times-column) =\n", A @ B)
+# the composition definition: column j of AB is A @ (column j of B)
+col0 = A @ B[:, 0]
+col1 = A @ B[:, 1]
+print("columns A@b_j stacked  =\n", np.column_stack([col0, col1]))
+```
+
+The two constructions agree, exactly as @eq-cols-of-ab promises: forming $AB$ by the
+entry rule and forming it column-by-column as $A\mathbf b_j$ are the same computation seen
+from two angles.
+
+## Conformability: why the inner dimensions must match {#sec-conformable}
+
+The summation @eq-product-rule has a precondition hiding in plain sight: the index $k$ runs
+from $1$ to $m$ in *both* factors. For $a_{ik}$ that $m$ is the **number of columns of
+$A$**; for $b_{kj}$ that same $m$ is the **number of rows of $B$**. If those two numbers
+disagree, the products $a_{ik}b_{kj}$ do not pair up — you run out of one before the other —
+and the sum is meaningless. This is the conformability rule:
+
+$$
+\underbrace{A}_{n \times \boxed{m}}
+\;\cdot\;
+\underbrace{B}_{\boxed{m} \times p}
+\;=\;
+\underbrace{AB}_{n \times p}.
+$$
+
+The two boxed **inner** dimensions must be equal; the **outer** dimensions become the shape
+of the product. We did not have to impose this by fiat. It *is* the "pipe must fit" fact
+from @sec-intuition: $B$ outputs vectors in $\mathbb{R}^m$ (it has $m$ rows), and $A$ can
+only accept inputs from $\mathbb{R}^m$ (it has $m$ columns). Mismatched inner dimensions
+means the output of $B$ is not a legal input to $A$, so the composite map does not exist —
+and neither does the product.
+
+::: {.callout-tip title="You might be asked"}
+*"$A$ is $3\times 4$ and $B$ is $4\times 2$. What shape is $AB$? What about $BA$?"* $AB$ is
+$3\times 2$ (drop the matched inner $4$s, keep the outer $3$ and $2$). $BA$ would require
+the inner dimensions of $B$-then-$A$ to match: $B$ is $4\times 2$, $A$ is $3\times 4$, so we
+need $2 = 3$ — they do not. **$BA$ is undefined.** This is the most basic way
+non-commutativity shows up: very often one ordering is not even a legal product. Being able
+to read shapes off instantly is table stakes; the deeper point is *why* — it is the pipe
+fitting.
+:::
+
+## The row view and the column view are the same rule {#sec-two-views}
+
+We derived @eq-product-rule via columns (Step 2 hit each column of $B$ with $A$), but the
+entry formula is symmetric enough to read three equivalent ways, and fluent practitioners
+flip between them constantly. All three are @eq-product-rule re-grouped; none is a new fact.
+
+- **Entry view (the dot products).** $(AB)_{ij}$ is row $i$ of $A$ dotted with column $j$
+  of $B$. Good for computing a single entry.
+- **Column view.** Column $j$ of $AB$ is $A\,\mathbf b_j$ — $A$ applied to column $j$ of
+  $B$ (this is @eq-cols-of-ab). Good for "what does the composite do to space."
+- **Row view.** Row $i$ of $AB$ is a linear combination of the *rows* of $B$, with the
+  entries of $A$'s $i$-th row as weights. This is not a new fact either; it falls straight
+  out of @eq-product-rule. Fix the row index $i$ and let $j$ range over all columns
+  $1,\dots,p$: row $i$ of $AB$ is the list of entries
+  $$
+  \bigl(\,(AB)_{i1},\,(AB)_{i2},\,\dots,\,(AB)_{ip}\,\bigr),
+  \qquad
+  (AB)_{ij} = \sum_{k=1}^{m} a_{ik}\,b_{kj}.
+  $$
+  Now read the sum the other way. For *every* column $j$ the same weights $a_{i1},\dots,a_{im}$
+  multiply the $k$-th row of $B$. So if $\mathbf b^{(k)\top} = (b_{k1},\dots,b_{kp})$ denotes
+  the $k$-th row of $B$ (the same notation we use in @sec-outer), then stacking the entries
+  across $j$ gives
+  $$
+  \text{row } i \text{ of } AB \;=\; \sum_{k=1}^{m} a_{ik}\,\mathbf b^{(k)\top},
+  $$
+  exactly a weighted sum of $B$'s rows with $A$'s $i$-th row supplying the weights — the
+  mirror image of the column view. Compactly, row $i$ of $AB$ equals (row $i$ of $A$) times
+  $B$. Good for "what each output coordinate mixes together."
+
+The column view is the one to internalize for this track, because it is the composition
+picture made concrete: **$AB$ acts on space by first letting $B$ rearrange the columns'
+worth of information and then letting $A$ transform each result.** When we reach the SVD
+([GEOM-20]) we will lean hardest on the column and outer-product views, not the entry view.
+
+## Associativity, proved {#sec-associative}
+
+Here is where the composition picture pays a dividend that the entry formula obscures. We
+claim $(AB)C = A(BC)$ whenever the shapes are conformable. The brute-force proof manipulates
+triple sums; the *honest* proof is one sentence about functions, and we give the function
+proof first because it is the real reason, then confirm with indices.
+
+**The function proof (the real reason).** A matrix *is* a map, and matrix product *is*
+composition of maps (@thm-product). Composition of functions is always associative — for
+any functions, doing them in a fixed order does not depend on grouping. Concretely, for
+every input vector $\mathbf x$,
+
+$$
+\bigl[(AB)C\bigr]\mathbf x
+= (AB)\,(C\mathbf x)
+= A\bigl(B\,(C\mathbf x)\bigr),
+\qquad
+\bigl[A(BC)\bigr]\mathbf x
+= A\,\bigl[(BC)\mathbf x\bigr]
+= A\bigl(B\,(C\mathbf x)\bigr).
+$$
+
+Both equal $A(B(C\mathbf x))$ — "do $C$, then $B$, then $A$" — for every $\mathbf x$. Two
+matrices that agree on every input are equal (the uniqueness argument from @thm-product:
+agree on every $\mathbf e_j$, hence equal columns). Therefore $(AB)C = A(BC)$. The
+parentheses never mattered because they only ever said *how to group* a sequence of actions
+that was already in a fixed order. $\qquad\blacksquare$
+
+That is the whole proof, and it is worth more than the index version because it tells you
+*why* associativity is inevitable: it is a property of composing functions, inherited by
+matrices because matrices are functions. Still, a reader should see it fall out of the
+summation rule directly, with nothing hidden, so here is the index proof.
+
+::: {#thm-assoc}
+**(Associativity.)** For conformable matrices, $(AB)C = A(BC)$.
+:::
+
+::: {.proof}
+Let $A$ be $n\times m$, $B$ be $m\times p$, $C$ be $p\times q$, so all products below are
+defined and both $(AB)C$ and $A(BC)$ are $n\times q$. Fix output position $(i,\ell)$ with
+$1\le i\le n$ and $1\le \ell\le q$. Apply the product rule @eq-product-rule once to peel off
+the outer product, then once more inside:
+
+$$
+\bigl[(AB)C\bigr]_{i\ell}
+= \sum_{j=1}^{p} (AB)_{ij}\,c_{j\ell}
+= \sum_{j=1}^{p} \left(\sum_{k=1}^{m} a_{ik}\,b_{kj}\right) c_{j\ell}
+= \sum_{j=1}^{p}\sum_{k=1}^{m} a_{ik}\,b_{kj}\,c_{j\ell}.
+$$
+
+Every term is an ordinary product of three real numbers $a_{ik}, b_{kj}, c_{j\ell}$, and
+real multiplication is commutative and associative, and finite sums may be reordered freely.
+So we may swap the order of the two finite sums (sum over $k$ outside, $j$ inside) and
+regroup the factors:
+
+$$
+\sum_{j=1}^{p}\sum_{k=1}^{m} a_{ik}\,b_{kj}\,c_{j\ell}
+= \sum_{k=1}^{m} a_{ik} \left(\sum_{j=1}^{p} b_{kj}\,c_{j\ell}\right)
+= \sum_{k=1}^{m} a_{ik}\,(BC)_{k\ell}
+= \bigl[A(BC)\bigr]_{i\ell}.
+$$
+
+The inner sum $\sum_j b_{kj}c_{j\ell}$ is precisely $(BC)_{k\ell}$ by @eq-product-rule, and
+the outer sum is then $A$ times $BC$ by @eq-product-rule again. Since the entry $(i,\ell)$
+was arbitrary, $(AB)C = A(BC)$ entry by entry. $\qquad\blacksquare$
+:::
+
+The two proofs are the same truth in two languages. The double sum could be reordered
+*because* it was secretly counting the same three-stage paths $\mathbf x \to C\mathbf x \to
+BC\mathbf x \to ABC\mathbf x$ regardless of how you parenthesized — which is exactly what
+the function proof said in one line.
+
+::: {.callout-tip title="You might be asked"}
+*"If matrix multiplication is associative, why does the order of operations matter so much
+for performance?"* Associativity says the *answer* $ABC$ is independent of parenthesization;
+it says nothing about the *cost*. Multiplying an $n\times m$ by an $m\times p$ matrix costs
+about $n\,m\,p$ scalar multiplications. So for $A$ ($1\times 1000$), $B$ ($1000\times
+1000$), $C$ ($1000\times 1$), computing $(AB)C$ costs $1\cdot1000\cdot1000 +
+1\cdot1000\cdot1 \approx 10^6$ operations, while $A(BC)$ costs $1000\cdot1000\cdot1 +
+1\cdot1000\cdot1 \approx 10^6$ as well — but reshape the dimensions and the gap explodes:
+the **matrix-chain ordering problem** is a classic dynamic-programming exercise precisely
+because associativity gives you the freedom to pick the cheapest grouping while guaranteeing
+the same result. In deep learning this is why you compute $A(Bx)$ — a matrix-vector product
+twice — rather than $(AB)x$ — a matrix-matrix product then a matrix-vector. Same answer,
+wildly different cost.
+:::
+
+## Non-commutativity: order is the whole point {#sec-noncommute}
+
+We now confront the property that trips up everyone coming from ordinary arithmetic: in
+general
+
+$$
+AB \neq BA.
+$$
+
+For real numbers $3\cdot 5 = 5 \cdot 3$; for matrices this fails, and the composition
+picture tells us it *must* fail. $AB$ means "do $B$, then $A$"; $BA$ means "do $A$, then
+$B$." These are different physical procedures, like "put on socks, then shoes" versus "put
+on shoes, then socks." There is no reason the universe should make them land in the same
+place, and it does not.
+
+We make this airtight with the cleanest possible witness — two maps from @sec-intuition's
+gallery — and we draw the disagreement so it is undeniable.
+
+::: {#thm-noncommute}
+**(Non-commutativity.)** There exist matrices $A,B$ with $AB \neq BA$.
+:::
+
+::: {.proof}
+Take $R$ = rotation by $90^\circ$ counterclockwise and $S$ = horizontal shear:
+
+$$
+R = \begin{bmatrix} 0 & -1 \\ 1 & 0 \end{bmatrix},
+\qquad
+S = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}.
+$$
+
+Compute both orders by @eq-product-rule. *Shear then rotate*, $RS$ (recall right-to-left:
+the right factor $S$ acts first):
+
+$$
+RS = \begin{bmatrix} 0 & -1 \\ 1 & 0 \end{bmatrix}
+     \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}
+   = \begin{bmatrix} (0)(1)+(-1)(0) & (0)(1)+(-1)(1) \\ (1)(1)+(0)(0) & (1)(1)+(0)(1)
+     \end{bmatrix}
+   = \begin{bmatrix} 0 & -1 \\ 1 & 1 \end{bmatrix}.
+$$
+
+*Rotate then shear*, $SR$:
+
+$$
+SR = \begin{bmatrix} 1 & 1 \\ 0 & 1 \end{bmatrix}
+     \begin{bmatrix} 0 & -1 \\ 1 & 0 \end{bmatrix}
+   = \begin{bmatrix} (1)(0)+(1)(1) & (1)(-1)+(1)(0) \\ (0)(0)+(1)(1) & (0)(-1)+(1)(0)
+     \end{bmatrix}
+   = \begin{bmatrix} 1 & -1 \\ 1 & 0 \end{bmatrix}.
+$$
+
+Since $\begin{bmatrix} 0 & -1 \\ 1 & 1 \end{bmatrix} \neq \begin{bmatrix} 1 & -1 \\ 1 & 0
+\end{bmatrix}$ — they already differ in the top-left entry, $0 \neq 1$ — we have $RS \neq
+SR$, exhibiting two matrices that do not commute. $\qquad\blacksquare$
+:::
+
+@fig-noncommute applies both compound maps to the same unit square and grid. The two
+results are visibly different shapes, which is the geometric content of $RS \neq SR$: the
+*same* two operations, performed in opposite orders, send the plane to different places.
+
+```{python}
+#| label: fig-noncommute
+#| fig-cap: "Order matters, drawn. The faint navy grid is the plane; the unit square is highlighted. **Left:** shear first, then rotate ($RS$). **Right:** rotate first, then shear ($SR$). The same two maps composed in opposite orders produce genuinely different images of the square — geometric proof that $RS \\neq SR$. Non-commutativity is not a quirk to memorize; it is the visible fact that doing things in a different order lands you somewhere else."
+R = np.array([[0., -1.], [1., 0.]])    # 90 deg rotation
+S = np.array([[1., 1.], [0., 1.]])     # horizontal shear
+RS = R @ S
+SR = S @ R
+
+square = np.array([[0, 1, 1, 0, 0], [0, 0, 1, 1, 0]])  # unit square outline
+base = unit_grid(n=4, lim=2.0)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.6), sharex=True, sharey=True)
+for ax, M, title in [(axL, RS, r"$RS$: shear, then rotate"),
+                     (axR, SR, r"$SR$: rotate, then shear")]:
+    draw_grid(ax, base, color=POINT, alpha=0.12, lw=0.8)
+    draw_grid(ax, apply_map(M, base), color=ACCENT, alpha=0.45, lw=0.9)
+    sq = M @ square
+    ax.plot(square[0], square[1], color=GREY, lw=1.6, ls="--", label="original square")
+    ax.fill(sq[0], sq[1], color=ARROW, alpha=0.30)
+    ax.plot(sq[0], sq[1], color=ARROW, lw=2.2, label="image of square")
+    ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+    ax.set_aspect("equal"); ax.set_xlim(-2.5, 2.5); ax.set_ylim(-2.5, 2.5)
+    ax.set_title(title); ax.set_xlabel("$x_1$")
+axL.set_ylabel("$x_2$")
+axL.legend(loc="lower left", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**Every reflex from scalar algebra that secretly used commutativity is now a bug.** Three
+that bite constantly:
+
+- $(A+B)^2 \neq A^2 + 2AB + B^2$ in general. Expanding honestly: $(A+B)^2 =
+  (A+B)(A+B) = A^2 + AB + BA + B^2$, and you may only fold $AB+BA$ into $2AB$ **if $A$ and
+  $B$ commute**. They usually do not.
+- $(AB)^{-1} = B^{-1}A^{-1}$, **not** $A^{-1}B^{-1}$ — the order *reverses*. (To undo "socks
+  then shoes" you take off shoes first. We prove this in [GEOM-11].)
+- $(AB)^\top = B^\top A^\top$ — the transpose also reverses the order ([GEOM-10]).
+
+The unifying lesson: whenever you move a factor past another, ask "did I just assume these
+commute?" If you cannot prove they do, you cannot make the move.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Do any matrices commute? When is $AB = BA$?"* Yes, special pairs do, and recognizing them
+is useful. The identity $I$ commutes with everything ($AI = IA = A$). Any matrix commutes
+with its own powers and with $cI$ (scalar matrices). Two **diagonal** matrices always
+commute (their product is just elementwise products of the diagonals, order-free). Most
+deeply: two **symmetric** matrices commute *if and only if* they are **simultaneously
+diagonalizable** — they share an eigenbasis — a fact we will earn in
+[GEOM-16 *The Spectral Theorem*]. Commuting is the exception that signals shared structure;
+the generic situation, as @fig-noncommute shows, is that order matters.
+:::
+
+## Two structural facts: the identity and the zero divisors {#sec-identity-zero}
+
+Two more properties round out the algebra, and both are quick consequences of the
+composition view.
+
+**The identity matrix is the "do nothing" map.** Define $I_n$ as the $n\times n$ matrix
+with $1$s on the diagonal and $0$s off it; its $j$-th column is $\mathbf e_j$
+(@sec-standard-basis). As a map, $I_n\mathbf x = \mathbf x$ for every $\mathbf x$ — it
+leaves space untouched, by @eq-pick-column applied to each coordinate. Composing "do
+nothing" before or after any map $A$ changes nothing, so $AI = A$ and $IA = A$. The identity
+is the multiplicative unit, the matrix analogue of the number $1$, *because* it is the
+identity *function*.
+
+**A surprise the scalars did not prepare you for: $AB = 0$ with neither $A$ nor $B$ zero.**
+For real numbers, $ab = 0$ forces $a=0$ or $b=0$. For matrices this fails, and composition
+explains why instantly: if $B$ first *collapses* some directions to zero and $A$ then only
+"sees" exactly those collapsed directions, the composite annihilates everything even though
+neither map is trivial. A clean witness:
+
+$$
+A = \begin{bmatrix} 0 & 1 \\ 0 & 0 \end{bmatrix},\quad
+B = \begin{bmatrix} 0 & 1 \\ 0 & 0 \end{bmatrix},\quad
+AB = \begin{bmatrix} 0\cdot 0 + 1\cdot 0 & 0\cdot 1 + 1 \cdot 0 \\ 0 & 0 \end{bmatrix}
+   = \begin{bmatrix} 0 & 0 \\ 0 & 0 \end{bmatrix}.
+$$
+
+Geometrically $B$ flattens the whole plane onto the $x_1$-axis (it sends $(x_1,x_2)$ to
+$(x_2,0)$), and then $A$ flattens *that* axis to the origin. Each map throws away
+information; chained, they throw away all of it. This is the algebraic face of
+**rank-deficiency** and **singularity** — the very thing [GEOM-11] (the inverse) and
+[GEOM-12] (rank) are built to measure. The takeaway for now: you cannot "cancel" matrices.
+From $AB = AC$ you may **not** conclude $B = C$, because that cancellation silently assumes
+$A$ is invertible (does not collapse anything).
+
+# The outer-product view: building a matrix from rank-one pieces {#sec-outer}
+
+We close the formal development with a regrouping of the product rule that looks like a
+footnote now and becomes the spine of the SVD later ([GEOM-20]). So far we built $AB$ a
+column at a time (@eq-cols-of-ab) and an entry at a time (@eq-product-rule). There is a
+third honest grouping: **a sum of outer products**, one per shared dimension.
+
+## What an outer product is {#sec-what-outer}
+
+Take a column vector $\mathbf u \in \mathbb{R}^n$ and a row vector $\mathbf v^\top \in
+\mathbb{R}^{1\times p}$. Their product $\mathbf u\,\mathbf v^\top$ is, by the conformability
+rule, an $n\times p$ matrix (outer dimensions $n$ and $p$, inner dimensions both $1$). Its
+$(i,j)$ entry is $u_i v_j$ — just multiply the $i$-th entry of $\mathbf u$ by the $j$-th
+entry of $\mathbf v$:
+
+$$
+\mathbf u\,\mathbf v^\top
+= \begin{bmatrix} u_1 \\ u_2 \\ \vdots \\ u_n \end{bmatrix}
+  \begin{bmatrix} v_1 & v_2 & \cdots & v_p \end{bmatrix}
+= \begin{bmatrix}
+    u_1 v_1 & u_1 v_2 & \cdots & u_1 v_p \\
+    u_2 v_1 & u_2 v_2 & \cdots & u_2 v_p \\
+    \vdots  & \vdots  & \ddots & \vdots  \\
+    u_n v_1 & u_n v_2 & \cdots & u_n v_p
+  \end{bmatrix}.
+$$
+
+This is the mirror image of the **dot product** (the *inner* product $\mathbf u^\top\mathbf
+v$, a single number, [GEOM-04]). Where the inner product collapses two vectors into a scalar,
+the outer product *expands* them into a whole matrix. Notice every column of $\mathbf
+u\mathbf v^\top$ is a scalar multiple of the single vector $\mathbf u$ (column $j$ is $v_j
+\mathbf u$). A matrix all of whose columns lie along one direction is called **rank one** —
+it is the simplest non-zero matrix there is, and [GEOM-12] will make "rank one" precise. For
+now, picture it as the most basic building block.
+
+## The product is a sum of outer products {#sec-outer-sum}
+
+Now the regrouping. Write $A$ ($n\times m$) by its columns $\mathbf a_1,\dots,\mathbf a_m$
+(each in $\mathbb{R}^n$) and $B$ ($m\times p$) by its rows; let $\mathbf b^{(k)\top}$ denote
+the $k$-th row of $B$ (a row vector in $\mathbb{R}^{1\times p}$). Then
+
+$$
+\boxed{\;AB \;=\; \sum_{k=1}^{m} \mathbf a_k\,\mathbf b^{(k)\top}.\;}
+$$ {#eq-outer-sum}
+
+This is not a new rule — it is @eq-product-rule re-summed. To see it, compare the $(i,j)$
+entry of each side. The right side's $(i,j)$ entry is, summing the $(i,j)$ entries of each
+outer product,
+
+$$
+\left(\sum_{k=1}^{m} \mathbf a_k \mathbf b^{(k)\top}\right)_{ij}
+= \sum_{k=1}^{m} \bigl(\mathbf a_k \mathbf b^{(k)\top}\bigr)_{ij}
+= \sum_{k=1}^{m} (\mathbf a_k)_i\,(\mathbf b^{(k)\top})_j
+= \sum_{k=1}^{m} a_{ik}\,b_{kj},
+$$
+
+where $(\mathbf a_k)_i = a_{ik}$ is the $i$-th entry of $A$'s $k$-th column (= entry
+$a_{ik}$), and $(\mathbf b^{(k)\top})_j = b_{kj}$ is the $j$-th entry of $B$'s $k$-th row
+(= entry $b_{kj}$). That final sum is exactly $(AB)_{ij}$ from @eq-product-rule. The two
+sides match entry by entry, so @eq-outer-sum holds. $\qquad\blacksquare$
+
+The reading worth carrying away: **the product $AB$ is a stack of $m$ rank-one slabs**, one
+for each shared dimension, and you add them up. Where the entry view computes one number at
+a time and the column view computes one column at a time, the outer-product view computes
+the *whole matrix at once, in layers*. Each layer $\mathbf a_k \mathbf b^{(k)\top}$ pairs
+the $k$-th column of $A$ with the $k$-th row of $B$.
+
+@fig-outer makes the layering visible: it shows a $3\times 3$ product as the sum of three
+rank-one outer-product layers.
+
+```{python}
+#| label: fig-outer
+#| fig-cap: "The outer-product view of $AB$ as a sum of rank-one layers (@eq-outer-sum). Each of the three middle panels is one slab $\\mathbf a_k\\,\\mathbf b^{(k)\\top}$ — the $k$-th column of $A$ times the $k$-th row of $B$, a rank-one matrix. Added together (rightmost panel) they reconstruct the full product $AB$ (leftmost). This 'stack of rank-one layers' picture is exactly how the SVD ([GEOM-20]) rebuilds a matrix, keeping only the layers that carry the most information."
+rng = np.random.default_rng(3)
+A = rng.integers(-3, 4, size=(3, 3)).astype(float)
+B = rng.integers(-3, 4, size=(3, 3)).astype(float)
+AB = A @ B
+layers = [np.outer(A[:, k], B[k, :]) for k in range(3)]
+
+fig, axes = plt.subplots(1, 5, figsize=(11.5, 3.0))
+vmax = np.abs(AB).max()
+panels = [("$AB$", AB)] + [(f"layer $k={k+1}$", layers[k]) for k in range(3)] \
+         + [(r"$\sum_k$ layers", sum(layers))]
+for ax, (title, M) in zip(axes, panels):
+    im = ax.imshow(M, cmap="RdBu_r", vmin=-vmax, vmax=vmax)
+    for (r, c), val in np.ndenumerate(M):
+        ax.text(c, r, f"{val:.0f}", ha="center", va="center", fontsize=9,
+                color="black")
+    ax.set_title(title, fontsize=10)
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.grid(False)
+fig.suptitle("Matrix product as a sum of rank-one outer-product layers", fontsize=11)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why would anyone care about the outer-product view if it gives the same answer?"* Because
+it is the lens through which low-rank structure becomes visible. The **SVD** ([GEOM-20])
+writes *any* matrix as $A = \sum_k \sigma_k \mathbf u_k \mathbf v_k^\top$ — a weighted sum
+of rank-one outer products ordered by importance ($\sigma_1 \ge \sigma_2 \ge \cdots$).
+Keeping only the first few layers gives the best low-rank approximation ([GEOM-21]),
+which underlies image compression, recommender systems, and PCA. None of that is even
+*expressible* in the entry view; it lives entirely in @eq-outer-sum. The entry rule is for
+computing; the outer-product rule is for *understanding what a matrix is made of*.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run composition on honest, real-world objects — never a toy rigged to flatter the
+idea — including one example at the edge, where the order in which two transformations are
+applied is not just a curiosity but the difference between a correct and a wrong answer.
+
+## Example 1 — a graphics transform: rotate-about-a-point as a composition {#sec-graphics}
+
+Computer graphics is where composition of linear maps earns its keep most visibly: every
+on-screen movement is a chain of elementary transforms multiplied together, and the *order*
+is the program logic. Consider the everyday task: **rotate a shape by $45^\circ$ about its
+own center**, not about the origin. A pure rotation matrix rotates about the origin, so a
+shape sitting away from the origin will swing across the screen. The fix is a composition of
+three maps, applied right-to-left: translate the center to the origin, rotate, translate
+back.
+
+To express translation as a matrix product we use the standard graphics trick of
+**homogeneous coordinates**: append a $1$ to each point, so $(x,y) \mapsto (x,y,1)$, and use
+$3\times 3$ matrices. A translation by $(t_x,t_y)$ then becomes the linear map
+
+$$
+T(t_x,t_y) = \begin{bmatrix} 1 & 0 & t_x \\ 0 & 1 & t_y \\ 0 & 0 & 1 \end{bmatrix},
+\qquad
+T \begin{bmatrix} x \\ y \\ 1 \end{bmatrix}
+= \begin{bmatrix} x + t_x \\ y + t_y \\ 1 \end{bmatrix},
+$$
+
+and a rotation by angle $\theta$ about the origin is
+
+$$
+R(\theta) = \begin{bmatrix} \cos\theta & -\sin\theta & 0 \\
+                            \sin\theta & \phantom{-}\cos\theta & 0 \\
+                            0 & 0 & 1 \end{bmatrix}.
+$$
+
+The composite "rotate about the point $\mathbf c = (c_x, c_y)$" is the single matrix
+
+$$
+M = T(c_x, c_y)\;R(\theta)\;T(-c_x, -c_y),
+$$
+
+read right-to-left: first shift the center to the origin with $T(-c_x,-c_y)$, then rotate
+with $R(\theta)$, then shift back with $T(c_x,c_y)$. The product $M$ is what graphics
+hardware actually stores and applies — one matrix doing the whole compound motion, exactly
+the payoff of @thm-product. @fig-graphics carries it through.
+
+```{python}
+#| label: fig-graphics
+#| fig-cap: "Composition in graphics: rotating a house $45^\\circ$ about its own center $\\mathbf c$. Done as a single rotation $R$ (left), the shape swings away around the origin (grey) — wrong. The correct motion (right) is the composite $M = T(\\mathbf c)\\,R\\,T(-\\mathbf c)$: translate center to origin, rotate, translate back. The three maps collapse into one matrix that rotates in place. Order is read right-to-left and is the entire program logic."
+def T(tx, ty):
+    return np.array([[1, 0, tx], [0, 1, ty], [0, 0, 1.]])
+def Rot(deg):
+    th = np.deg2rad(deg)
+    c, s = np.cos(th), np.sin(th)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.]])
+
+# a little house outline in homogeneous coords
+house = np.array([
+    [2, 4, 4, 3, 2, 2],   # x
+    [1, 1, 3, 4, 3, 1],   # y
+    [1, 1, 1, 1, 1, 1.],  # homogeneous
+])
+cx, cy = house[0, :-1].mean(), house[1, :-1].mean()   # its center
+
+R = Rot(45)
+M = T(cx, cy) @ R @ T(-cx, -cy)        # rotate about the house's own center
+
+wrong = R @ house                      # naive: rotate about origin
+right = M @ house                      # correct: rotate in place
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.6), sharex=True, sharey=True)
+for ax in (axL, axR):
+    ax.plot(house[0], house[1], color=POINT, lw=2.0, label="original")
+    ax.scatter([cx], [cy], color=ACCENT, s=60, zorder=4, label="center $\\mathbf{c}$")
+    ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+    ax.set_aspect("equal"); ax.set_xlim(-4, 6); ax.set_ylim(-4, 6)
+    ax.set_xlabel("$x$")
+axL.plot(wrong[0], wrong[1], color=ARROW, lw=2.0, label="$R$ alone (about origin)")
+axL.set_title("Naive: single rotation $R$"); axL.set_ylabel("$y$")
+axR.plot(right[0], right[1], color=ARROW, lw=2.0, label="$TRT^{-1}$ (about center)")
+axR.set_title("Composite $M=T\\,R\\,T^{-1}$: rotate in place")
+axL.legend(loc="upper left", fontsize=8); axR.legend(loc="upper left", fontsize=8)
+plt.tight_layout()
+```
+
+Note the order is doing real work: $T(c_x,c_y)\,R\,T(-c_x,-c_y)$ and, say, $R\,T(c_x,c_y)\,
+T(-c_x,-c_y) = R$ (the two translations cancel) are different matrices producing different
+motions. Composition is the grammar of the scene graph, and non-commutativity is why you
+cannot reorder the transforms in your code and expect the same picture.
+
+## Example 2 — a Markov chain: one step at a time, or all at once {#sec-markov}
+
+A second honest setting where matrix multiplication *is* the model, not a tool applied to
+it: a **Markov chain**, the workhorse of weather models, customer-churn analysis, board
+games, and the original PageRank. We have a system that hops between a few states, and a
+**transition matrix** $P$ whose entry $P_{ij}$ is the probability of moving to state $i$
+*from* state $j$ in one step. A probability distribution over states is a column vector
+$\mathbf p$ (nonnegative, summing to $1$), and **one step of the chain is one matrix-vector
+product** $\mathbf p \mapsto P\mathbf p$ — exactly composition with a map.
+
+The composition payoff: *two* steps is $P(P\mathbf p) = P^2 \mathbf p$, and $t$ steps is
+$P^t \mathbf p$. The matrix power $P^t$ — repeated composition of the one-step map with
+itself — is the **$t$-step transition matrix** directly, and associativity (@thm-assoc) is
+what lets us even write $P^t$ unambiguously: the grouping does not matter. Let us model a
+tiny weather chain with states *Sunny*, *Cloudy*, *Rainy*.
+
+```{python}
+#| label: fig-markov
+#| fig-cap: "A 3-state weather Markov chain. Each step is the matrix-vector product $\\mathbf p \\mapsto P\\mathbf p$ (composition with the one-step map); $t$ steps is the matrix power $P^t$ applied to the start. **Left:** the distribution over Sunny/Cloudy/Rainy as it evolves from a certain-Sunny start, converging to the chain's steady state. **Right:** the $t$-step transition matrix $P^t$ for $t=1,3,10$ — its columns become identical as $t$ grows, the matrix-level signature of convergence. Repeated composition is just matrix powers."
+# columns are FROM-state, rows are TO-state; each column sums to 1
+states = ["Sunny", "Cloudy", "Rainy"]
+P = np.array([
+    [0.70, 0.30, 0.20],   # -> Sunny
+    [0.20, 0.40, 0.30],   # -> Cloudy
+    [0.10, 0.30, 0.50],   # -> Rainy
+])
+p0 = np.array([1.0, 0.0, 0.0])    # start certain it's Sunny
+
+T_steps = 12
+traj = np.zeros((T_steps + 1, 3))
+traj[0] = p0
+for t in range(1, T_steps + 1):
+    traj[t] = P @ traj[t - 1]     # one step = one composition
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 4.0),
+                               gridspec_kw={"width_ratios": [1.4, 1.0]})
+colors = [ARROW, GREY, POINT]
+for s in range(3):
+    axL.plot(range(T_steps + 1), traj[:, s], color=colors[s], marker="o",
+             ms=4, label=states[s])
+axL.set_xlabel("step $t$"); axL.set_ylabel("probability")
+axL.set_title("Distribution $P^t\\mathbf{p}_0$ over time"); axL.legend(fontsize=9)
+axL.set_ylim(0, 1)
+
+# show P^t for a few t as heatmaps stacked
+import matplotlib.gridspec as gridspec
+axR.axis("off")
+inner = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=axR.get_subplotspec(),
+                                         wspace=0.35)
+for idx, t in enumerate([1, 3, 10]):
+    a = fig.add_subplot(inner[idx])
+    Pt = np.linalg.matrix_power(P, t)
+    a.imshow(Pt, cmap="Purples", vmin=0, vmax=1)
+    for (r, c), v in np.ndenumerate(Pt):
+        a.text(c, r, f"{v:.2f}", ha="center", va="center", fontsize=7)
+    a.set_title(f"$P^{{{t}}}$", fontsize=9)
+    a.set_xticks([]); a.set_yticks([]); a.grid(False)
+fig.suptitle("Markov steps are matrix powers (repeated composition)", fontsize=11)
+plt.tight_layout()
+print("steady-state-ish distribution after 12 steps:",
+      np.round(traj[-1], 3), "  (columns of P^10 all ~ this)")
+```
+
+Two things to read off, both pure composition. First, the **left panel converges**: no
+matter that we started certain it was sunny, after enough steps the distribution settles to
+the chain's long-run climate — and that long-run vector is exactly what each column of
+$P^t$ approaches (right panel). Second, the right panel's columns becoming identical is the
+matrix-level statement of the same fact: $P^{10}$ has nearly forgotten the starting state,
+because composing the one-step map with itself ten times washes out the initial condition.
+The machinery for *why* it converges, and to what, is eigenvalues ([GEOM-14]) and the
+spectral picture ([GEOM-15]) — the steady state is the eigenvector of $P$ with eigenvalue
+$1$ — which this article sets up but does not yet own.
+
+## Example 3 — the edge case: when treating composition as commutative silently corrupts an analysis {#sec-edge}
+
+Now the honest edge, where the rule strains against a real workflow. A pervasive,
+*plausible-looking* mistake in applied work is to chain linear operations in whichever order
+is convenient because "they're all linear, so it commutes." It does not, and the failure is
+silent — the code runs, the numbers look reasonable, and the answer is wrong. We make this
+concrete with two operations that appear together constantly in dimensionality-reduction
+and signal pipelines: a **projection** onto a chosen direction (keep one feature axis,
+discard the rest — the dimension-dropping step at the heart of [GEOM-06], [GEOM-21]) and a
+**rotation** (a change of axes, e.g. into a more informative coordinate frame).
+
+Both are genuine linear maps, so each is a matrix and the composite is their product. Call
+the projection $P$ (onto the horizontal axis) and the rotation $R$ (by $45^\circ$). The two
+orderings are the two products
+
+$$
+RP \;=\; \text{"project onto the axis, then rotate,"} \qquad
+PR \;=\; \text{"rotate, then project onto the axis,"}
+$$
+
+and they are *different matrices*, because $P$ destroys information (it flattens the plane
+onto a line) and *which* information survives depends entirely on whether you rotate before
+or after the flattening. Project-first keeps the original horizontal spread and then tilts
+that line; rotate-first mixes both original axes into the horizontal one *before* discarding
+the vertical, so a completely different combination of the data survives. We watch them
+disagree — and the disagreement is exactly $RP \neq PR$.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge: two genuinely linear maps that do not commute, and getting the order wrong silently changes the answer. A 2-D point cloud (navy, centered at the origin) is processed two ways. **Order A — $RP$:** project onto the horizontal axis (collapse to a line), then rotate $45^\\circ$ (green line of points). **Order B — $PR$:** rotate $45^\\circ$ first, then project (red line of points). The two pipelines keep *different* combinations of the original data — different spread, different orientation — because projection discards information and the rotation decides which information that is. This is $RP \\neq PR$ made visible on real data."
+rng = np.random.default_rng(11)
+# centered cloud so the disagreement is about the maps, not the mean
+X = rng.multivariate_normal([0.0, 0.0], [[2.2, 1.3], [1.3, 1.0]], size=250).T  # 2 x N
+
+P = np.array([[1.0, 0.0], [0.0, 0.0]])                 # project onto x1-axis
+th = np.deg2rad(45.0)
+R = np.array([[np.cos(th), -np.sin(th)],
+              [np.sin(th),  np.cos(th)]])               # rotate 45 deg
+
+RP = R @ P     # project FIRST, then rotate   (right-to-left)
+PR = P @ R     # rotate FIRST, then project
+
+A_out = RP @ X     # order A
+B_out = PR @ X     # order B
+
+fig, ax = plt.subplots(figsize=(7.0, 5.6))
+ax.scatter(X[0], X[1], color=POINT, s=12, alpha=0.40, label="raw data (centered)")
+ax.scatter(A_out[0], A_out[1], color=ACCENT, s=20,
+           label=r"A: $RP$ (project, then rotate)")
+ax.scatter(B_out[0], B_out[1], color=ARROW, s=20, marker="s", alpha=0.8,
+           label=r"B: $PR$ (rotate, then project)")
+ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+ax.set_aspect("equal"); ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title(r"Order matters: $RP \neq PR$ on real data")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print("RP =\n", np.round(RP, 3))
+print("PR =\n", np.round(PR, 3))
+print("RP == PR ? ", np.allclose(RP, PR))
+print("std of survived data  A (RP):", round(A_out[0].std() + A_out[1].std(), 3),
+      "   B (PR):", round(B_out[0].std() + B_out[1].std(), 3))
+```
+
+The printed matrices $RP$ and $PR$ are flatly unequal, and the two output clouds lie along
+different lines with different spreads — even though each individual step is a perfectly
+correct linear map. The reason is precisely the composition picture: $P$ throws information
+away, and composing it with $R$ on the left versus the right decides *what* gets thrown
+away. Get the order wrong in a real pipeline and you have silently analyzed a different
+projection of your data than you intended; nothing crashes, and the plot still looks
+plausible.
+
+The lesson generalizes far past this example: **a data pipeline is a composition of maps,
+and composition does not commute.** Standardize-then-split is not split-then-standardize
+(the latter leaks information across the split — a notorious bug). Whiten-then-rotate is not
+rotate-then-whiten. Whenever your preprocessing is a chain of linear (or affine) steps, the
+order is part of the specification, and "rearranging for convenience" is exactly the
+scalar-algebra reflex the Pitfall in @sec-noncommute warned against.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+When is "think of it as composition" the right frame, and when does it mislead? The honest
+boundaries:
+
+- **The frame is exactly right whenever the matrices are maps you genuinely compose** —
+  transformations of space (graphics, robotics), state transitions (Markov chains, linear
+  dynamics), feature pipelines, layers of a linear network. Here "do $B$ then $A$" is
+  literally what is happening, and every property in this article applies directly.
+
+- **The frame strains when the matrices are not acting on a common space in sequence.** If
+  $A$ is a $\text{users} \times \text{items}$ ratings matrix and $B$ is an
+  $\text{items} \times \text{features}$ matrix, the product $AB$ is conformable and
+  meaningful (users-by-features), but the "do $B$ then $A$ to a vector" story is awkward —
+  the better reading here is the **outer-product / data-summarization** view (@sec-outer)
+  or the row/column combination view (@sec-two-views). The composition story is one lens,
+  not the only one; reach for the lens the problem wants.
+
+- **The frame breaks down entirely for the Hadamard product and other "products"** that are
+  *not* composition (elementwise, Kronecker in some uses, convolution). Calling those
+  "matrix multiplication" and expecting associativity-of-composition or the conformability
+  rule is a category error. Always confirm which product is meant.
+
+- **Numerically, composition can amplify error.** Each product is a sum of products
+  (@eq-product-rule); chaining many of them ($P^t$, deep linear stacks) compounds
+  floating-point error and can blow up or underflow when the maps stretch or shrink space.
+  *Which* maps amplify error is governed by the **condition number** ([GEOM-26]); the honest
+  warning for now is that "mathematically associative" does not mean "numerically
+  interchangeable" — different groupings can give different floating-point answers even
+  though the exact answers agree (the performance callout in @sec-associative had a
+  numerical twin).
+
+::: {.callout-tip title="You might be asked"}
+*"When would you NOT form a matrix product explicitly?"* When you only need its *action* on
+a vector. If you need $ABC\,\mathbf x$, never build $ABC$; apply the maps in sequence
+$A(B(C\mathbf x))$ — three cheap matrix-vector products instead of two expensive
+matrix-matrix products (the cost argument from @sec-associative). This is the single most
+common performance win in numerical linear algebra and the reason libraries expose
+"apply this operator" interfaces (`LinearOperator` in SciPy, matrix-free methods) that never
+materialize the product at all. The composition view *is* the optimization: a chain of maps
+is cheaper to *run* than to *assemble*.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-08 *Matrices as Linear Maps*]**, which established that a matrix is
+a function on space and that $A\mathbf x$ is a linear combination of $A$'s columns. This
+article took two such maps and built the single matrix that does both in sequence — and
+showed that the row-times-column rule is the *forced* consequence of that one demand. From
+here the cluster continues:
+
+- **[GEOM-10 *The Transpose and What It Means*]** — the operation that reverses a product,
+  $(AB)^\top = B^\top A^\top$ (foreshadowed in @sec-noncommute), and the first appearance of
+  the all-important Gram matrix $A^\top A$.
+- **[GEOM-11 *Solving $A\mathbf x = \mathbf b$*]** — the **inverse** as the *undo* map: the
+  matrix $A^{-1}$ with $A^{-1}A = I$, why $(AB)^{-1} = B^{-1}A^{-1}$ reverses order
+  (undo the last action first), and what "$AB=0$ with $A,B \neq 0$" (@sec-identity-zero)
+  reveals about singularity.
+- **[GEOM-12 *Rank and the Four Subspaces*]** — makes "rank one" (@sec-what-outer) and
+  "collapses directions" (@sec-identity-zero) precise.
+- **[GEOM-20 *The Singular Value Decomposition*]** — pays off the outer-product view
+  (@eq-outer-sum) in full: every matrix is a *sum of rank-one outer-product layers* ordered
+  by importance, the master factorization of the track.
+
+And it discharges, for the Regression track, the matrix-algebra prerequisite behind
+[REGR-05 *Multiple Regression*], whose normal equations $X^\top X\hat\beta = X^\top y$ are
+built entirely from the products defined here.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The primary source.** Arthur Cayley, *A Memoir on the Theory of Matrices*,
+  *Philosophical Transactions of the Royal Society of London* **148** (1858), 17–37 — the
+  paper that defined matrix multiplication *as* composition of substitutions, exactly the
+  derivation of @sec-derive. Worth reading for how naturally the rule emerges when you start
+  from "compose two changes of variable."
+- **The function-first viewpoint.** Sheldon Axler, *Linear Algebra Done Right* — develops
+  matrices strictly as representations of linear maps, so that the product rule, associativity,
+  and non-commutativity are theorems about composition rather than definitions about arrays.
+  The cleanest articulation of the thesis of this article.
+- **Open threads this article deliberately deferred.** *Can every linear map be written as a
+  matrix product, and is the factorization unique?* — the decomposition story ([GEOM-15],
+  [GEOM-20]). *What does $AB=0$ with neither zero say about the geometry of $A$ and $B$?* —
+  rank and the four subspaces ([GEOM-12]). *Why does multiplying many matrices sometimes
+  destroy numerical accuracy?* — conditioning and stability ([GEOM-26]). *When does $AB=BA$,
+  really?* — simultaneous diagonalizability and the spectral theorem ([GEOM-16]).

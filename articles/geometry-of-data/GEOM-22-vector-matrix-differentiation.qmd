@@ -1,0 +1,1038 @@
+---
+title: "Vector and Matrix Differentiation"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / points
+GRAD   = "#c1121f"   # gradients / the answer direction
+ACCENT = "#0a7d4d"   # highlights / tangent moves
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This opens **Movement VI — Calculus on Vectors**, the
+> last stretch of the Geometry-of-Data track, and it is the *one* place the track lifts
+> calculus above the Calculus-I floor — done explicitly, from scratch. It assumes the **dot
+> product** $a^\top x = \sum_i a_i x_i$ and the norm $\|x\|^2 = x^\top x$ ([GEOM-04]); the
+> reading of a matrix as a **linear map** whose action $Ax$ is a linear combination of its
+> columns ([GEOM-08]); and the **transpose** with its algebra $(AB)^\top = B^\top A^\top$ and
+> the meaning of a **symmetric** matrix $A = A^\top$ ([GEOM-10]). From the floor it needs only
+> single-variable differentiation — the power rule, the product rule, and the chain rule —
+> which we restate as we use them. The one question: *what does it even mean to differentiate
+> a function with respect to a whole vector (or matrix) of variables, and how do we keep the
+> bookkeeping straight so the answers come out as clean objects we can compute with?* It sets
+> up [GEOM-23] (the gradient as the direction of steepest ascent), [GEOM-24] (the Hessian as
+> curvature), and [GEOM-25] (the gradient and Hessian of a quadratic form). It supplies the
+> **multivariable critical-point condition** that Inference's score-equation work ([INFR-B2])
+> stands on, and it builds the gradient object that every Optimization algorithm chases.
+
+## Abstract {.unnumbered}
+
+A machine-learning loss is a single number computed from a whole vector of parameters. To
+train a model we must ask how that number changes as we nudge the parameters — but the
+parameters are not one knob, they are dozens or millions. This article builds the calculus
+of that question from the ground up. We define the **partial derivative** as "vary one
+coordinate, freeze the rest," assemble the partials into the **gradient** vector and the
+**Jacobian** matrix, fix a **layout convention** so the shapes always line up, and then
+derive the handful of identities that do all the real work in the rest of the series:
+$$
+\nabla(a^\top x) = a, \qquad \nabla(x^\top x) = 2x, \qquad
+\nabla(x^\top A x) = (A + A^\top)x, \qquad
+\frac{\partial}{\partial x}\, f(Ax) = A^\top \nabla f\big|_{Ax}.
+$$
+Every one of these is proved one component at a time, with nothing above Calc 1 assumed. The
+single claim the article defends is that **vector differentiation is not a new kind of
+calculus — it is ordinary single-variable calculus done coordinate-by-coordinate, with a
+bookkeeping convention that lets us hide the indices and read the answer as a vector.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+To differentiate a scalar function $f$ of a vector $x = (x_1,\dots,x_n)$, differentiate it
+**one coordinate at a time**, holding all other coordinates fixed — that is a *partial
+derivative*, and it is pure Calc 1. Stack the $n$ partials into a vector and you have the
+**gradient** $\nabla f$. The gradient is the vector that makes the first-order change in $f$
+read as a single dot product:
+$$
+f(x + \Delta x) \approx f(x) + (\nabla f)^\top \Delta x .
+$$
+Everything else in this article — the layout conventions, the Jacobian, the chain rule — is
+machinery for computing that vector cleanly without writing the indices out by hand.
+:::
+
+Hold onto the approximation in the box; it is the *why* behind every choice below. The whole
+point of a derivative, since Calc 1, is **local linear approximation**: near a point, a
+smooth function looks like a straight line, and the derivative is its slope. When the input
+is a vector, "looks like a line" becomes "looks like a flat plane (a *linear* map)," and the
+slope becomes a vector — the gradient — whose dot product with the nudge $\Delta x$ gives the
+first-order change. If you ever lose the thread, return to that sentence: we are always
+building the best linear approximation, just in more than one input dimension.
+
+# Why we are doing this: the loss is a function of a vector {#sec-why}
+
+Keep one question in view the entire way through: **why do we need to differentiate against a
+whole vector at once, and why can't we just do it one variable at a time and forget about
+it?** The answer is that the *answer itself* is a vector — a single object with a geometric
+meaning — and that meaning is the engine of the rest of the series.
+
+## The problem that forces it
+
+Every supervised model in this series ends at the same place. You have parameters — a slope
+and intercept in regression, a weight vector in a linear classifier, millions of weights in a
+network — and you have a **loss**: one number measuring how badly the current parameters fit
+the data. Collect the parameters into a vector $\theta = (\theta_1,\dots,\theta_n)$. The loss
+is then a function
+
+$$
+L : \mathbb{R}^n \to \mathbb{R}, \qquad \theta \mapsto L(\theta),
+$$
+
+that eats a whole vector of parameters and returns a single scalar. Training is the search for
+the $\theta$ that makes $L$ smallest. From Calc 1 we know the way to find the bottom of a
+function is to follow its slope downhill and stop where the slope is zero. But $L$ has no one
+slope — it has a slope *in every direction* of the $n$-dimensional parameter space. The object
+that packages all of those slopes into one is the gradient, and to find it we must learn to
+differentiate with respect to a vector.
+
+This is not a niche concern. The same need appeared the moment Legendre and Gauss wrote down
+least squares in 1805 (the story of [REGR-01]): the sum of squared errors is a scalar function
+of the *vector* of coefficients, and minimizing it meant setting a whole vector of partial
+derivatives to zero. It is the reason the **normal equations** $X^\top X\hat\beta = X^\top y$
+have the shape they do — that shape is what falls out when you differentiate $\|y - X\beta\|^2$
+with respect to the vector $\beta$, a computation we set up here and finish in [GEOM-25]. The
+notation we are about to build is the language the entire optimization half of data science is
+written in.
+
+::: {.callout-tip title="You might be asked"}
+*"Isn't this just multivariable calculus? Why dress it up as 'vector' differentiation?"* It
+**is** multivariable calculus — there is no new theorem hiding here. What "vector
+differentiation" adds is a *bookkeeping discipline*. Multivariable calculus, as usually taught,
+leaves you holding a bag of $n$ separate partial derivatives, indexed by hand. Vector calculus
+agrees to *stack* those partials into a vector or matrix and to fix a layout convention
+(@sec-layout) so that the result is one clean object whose shape is predictable. That lets us
+write $\nabla(x^\top A x) = (A+A^\top)x$ — a statement about whole vectors — instead of $n$
+scalar equations. The payoff is that we can then *manipulate the answer algebraically*, the
+same way the rest of the track manipulates matrices, instead of drowning in indices.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture the loss surface over a two-parameter model: a landscape of hills and valleys living
+above the $(\theta_1, \theta_2)$ plane, with height $L(\theta_1,\theta_2)$. Stand at a point on
+that surface. There is no single "slope" — which way are you even facing? Walk east (increase
+$\theta_1$, hold $\theta_2$ fixed) and you measure one slope; that is $\partial L/\partial
+\theta_1$. Walk north (increase $\theta_2$, hold $\theta_1$) and you measure another; that is
+$\partial L/\partial \theta_2$. Those two numbers are the **partial derivatives**: the slope of
+the surface along each coordinate axis. @fig-slices shows exactly this — two vertical slices
+through a surface, each an ordinary Calc-1 curve whose slope is one partial derivative.
+
+```{python}
+#| label: fig-slices
+#| fig-cap: "A partial derivative is a Calc-1 slope along one axis. The surface is $f(x_1,x_2)=x_1^2+\\tfrac12 x_2^2$. Slicing it at fixed $x_2$ (red curve, varying $x_1$) gives a parabola whose slope is $\\partial f/\\partial x_1$; slicing at fixed $x_1$ (green curve, varying $x_2$) gives another whose slope is $\\partial f/\\partial x_2$. Differentiating with respect to a vector is nothing more than taking *both* of these ordinary derivatives and stacking them."
+def f(x1, x2):
+    return x1**2 + 0.5 * x2**2
+
+g = np.linspace(-2, 2, 60)
+X1, X2 = np.meshgrid(g, g)
+Z = f(X1, X2)
+
+fig = plt.figure(figsize=(6.6, 4.8))
+ax = fig.add_subplot(111, projection="3d")
+ax.plot_surface(X1, X2, Z, cmap="viridis", alpha=0.55, linewidth=0, antialiased=True)
+
+# point we slice at
+p1, p2 = 1.0, 1.0
+# slice varying x1 at fixed x2 = p2
+t = np.linspace(-2, 2, 80)
+ax.plot(t, np.full_like(t, p2), f(t, p2), color=GRAD, lw=3.2, label="vary $x_1$ (fix $x_2$)")
+# slice varying x2 at fixed x1 = p1
+ax.plot(np.full_like(t, p1), t, f(p1, t), color=ACCENT, lw=3.2, label="vary $x_2$ (fix $x_1$)")
+ax.scatter([p1], [p2], [f(p1, p2)], color="black", s=40, depthshade=False)
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$"); ax.set_zlabel("$f$")
+ax.set_title("Each partial derivative is a slope along one axis")
+ax.legend(loc="upper left", fontsize=9)
+ax.view_init(elev=26, azim=-122)
+plt.tight_layout()
+```
+
+Stacking those two slopes into a single arrow $(\partial L/\partial\theta_1,\,
+\partial L/\partial\theta_2)$ gives a vector that lives in the *floor* of the landscape — the
+parameter plane — and points in a definite compass direction. That arrow is the gradient. In
+this article we earn the *vector*; the claim that it points uphill in the steepest direction is
+the geometry we cash in next door in [GEOM-23]. For now the mental model is enough: **the
+gradient is the arrow you get by measuring the slope along each axis and stacking those slopes
+into one vector.**
+
+# The formal development {#sec-formal}
+
+## From the Calc-1 derivative to the partial derivative {#sec-partial}
+
+We start at the floor and build up, defining every symbol on first use. Recall the single
+definition Calc 1 gives for the derivative of a one-variable function $h:\mathbb{R}\to
+\mathbb{R}$ at a point $a$:
+
+$$
+h'(a) = \lim_{t \to 0} \frac{h(a + t) - h(a)}{t}.
+$$ {#eq-calc1}
+
+In words: nudge the input by a small amount $t$, see how much the output changed, divide by
+the nudge, and take the nudge to zero. The result is the instantaneous rate of change — the
+slope of the tangent line. That is the only calculus fact we will assume; everything else is
+built from it.
+
+Now let $f:\mathbb{R}^n\to\mathbb{R}$ be a scalar-valued function of a vector
+$x=(x_1,\dots,x_n)^\top$. We cannot directly nudge "$x$" the way @eq-calc1 nudges a single
+number, because $x$ has $n$ components and a nudge could point any of infinitely many ways. The
+simplest, most disciplined choice is to nudge along **one coordinate axis at a time**.
+
+::: {#def-partial}
+**Definition (partial derivative).** The **partial derivative** of $f:\mathbb{R}^n\to\mathbb{R}$
+with respect to the $j$-th coordinate, at the point $x$, is
+$$
+\frac{\partial f}{\partial x_j}(x)
+= \lim_{t \to 0} \frac{f(x_1,\dots,x_j + t,\dots,x_n) - f(x_1,\dots,x_j,\dots,x_n)}{t},
+$$ {#eq-partial-def}
+provided the limit exists. Only the $j$-th coordinate is changed; the other $n-1$ coordinates
+are held fixed.
+:::
+
+Compare @eq-partial-def with @eq-calc1: they are *the same limit*. If we define a one-variable
+helper $h(t) = f(x_1,\dots,x_j + t,\dots,x_n)$ — the function you get by freezing every
+coordinate except the $j$-th and letting that one vary — then @eq-partial-def is exactly
+$h'(0)$. This is the crucial reduction, and it is worth saying as a slogan:
+
+> **A partial derivative is an ordinary Calc-1 derivative of the function you get by treating
+> every other variable as a constant.**
+
+The symbol changes from $d$ to $\partial$ ("partial") for one reason only: to remind you that
+other variables are present and being held still. The mechanics are identical to Calc 1. If
+$f(x_1,x_2) = 3x_1^2 x_2 + 5x_2$, then to compute $\partial f/\partial x_1$ we pretend $x_2$ is
+a fixed constant $c$: $f = 3c\,x_1^2 + 5c$, whose $x_1$-derivative is $6c\,x_1 = 6x_1 x_2$.
+Likewise $\partial f/\partial x_2$ pretends $x_1$ is constant: $f = (3x_1^2)x_2 + 5x_2$, linear
+in $x_2$, with derivative $3x_1^2 + 5$.
+
+::: {.callout-tip title="You might be asked"}
+*"Does the existence of all the partial derivatives mean the function is differentiable?"* No —
+and an interviewer asking this is probing whether you know the gap between partials and true
+differentiability. Partials only test the function along the coordinate axes; a function can
+have both partials at a point and still fail to have a coherent linear approximation there (the
+standard counterexample is $f(x,y) = xy/(x^2+y^2)$ at the origin, which has both partials equal
+to zero but is not even continuous). What *guarantees* differentiability is that the partials
+exist **and are continuous** near the point — then the linear approximation in the Core box is
+valid. Every function we differentiate in this track (polynomials, quadratic forms, smooth
+losses) has continuous partials everywhere, so we are safely inside that regime; we name the
+condition so you know it is there, not because it will bite us here.
+:::
+
+## The gradient: stacking the partials {#sec-gradient}
+
+A function of $n$ variables has $n$ partial derivatives, one per coordinate. Carrying them
+around as a loose list is exactly the bookkeeping mess we want to avoid. So we collect them
+into a single vector.
+
+::: {#def-gradient}
+**Definition (gradient).** For $f:\mathbb{R}^n\to\mathbb{R}$ with all partials existing at $x$,
+the **gradient** of $f$ at $x$ is the vector of partial derivatives
+$$
+\nabla f(x)
+= \begin{bmatrix}
+\dfrac{\partial f}{\partial x_1} \\[8pt]
+\dfrac{\partial f}{\partial x_2} \\[4pt]
+\vdots \\[2pt]
+\dfrac{\partial f}{\partial x_n}
+\end{bmatrix} \in \mathbb{R}^n .
+$$ {#eq-gradient-def}
+The symbol $\nabla$ ("del" or "nabla") is read "gradient of." We also write
+$\partial f/\partial x$ for the same object.
+:::
+
+The gradient lives in the **same space as $x$** — it is an $n$-vector, one slope per input
+coordinate. That is the whole reason for stacking: the answer is now a geometric object in the
+input space, an arrow we can draw, compare to other arrows, and feed into the dot-product
+machinery the track has already built.
+
+Why is this the *right* package and not an arbitrary one? Because it is precisely the vector
+that makes the first-order Taylor approximation collapse into a single dot product, the
+identity in the Core box. We prove that now, since it justifies everything.
+
+::: {#thm-firstorder}
+**Theorem (first-order approximation).** If $f:\mathbb{R}^n\to\mathbb{R}$ has continuous
+partial derivatives near $x$, then for a small nudge $\Delta x = (\Delta x_1,\dots,\Delta
+x_n)^\top$,
+$$
+f(x + \Delta x) = f(x) + \nabla f(x)^\top \, \Delta x + r(\Delta x),
+$$
+where the remainder $r(\Delta x)$ shrinks faster than $\|\Delta x\|$ (that is,
+$r(\Delta x)/\|\Delta x\| \to 0$ as $\Delta x \to 0$).
+:::
+
+::: {.proof}
+We change one coordinate at a time and add up the changes, applying the one-variable result at
+each step. Define the intermediate points where we have already nudged the first $k$
+coordinates:
+$$
+x^{(0)} = x, \qquad
+x^{(k)} = x + (\Delta x_1, \dots, \Delta x_k, 0, \dots, 0)^\top .
+$$
+Then $x^{(n)} = x + \Delta x$, and the total change telescopes — each term cancels with the
+next — into a sum of one-coordinate changes:
+$$
+f(x+\Delta x) - f(x)
+= \sum_{k=1}^{n} \big[\, f(x^{(k)}) - f(x^{(k-1)}) \,\big].
+$$
+Going from $x^{(k-1)}$ to $x^{(k)}$ changes *only* the $k$-th coordinate, by $\Delta x_k$.
+Holding the others fixed, $f$ is a one-variable function of that coordinate, so the
+Calc-1 mean value theorem gives a point $\xi_k$ between $x_k$ and $x_k + \Delta x_k$ with
+$$
+f(x^{(k)}) - f(x^{(k-1)}) = \frac{\partial f}{\partial x_k}(c_k)\,\Delta x_k,
+$$
+where $c_k$ is $x^{(k-1)}$ with its $k$-th coordinate replaced by $\xi_k$ — a point that lies
+within $\|\Delta x\|$ of $x$. Summing,
+$$
+f(x+\Delta x) - f(x) = \sum_{k=1}^{n} \frac{\partial f}{\partial x_k}(c_k)\,\Delta x_k .
+$$
+Now use continuity of the partials: as $\Delta x \to 0$ every $c_k \to x$, so
+$\frac{\partial f}{\partial x_k}(c_k) = \frac{\partial f}{\partial x_k}(x) + \varepsilon_k$ with
+$\varepsilon_k \to 0$. Substituting,
+$$
+f(x+\Delta x) - f(x)
+= \underbrace{\sum_{k=1}^{n} \frac{\partial f}{\partial x_k}(x)\,\Delta x_k}_{=\ \nabla f(x)^\top \Delta x}
+\;+\; \underbrace{\sum_{k=1}^{n} \varepsilon_k\,\Delta x_k}_{=\ r(\Delta x)} .
+$$
+The first sum is exactly the dot product $\nabla f(x)^\top \Delta x$ (definition of the dot
+product, [GEOM-04]). For the remainder, $|r(\Delta x)| \le \big(\sum_k |\varepsilon_k|\big)
+\max_k|\Delta x_k| \le \big(\sum_k |\varepsilon_k|\big)\|\Delta x\|$, so
+$|r(\Delta x)|/\|\Delta x\| \le \sum_k|\varepsilon_k| \to 0$. That is the claim. $\qquad\blacksquare$
+:::
+
+This theorem is the spine of the article. It says the gradient *is* the local linear map: nudge
+$x$ by $\Delta x$ and, to first order, $f$ changes by $\nabla f^\top \Delta x$. Read against the
+Calc-1 picture, $\nabla f$ plays the exact role $h'(a)$ played in $h(a+t)\approx h(a)+h'(a)t$ —
+the slope, generalized to a vector. The "stacking" of @def-gradient is forced: it is the only
+arrangement of the partials for which $\nabla f^\top \Delta x$ recovers the change in $f$.
+
+## A worked micro-derivation, indices visible {#sec-micro}
+
+Before we hide the indices behind clean identities, let us do one gradient *completely by
+hand*, every index on the page, so the later shortcuts are never mysterious. Take
+
+$$
+f(x) = x_1^2 + x_1 x_2 + 4 x_2 , \qquad x = (x_1, x_2)^\top \in \mathbb{R}^2 .
+$$
+
+Compute each partial by freezing the other variable and using ordinary Calc-1 rules. For
+$\partial f/\partial x_1$, treat $x_2$ as a constant: the term $x_1^2$ differentiates to $2x_1$
+(power rule), $x_1 x_2$ has constant coefficient $x_2$ so it differentiates to $x_2$, and
+$4x_2$ is constant in $x_1$ so it differentiates to $0$. Hence $\partial f/\partial x_1 = 2x_1
++ x_2$. For $\partial f/\partial x_2$, freeze $x_1$: $x_1^2$ is constant ($\to 0$), $x_1 x_2$
+has coefficient $x_1$ ($\to x_1$), and $4x_2$ ($\to 4$). Hence $\partial f/\partial x_2 = x_1 +
+4$. Stacking,
+
+$$
+\nabla f(x) = \begin{bmatrix} 2x_1 + x_2 \\ x_1 + 4 \end{bmatrix} .
+$$
+
+That is the entire mechanism. Everything from here on is repeating this move on functions
+written in vector notation and then *recognizing the stacked answer as a vector expression*, so
+we never have to write the indices again.
+
+## Layout convention: why shapes line up {#sec-layout}
+
+Here is the one genuine subtlety in the whole subject, and the source of every sign-and-shape
+headache people meet later. When we differentiate, we must decide *how to arrange the answer*.
+The gradient of a scalar with respect to a column vector $x$ — should it be a column or a row?
+Different textbooks choose differently, and mixing the two is the number-one source of
+transpose errors.
+
+We adopt, and state plainly, the **denominator layout** (also called the *gradient
+convention*), which is the standard in optimization and machine learning:
+
+::: {.callout-important title="The layout convention we use"}
+The derivative of a **scalar** $f$ with respect to a **column vector** $x\in\mathbb{R}^n$ is a
+**column vector** of the same shape as $x$:
+$$
+\frac{\partial f}{\partial x} = \nabla f =
+\Big[\tfrac{\partial f}{\partial x_1}, \dots, \tfrac{\partial f}{\partial x_n}\Big]^\top \in \mathbb{R}^{n\times 1}.
+$$
+The derivative of a **vector** $g\in\mathbb{R}^m$ with respect to a **column vector**
+$x\in\mathbb{R}^n$ is the **Jacobian**, an $m\times n$ matrix whose $(i,j)$ entry is $\partial
+g_i/\partial x_j$ (@sec-jacobian).
+:::
+
+The reason to fix the gradient as a column "same shape as $x$" is purely practical, and it ties
+straight back to @thm-firstorder: with this choice the first-order change is the dot product
+$\nabla f^\top \Delta x$ (a row times a column, giving a scalar), and a gradient-descent step
+$x \gets x - \eta\,\nabla f$ subtracts a vector of the same shape as $x$ — both expressions
+type-check on sight. We will hold this convention rigidly for the rest of the track.
+
+::: {.callout-warning title="Pitfall"}
+**The single most common bug in vector calculus is a transpose introduced by silently switching
+layout conventions mid-derivation.** If you ever find yourself needing to "add a transpose to
+make the shapes work," stop: you have almost certainly mixed denominator layout (gradient is a
+column) with numerator layout (gradient is a row). Pick one — we use denominator layout
+throughout — and never switch inside a derivation. When in doubt, drop to indices as in
+@sec-micro and the correct shape is forced, with no convention to get wrong.
+:::
+
+## The core identities, derived from scratch {#sec-identities}
+
+We now derive the handful of vector-derivative facts the rest of the series leans on. Each is
+proved by computing one component with @def-partial — ordinary Calc 1 — and then recognizing the
+stacked result. No identity is asserted; each is built.
+
+### The linear form: $\nabla(a^\top x) = a$ {#sec-linear}
+
+Let $a = (a_1,\dots,a_n)^\top$ be a fixed constant vector and define the scalar function
+$f(x) = a^\top x = \sum_{i=1}^n a_i x_i$ — the dot product of the constant $a$ with the variable
+$x$ ([GEOM-04]). Differentiate with respect to the $j$-th coordinate. In the sum $\sum_i a_i
+x_i$, the only term containing $x_j$ is $a_j x_j$; every other term is constant in $x_j$ and
+contributes $0$. The surviving term is linear in $x_j$ with coefficient $a_j$, so
+
+$$
+\frac{\partial}{\partial x_j}\,(a^\top x)
+= \frac{\partial}{\partial x_j}\sum_{i=1}^n a_i x_i
+= a_j .
+$$
+
+The $j$-th partial is $a_j$, for every $j$. Stacking the partials (@def-gradient) gives the
+vector whose $j$-th entry is $a_j$ — which is $a$ itself:
+
+$$
+\boxed{\;\nabla(a^\top x) = a.\;}
+$$ {#eq-grad-linear}
+
+This is the vector analogue of the Calc-1 fact $\frac{d}{dx}(ax) = a$: the derivative of a
+linear function is its constant coefficient. Note that $x^\top a = a^\top x$ (a dot product is
+symmetric, [GEOM-04]), so $\nabla(x^\top a) = a$ as well — order inside the dot product does not
+matter here.
+
+### The squared norm: $\nabla(x^\top x) = 2x$ {#sec-normsq}
+
+Now $f(x) = x^\top x = \sum_{i=1}^n x_i^2 = \|x\|^2$, the squared length of $x$ ([GEOM-04]).
+Differentiate with respect to $x_j$. In $\sum_i x_i^2$, the only term containing $x_j$ is
+$x_j^2$; all others are constant in $x_j$. By the power rule, $\frac{\partial}{\partial x_j}
+x_j^2 = 2x_j$, so
+
+$$
+\frac{\partial}{\partial x_j}\,(x^\top x) = 2x_j .
+$$
+
+The $j$-th partial is $2x_j$; stacking gives the vector with $j$-th entry $2x_j$, which is $2x$:
+
+$$
+\boxed{\;\nabla(x^\top x) = 2x.\;}
+$$ {#eq-grad-normsq}
+
+The vector analogue of $\frac{d}{dx}x^2 = 2x$ — the same factor of two, the same shape of
+answer, now a vector. @fig-gradients draws both @eq-grad-linear and @eq-grad-normsq as gradient
+fields so the algebra has a picture: the gradient of a linear form is one constant arrow
+everywhere, and the gradient of $\|x\|^2$ points radially outward, growing with distance from
+the origin.
+
+```{python}
+#| label: fig-gradients
+#| fig-cap: "The two foundational gradients, drawn as vector fields with their level sets behind them. **Left:** $f(x)=a^\\top x$ with $a=(1,2)$. Its level sets are parallel lines; its gradient $\\nabla f = a$ is the *same* constant arrow at every point, pointing perpendicular to the level lines toward higher $f$. **Right:** $f(x)=\\|x\\|^2$. Its level sets are circles; its gradient $\\nabla f = 2x$ points straight out from the origin and lengthens as $\\|x\\|$ grows. (That gradients sit perpendicular to level sets and point uphill is the geometry proved next door in GEOM-23; here we have only computed the vectors.)"
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
+
+# Left: linear form a^T x
+a = np.array([1.0, 2.0])
+g = np.linspace(-2.5, 2.5, 9)
+GX, GY = np.meshgrid(g, g)
+cg = np.linspace(-2.6, 2.6, 200)
+CX, CY = np.meshgrid(cg, cg)
+axL.contour(CX, CY, a[0]*CX + a[1]*CY, levels=10, colors=PALE, linewidths=1.0)
+axL.quiver(GX, GY, np.full_like(GX, a[0]), np.full_like(GY, a[1]),
+           color=GRAD, angles="xy", scale_units="xy", scale=6, width=0.006)
+axL.set_title(r"$f(x)=a^\top x,\ \ \nabla f = a$ (constant)")
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$"); axL.set_aspect("equal")
+axL.set_xlim(-2.6, 2.6); axL.set_ylim(-2.6, 2.6)
+
+# Right: squared norm
+axR.contour(CX, CY, CX**2 + CY**2, levels=np.arange(1, 14, 2), colors=PALE, linewidths=1.0)
+axR.quiver(GX, GY, 2*GX, 2*GY, color=GRAD, angles="xy",
+           scale_units="xy", scale=10, width=0.006)
+axR.set_title(r"$f(x)=\|x\|^2,\ \ \nabla f = 2x$ (radial)")
+axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$"); axR.set_aspect("equal")
+axR.set_xlim(-2.6, 2.6); axR.set_ylim(-2.6, 2.6)
+plt.tight_layout()
+```
+
+### The quadratic form: $\nabla(x^\top A x) = (A + A^\top)x$ {#sec-quadform}
+
+This is the workhorse — the one that powers the normal equations, the Hessian story, and the
+quadratic-form article [GEOM-25]. Let $A$ be a fixed $n\times n$ matrix with entries $A_{ik}$,
+and define the scalar **quadratic form** (the object [GEOM-17] studies geometrically)
+
+$$
+f(x) = x^\top A x = \sum_{i=1}^n \sum_{k=1}^n A_{ik}\, x_i x_k .
+$$ {#eq-quad}
+
+To get @eq-quad in index form, note $Ax$ has $i$-th entry $\sum_k A_{ik}x_k$, and $x^\top(Ax) =
+\sum_i x_i \sum_k A_{ik}x_k$, which is the stated double sum. Now differentiate with respect to
+$x_j$. A term $A_{ik}x_i x_k$ depends on $x_j$ only when $i = j$, or $k = j$, or both. We split
+the double sum into exactly those cases — careful bookkeeping, no shortcuts.
+
+**Case $i = j$, $k \neq j$.** The term is $A_{jk}x_j x_k$ with $x_k$ a constant in $x_j$;
+$\partial/\partial x_j$ gives $A_{jk}x_k$. Summing over $k\neq j$: $\sum_{k\neq j}A_{jk}x_k$.
+
+**Case $k = j$, $i \neq j$.** The term is $A_{ij}x_i x_j$ with $x_i$ constant in $x_j$;
+$\partial/\partial x_j$ gives $A_{ij}x_i$. Summing over $i\neq j$: $\sum_{i\neq j}A_{ij}x_i$.
+
+**Case $i = j$ and $k = j$.** The single term is $A_{jj}x_j^2$; by the power rule
+$\partial/\partial x_j$ gives $2A_{jj}x_j$.
+
+All other terms (with $i\neq j$ and $k\neq j$) are constant in $x_j$ and contribute $0$. Adding
+the three surviving pieces,
+
+$$
+\frac{\partial f}{\partial x_j}
+= \sum_{k\neq j}A_{jk}x_k \;+\; \sum_{i\neq j}A_{ij}x_i \;+\; 2A_{jj}x_j .
+$$
+
+Now fold the lone $2A_{jj}x_j$ back into the two sums — split it as $A_{jj}x_j + A_{jj}x_j$ and
+hand one copy to each sum, which lets each sum run over *all* indices including the previously
+excluded $j$:
+
+$$
+\frac{\partial f}{\partial x_j}
+= \underbrace{\sum_{k=1}^n A_{jk}x_k}_{j\text{-th entry of } Ax}
+\;+\;
+\underbrace{\sum_{i=1}^n A_{ij}x_i}_{j\text{-th entry of } A^\top x} .
+$$
+
+Identify each sum. The first, $\sum_k A_{jk}x_k$, is the $j$-th entry of the vector $Ax$ (a row
+of $A$ dotted with $x$, [GEOM-08]). The second, $\sum_i A_{ij}x_i$, sums down the $j$-th *column*
+of $A$ against $x$ — and summing down the $j$-th column of $A$ is the same as summing across the
+$j$-th *row* of $A^\top$, since $(A^\top)_{ji} = A_{ij}$ ([GEOM-10]). So it is the $j$-th entry
+of $A^\top x$. The $j$-th partial is therefore the $j$-th entry of $Ax + A^\top x$, for every
+$j$. Stacking over all $j$:
+
+$$
+\boxed{\;\nabla(x^\top A x) = Ax + A^\top x = (A + A^\top)\,x.\;}
+$$ {#eq-grad-quad}
+
+Two special cases are worth pinning down, because they are the ones that actually appear.
+
+**Symmetric $A$.** If $A = A^\top$ (a symmetric matrix, [GEOM-10] — and covariance matrices,
+Gram matrices $B^\top B$, and Hessians are all symmetric, [GEOM-16]), then $A + A^\top = 2A$ and
+
+$$
+\nabla(x^\top A x) = 2Ax \qquad (A = A^\top).
+$$ {#eq-grad-quad-sym}
+
+This is the clean, memorable form, and the exact vector analogue of $\frac{d}{dx}(ax^2) = 2ax$.
+
+**Recovering @eq-grad-normsq.** Take $A = I$, the identity matrix. Then $x^\top I x = x^\top x$
+and @eq-grad-quad-sym gives $\nabla(x^\top x) = 2Ix = 2x$ — exactly @eq-grad-normsq. The
+quadratic identity contains the squared-norm identity as the special case $A=I$, which is a good
+consistency check that we have not slipped a factor.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the answer involve $A + A^\top$ and not just $A$? People always write $2Ax$."* Because
+the general quadratic form does not "see" the asymmetric part of $A$ symmetrically. The clean
+$2Ax$ is correct *only when $A$ is symmetric*. For a general $A$, write $A = S + K$ with $S =
+\tfrac12(A+A^\top)$ symmetric and $K = \tfrac12(A - A^\top)$ antisymmetric ($K^\top = -K$). The
+antisymmetric part contributes nothing to the value. To see it, use that $x^\top K x$ is a
+$1\times 1$ matrix — a scalar — and a scalar equals its own transpose ($s^\top = s$ when $s$ is
+$1\times 1$). So $x^\top K x = (x^\top K x)^\top$, and the transpose-of-a-product rule $(ABC)^\top
+= C^\top B^\top A^\top$ ([GEOM-10], applied with $(x^\top)^\top = x$) turns this into $(x^\top K
+x)^\top = x^\top K^\top x = x^\top(-K)x = -\,x^\top K x$. A number equal to its own negative must
+be $0$, so $x^\top K x = 0$ for all $x$. Thus $x^\top A x = x^\top S x$ — the
+form only depends on the symmetric part $S$ — and @eq-grad-quad gives $\nabla = (A+A^\top)x = 2Sx$,
+consistent with applying @eq-grad-quad-sym to $S$. The upshot: *you may always symmetrize $A$
+before differentiating*, and in practice (covariance, $X^\top X$, Hessians) $A$ is already
+symmetric, so $2Ax$ is what you use. The $A+A^\top$ form is the honest general statement that
+collapses to it.
+:::
+
+## The Jacobian: differentiating a vector-valued function {#sec-jacobian}
+
+So far the output of $f$ has been a single number. Sometimes the output is itself a vector — for
+instance $g(x) = Ax$ maps $\mathbb{R}^n \to \mathbb{R}^m$. Differentiating a vector with respect
+to a vector produces a *matrix* of all the partials, called the Jacobian.
+
+::: {#def-jacobian}
+**Definition (Jacobian).** For $g:\mathbb{R}^n\to\mathbb{R}^m$, $g(x) = (g_1(x),\dots,g_m(x))^\top$,
+the **Jacobian** at $x$ is the $m\times n$ matrix
+$$
+J_g(x) = \frac{\partial g}{\partial x}
+= \begin{bmatrix}
+\dfrac{\partial g_1}{\partial x_1} & \cdots & \dfrac{\partial g_1}{\partial x_n} \\[8pt]
+\vdots & \ddots & \vdots \\[4pt]
+\dfrac{\partial g_m}{\partial x_1} & \cdots & \dfrac{\partial g_m}{\partial x_n}
+\end{bmatrix},
+\qquad (J_g)_{ij} = \frac{\partial g_i}{\partial x_j} .
+$$ {#eq-jacobian-def}
+Row $i$ holds the gradient (transposed) of the $i$-th output component; column $j$ holds the
+effect of nudging the $j$-th input on every output.
+:::
+
+The Jacobian is the honest multi-output generalization of @thm-firstorder: it is the matrix
+that makes the first-order approximation read $g(x + \Delta x) \approx g(x) + J_g(x)\,\Delta x$
+— a matrix times a nudge, returning a nudge in output space. When $m = 1$ the Jacobian is a
+single row, the transpose of the gradient; the gradient is a column by our convention
+(@sec-layout), so $\nabla f = (J_f)^\top$ in that case. Keeping the gradient a column and the
+Jacobian "outputs-by-inputs" is what makes the chain rule below come out without stray
+transposes.
+
+The cleanest Jacobian is the one we need most: the linear map $g(x) = Ax$.
+
+::: {#thm-jac-linear}
+**Theorem (Jacobian of a linear map).** If $g(x) = Ax$ for a constant $m\times n$ matrix $A$,
+then $J_g(x) = A$ at every $x$.
+:::
+
+::: {.proof}
+The $i$-th output component is $g_i(x) = \sum_{k=1}^n A_{ik}x_k$ ([GEOM-08]). Differentiate with
+respect to $x_j$: the only term containing $x_j$ is $A_{ij}x_j$, linear with coefficient
+$A_{ij}$, so $\partial g_i/\partial x_j = A_{ij}$. Therefore $(J_g)_{ij} = A_{ij}$ for all
+$i,j$, i.e. $J_g = A$. $\qquad\blacksquare$
+:::
+
+This is the vector analogue of $\frac{d}{dx}(ax) = a$ once more — the derivative of a linear map
+*is* the map's matrix. It is the single fact we feed into the chain rule next.
+
+## The chain rule for $f(Ax)$ {#sec-chain}
+
+The last tool, and the one optimization uses constantly: differentiating a scalar function
+composed with a linear map. Let $f:\mathbb{R}^m\to\mathbb{R}$ be smooth, let $A$ be a constant
+$m\times n$ matrix, and define the composite scalar function
+
+$$
+F(x) = f(Ax), \qquad F:\mathbb{R}^n \to \mathbb{R}.
+$$
+
+We want $\nabla F(x)$, an $n$-vector. We will first recall the Calc-1 chain rule, then state and
+prove its multivariable form, then read off the answer.
+
+The Calc-1 chain rule says $\frac{d}{dt}\,h(u(t)) = h'(u(t))\,u'(t)$ — "derivative of the
+outside, evaluated at the inside, times the derivative of the inside." The multivariable
+statement we need is its faithful generalization:
+
+::: {#thm-chain}
+**Theorem (chain rule).** Let $u:\mathbb{R}^n\to\mathbb{R}^m$ be differentiable with Jacobian
+$J_u(x)$, and let $f:\mathbb{R}^m\to\mathbb{R}$ be differentiable with gradient $\nabla f$. Then
+$F(x) = f(u(x))$ has gradient
+$$
+\nabla F(x) = J_u(x)^\top \, \nabla f\big(u(x)\big) .
+$$ {#eq-chain}
+:::
+
+::: {.proof}
+We compute the $j$-th partial of $F$ from @def-partial and recognize the result. Write $u =
+(u_1,\dots,u_m)$, and fix the coordinate index $j$. The $j$-th partial of $F$ is, by definition,
+$$
+\frac{\partial F}{\partial x_j}(x)
+= \lim_{t\to 0}\frac{F(x + t e_j) - F(x)}{t}
+= \lim_{t\to 0}\frac{f\big(u(x + t e_j)\big) - f\big(u(x)\big)}{t},
+$$
+where $e_j$ is the vector with a $1$ in position $j$ and $0$ elsewhere — so $x + t e_j$ nudges
+*only* the $j$-th input. We do not assume any multivariable chain rule; we build this one from the
+first-order approximation @thm-firstorder, which we have already proved.
+
+**Expand the inner nudge.** Set $u^0 = u(x)$. As $t\to 0$ the inner point moves by
+$$
+\Delta u(t) \;=\; u(x + t e_j) - u(x),
+$$
+an $m$-vector whose $i$-th component is $u_i(x + t e_j) - u_i(x)$. Each $u_i$ is an ordinary
+scalar function of the single varying coordinate $x_j$ here (every other coordinate is held
+fixed), so by the very definition of the partial derivative @def-partial,
+$$
+\Delta u_i(t) = \frac{\partial u_i}{\partial x_j}(x)\, t + o(t),
+$$
+where $o(t)$ denotes a term with $o(t)/t \to 0$ as $t\to 0$ (the standard "smaller than linear"
+remainder; it is exactly $\big[\tfrac{\Delta u_i(t)}{t} - \tfrac{\partial u_i}{\partial x_j}(x)\big]t$,
+which the limit in @def-partial sends to zero faster than $t$). In particular $\Delta u(t)\to 0$ as
+$t\to 0$, and $\|\Delta u(t)\| = O(t)$.
+
+**Apply the first-order approximation to the outer function.** Since $f$ has continuous partials,
+@thm-firstorder applied at the point $u^0$ with nudge $\Delta u(t)$ gives
+$$
+f\big(u(x + t e_j)\big) - f\big(u(x)\big)
+= f(u^0 + \Delta u) - f(u^0)
+= \nabla f(u^0)^\top \Delta u(t) + r\big(\Delta u(t)\big),
+$$
+with $r(\Delta u)/\|\Delta u\| \to 0$. Substitute the component expansion of $\Delta u$:
+$$
+f\big(u(x + t e_j)\big) - f\big(u(x)\big)
+= \sum_{i=1}^m \frac{\partial f}{\partial u_i}(u^0)\Big[\frac{\partial u_i}{\partial x_j}(x)\,t + o(t)\Big]
+  \;+\; r\big(\Delta u(t)\big).
+$$
+**Divide by $t$ and take the limit.** Dividing by $t$,
+$$
+\frac{f(u(x+te_j)) - f(u(x))}{t}
+= \sum_{i=1}^m \frac{\partial f}{\partial u_i}(u^0)\,\frac{\partial u_i}{\partial x_j}(x)
+  \;+\; \underbrace{\sum_{i=1}^m \frac{\partial f}{\partial u_i}(u^0)\frac{o(t)}{t}}_{\to\,0}
+  \;+\; \underbrace{\frac{r(\Delta u(t))}{t}}_{\to\,0}.
+$$
+The first error term vanishes because each $o(t)/t\to 0$. The second vanishes because $\|\Delta
+u(t)\| = O(t)$, so $\big|r(\Delta u)/t\big| = \big(|r(\Delta u)|/\|\Delta u\|\big)\,(\|\Delta
+u\|/t) \to 0\cdot O(1) = 0$. Taking $t\to 0$ leaves exactly the multivariable chain rule for one
+coordinate,
+$$
+\frac{\partial F}{\partial x_j}
+= \sum_{i=1}^{m} \frac{\partial f}{\partial u_i}\big(u(x)\big)\,\frac{\partial u_i}{\partial x_j}(x) .
+$$ {#eq-chain-coord}
+Now recognize the right-hand side as a dot product: it is the dot product of the vector $\big(\partial
+f/\partial u_i\big)_i = \nabla f$ with the vector $\big(\partial u_i/\partial x_j\big)_i$, which
+is the $j$-th *column* of the Jacobian $J_u$ (the $j$-th column collects $\partial u_i/\partial
+x_j$ over all output indices $i$, by @eq-jacobian-def). The dot product of $\nabla f$ with the
+$j$-th column of $J_u$ is exactly the $j$-th entry of $J_u^\top \nabla f$ (multiplying by
+$J_u^\top$ turns columns of $J_u$ into rows that dot against $\nabla f$, [GEOM-10]). So the
+$j$-th partial of $F$ is the $j$-th entry of $J_u^\top \nabla f$, for every $j$; stacking gives
+$\nabla F = J_u^\top \nabla f$. $\qquad\blacksquare$
+:::
+
+The transpose on $J_u$ is *not* a fudge — it is forced by our denominator-layout convention
+(@sec-layout) and is the visible reason we fixed that convention. The gradient $\nabla f$ lives
+in the $m$-dimensional output space; $J_u^\top$ is the $n\times m$ matrix that carries it back to
+the $n$-dimensional input space, which is exactly where a gradient of $F$ must live. Shapes line
+up: $(n\times m)(m\times 1) = (n\times 1)$.
+
+Now specialize to the case we actually need, $u(x) = Ax$. By @thm-jac-linear the Jacobian is
+$J_u = A$, constant, so @eq-chain becomes
+
+$$
+\boxed{\;\nabla_x\, f(Ax) = A^\top\, \nabla f\big|_{Ax}.\;}
+$$ {#eq-chain-linear}
+
+where $\nabla f|_{Ax}$ means "the gradient of $f$, evaluated at the point $Ax$." The constant
+matrix $A$ comes out transposed. This single identity is the heart of backpropagation through a
+linear layer and the engine of the least-squares gradient we assemble next.
+
+::: {.callout-tip title="You might be asked"}
+*"Differentiate the least-squares loss $L(\beta) = \|y - X\beta\|^2$ with respect to $\beta$."*
+This is the canonical interview question, and @eq-chain-linear plus the squared-norm identity
+answer it in two lines — let us do it, since it is the bridge to the rest of the series. Write
+the residual as the vector $r(\beta) = y - X\beta$, so $L(\beta) = r^\top r = \|r\|^2$, a
+composite: square-the-norm $\circ$ the affine map $\beta \mapsto y - X\beta$. The outer function
+is $f(r) = r^\top r$ with $\nabla_r f = 2r$ (@eq-grad-normsq). The inner map $\beta \mapsto y -
+X\beta$ is affine; its Jacobian with respect to $\beta$ is $-X$ (the constant $y$ has zero
+derivative; the linear part $-X\beta$ contributes $-X$ by @thm-jac-linear). Apply the chain rule
+@eq-chain:
+$$
+\nabla_\beta L = (-X)^\top\,(2r) = -2X^\top (y - X\beta) = 2\big(X^\top X\,\beta - X^\top y\big).
+$$
+Setting $\nabla_\beta L = 0$ gives $X^\top X\,\beta = X^\top y$ — the **normal equations**. That
+is precisely the multiple-regression result [REGR-05] needs and the quadratic-form minimization
+[GEOM-25] finishes; the entire least-squares estimator falls out of the three boxed identities
+of this article. If you can produce these two lines on a whiteboard, you have shown command of
+exactly what this article exists to teach.
+:::
+
+## Differentiating with respect to a matrix {#sec-matrix-deriv}
+
+The same stacking idea handles a scalar that depends on a whole *matrix* of variables. If
+$f:\mathbb{R}^{m\times n}\to\mathbb{R}$ takes a matrix $X$ to a number, its derivative is the
+matrix of partials, laid out in the same shape as $X$ (denominator layout again):
+
+$$
+\frac{\partial f}{\partial X} \in \mathbb{R}^{m\times n}, \qquad
+\Big(\frac{\partial f}{\partial X}\Big)_{ij} = \frac{\partial f}{\partial X_{ij}} .
+$$ {#eq-matrix-deriv}
+
+There is no new idea here — it is @def-gradient with the partials arranged in a grid instead of
+a column. Two cases recur often enough to record, and we derive the first to show the mechanics
+are unchanged.
+
+::: {#thm-trace}
+**Theorem (gradient of a linear trace form).** For constant matrices, $\dfrac{\partial}{\partial
+X}\,\mathrm{tr}(A^\top X) = A$, where $\mathrm{tr}$ is the trace (sum of diagonal entries).
+:::
+
+::: {.proof}
+Recall the trace identity $\mathrm{tr}(A^\top X) = \sum_{i}\sum_{k}(A^\top)_{ik}X_{ki} =
+\sum_i\sum_k A_{ki}X_{ki}$ — the elementwise sum of $A$ against $X$ (this is the matrix dot
+product). Differentiate with respect to the single entry $X_{pq}$: the only term containing
+$X_{pq}$ is $A_{pq}X_{pq}$, with coefficient $A_{pq}$, so $\partial/\partial X_{pq} = A_{pq}$.
+The $(p,q)$ entry of the answer is $A_{pq}$ for every $p,q$, i.e. the derivative matrix *is* $A$.
+$\qquad\blacksquare$
+:::
+
+The second, used in covariance and Gaussian-likelihood derivations and recorded here for
+completeness, is $\dfrac{\partial}{\partial X}\log\det X = (X^{-1})^\top$ for invertible $X$ — its
+derivation needs the determinant expansion of [GEOM-13] and we point there rather than reproduce
+it, since this article's job is the vector case and the matrix case is the same stacking
+principle applied to a grid.
+
+# Worked examples {#sec-examples}
+
+We now run the identities on honest problems, and verify each gradient *numerically* against the
+analytic formula — the one place code earns its keep here, by confirming the hand-derivation
+against a finite-difference check (the discrete shadow of @def-partial).
+
+## Example 1 — gradient of a least-squares loss on real-shaped data {#sec-ex-ls}
+
+Take a small regression design: $n = 6$ observations, $p = 3$ features (an intercept column plus
+two predictors). The loss is $L(\beta) = \|y - X\beta\|^2$ and its gradient, by the interview
+derivation above, is $\nabla_\beta L = 2(X^\top X\beta - X^\top y)$. We compute both the
+formula and a finite-difference approximation and check they agree.
+
+```{python}
+#| label: tbl-ls-gradient
+#| echo: true
+import numpy as np
+rng = np.random.default_rng(0)
+
+# A small, concrete design matrix: intercept + 2 predictors, 6 observations.
+X = np.column_stack([np.ones(6), rng.normal(size=6), rng.normal(size=6)])
+beta_true = np.array([1.5, -2.0, 0.7])
+y = X @ beta_true + rng.normal(scale=0.3, size=6)   # noisy outcome
+
+beta = np.array([0.0, 0.0, 0.0])                    # a candidate parameter vector
+
+def loss(b):
+    r = y - X @ b
+    return r @ r                                    # ||y - Xb||^2 = r^T r
+
+# Analytic gradient from the boxed identities: 2 (X^T X b - X^T y).
+grad_analytic = 2 * (X.T @ X @ beta - X.T @ y)
+
+# Finite-difference gradient: the discrete shadow of the partial-derivative limit.
+def finite_diff_grad(fn, b, h=1e-6):
+    g = np.zeros_like(b)
+    for j in range(len(b)):
+        step = np.zeros_like(b); step[j] = h
+        g[j] = (fn(b + step) - fn(b - step)) / (2 * h)   # central difference
+    return g
+
+grad_numeric = finite_diff_grad(loss, beta)
+print("analytic gradient 2(X^T X b - X^T y):", np.round(grad_analytic, 6))
+print("finite-difference gradient          :", np.round(grad_numeric, 6))
+print("max abs difference                  :", np.max(np.abs(grad_analytic - grad_numeric)))
+```
+
+The two gradients agree to the precision of the finite-difference step. This is the operational
+content of @sec-chain: the hand-derived $2(X^\top X\beta - X^\top y)$ is not a formula to trust on
+faith — it matches what you get by literally perturbing each coordinate and measuring the change,
+which is @def-partial made discrete. @fig-ls-descent shows the gradient as an arrow on the loss
+surface over a two-parameter slice, pointing the way the loss climbs.
+
+```{python}
+#| label: fig-ls-descent
+#| fig-cap: "The least-squares gradient as an arrow on the loss surface. Fixing the intercept at its optimum and varying the two slope parameters, the contours show $L(\\beta)$ and the red arrow is $\\nabla_\\beta L$ at a sample point — it points directly *uphill*, perpendicular to the contour through that point. Its negative (the descent direction) is what an optimizer steps along. We computed this vector entirely from the boxed identities; GEOM-23 proves it is the steepest-ascent direction, and Optimization turns the descent step into an algorithm."
+# Solve for the optimal intercept, then make a 2D loss slice over the two slopes.
+beta_hat = np.linalg.solve(X.T @ X, X.T @ y)
+b1g = np.linspace(beta_hat[1] - 2.5, beta_hat[1] + 2.5, 80)
+b2g = np.linspace(beta_hat[2] - 2.5, beta_hat[2] + 2.5, 80)
+B1, B2 = np.meshgrid(b1g, b2g)
+Lsurf = np.zeros_like(B1)
+for i in range(B1.shape[0]):
+    for j in range(B1.shape[1]):
+        b = np.array([beta_hat[0], B1[i, j], B2[i, j]])
+        r = y - X @ b
+        Lsurf[i, j] = r @ r
+
+# pick a sample point and its analytic gradient (the two slope components)
+bs = np.array([beta_hat[0], beta_hat[1] + 1.6, beta_hat[2] - 1.3])
+g_full = 2 * (X.T @ X @ bs - X.T @ y)
+g2 = g_full[1:]                                   # gradient in the (b1, b2) slice
+g2u = g2 / np.linalg.norm(g2) * 1.2               # scaled for drawing
+
+fig, ax = plt.subplots(figsize=(6.0, 4.8))
+cs = ax.contour(B1, B2, Lsurf, levels=14, colors=PALE, linewidths=1.0)
+ax.scatter([beta_hat[1]], [beta_hat[2]], color=ACCENT, s=80, zorder=5,
+           edgecolor="white", label=r"minimum $\hat\beta$")
+ax.scatter([bs[1]], [bs[2]], color="black", s=40, zorder=5)
+draw_vec(ax, (bs[1], bs[2]), (bs[1] + g2u[0], bs[2] + g2u[1]), color=GRAD,
+         label=r"$\nabla L$", label_offset=(0.25, 0.2))
+ax.set_xlabel(r"$\beta_1$"); ax.set_ylabel(r"$\beta_2$")
+ax.set_title(r"$\nabla_\beta L$ points uphill, $\perp$ to the contour")
+ax.legend(loc="upper right", fontsize=9)
+ax.set_aspect("equal")
+plt.tight_layout()
+```
+
+## Example 2 — gradient of a quadratic form with a genuinely asymmetric matrix {#sec-ex-quad}
+
+Now the edge-of-applicability case, chosen to expose the trap people fall into: a quadratic form
+$x^\top A x$ with $A$ **not symmetric**. If you reflexively write $\nabla = 2Ax$ you get the
+wrong answer; the correct one is $(A + A^\top)x$ from @eq-grad-quad. We verify the honest formula
+and show the naive one fails.
+
+```{python}
+#| label: tbl-asym-quad
+#| echo: true
+import numpy as np
+rng = np.random.default_rng(3)
+
+A = np.array([[2.0, 5.0, -1.0],     # deliberately NOT symmetric (A != A^T)
+              [0.0, 3.0,  4.0],
+              [1.0, 2.0,  6.0]])
+x = np.array([0.4, -1.1, 0.8])
+
+def quad(v):
+    return v @ A @ v                 # x^T A x, a scalar
+
+grad_correct = (A + A.T) @ x         # the honest identity, eq-grad-quad
+grad_naive   = 2 * A @ x             # the common mistake (only valid if A symmetric)
+
+# finite-difference truth
+def fd_grad(fn, v, h=1e-6):
+    g = np.zeros_like(v)
+    for j in range(len(v)):
+        e = np.zeros_like(v); e[j] = h
+        g[j] = (fn(v + e) - fn(v - e)) / (2 * h)
+    return g
+
+grad_true = fd_grad(quad, x)
+print("finite-difference (truth)  :", np.round(grad_true, 6))
+print("(A + A^T) x   [correct]     :", np.round(grad_correct, 6))
+print("2 A x         [naive]       :", np.round(grad_naive, 6))
+print("error of naive 2Ax          :", np.round(grad_naive - grad_true, 6))
+```
+
+The finite-difference truth matches $(A + A^\top)x$ exactly and the naive $2Ax$ is wrong by
+$(A - A^\top)x$ — the contribution of the antisymmetric part, exactly as the interview-box
+analysis predicted. This is the honest boundary of the convenient $2Ax$ shortcut: it is a
+*special case*, valid only for symmetric $A$, and an asymmetric $A$ breaks it silently (the
+formula returns a plausible-looking vector that is simply incorrect). In practice the matrices we
+differentiate — $X^\top X$, covariance matrices, Hessians — are symmetric by construction
+([GEOM-16]), so $2Ax$ is what you will use most; but knowing *why* it holds keeps you from
+misapplying it.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The mechanics of this article are robust — partial differentiation is just Calc 1, and the
+identities are exact — but there are honest places it strains or is the wrong frame.
+
+## Non-differentiable losses: the gradient does not exist {#sec-nondiff}
+
+Everything here assumes the partials exist. Several losses central to modern data science are
+*not* differentiable everywhere. The absolute-value loss $|r|$ (least absolute deviations,
+robust regression) has a corner at $r = 0$; the hinge loss of an SVM and the ReLU activation
+$\max(0, z)$ have kinks; the $\ell_1$ penalty $\|\beta\|_1$ that drives the lasso has corners
+along every axis. At those kinks @def-partial's limit does not exist — the slope from the left
+differs from the slope on the right — and the gradient is genuinely undefined. @fig-kink shows
+the offending point.
+
+```{python}
+#| label: fig-kink
+#| fig-cap: "Where the gradient fails to exist. The absolute-value function $|r|$ (left) and ReLU $\\max(0,r)$ (right) both have a corner at $r=0$: the left-hand and right-hand slopes disagree, so the Calc-1 limit defining the derivative does not exist there. Smooth differentiation has nothing to say at the kink — the correct tool is the *subgradient*, the set of all slopes that lie below the function (shaded fan), which Optimization develops for exactly these losses."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.6))
+r = np.linspace(-2, 2, 200)
+
+axL.plot(r, np.abs(r), color=VEC, lw=2.4)
+# fan of subgradient slopes at 0
+for s in np.linspace(-1, 1, 9):
+    axL.plot(r, s * r, color=GREY, lw=0.8, alpha=0.5)
+axL.scatter([0], [0], color=GRAD, s=50, zorder=5)
+axL.set_title(r"$|r|$: corner at $r=0$"); axL.set_xlabel("$r$"); axL.set_ylim(-0.5, 2)
+
+axR.plot(r, np.maximum(0, r), color=VEC, lw=2.4)
+for s in np.linspace(0, 1, 7):
+    axR.plot(r, s * r, color=GREY, lw=0.8, alpha=0.5)
+axR.scatter([0], [0], color=GRAD, s=50, zorder=5)
+axR.set_title(r"ReLU $\max(0,r)$: kink at $r=0$"); axR.set_xlabel("$r$"); axR.set_ylim(-0.5, 2)
+plt.tight_layout()
+```
+
+**What you reach for instead:** the **subgradient** — the set of slopes of all lines that touch
+the function from below at the kink — which generalizes the gradient to convex non-smooth
+functions and is the object subgradient descent and proximal methods use. That machinery belongs
+to the Optimization track; here we only flag that the smooth calculus stops at the corner and
+name its successor.
+
+## The curse of layout, and when indices beat cleverness {#sec-layout-failure}
+
+The second failure mode is human, not mathematical: complicated expressions (think a derivative
+through a softmax inside a cross-entropy, or $\partial/\partial X$ of $\mathrm{tr}(AXBX^\top)$)
+invite layout slips, and a single dropped transpose silently corrupts the answer. The honest
+advice is the one from the Pitfall box: **when an expression gets hairy, abandon the identities
+and drop to indices** (@sec-micro). Computing $\partial f/\partial x_j$ one component at a time
+is slower but has *no convention to get wrong* — the indices force the correct shape. The clean
+identities are for the cases you have already verified; the index computation is the ground truth
+you fall back to. And in production, the autodiff engine inside every deep-learning framework is
+doing exactly the chain rule of @sec-chain, mechanically and without layout errors — which is why
+hand-derivation is, in practice, a tool for *understanding and checking*, not for grinding out
+every gradient by hand.
+
+::: {.callout-tip title="You might be asked"}
+*"When would you actually differentiate by hand versus let autodiff do it?"* By hand: to
+*understand* a method, to *derive a closed form* (the normal equations, a Newton step), to
+*sanity-check* an autodiff result against a known formula, and in interviews. By machine: anytime
+the computation graph is large or changing — neural networks, complex pipelines — where autodiff
+applies the same chain rule @eq-chain node by node, exactly and tirelessly. The skills are
+complementary: autodiff frees you from the bookkeeping, but you cannot debug a wrong gradient, a
+vanishing gradient, or a numerically unstable one without the hand-calculus this article builds.
+The finite-difference check in the examples is the bridge — it is how you confirm an analytic
+gradient (yours or the framework's) is correct.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the matrix and decomposition machinery of Movements III–V — in particular the
+**dot product and norm** ([GEOM-04]), **matrices as linear maps** ([GEOM-08]), and the
+**transpose and symmetry** ([GEOM-10]) — and you have now lifted calculus above the Calc-1 floor
+for the only time in the track, building the partial derivative, the gradient, the Jacobian, and
+the chain rule from scratch. From here Movement VI continues:
+
+- **[GEOM-23] — The Gradient as a Direction in Space.** We computed the gradient *vector* here;
+  next we prove it points in the direction of steepest ascent and is perpendicular to the level
+  sets, cashing in the dot-product geometry of [GEOM-04]. The pictures in @fig-gradients and
+  @fig-ls-descent are stated there as theorems.
+- **[GEOM-24] — The Hessian and the Curvature of a Surface.** Differentiate the gradient *again*
+  to get the matrix of second partials; its definiteness ([GEOM-18]) decides whether a critical
+  point $\nabla f = 0$ is a minimum, maximum, or saddle.
+- **[GEOM-25] — The Gradient and Hessian of a Quadratic Form.** The convergence point: applying
+  @eq-grad-quad and @eq-grad-quad-sym to $f(x) = \tfrac12 x^\top A x - b^\top x$ gives $\nabla f =
+  Ax - b$, so minimizing a quadratic *is* solving $Ax = b$ — and the least-squares gradient we
+  derived in @sec-chain is finished there in full.
+
+Downstream of the track, this article **discharges [INFR-B2]'s** multivariable critical-point
+condition (the score equation $\nabla \ell(\theta) = 0$) and supplies the **gradient object every
+Optimization algorithm consumes** — gradient descent, Newton's method, and the rest apply this
+calculus, and link back here rather than re-deriving it.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The reference that ends layout arguments.** K. B. Petersen and M. S. Pedersen, *The Matrix
+  Cookbook* — a compendium of matrix-derivative identities. Use it as a lookup table *after* you
+  have internalized the index method of @sec-micro, never as a substitute for it; it states
+  results in a fixed layout and a mismatched convention is the usual source of a wrong transpose.
+- **The honest treatment of non-smoothness.** The subgradient and proximal calculus that handle
+  the kinks of @sec-failure are developed in the Optimization track; the classic source is
+  Rockafellar, *Convex Analysis* (1970), for the subdifferential of a convex function.
+- **Automatic differentiation.** The chain rule of @sec-chain, applied mechanically over a
+  computation graph, is reverse-mode autodiff (backpropagation). Baydin et al., "Automatic
+  Differentiation in Machine Learning: a Survey" (*JMLR*, 2018), is the clean modern overview;
+  every framework's gradient is @eq-chain repeated node by node.
+- **Open threads this article deliberately deferred.** *Why does the gradient point steepest
+  uphill?* — the geometry of [GEOM-23]. *What does the second derivative tell us?* — the Hessian
+  of [GEOM-24]. *What is the gradient of a determinant or a matrix inverse?* — the matrix-calculus
+  cases of @sec-matrix-deriv, which lean on [GEOM-13] and recur in Gaussian-likelihood work in the
+  Inference track.

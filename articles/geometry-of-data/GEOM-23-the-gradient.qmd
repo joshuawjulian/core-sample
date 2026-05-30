@@ -1,0 +1,941 @@
+---
+title: "The Gradient as a Direction in Space"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / points
+GRAD   = "#c1121f"   # the gradient / the answer direction
+ACCENT = "#0a7d4d"   # highlights / tangent moves
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the second article of **Movement VI — Calculus
+> on Vectors**, and it is where the gradient stops being a column of numbers and becomes a
+> *direction in space*. It assumes [GEOM-22], which built the **partial derivative** as
+> "vary one coordinate, freeze the rest," stacked the partials into the **gradient**
+> $\nabla f$, and proved the first-order approximation $f(x+\Delta x)\approx f(x)+\nabla
+> f^\top\Delta x$. It also leans hard on [GEOM-04]: the **dot product** $u^\top v = \sum_i
+> u_iv_i$, the **norm** $\|u\| = \sqrt{u^\top u}$, the relation $u^\top v =
+> \|u\|\|v\|\cos\theta$, and the **Cauchy–Schwarz inequality** — these supply the entire
+> geometric payoff. From the floor it needs only single-variable differentiation, restated
+> as used. The one question: *why does the gradient point in the direction of steepest
+> ascent, and why is it perpendicular to the level sets?* It sets up [GEOM-24] (the
+> Hessian, which decides *which kind* of critical point $\nabla f = 0$ is) and [GEOM-25]
+> (the gradient and Hessian of a quadratic form). It is the **geometric foundation that
+> the Optimization track builds gradient descent on** — but the algorithm itself belongs
+> there; here we own the geometry, not the iteration.
+
+## Abstract {.unnumbered}
+
+[GEOM-22] handed us the gradient as a stacked column of partial derivatives. That is an
+algebraic object; this article reveals it as a *geometric* one. We define the
+**directional derivative** $D_u f = \nabla f^\top u$ — the slope of $f$ as you walk in a
+chosen direction $u$ — and ask which direction makes that slope largest. The Cauchy–Schwarz
+inequality from [GEOM-04] answers in one stroke: the slope is maximized exactly when $u$
+points along $\nabla f$, so **the gradient is the direction of steepest ascent**, and its
+length is the steepest slope itself. We then prove the gradient is **perpendicular to every
+level set** — walk along a contour, where $f$ does not change, and you are walking at right
+angles to $\nabla f$. Finally we read off the **first-order optimality condition**: at a
+peak, a valley, or a saddle the gradient must vanish, $\nabla f = 0$, because no direction
+can be uphill. The single claim the article defends is that **the gradient is not merely
+"the vector of slopes" — it is the one arrow that simultaneously tells you which way is
+steepest uphill, how steep that is, and which way the surface is flat**, and that all three
+facts are consequences of one inequality about dot products.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The gradient $\nabla f(x)$ is the arrow in input space that points in the direction of
+**steepest ascent** of $f$ at $x$, and whose **length** $\|\nabla f(x)\|$ is the rate of
+climb in that steepest direction. Equivalently: among all unit directions $u$, the
+directional slope $D_u f = \nabla f^\top u$ is largest when $u$ aligns with $\nabla f$.
+A direct corollary is that $\nabla f$ is **perpendicular to the level set** through $x$
+(the contour where $f$ is constant), since along that contour $f$ does not change at all.
+And where there is no uphill direction — a peak, a pit, or a saddle — the gradient must be
+the zero vector, $\nabla f = 0$: the **first-order optimality condition**.
+:::
+
+Everything below orbits that box. We already have the gradient as a list of partials from
+[GEOM-22]; the work of this article is to show that this particular list of numbers, read
+as an arrow, carries three pieces of geometry at once — a *direction* (steepest uphill), a
+*magnitude* (how steep), and an *orthogonality* (perpendicular to the flat directions). The
+engine that delivers all three is a single fact about dot products, Cauchy–Schwarz, which
+we restate and use rather than assume.
+
+# Why we are doing this: a slope is not enough, we need a *direction* {#sec-why}
+
+Keep one question in view the whole way through: **once a loss depends on many parameters,
+"downhill" is no longer obvious — so which way do we actually step?** In Calc 1 the answer
+took no thought: a function of one variable has a slope $f'(x)$, and there are only two ways
+to move — you step left or right according to the sign of $f'(x)$. With $n$ parameters there is no single slope. Stand on a hillside in
+the parameter landscape of [GEOM-22] and you can face any of infinitely many compass
+directions; each gives a different slope. To descend you must pick a direction, and to pick
+well you must know *which direction is steepest*. That is the question this article exists
+to answer, and the gradient is the answer.
+
+## The problem that forces it
+
+The history here is the history of optimization itself. In 1847 Augustin-Louis Cauchy,
+faced with solving large systems of equations arising in astronomy and geodesy — the same
+over-determined problems that birthed least squares (the story of [REGR-01]) — proposed a
+strikingly simple idea: to minimize a function of several variables, repeatedly take a small
+step in the direction in which the function *decreases fastest*. He called it the *méthode
+générale*. The whole method rests on one sub-problem he had to solve first: *of all the
+directions you could step, which one decreases the function fastest?* Cauchy's answer — the
+negative of the gradient — is the geometry we derive below. Every modern training loop, from
+linear regression to a billion-parameter network, is a descendant of that 1847 idea, and
+every one of them depends on the gradient meaning "steepest" in the precise sense we are
+about to pin down.
+
+There is an older thread too. Carl Friedrich Gauss and others, mapping the Earth, drew
+**contour lines** of constant elevation, and surveyors knew by instinct that water runs
+downhill *perpendicular* to the contours — the steepest path crosses the level lines at
+right angles. That folk-geometry is exactly the theorem "$\nabla f \perp$ level set" we
+prove in @sec-perp. We are formalizing what map-readers have known for two centuries: the
+direction of steepest change is square to the lines of no change.
+
+::: {.callout-tip title="You might be asked"}
+*"You already have the gradient from the previous article — what is left to do? Isn't
+'steepest ascent' just the definition of the gradient?"* No, and this is a subtle point an
+interviewer uses to separate memorization from understanding. In [GEOM-22] the gradient was
+*defined* as the stack of partial derivatives — slopes along the coordinate axes only. That
+definition says nothing, on its face, about *off-axis* directions or about which direction
+is steepest. The content of *this* article is the theorem that this particular stack of
+axis-slopes turns out to govern the slope in *every* direction (via the dot product), and
+that the steepest of all those directions is the gradient's own. "Steepest ascent" is a
+*derived property* of the gradient, not its definition — and the derivation is the
+Cauchy–Schwarz argument below.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture the loss surface of [GEOM-22] once more: a landscape with height $f(x_1,x_2)$ above
+the floor. Stand at a point. You may step in any direction $u$ along the floor. Each choice
+gives you a slope — walk toward the uphill side and the slope is positive and large; walk
+along the hillside (neither up nor down) and the slope is zero; walk downhill and it is
+negative. There is a single direction that is *steepest uphill*, the way a marble would roll
+if you reversed gravity. **The claim is that this steepest direction is the gradient.**
+
+Now overlay the contour map — the level sets, the curves where $f$ is constant, like the
+elevation lines on a topographic map. Walking along a contour, your height never changes, so
+the slope in that direction is exactly zero. The steepest direction, which has the *largest*
+slope, ought to be as far from "zero slope" as possible — and the geometry that makes that
+precise is: **the steepest direction is perpendicular to the contour.** Water crossing
+elevation lines at right angles is the everyday picture. @fig-intuition draws a surface, its
+contours, and the steepest-ascent arrow, so you can see the gradient sitting square to the
+level curves and aimed straight uphill before we prove a thing.
+
+```{python}
+#| label: fig-intuition
+#| fig-cap: "A surface, its contour map, and the gradient. **Left:** the surface $f(x_1,x_2)=\\exp(-(x_1^2+x_2^2)/3)\\cdot(x_1+1)$, a tilted hill. **Right:** its contour map (level sets). At the marked point the red arrow is the gradient: it points in the direction of steepest ascent (toward higher contours, uphill on the left) and it crosses the level curve at a right angle. The two facts proved in this article — steepest ascent and perpendicular-to-contour — are visible here before any algebra."
+
+def f(x1, x2):
+    return np.exp(-(x1**2 + x2**2) / 3.0) * (x1 + 1.0)
+
+def grad_f(x1, x2):
+    e = np.exp(-(x1**2 + x2**2) / 3.0)
+    df1 = e * (1.0) + (x1 + 1.0) * e * (-2 * x1 / 3.0)
+    df2 = (x1 + 1.0) * e * (-2 * x2 / 3.0)
+    return np.array([df1, df2])
+
+g = np.linspace(-3, 3, 80)
+X1, X2 = np.meshgrid(g, g)
+Z = f(X1, X2)
+
+fig = plt.figure(figsize=(9.0, 4.2))
+axL = fig.add_subplot(1, 2, 1, projection="3d")
+axL.plot_surface(X1, X2, Z, cmap="viridis", alpha=0.8, linewidth=0, antialiased=True)
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$"); axL.set_zlabel("$f$")
+axL.set_title("the surface $f(x_1,x_2)$")
+axL.view_init(elev=30, azim=-120)
+
+axR = fig.add_subplot(1, 2, 2)
+cs = axR.contour(X1, X2, Z, levels=14, colors=PALE, linewidths=1.0)
+p = np.array([0.6, -0.9])
+gp = grad_f(p[0], p[1])
+gpu = gp / np.linalg.norm(gp) * 1.0
+draw_vec(axR, (p[0], p[1]), (p[0] + gpu[0], p[1] + gpu[1]), color=GRAD,
+         label=r"$\nabla f$", label_offset=(0.18, 0.22))
+axR.scatter([p[0]], [p[1]], color="black", s=35, zorder=6)
+axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$")
+axR.set_title("contours + gradient (steepest, $\\perp$ contour)")
+axR.set_aspect("equal")
+plt.tight_layout()
+```
+
+That is the destination. The rest of the article earns it: we define the slope-in-a-direction
+precisely (the directional derivative), prove it equals $\nabla f^\top u$, then use one
+inequality to find the steepest $u$ and one short argument to show $\nabla f$ is square to
+the contours.
+
+# The formal development {#sec-formal}
+
+## The directional derivative: slope along any direction {#sec-directional}
+
+In Calc 1, the derivative measured the rate of change as you nudged the single input. With a
+vector input we must say *which way* we nudge. Fix a point $x \in \mathbb{R}^n$ and a
+direction $u \in \mathbb{R}^n$. Walking from $x$ in the direction $u$ traces the straight
+path $x + tu$ as the scalar $t$ runs through small values: at $t=0$ we are at $x$, and
+increasing $t$ moves us along $u$. The rate at which $f$ changes as we walk is an ordinary
+one-variable derivative of the height-along-the-path.
+
+::: {#def-directional}
+**Definition (directional derivative).** The **directional derivative** of
+$f:\mathbb{R}^n\to\mathbb{R}$ at the point $x$ in the direction $u\in\mathbb{R}^n$ is
+$$
+D_u f(x) = \lim_{t\to 0}\frac{f(x + tu) - f(x)}{t},
+$$ {#eq-dirderiv-def}
+the rate of change of $f$ as we move away from $x$ along $u$, provided the limit exists.
+:::
+
+Compare @eq-dirderiv-def with the Calc-1 derivative
+$h'(a) = \lim_{t\to 0}\frac{h(a+t)-h(a)}{t}$ from [GEOM-22]: they are *the same limit*. If we
+define the one-variable helper $\varphi(t) = f(x + tu)$ — the height of $f$ as we slide along
+the path — then @eq-dirderiv-def is exactly $\varphi'(0)$. The directional derivative is the
+Calc-1 slope of the curve you get by slicing the surface along the line through $x$ in the
+direction $u$. The partial derivatives of [GEOM-22] are the special case where $u$ is a
+coordinate axis: taking $u = e_j$ (the vector with $1$ in slot $j$ and $0$ elsewhere) makes
+@eq-dirderiv-def into @eq-partial-def of [GEOM-22], the slope along the $j$-th axis. So the
+directional derivative *generalizes* the partials from the $n$ axis directions to *all*
+directions.
+
+A word on a convention that will matter when we talk about "steepness." The number $D_u f$
+scales with the length of $u$: if you double $u$ you double the displacement per unit $t$,
+hence double the measured rate. To compare directions fairly — to ask "which *direction* is
+steepest," not "which arrow is longest" — we will use **unit** directions, $\|u\| = 1$, so
+that $t$ measures honest distance traveled. We flag where this matters as we go.
+
+## The directional derivative is a dot product {#sec-dirderiv-dot}
+
+We now connect @eq-dirderiv-def to the gradient. This is the bridge theorem: it says the
+single directional derivative in *any* direction is recovered from the gradient by one dot
+product. Everything geometric flows from it.
+
+::: {#thm-dirderiv}
+**Theorem (directional derivative via the gradient).** If $f:\mathbb{R}^n\to\mathbb{R}$ has
+continuous partial derivatives near $x$, then for any direction $u\in\mathbb{R}^n$,
+$$
+D_u f(x) = \nabla f(x)^\top u = \sum_{j=1}^n \frac{\partial f}{\partial x_j}(x)\,u_j .
+$$ {#eq-dirderiv}
+:::
+
+::: {.proof}
+We compute the limit in @eq-dirderiv-def directly, using the first-order approximation from
+[GEOM-22]. With the nudge $\Delta x = tu$, @thm-firstorder of [GEOM-22] gives
+$$
+f(x + tu) = f(x) + \nabla f(x)^\top (tu) + r(tu),
+$$
+where the remainder satisfies $r(tu)/\|tu\| \to 0$ as $t \to 0$. Subtract $f(x)$ and divide
+by $t$ (assume $t \neq 0$, since the limit is taken as $t\to 0$). Because the dot product is
+linear, $\nabla f(x)^\top(tu) = t\,\nabla f(x)^\top u$, so the gradient term's $t$ cancels:
+$$
+\frac{f(x + tu) - f(x)}{t}
+= \nabla f(x)^\top u + \frac{r(tu)}{t}.
+$$
+It remains to show the last term vanishes as $t \to 0$. Write it as
+$$
+\frac{r(tu)}{t} = \frac{r(tu)}{\|tu\|}\cdot\frac{\|tu\|}{t}
+= \frac{r(tu)}{\|tu\|}\cdot \frac{|t|\,\|u\|}{t}.
+$$
+The factor $\frac{|t|\|u\|}{t} = \pm\|u\|$ is bounded (its magnitude is exactly $\|u\|$,
+a fixed number), and the factor $\frac{r(tu)}{\|tu\|}\to 0$ by the remainder property of
+@thm-firstorder, since $\|tu\|\to 0$ as $t\to 0$. A bounded quantity times a quantity going
+to zero goes to zero. Hence
+$$
+D_u f(x) = \lim_{t\to 0}\frac{f(x+tu)-f(x)}{t} = \nabla f(x)^\top u,
+$$
+and writing out the dot product by its definition ([GEOM-04]) gives the component form.
+$\qquad\blacksquare$
+:::
+
+Read what @eq-dirderiv accomplishes. We have $n$ slopes along the axes, the partials; the
+theorem says the slope along *any* direction is a *linear combination* of those axis-slopes,
+weighted by the components of $u$. Nothing about off-axis directions had to be measured
+separately — the gradient already encodes all of them. This is the precise sense in which
+the gradient "knows" the surface's first-order behaviour in every direction at once, and it
+is why a single vector is enough.
+
+::: {.callout-tip title="You might be asked"}
+*"Some textbooks define the directional derivative only for unit $u$, others for any $u$, and
+some insist $D_u f = \nabla f^\top u$ holds 'by definition.' Which is it?"* The cleanest
+story, and the one to give: $D_u f$ is defined by the *limit* @eq-dirderiv-def for *any*
+$u$ — that is the honest definition, independent of the gradient. The formula $D_u f =
+\nabla f^\top u$ is then a *theorem* (@thm-dirderiv) that requires the partials to be
+*continuous* — exactly the differentiability condition flagged in [GEOM-22]. For badly
+behaved functions the limit can exist for every $u$ yet *fail* to equal $\nabla f^\top u$
+(the same pathology as partials-exist-but-not-differentiable from [GEOM-22]). The
+restriction to unit $u$ is a separate convention used only when comparing steepness across
+directions, so that $\|u\|$ does not inflate the number; it is not part of the definition.
+Keeping these three things distinct — the limit definition, the dot-product theorem, the
+unit-length convention — is what the question is testing.
+:::
+
+## Steepest ascent: the Cauchy–Schwarz argument {#sec-steepest}
+
+Now the headline result. We have, for each unit direction $u$, a slope $D_u f =
+\nabla f^\top u$. Which unit $u$ makes it largest? Write the dot product in its
+geometric form from [GEOM-04]. For any two vectors, $a^\top b = \|a\|\,\|b\|\cos\theta$, where
+$\theta$ is the angle between them. With $a = \nabla f$ and $b = u$, and using $\|u\| = 1$,
+$$
+D_u f = \nabla f^\top u = \|\nabla f\|\,\|u\|\cos\theta = \|\nabla f\|\cos\theta,
+$$ {#eq-cosform}
+where $\theta$ is the angle between the step direction $u$ and the gradient $\nabla f$. The
+factor $\|\nabla f\|$ is fixed — it is a property of the point $x$, not of the direction we
+choose. So the *only* thing we control by choosing $u$ is $\cos\theta$. And $\cos\theta$ is
+largest, equal to $1$, exactly when $\theta = 0$ — when $u$ points in the *same direction* as
+$\nabla f$. We have proved the result, but let us state it carefully and note the boundary.
+
+::: {#thm-steepest}
+**Theorem (steepest ascent).** Suppose $\nabla f(x) \neq 0$. Among all unit directions
+$u$ ($\|u\|=1$), the directional derivative $D_u f(x) = \nabla f(x)^\top u$ is
+**maximized** by
+$$
+u^\star = \frac{\nabla f(x)}{\|\nabla f(x)\|},
+$$
+the unit vector pointing along the gradient, and the maximum value is
+$$
+D_{u^\star} f(x) = \|\nabla f(x)\| .
+$$
+Symmetrically, the slope is **minimized** (steepest *descent*) by $u = -\nabla f/\|\nabla
+f\|$, with value $-\|\nabla f\|$. In words: the gradient points the steepest way uphill, its
+negative the steepest way downhill, and the length of the gradient is the steepest slope.
+:::
+
+::: {.proof}
+We give two proofs; they illuminate the result from different sides, and an interviewer may
+want either.
+
+*Proof via the angle form.* From @eq-cosform, $D_u f = \|\nabla f\|\cos\theta$ for unit $u$.
+Since $-1 \le \cos\theta \le 1$ for every angle, and $\|\nabla f\| > 0$ by assumption,
+$$
+-\|\nabla f\| \;\le\; D_u f \;\le\; \|\nabla f\| .
+$$
+The upper bound is attained iff $\cos\theta = 1$, i.e. $\theta = 0$, i.e. $u$ is the unit
+vector along $\nabla f$, which is $u^\star = \nabla f/\|\nabla f\|$; then $D_{u^\star}f =
+\|\nabla f\|\cdot 1 = \|\nabla f\|$. The lower bound is attained iff $\cos\theta = -1$, i.e.
+$u = -\nabla f/\|\nabla f\|$, giving $-\|\nabla f\|$.
+
+*Proof via Cauchy–Schwarz.* The **Cauchy–Schwarz inequality** ([GEOM-04]) states that for
+any vectors $a,b$,
+$$
+|a^\top b| \le \|a\|\,\|b\|,
+$$
+with equality in the inequality **iff** $a$ and $b$ are parallel — that is, one is a scalar
+multiple of the other, $b = \lambda a$ for some scalar $\lambda$ (or one of them is zero).
+Apply it with $a = \nabla f$, $b = u$, $\|u\| = 1$:
+$$
+D_u f = \nabla f^\top u \le |\nabla f^\top u| \le \|\nabla f\|\,\|u\| = \|\nabla f\| .
+$$
+There are two "$\le$" signs here, and the upper bound $\|\nabla f\|$ is reached only when
+*both* are equalities. The second, $|\nabla f^\top u| = \|\nabla f\|\,\|u\|$, is the
+Cauchy–Schwarz equality case: it forces $u = \lambda\,\nabla f$ for some scalar $\lambda$.
+The first, $\nabla f^\top u = |\nabla f^\top u|$, forces the dot product to be nonnegative,
+which rules out $\lambda < 0$. With $u = \lambda\,\nabla f$ and $\|u\| = 1$ we get
+$|\lambda|\,\|\nabla f\| = 1$, so $\lambda = 1/\|\nabla f\| > 0$ (taking the positive root,
+as $\lambda \ge 0$), giving $u = \nabla f/\|\nabla f\| = u^\star$ and then $D_{u^\star}f =
+\nabla f^\top u^\star = \|\nabla f\|^2/\|\nabla f\| = \|\nabla f\|$. The descent case is the
+same with $\lambda = -1/\|\nabla f\|$, giving $-\|\nabla f\|$. $\qquad\blacksquare$
+:::
+
+This is the theorem that justifies the name. Notice what each piece of the gradient *means*
+now, geometrically:
+
+- **The direction of $\nabla f$** is the heading of steepest climb. Turn the wheel any other
+  way and, by @eq-cosform, you give up a factor of $\cos\theta < 1$ of the available slope.
+- **The length $\|\nabla f\|$** is the steepest slope itself — the actual rate of climb when
+  you head straight uphill. A long gradient means a steep hill; a short one means gentle
+  terrain; a zero gradient means flat in every direction (the subject of @sec-optimality).
+- **The negative gradient** $-\nabla f$ is steepest *descent* — the direction Cauchy's 1847
+  method steps, and the direction every gradient-descent optimizer follows. We will *only*
+  point at the algorithm; building it is Optimization's job (@sec-descent-preview).
+
+@fig-steepest makes the trade-off concrete: it draws the directional slope $D_u f$ as $u$
+sweeps around the full circle, and you can watch it peak exactly when $u$ lines up with the
+gradient.
+
+```{python}
+#| label: fig-steepest
+#| fig-cap: "Steepest ascent, two views. **Left:** at a fixed point on the surface $f(x)=\\tfrac12 x_1^2 + 2x_2^2$, the gradient (red) is one specific arrow; three other unit step directions (grey) are shown with their slopes $D_u f = \\nabla f^\\top u$. **Right:** the directional slope $D_u f$ plotted against the heading angle $\\phi$ of $u$ as it sweeps the full circle. It traces a cosine, $\\|\\nabla f\\|\\cos(\\phi - \\phi_{\\nabla})$ — peaking at $+\\|\\nabla f\\|$ when $u$ aligns with $\\nabla f$ (red dot), hitting zero when $u$ is perpendicular (along the contour), and bottoming at $-\\|\\nabla f\\|$ for steepest descent. The whole of @thm-steepest is in that curve."
+def fq(x):
+    return 0.5 * x[0]**2 + 2.0 * x[1]**2
+def gq(x):
+    return np.array([x[0], 4.0 * x[1]])
+
+p = np.array([1.4, 0.6])
+g = gq(p)
+gn = np.linalg.norm(g)
+phi_grad = np.arctan2(g[1], g[0])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.0))
+
+# Left: gradient and some sample directions, on the contour map
+cg = np.linspace(-2.6, 2.6, 200)
+CX, CY = np.meshgrid(cg, cg)
+axL.contour(CX, CY, 0.5*CX**2 + 2.0*CY**2, levels=12, colors=PALE, linewidths=1.0)
+gu = g / gn
+draw_vec(axL, (p[0], p[1]), (p[0] + gu[0], p[1] + gu[1]), color=GRAD,
+         label=r"$\nabla f$", label_offset=(0.0, 0.28))
+for ang in (phi_grad + 0.9, phi_grad + 2.1, phi_grad - 1.4):
+    u = np.array([np.cos(ang), np.sin(ang)])
+    draw_vec(axL, (p[0], p[1]), (p[0] + u[0], p[1] + u[1]), color=GREY, lw=1.6)
+axL.scatter([p[0]], [p[1]], color="black", s=30, zorder=6)
+axL.set_aspect("equal"); axL.set_xlim(-2.6, 2.6); axL.set_ylim(-2.6, 2.6)
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$")
+axL.set_title("one gradient, many step directions")
+
+# Right: D_u f as u sweeps the circle
+phis = np.linspace(-np.pi, np.pi, 400)
+Du = np.array([g @ np.array([np.cos(ph), np.sin(ph)]) for ph in phis])
+axR.plot(phis, Du, color=VEC)
+axR.axhline(0, color=GREY, lw=1.0)
+axR.scatter([phi_grad], [gn], color=GRAD, s=50, zorder=5)
+axR.scatter([phi_grad - np.pi if phi_grad > 0 else phi_grad + np.pi], [-gn],
+            color=ACCENT, s=50, zorder=5)
+axR.set_xlabel(r"heading angle $\phi$ of $u$"); axR.set_ylabel(r"$D_u f = \nabla f^\top u$")
+axR.set_title(r"slope peaks when $u \parallel \nabla f$")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Is the negative gradient the fastest route to the minimum?"* A favourite trap. No — it is
+the *locally* steepest descent direction, the one that decreases $f$ fastest *for an
+infinitesimal step at the current point*. It is **not** generally the direction that points
+at the minimum, and following it can zig-zag badly when the surface is stretched (an
+elongated bowl), taking many steps to reach the bottom. The reason is exactly the curvature
+the *Hessian* measures ([GEOM-24]) and the *conditioning* the condition number measures
+([GEOM-26]): steepest descent is blind to how the steepness *changes* as you move. Methods
+that use that second-order information — Newton's method, conjugate gradients — can aim much
+closer to the true minimum. The gradient gives the best *direction* under a first-order
+(linear) view of the world; that view is local, and its limits are the whole motivation for
+the articles that follow.
+:::
+
+## The gradient is perpendicular to the level set {#sec-perp}
+
+The second geometric fact, and the one that makes contour maps legible. A **level set** of
+$f$ at value $c$ is the set of inputs where $f$ equals $c$:
+$$
+\{\,x : f(x) = c\,\},
+$$
+the contour of constant height — an elevation line on a topographic map, a constant-loss
+curve in parameter space. The claim is that $\nabla f$ is orthogonal to this set at every
+point: it makes a right angle with every direction you could travel *along* the contour.
+
+The intuition is already in hand from @eq-cosform. Moving *along* a contour means $f$ does
+not change, so the directional derivative in that direction is zero. But $D_u f = \nabla
+f^\top u$, so a zero directional derivative means $\nabla f^\top u = 0$ — the gradient is
+perpendicular to that direction by the dot-product definition of orthogonality ([GEOM-05]).
+We make this precise with a curve along the contour.
+
+::: {#thm-perp}
+**Theorem (gradient $\perp$ level set).** Let $\gamma(t)$ be any smooth curve that lies
+inside a level set of $f$ — that is, $f(\gamma(t)) = c$ for all $t$, with constant $c$ — and
+suppose $\gamma(0) = x$. Then the gradient at $x$ is orthogonal to the curve's velocity
+(tangent) vector there:
+$$
+\nabla f(x)^\top \gamma'(0) = 0 .
+$$
+Since this holds for *every* such curve, $\nabla f(x)$ is orthogonal to every direction
+tangent to the level set at $x$ — i.e. $\nabla f(x)$ is perpendicular to the level set.
+:::
+
+::: {.proof}
+Define the one-variable function $\psi(t) = f(\gamma(t))$, the height of $f$ as we travel
+along the curve. By hypothesis $\gamma$ stays in the level set, so $f(\gamma(t)) = c$ for all
+$t$: $\psi$ is the *constant* function $c$. The derivative of a constant is zero, so
+$\psi'(0) = 0$.
+
+Now compute $\psi'(0)$ a second way, with the chain rule. $\psi = f\circ\gamma$ is a scalar
+function $f$ composed with the vector-valued path $\gamma$, exactly the setting of the chain
+rule from [GEOM-22] (@thm-chain there). The Jacobian of the path $\gamma:\mathbb{R}\to
+\mathbb{R}^n$ is the column of derivatives $\gamma'(t)$ (one output coordinate at a time,
+each an ordinary Calc-1 derivative), so the chain rule gives
+$$
+\psi'(t) = \nabla f(\gamma(t))^\top \gamma'(t) .
+$$
+Concretely, this is the multivariable chain rule written out: $\frac{d}{dt}f(\gamma(t)) =
+\sum_{j=1}^n \frac{\partial f}{\partial x_j}(\gamma(t))\,\gamma_j'(t)$, the sum of $f$'s
+change through each coordinate of the moving point — which is precisely the dot product
+$\nabla f(\gamma(t))^\top\gamma'(t)$ ([GEOM-04]). Evaluate at $t=0$, where $\gamma(0)=x$:
+$$
+\psi'(0) = \nabla f(x)^\top \gamma'(0) .
+$$
+Setting the two computations of $\psi'(0)$ equal — zero from the constant, the dot product
+from the chain rule — gives $\nabla f(x)^\top\gamma'(0) = 0$. The tangent vector $\gamma'(0)$
+can be any direction tangent to the level set (choose the curve to head whichever way you
+like along the contour), so $\nabla f(x)$ is orthogonal to all of them. $\qquad\blacksquare$
+:::
+
+This is the surveyor's fact, now a theorem: **the steepest direction crosses the lines of no
+change at a right angle.** It also re-explains the steepest-ascent result from a second
+angle. If the gradient were *not* perpendicular to the contour, it would have a nonzero
+component *along* the contour — a component in a direction where $f$ does not change, which
+would be wasted effort for climbing. The steepest climb spends all its motion crossing
+contours, none of it sliding along them, which is exactly "perpendicular to the level set."
+@fig-perp shows the gradient field draped over the contours so the right angles are visible
+everywhere.
+
+```{python}
+#| label: fig-perp
+#| fig-cap: "The gradient field is everywhere perpendicular to the level sets. For $f(x)=x_1^2 + 3x_2^2$ (an elliptical bowl), the pale curves are level sets (constant-$f$ ellipses) and each red arrow is the gradient $\\nabla f = (2x_1, 6x_2)$ at its base point. Every arrow meets its contour at a right angle and points 'outward' toward higher values — the visual statement of both theorems at once: steepest ascent (outward, uphill) and orthogonality (square to the contour). Note the arrows are longer where the contours bunch together (steeper terrain, larger $\\|\\nabla f\\|$)."
+cg = np.linspace(-2.6, 2.6, 300)
+CX, CY = np.meshgrid(cg, cg)
+F = CX**2 + 3.0*CY**2
+fig, ax = plt.subplots(figsize=(6.0, 5.0))
+ax.contour(CX, CY, F, levels=np.arange(1, 25, 2.5), colors=PALE, linewidths=1.0)
+gg = np.linspace(-2.2, 2.2, 9)
+GXp, GYp = np.meshgrid(gg, gg)
+U = 2.0 * GXp
+V = 6.0 * GYp
+ax.quiver(GXp, GYp, U, V, color=GRAD, angles="xy", scale_units="xy", scale=18,
+          width=0.005)
+ax.set_aspect("equal"); ax.set_xlim(-2.6, 2.6); ax.set_ylim(-2.6, 2.6)
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title(r"$\nabla f \perp$ level sets, pointing uphill")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Does 'gradient is perpendicular to the level set' work in higher dimensions, where I can't
+draw a contour?"* Yes, and the proof above already covers it — nowhere did we use $n=2$. In
+$\mathbb{R}^n$ a level set $\{x: f(x)=c\}$ is generically an $(n-1)$-dimensional surface (a
+*hypersurface*); its tangent directions at $x$ form an $(n-1)$-dimensional space, and
+@thm-perp says $\nabla f(x)$ is orthogonal to *all* of them. So the gradient spans the *one*
+direction left over — the single direction not tangent to the level set, the normal to the
+hypersurface. This is the engine behind the method of Lagrange multipliers (where a
+constrained optimum forces the objective's gradient to be parallel to the constraint's
+gradient, because both must be normal to the same constraint surface), which the
+Optimization track builds on this fact.
+:::
+
+## First-order optimality: where the gradient vanishes {#sec-optimality}
+
+We can now read off the condition for a maximum or minimum — the multivariable analogue of
+"set the derivative to zero" from Calc 1, and the condition every optimization method is
+ultimately solving.
+
+Suppose $x^\star$ is a **local minimum** of $f$: $f(x^\star) \le f(x)$ for all $x$ near
+$x^\star$. Could the gradient there be nonzero? If $\nabla f(x^\star) \neq 0$, then by
+@thm-steepest the direction $u = -\nabla f/\|\nabla f\|$ has directional derivative
+$D_u f(x^\star) = -\|\nabla f(x^\star)\| < 0$ — a *strictly negative* slope. A negative slope
+means $f$ *decreases* as we step a little in that direction: there are points arbitrarily
+close to $x^\star$ with smaller $f$. That contradicts $x^\star$ being a local minimum. So the
+gradient cannot be nonzero, which leaves only one possibility.
+
+::: {#thm-firstorder-opt}
+**Theorem (first-order necessary condition).** If $f:\mathbb{R}^n\to\mathbb{R}$ has
+continuous partials and $x^\star$ is a local minimum or a local maximum of $f$, then
+$$
+\boxed{\;\nabla f(x^\star) = 0.\;}
+$$
+A point where $\nabla f = 0$ is called a **critical point** (or stationary point).
+:::
+
+::: {.proof}
+Take the minimum case (the maximum is identical with inequalities reversed, or apply the
+minimum argument to $-f$). Suppose for contradiction $\nabla f(x^\star) \neq 0$. By
+@thm-steepest the steepest-descent direction $u = -\nabla f(x^\star)/\|\nabla f(x^\star)\|$
+satisfies $D_u f(x^\star) = -\|\nabla f(x^\star)\| < 0$. By definition @eq-dirderiv-def this
+directional derivative is the *two-sided* limit $D_u f(x^\star) = \lim_{t\to 0}\frac{f(x^\star
++ tu) - f(x^\star)}{t}$; whenever a two-sided limit exists and equals $L$, the one-sided limit
+from the right equals the same $L$, so $\lim_{t\to 0^+}\frac{f(x^\star + tu) - f(x^\star)}{t} =
+-\|\nabla f(x^\star)\| < 0$. A limit from the right being a negative number means that for all
+sufficiently small $t > 0$ the difference quotient $\frac{f(x^\star+tu)-f(x^\star)}{t}$ is
+itself negative; since its denominator $t>0$, the numerator must be negative too, i.e.
+$f(x^\star + tu) < f(x^\star)$. Those are
+points arbitrarily close to $x^\star$ with strictly smaller value, contradicting that
+$x^\star$ is a local minimum. Therefore $\nabla f(x^\star) = 0$. $\qquad\blacksquare$
+:::
+
+Two cautions, both essential, both the reason the *next* article exists.
+
+**The condition is necessary, not sufficient.** $\nabla f = 0$ says "no direction is uphill
+*and* no direction is downhill, to first order" — the surface is locally flat. That is true at
+a minimum, but equally true at a *maximum* and at a *saddle point* (uphill in one direction,
+downhill in another, like a mountain pass). First-order information cannot tell these apart;
+all three are critical points. @fig-critical draws the three. Deciding *which* one a critical
+point is requires the *second* derivatives — the Hessian — which is precisely [GEOM-24].
+
+**It is a local statement.** $\nabla f = 0$ detects local flatness; it says nothing about
+whether $x^\star$ is the *global* best. A function can have many critical points, and finding
+the global minimum among them is a separate, generally hard problem — unless the surface is a
+single convex bowl (such as a quadratic form with positive-definite matrix, [GEOM-25],
+[GEOM-18]), in which case the unique critical point *is* the global minimum. That special,
+beautiful case is the convergence point of this whole movement.
+
+```{python}
+#| label: fig-critical
+#| fig-cap: "Three critical points, all with $\\nabla f = 0$, all looking flat to first order. **Left:** a minimum, $f=x_1^2+x_2^2$ (a bowl). **Middle:** a maximum, $f=-(x_1^2+x_2^2)$ (a dome). **Right:** a saddle, $f=x_1^2 - x_2^2$ (uphill along $x_1$, downhill along $x_2$). At the marked centre point the gradient vanishes in all three — the first-order condition cannot distinguish them. Telling them apart needs curvature (the Hessian, GEOM-24)."
+fig = plt.figure(figsize=(9.6, 3.4))
+g = np.linspace(-1.6, 1.6, 60)
+GX, GY = np.meshgrid(g, g)
+surfs = [("minimum  $x_1^2+x_2^2$", GX**2 + GY**2),
+         ("maximum  $-(x_1^2+x_2^2)$", -(GX**2 + GY**2)),
+         ("saddle  $x_1^2-x_2^2$", GX**2 - GY**2)]
+for k, (title, Zk) in enumerate(surfs, start=1):
+    axk = fig.add_subplot(1, 3, k, projection="3d")
+    axk.plot_surface(GX, GY, Zk, cmap="viridis", alpha=0.85, linewidth=0, antialiased=True)
+    axk.scatter([0], [0], [0], color=GRAD, s=40, depthshade=False)
+    axk.set_title(title, fontsize=10)
+    axk.set_xlabel("$x_1$"); axk.set_ylabel("$x_2$")
+    axk.view_init(elev=28, azim=-130)
+plt.tight_layout()
+```
+
+## Gradient descent, named but not built {#sec-descent-preview}
+
+We owe the reader an honest signpost. The negative gradient is the steepest-descent direction
+(@thm-steepest), so the natural way to *minimize* $f$ is Cauchy's idea: start somewhere, step
+a little against the gradient, repeat,
+$$
+x_{k+1} = x_k - \eta\,\nabla f(x_k),
+$$
+with a step size $\eta > 0$. This is **gradient descent**. We state it *only* to show where
+the geometry leads — and then we stop, deliberately. The questions that make it an
+*algorithm* — how big should $\eta$ be, when does the iteration converge and how fast, why
+does it zig-zag on stretched bowls, what to do about saddle points, momentum, line search —
+are **Optimization's** to answer, building directly on this article's geometry and on the
+conditioning story of [GEOM-26]. The boundary is the track's ownership rule: *Geometry owns
+the gradient as a direction; Optimization owns the iteration that walks along it.* What this
+article guarantees is the single fact the algorithm rests on — that $-\nabla f$ is the
+locally fastest way down — and the caution that "locally fastest" is not "globally smartest,"
+which is why Optimization needs more than this article gives.
+
+# Worked examples {#sec-examples}
+
+We now run the geometry on honest functions, verifying the steepest direction *numerically*
+against the analytic gradient — the finite-difference check is the discrete shadow of
+@eq-dirderiv-def, the same bridge used in [GEOM-22].
+
+## Example 1 — a real loss surface: logistic-regression negative log-likelihood {#sec-ex-logistic}
+
+A genuine machine-learning loss, not a toy. Logistic regression fits a probability
+$\sigma(w^\top x_i) = 1/(1+e^{-w^\top x_i})$ to binary labels $y_i\in\{0,1\}$ by minimizing
+the average negative log-likelihood. With a two-dimensional weight vector $w=(w_1,w_2)$ we
+can see the whole surface. Its gradient has the clean closed form
+$\nabla_w L = \tfrac1m\sum_i (\sigma(w^\top x_i) - y_i)\,x_i$ (derived in the Classification
+track; here we use it and *check* it). We confirm the steepest-ascent claim directly: the
+analytic gradient should beat every other unit direction's directional slope, and the
+finite-difference gradient should match it.
+
+```{python}
+#| label: tbl-logistic-grad
+#| echo: true
+import numpy as np
+rng = np.random.default_rng(1)
+
+# A small 2-feature binary dataset.
+m = 200
+X = rng.normal(size=(m, 2))
+w_true = np.array([1.3, -0.8])
+p = 1.0 / (1.0 + np.exp(-(X @ w_true)))
+y = (rng.uniform(size=m) < p).astype(float)
+
+def sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-z))
+
+def loss(w):
+    z = X @ w
+    # mean negative log-likelihood, written stably
+    return np.mean(np.logaddexp(0.0, z) - y * z)
+
+def grad_analytic(w):
+    return X.T @ (sigmoid(X @ w) - y) / m
+
+w0 = np.array([0.2, 0.4])               # a point on the surface
+g = grad_analytic(w0)
+
+# finite-difference gradient: the discrete shadow of the directional-derivative limit
+def fd_grad(fn, w, h=1e-6):
+    out = np.zeros_like(w)
+    for j in range(len(w)):
+        e = np.zeros_like(w); e[j] = h
+        out[j] = (fn(w + e) - fn(w - e)) / (2 * h)
+    return out
+
+g_fd = fd_grad(loss, w0)
+print("analytic gradient            :", np.round(g, 6))
+print("finite-difference gradient   :", np.round(g_fd, 6))
+print("max abs difference           :", np.max(np.abs(g - g_fd)))
+
+# Steepest-ascent check: D_u f for the gradient direction vs many random unit directions.
+u_grad = g / np.linalg.norm(g)
+def dir_deriv(fn, w, u, h=1e-6):
+    return (fn(w + h * u) - fn(w - h * u)) / (2 * h)
+
+slope_grad = dir_deriv(loss, w0, u_grad)
+rand_slopes = []
+for _ in range(8):
+    v = rng.normal(size=2); v /= np.linalg.norm(v)
+    rand_slopes.append(dir_deriv(loss, w0, v))
+print("\nD_u f along +gradient (steepest) :", round(slope_grad, 6),
+      "   = ||grad|| =", round(np.linalg.norm(g), 6))
+print("D_u f along 8 random directions  :", np.round(rand_slopes, 4))
+print("is the gradient direction the steepest? ",
+      all(slope_grad >= s - 1e-9 for s in rand_slopes))
+```
+
+Three things the printout confirms operationally. First, the analytic gradient matches the
+finite-difference gradient to the step precision — the closed-form $\nabla_w L$ is exactly
+@def-partial made discrete. Second, the directional slope *along the gradient direction*
+equals $\|\nabla f\|$, the number @thm-steepest predicts for the steepest direction. Third,
+no random unit direction beats it — the gradient is the steepest, as the theorem demands.
+@fig-logistic draws the surface's contours, the gradient arrow, and a steepest-descent path
+that visibly crosses the contours at right angles on its way to the minimum.
+
+```{python}
+#| label: fig-logistic
+#| fig-cap: "The logistic-regression loss surface over the two weights. Contours are constant-loss curves; the red arrow at the start point is $\\nabla L$, pointing uphill and perpendicular to its contour. The green path is steepest descent ($w \\gets w - \\eta\\nabla L$, Optimization's algorithm, shown here only to illustrate the geometry): each step heads along $-\\nabla L$, square to the local contour, walking the surface down toward the minimum (green dot). The loss is a single convex bowl, so the one critical point is the global minimum — the well-behaved case of @sec-optimality."
+w1g = np.linspace(-1.0, 3.0, 120)
+w2g = np.linspace(-2.5, 1.5, 120)
+W1, W2 = np.meshgrid(w1g, w2g)
+Ls = np.zeros_like(W1)
+for i in range(W1.shape[0]):
+    for j in range(W1.shape[1]):
+        Ls[i, j] = loss(np.array([W1[i, j], W2[i, j]]))
+
+fig, ax = plt.subplots(figsize=(6.2, 5.0))
+ax.contour(W1, W2, Ls, levels=18, colors=PALE, linewidths=1.0)
+
+# steepest-descent path (geometry illustration only)
+w = np.array([0.2, 0.4]); eta = 1.6
+path = [w.copy()]
+for _ in range(40):
+    w = w - eta * grad_analytic(w)
+    path.append(w.copy())
+path = np.array(path)
+ax.plot(path[:, 0], path[:, 1], color=ACCENT, lw=1.8, marker="o", ms=3,
+        label="steepest-descent path")
+
+# gradient arrow at the start
+w0 = np.array([0.2, 0.4]); g0 = grad_analytic(w0)
+g0u = g0 / np.linalg.norm(g0) * 0.6
+draw_vec(ax, (w0[0], w0[1]), (w0[0] + g0u[0], w0[1] + g0u[1]), color=GRAD,
+         label=r"$\nabla L$", label_offset=(0.18, 0.18))
+ax.scatter([path[-1, 0]], [path[-1, 1]], color=ACCENT, s=80, zorder=6,
+           edgecolor="white", label="minimum")
+ax.set_xlabel(r"$w_1$"); ax.set_ylabel(r"$w_2$")
+ax.set_title(r"$-\nabla L$ steps cross contours at right angles")
+ax.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+```
+
+## Example 2 — the gradient of a quadratic form, where steepest is not toward the minimum {#sec-ex-quad}
+
+The honest, near-the-edge example. Steepest descent is *locally* fastest but can be a poor
+*global* route, and a stretched quadratic bowl is where this bites hardest — a preview of why
+[GEOM-24] and [GEOM-26] exist. Take the quadratic form $f(x) = \tfrac12 x^\top A x$ with
+$A = \mathrm{diag}(1, 20)$ — a valley that is twenty times steeper across than along. Its
+gradient is $\nabla f = Ax$ (the quadratic-form identity from [GEOM-22], finished in
+[GEOM-25]). The minimum is at the origin. We show that the steepest-descent direction at a
+typical point does *not* point at the origin, and the resulting path zig-zags.
+
+```{python}
+#| label: tbl-quad-zigzag
+#| echo: true
+import numpy as np
+A = np.diag([1.0, 20.0])            # an ill-conditioned (stretched) bowl
+
+def fq(x):  return 0.5 * x @ A @ x
+def gq(x):  return A @ x            # gradient of (1/2) x^T A x  (GEOM-22 / GEOM-25)
+
+x0 = np.array([9.0, 1.0])           # a starting point off the long axis
+g0 = gq(x0)
+dir_to_min = -x0 / np.linalg.norm(x0)        # the direction that points AT the minimum
+dir_steepest = -g0 / np.linalg.norm(g0)      # the steepest-descent direction
+cos_angle = dir_to_min @ dir_steepest        # 1 would mean "steepest points at the min"
+print("steepest-descent direction :", np.round(dir_steepest, 4))
+print("direction toward minimum   :", np.round(dir_to_min, 4))
+print("cos(angle between them)    :", round(cos_angle, 4),
+      "  -> they are NOT the same direction")
+```
+
+The two directions disagree: the steepest-descent heading is dominated by the steep
+$x_2$-axis and points well off the line to the minimum. @fig-zigzag shows the consequence —
+steepest descent ricochets between the steep walls, taking many small steps, while the
+straight line to the minimum is right there. This is not a flaw in the gradient; it is the
+honest *limit* of first-order geometry. The gradient correctly reports the locally steepest
+direction; it simply cannot see that the bowl is stretched, because stretch is *curvature*,
+a second-derivative property. Recognizing this is the bridge to the rest of the movement.
+
+```{python}
+#| label: fig-zigzag
+#| fig-cap: "The edge of the gradient's usefulness. The bowl $f=\\tfrac12(x_1^2 + 20x_2^2)$ is stretched 20:1, so its contours are long thin ellipses. Steepest descent (green) repeatedly heads almost straight across the narrow valley, overshoots, and bounces — a slow zig-zag to the origin. The dashed grey line is the straight path to the minimum the gradient never takes. The gradient is locally correct at every step (always $\\perp$ the contour, always steepest), yet globally inefficient here: 'steepest' is not 'smartest.' Curvature (GEOM-24) and conditioning (GEOM-26) explain and fix this."
+cg1 = np.linspace(-10, 10, 300)
+cg2 = np.linspace(-3, 3, 300)
+CX, CY = np.meshgrid(cg1, cg2)
+F = 0.5 * (CX**2 + 20.0 * CY**2)
+fig, ax = plt.subplots(figsize=(7.4, 3.6))
+ax.contour(CX, CY, F, levels=np.linspace(2, 120, 16), colors=PALE, linewidths=1.0)
+
+x = np.array([9.0, 1.0]); eta = 0.09
+path = [x.copy()]
+for _ in range(60):
+    x = x - eta * gq(x)
+    path.append(x.copy())
+path = np.array(path)
+ax.plot(path[:, 0], path[:, 1], color=ACCENT, lw=1.6, marker="o", ms=2.5,
+        label="steepest descent (zig-zag)")
+ax.plot([9.0, 0.0], [1.0, 0.0], color=GREY, ls="--", lw=1.4,
+        label="straight line to minimum")
+ax.scatter([0], [0], color=GRAD, s=70, zorder=6, edgecolor="white", label="minimum")
+ax.set_aspect("equal"); ax.set_xlim(-10, 10); ax.set_ylim(-3, 3)
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title("locally steepest, globally slow")
+ax.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+```
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The geometry of this article is exact wherever the gradient exists and is continuous, but
+there are honest boundaries — the places where "follow the gradient" is the wrong instinct.
+
+## The gradient does not exist: kinks and corners {#sec-nondiff}
+
+Everything here assumed continuous partials, so that @thm-dirderiv and @thm-firstorder of
+[GEOM-22] apply. Several important losses violate that. The absolute-value loss $|r|$ (least
+absolute deviations), the hinge loss of an SVM, the ReLU activation $\max(0,z)$, and the
+$\ell_1$ penalty $\|w\|_1$ all have *kinks* where the left and right slopes disagree, so the
+limit @eq-dirderiv-def does not exist and there is no gradient to point along. At such a
+point "steepest ascent" is undefined — there is a *fan* of candidate slopes, not one. The
+correct generalization is the **subgradient**, the set of all linear under-estimators, which
+the Optimization track develops (and [GEOM-22] flagged in its own failure section). Here the
+honest statement is: the steepest-direction theorem is a *smooth* theorem; at a corner it has
+nothing to say, and you switch tools.
+
+## A critical point is not a minimum: the saddle trap {#sec-saddle}
+
+The single most common misuse of $\nabla f = 0$ is to read it as "we found the minimum." We
+proved only that it is *necessary* (@thm-firstorder-opt): minima, maxima, and saddles all
+satisfy it. In high dimensions saddle points vastly outnumber local minima for typical
+non-convex losses (a deep-network loss surface is riddled with them), so a solver that merely
+drives $\nabla f$ to zero can stall at a saddle that is *not* a minimum at all. **What you
+reach for instead:** the second-order test using the Hessian's definiteness ([GEOM-24],
+[GEOM-18]) — positive-definite Hessian means a genuine local minimum, indefinite means a
+saddle. First-order geometry locates the *candidates*; second-order geometry classifies them.
+This is the entire reason the next article exists, and we hand off to it cleanly.
+
+## Vanishing and exploding gradients: the magnitude misleads {#sec-vanishing}
+
+Because $\|\nabla f\|$ is the rate of climb, a *tiny* gradient signals nearly flat terrain —
+which can be a true minimum, but can equally be a long flat plateau or a saddle's flat
+direction, where progress stalls without any optimum nearby. The infamous *vanishing
+gradient* problem in deep networks is exactly this: gradients shrink to near-zero through
+many layers, the steepest direction becomes a near-zero arrow, and learning grinds to a halt
+even though no good solution has been reached. Conversely *exploding* gradients (huge
+$\|\nabla f\|$) make steepest-descent steps overshoot wildly. The lesson for this article:
+the gradient's *direction* is geometrically meaningful at every point it exists, but its
+*magnitude* is a slope, not a distance — a small or large $\|\nabla f\|$ tells you the local
+steepness, never how far the minimum is. Reading magnitude as "closeness to the answer" is a
+genuine error.
+
+::: {.callout-warning title="Pitfall"}
+**Three things $\nabla f = 0$ does *not* tell you.** (1) It does not tell you the point is a
+minimum — it could be a maximum or a saddle (@sec-saddle); you need the Hessian. (2) It does
+not tell you the point is the *global* optimum — only convexity does that ([GEOM-18],
+[GEOM-25]). (3) And a *small but nonzero* $\|\nabla f\|$ does not tell you the minimum is
+near — it tells you the terrain is locally gentle, which is true on plateaus and near saddles
+too. The gradient is a first-order, local instrument; treating it as a global verdict is the
+recurring trap.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When is following the gradient the right thing to do, and when is it not?"* The honest
+summary to recite:
+
+- **Trust the gradient's direction** whenever $f$ is differentiable: $-\nabla f$ is provably
+  the locally steepest descent (@thm-steepest), and $\nabla f = 0$ is the right *necessary*
+  condition to chase (@thm-firstorder-opt). On a convex bowl (a positive-definite quadratic,
+  [GEOM-25]) that is the whole story — one critical point, the global minimum.
+- **Do not rely on it alone** when the surface is curved unevenly (steepest descent zig-zags,
+  @sec-ex-quad — use curvature, [GEOM-24], or preconditioning, [GEOM-26]), when there are
+  many critical points (saddles and local minima, non-convex losses — needs the Hessian and
+  good initialization), or when $f$ is non-smooth (kinks — use subgradients).
+- **And never confuse the magnitude with proximity:** $\|\nabla f\|$ is a slope, not a
+  remaining distance to the optimum.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-22] *Vector and Matrix Differentiation***, which built the gradient
+as a stacked column of partial derivatives and proved the first-order approximation
+$f(x+\Delta x)\approx f(x)+\nabla f^\top\Delta x$. This article turned that algebraic object
+into a *geometric* one, using the dot-product geometry of **[GEOM-04]** (the angle form
+$u^\top v=\|u\|\|v\|\cos\theta$ and Cauchy–Schwarz) and the orthogonality of **[GEOM-05]**:
+the gradient is the steepest-ascent direction, its length is the steepest slope, it is
+perpendicular to the level sets, and it vanishes at every critical point. From here Movement
+VI finishes:
+
+- **[GEOM-24] — The Hessian and the Curvature of a Surface.** We found *where* the surface is
+  flat ($\nabla f = 0$); next we differentiate the gradient again to get the matrix of second
+  partials, whose definiteness ([GEOM-18]) finally tells us *which kind* of critical point we
+  are at — minimum, maximum, or saddle. The saddle trap of @sec-saddle is resolved there.
+- **[GEOM-25] — The Gradient and Hessian of a Quadratic Form.** The convergence point of the
+  movement: for $f(x)=\tfrac12 x^\top A x - b^\top x$ the gradient is $Ax - b$ and setting it
+  to zero gives $Ax = b$ — so minimizing a quadratic *is* solving a linear system, with a
+  unique global minimum exactly when $A$ is positive-definite. The stretched-bowl example of
+  @sec-ex-quad is exactly that surface, and its conditioning is [GEOM-26].
+
+Downstream of the track, this article is the **geometric foundation the Optimization track
+builds gradient descent on** — the $x_{k+1}=x_k-\eta\nabla f(x_k)$ step of @sec-descent-preview
+is theirs to analyze, consuming the steepest-descent theorem and the conditioning story of
+[GEOM-26] and linking back here rather than re-deriving the geometry. It also supplies the
+**first-order critical-point condition $\nabla\ell(\theta)=0$** that Inference's score-equation
+work ([INFR-B2]) stands on.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The primary source.** A.-L. Cauchy, "Méthode générale pour la résolution des systèmes
+  d'équations simultanées," *Comptes Rendus de l'Académie des Sciences* (1847) — two pages
+  that introduce steepest descent and rest entirely on the steepest-direction fact this
+  article proves.
+- **The geometry, told well.** The directional-derivative / gradient / level-set picture is
+  the heart of any vector-calculus text; for the data-science framing, the optimization
+  chapters of Boyd & Vandenberghe, *Convex Optimization* (2004), connect the steepest
+  direction and the descent step at exactly the boundary this track draws with Optimization.
+- **The honest limits.** The zig-zag of @sec-ex-quad and the role of curvature are the
+  motivation for Nocedal & Wright, *Numerical Optimization* (2006), whose early chapters
+  contrast steepest descent with Newton and quasi-Newton methods — the second-order successors
+  to this first-order article.
+- **Open threads this article deliberately deferred.** *Which kind of critical point is it?*
+  — the Hessian of [GEOM-24]. *Why does steepest descent zig-zag, and what fixes it?* — the
+  conditioning of [GEOM-26]. *What is the steepest direction when $f$ is constrained?* — the
+  normal-to-the-constraint-surface reading of @thm-perp, which becomes Lagrange multipliers in
+  the Optimization track. *What replaces the gradient at a kink?* — the subgradient, also
+  Optimization's.

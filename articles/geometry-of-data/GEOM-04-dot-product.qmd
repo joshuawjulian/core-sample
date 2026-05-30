@@ -44,15 +44,15 @@ def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
 
 > **Where this sits in the track.** This is the fourth article in the **Geometry of
 > Data** track and the opening of Movement II, where length and angle finally enter the
-> picture. It assumes [GEOM-0 *What Is a Vector, Really?*] (a vector is at once an arrow,
-> a list of numbers in $\mathbb{R}^n$, and a row of a dataset) and [GEOM-1 *Adding and
+> picture. It assumes [GEOM-00 *What Is a Vector, Really?*] (a vector is at once an arrow,
+> a list of numbers in $\mathbb{R}^n$, and a row of a dataset) and [GEOM-01 *Adding and
 > Scaling*] (the linear combination $c_1\mathbf{v}_1 + \cdots + c_k\mathbf{v}_k$). It
 > also leans on one fact from below the Calc-1 floor — the **law of cosines** — which we
 > restate and use, not assume. Everything so far has been *affine*: we could add and
 > scale, but we had no way to say how *long* a vector is or what *angle* sits between two
 > of them. This article installs both, and it does so from a single new operation, the
-> **dot product**. It sets up [GEOM-5 *Orthogonality and Orthonormal Bases*]
-> (perpendicular means "dot product zero"), [GEOM-6 *Orthogonal Projection*] (the
+> **dot product**. It sets up [GEOM-05 *Orthogonality and Orthonormal Bases*]
+> (perpendicular means "dot product zero"), [GEOM-06 *Orthogonal Projection*] (the
 > keystone, built entirely from dot products), and [GEOM-17 *Quadratic Forms*] (which
 > generalize the length-squared $\mathbf{x}^\top\mathbf{x}$).
 
@@ -102,12 +102,12 @@ is an answer to some piece of that.
 
 ## What we had, and what we lost
 
-[GEOM-0] made a vector three things at once: an arrow with a tip and a tail, a list of
-numbers $(x_1,\dots,x_n)$, and a row of a data table. [GEOM-1] then gave us the only two
+[GEOM-00] made a vector three things at once: an arrow with a tip and a tail, a list of
+numbers $(x_1,\dots,x_n)$, and a row of a data table. [GEOM-01] then gave us the only two
 operations we were allowed: add two vectors (tip-to-tail), and scale a vector (stretch or
 flip). With just those two moves we can build any linear combination, and that is enough
-to talk about *which directions we can reach* (span, [GEOM-2]) and *whether our directions
-are redundant* (independence, [GEOM-3]).
+to talk about *which directions we can reach* (span, [GEOM-02]) and *whether our directions
+are redundant* (independence, [GEOM-03]).
 
 But notice what we still cannot do. We cannot say a vector is "three units long." We
 cannot say two vectors are "perpendicular," or "almost parallel," or "$30^\circ$ apart."
@@ -171,9 +171,9 @@ Before any algebra, hold two pictures in mind.
 (x_1, x_2)$ is the hypotenuse of a right triangle with legs $x_1$ and $x_2$, so its length
 is $\sqrt{x_1^2 + x_2^2}$ — that is just Pythagoras. In three dimensions you apply
 Pythagoras twice (once in the base plane, once to climb to the tip) and get
-$\sqrt{x_1^2 + x_2^2 + x_3^2}$. The pattern obviously wants to continue: length is the
-square root of the sum of squared coordinates, in any dimension. We will make "obviously"
-honest in @sec-norm.
+$\sqrt{x_1^2 + x_2^2 + x_3^2}$. The pattern looks like it wants to continue — length is the
+square root of the sum of squared coordinates, in any dimension — but "looks like" is not a
+proof, so we do not lean on it: @sec-norm earns it with a full induction.
 
 **Angle is about alignment.** Two arrows from the same origin can point the same way
 ($0^\circ$), opposite ways ($180^\circ$), at right angles ($90^\circ$), or anywhere
@@ -241,7 +241,7 @@ $\mathbf{x}$: it lays the column on its side into a row. Stacking a $1\times n$ 
 an $n \times 1$ column and using the row-times-column rule produces exactly the single sum
 $\sum_i x_i y_i$. (The transpose gets its own full treatment in [GEOM-10]; here we use it
 only as compact notation for "pair up and sum," and the matrix-multiplication rule that
-justifies it is built in [GEOM-9].) The older notation $\mathbf{x}\cdot\mathbf{y}$ — the
+justifies it is built in [GEOM-09].) The older notation $\mathbf{x}\cdot\mathbf{y}$ — the
 literal "dot" — means the identical number; the most general name, $\langle
 \mathbf{x},\mathbf{y}\rangle$, the **inner product**, we save for @sec-inner where we say
 what makes the dot product just *one* inner product among many.
@@ -562,14 +562,14 @@ the two lengths. We never measured an angle; we *computed* one from a spreadshee
 the article's central promise delivered: the geometry the physicists started with is
 recovered from the numbers a computer holds.
 
-Two special cases are worth naming on the spot, because the entire next article (GEOM-5)
+Two special cases are worth naming on the spot, because the entire next article (GEOM-05)
 hangs on the first:
 
 - **Perpendicular ($\theta = 90^\circ$).** Then $\cos\theta = 0$, so @eq-angle forces
   $\mathbf{x}^\top\mathbf{y} = 0$. Conversely, if $\mathbf{x}^\top\mathbf{y}=0$ for nonzero
   vectors, then $\cos\theta = 0$ and $\theta = 90^\circ$. So **"perpendicular" and "dot
   product zero" are the same statement** — the definition of *orthogonality* that
-  [GEOM-5] runs on, and a notion that now makes sense in any dimension, even where we cannot
+  [GEOM-05] runs on, and a notion that now makes sense in any dimension, even where we cannot
   picture a right angle.
 - **Parallel ($\theta = 0^\circ$ or $180^\circ$).** Then $\cos\theta = \pm 1$, so
   $\mathbf{x}^\top\mathbf{y} = \pm\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert$ — the dot
@@ -675,7 +675,7 @@ genuine angle $\theta\in[0^\circ, 180^\circ]$ exists with that cosine. The angle
 vectors in $\mathbb{R}^n$ is now a well-defined object, not a hopeful analogy. And the
 equality case has a clean reading: $|\cos\theta| = 1$ — vectors exactly parallel or
 anti-parallel — happens precisely when one vector is a scalar multiple of the other, which
-is exactly when they are *linearly dependent* in the sense of [GEOM-3]. The geometry
+is exactly when they are *linearly dependent* in the sense of [GEOM-03]. The geometry
 ($\theta\in\{0^\circ,180^\circ\}$) and the algebra (linear dependence) agree.
 
 ::: {.callout-tip title="You might be asked"}
@@ -1017,19 +1017,19 @@ letting a divide-by-zero produce a silent `nan`.
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from [GEOM-1 *Adding and Scaling*] with only affine structure — addition and
+You arrived from [GEOM-01 *Adding and Scaling*] with only affine structure — addition and
 scaling, but no ruler and no protractor. This article installed both from one operation, the
 dot product: length via $\lVert\mathbf{x}\rVert = \sqrt{\mathbf{x}^\top\mathbf{x}}$
 (Pythagoras in $n$ dimensions) and angle via $\mathbf{x}^\top\mathbf{y} =
 \lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta$ (the law of cosines), with
 Cauchy–Schwarz guaranteeing the angle is real. From here:
 
-- **[GEOM-5 *Orthogonality and Orthonormal Bases*]** — the read-as-a-pair companion to this
+- **[GEOM-05 *Orthogonality and Orthonormal Bases*]** — the read-as-a-pair companion to this
   article. It runs entirely on the special case we flagged: $\mathbf{x}^\top\mathbf{y} = 0$
   means perpendicular. It builds the generalized Pythagorean theorem, orthonormal bases
   (where coordinates are *just dot products*, $c_i = \mathbf{q}_i^\top\mathbf{x}$), and the
   orthogonal complement.
-- **[GEOM-6 *Orthogonal Projection onto a Subspace*]** — the keystone of the track. The
+- **[GEOM-06 *Orthogonal Projection onto a Subspace*]** — the keystone of the track. The
   projection of one vector onto another, $(\mathbf{a}^\top\mathbf{x}/\mathbf{a}^\top
   \mathbf{a})\,\mathbf{a}$, is built entirely from the dot products defined here; "closest
   point" is "drop a perpendicular," and perpendicular is dot-product-zero. This is the
@@ -1040,7 +1040,7 @@ Cauchy–Schwarz guaranteeing the angle is real. From here:
 - **Cross-track:** cosine similarity (@sec-ex-cosine) is consumed by Classification (k-NN,
   the kernel trick, where a kernel is a generalized inner product) and Unsupervised Learning
   (clustering, recommender systems). The "regression slope is covariance over variance"
-  result of [REGR-1] is, geometrically, a dot product in disguise — a connection [REGR-4]
+  result of [REGR-01] is, geometrically, a dot product in disguise — a connection [REGR-04]
   makes explicit once projection is in hand.
 :::
 
@@ -1057,8 +1057,8 @@ Cauchy–Schwarz guaranteeing the angle is real. From here:
   discriminant proof is the standard one and the same template that proves the general
   inner-product version in @sec-inner verbatim.
 - **Open threads this article deliberately deferred.** *What if perpendicular is the whole
-  story?* — orthogonality and its consequences are [GEOM-5]. *How do we find the closest
-  point in a subspace?* — projection, [GEOM-6], the keystone. *Is there a "best" inner
+  story?* — orthogonality and its consequences are [GEOM-05]. *How do we find the closest
+  point in a subspace?* — projection, [GEOM-06], the keystone. *Is there a "best" inner
   product for a given dataset?* — the Mahalanobis distance and positive-definite matrices,
   [GEOM-17]–[GEOM-18]. *Why do nearly all high-dimensional vectors look orthogonal, made
   precise?* — measure concentration, a probabilistic story owned by the Probability track but

@@ -1,0 +1,953 @@
+---
+title: "Adding and Scaling: The Linear Combination"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # the input vectors
+SCALED = "#c1121f"   # scaled copies / the result
+ACCENT = "#0a7d4d"   # highlights / sums / means
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_dx=0.0, label_dy=0.0):
+    """Draw a 2-D arrow from tail to head with a clean arrowhead."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_dx, head[1] + label_dy, label,
+                color=color, fontsize=12, ha="left", va="bottom")
+```
+
+> **Where this sits in the track.** This is the second article in the **Geometry of
+> Data** track. It assumes only [GEOM-00 *What Is a Vector, Really?*], which fixed the
+> object we work with: a vector is at once an arrow from the origin, an ordered list of
+> numbers in $\mathbb{R}^n$, and one row of a data table. GEOM-00 left a debt — it
+> repeatedly *used* "componentwise addition" and "scaling" to decompose a vector into its
+> coordinates, while promising those two operations would be defined and drawn here. This
+> article pays that debt in full. It defines the **only two operations** linear algebra
+> grants a vector, draws each one, fuses them into the single move from which the rest of
+> the subject is assembled — the **linear combination** — and states the eight rules those
+> operations obey, not as sacred axioms but as the bookkeeping that makes the geometry
+> work. It sets up [GEOM-02 *Span and Subspaces*] (turn the coefficients of a linear
+> combination loose and ask what you can reach) and [GEOM-08 *Matrices as Linear Maps*]
+> (a matrix acts on a vector by taking a linear combination of its columns).
+
+## Abstract {.unnumbered}
+
+Linear algebra permits a vector exactly two operations: **add two vectors**, and **scale
+one vector by a number**. That is the entire vocabulary — every later construction in this
+track, however elaborate, is built from just these two moves applied over and over. This
+article defines both operations *componentwise* (slot by slot) and shows that each has a
+clean geometric picture: addition is tip-to-tail (equivalently, the diagonal of a
+parallelogram), and scaling is stretching, shrinking, or flipping an arrow along its own
+line. We then fuse the two into the **linear combination**
+$c_1\mathbf{v}_1 + \cdots + c_k\mathbf{v}_k$ — scale each vector, then add the results —
+and argue that this single expression is the load-bearing idea of the whole subject. We
+close by stating the eight algebraic rules these operations satisfy, deriving each from the
+componentwise definitions, and reading them not as abstract axioms but as the precise
+guarantees that let us manipulate vectors as freely as numbers. The single claim the
+article defends: **two operations, honestly understood, are enough to generate all of
+linear algebra — and a weighted average is nothing more than a linear combination whose
+coefficients happen to sum to one.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+There are only **two** things you may do to vectors: **add** them, and **scale** them by a
+number. Both are done one coordinate at a time, and both have a picture — addition lays
+arrows tip-to-tail; scaling stretches or flips an arrow along its own line. Glue the two
+together and you get the **linear combination** $c_1\mathbf{v}_1 + \cdots + c_k\mathbf{v}_k$:
+scale each vector by its own coefficient, then sum. This one expression is the atom of the
+entire track — span, projection, matrix multiplication, and least squares are all linear
+combinations in disguise. The eight algebraic "rules of a vector space" are not extra
+content to memorize; they are simply the slot-by-slot arithmetic of real numbers,
+inherited one coordinate at a time.
+:::
+
+Everything below orbits that box. The destination — the linear combination — looks almost
+too simple to deserve an article. The point of the article is that *almost everything else
+in the track is this expression wearing a costume*, so understanding it cleanly, with both
+its algebra and its picture, is what makes the later machinery feel inevitable instead of
+arbitrary. When matrix multiplication arrives in [GEOM-09] and looks like a strange
+row-times-column ritual, the antidote will be: *it is taking linear combinations of
+columns*, the move defined right here.
+
+# Why we are here: the problem that forced these two operations {#sec-why}
+
+Keep one question in view for the whole article: **why these two operations, and why only
+these two?** A vector, GEOM-00 insisted, is a point in space and a row of data. Of all the
+things one could imagine doing to such an object, linear algebra is built on a deliberately
+*tiny* toolkit — add, and scale — and the power of the subject comes precisely from that
+restraint. Understanding *why* the toolkit is so small is understanding what "linear" means.
+
+## What "linear" is actually promising
+
+The word **linear** is doing real work, and it is worth saying what it promises before we
+formalize anything. A relationship is linear when **the whole is the sum of its parts, each
+part scaled by how much of it you have.** A grocery bill is linear: three apples at \$0.50
+and two loaves at \$2.00 cost $3 \times 0.50 + 2 \times 2.00$ — you *scale* each unit price
+by a quantity and *add*. Mixing paint is linear: two parts blue and one part yellow is
+$2 \cdot (\text{blue}) + 1 \cdot (\text{yellow})$, scaling each color by its share and
+combining. A portfolio's value is linear in its holdings; a weighted exam grade is linear
+in its components.
+
+Every one of those everyday computations is the *same* shape: take some base quantities,
+scale each by a number, add the scaled results. Linear algebra is the study of that shape,
+made precise and lifted into $n$ dimensions.
+
+This is also, historically, the order in which the subject was discovered. People computed
+*with* "scale and add" — on forces, on velocities, on systems of linear equations — for
+centuries before anyone wrote down what the operations *were*. Hermann Grassmann's 1844
+*Ausdehnungslehre* ("theory of extension") was the first attempt to treat adding and
+scaling abstract magnitudes as the primitive operations of a self-contained calculus; it
+was so far ahead of its notation that almost no one read it. It took until Giuseppe Peano's
+1888 *Calcolo geometrico* for the modern list — the eight rules of @thm-vector-space below —
+to be written out as the defining properties of what he called a "linear system." The
+striking historical fact is the *direction* of the discovery: the axioms came **last**, as a
+distillation of operations practitioners had trusted for generations, not first as
+postulates handed down. That is exactly the stance this article takes in @sec-rules — the
+eight rules are bookkeeping we *verify*, not commandments we obey. The two operations — scaling and adding — are
+exactly the two verbs in that sentence, and the reason the toolkit is only two operations
+wide is that **this shape is the entire subject.** There is no third verb because "scale
+and add" already captures what "linear" means. Anything you cannot express by scaling and
+adding is, by definition, *non*linear, and lives outside this subject (it is why squaring a
+feature, or multiplying two features together, immediately takes you out of plain linear
+algebra and into the harder territory the later tracks handle).
+
+## Why a data scientist should care
+
+GEOM-00 turned a data table into a cloud of points. But a cloud you can only *look* at is
+inert; to *do* anything with it you need operations, and the two defined here are the ones
+that turn out to matter most. Three concrete jobs, each one a linear combination:
+
+- **Combining features.** A credit score, a risk index, a "health score" from a fitness
+  tracker — these are almost always a weighted sum of measured features:
+  $\text{score} = w_1 \cdot \text{feature}_1 + \cdots + w_p \cdot \text{feature}_p$. That
+  *is* a linear combination of the feature values, with the weights as coefficients. The
+  whole of linear regression ([REGR-01], [REGR-05]) is the search for the best such weights.
+- **Averaging observations.** The "typical" customer, the centroid of a cluster, the mean
+  image of a face — each is an average of data-row vectors, which we will see (@sec-weighted)
+  is a linear combination whose coefficients are all $1/n$.
+- **Moving through space.** A neural network's hidden layer, a change of coordinates, a
+  rotation — each acts by forming linear combinations of its inputs. When [GEOM-08] reveals
+  that *every* matrix does its work by taking linear combinations of columns, this article
+  is the thing that makes the statement land.
+
+Hold this *why* as we go: every formal step below is in service of pinning down the one
+operation that all of these share, so that when it reappears in a dozen disguises later in
+the track, you recognize it on sight.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does linear algebra only allow adding and scaling — why can't I multiply two vectors
+together?"* Because **"linear" is exactly the restriction to adding and scaling**, and that
+restriction is a feature, not a limitation. The honest, layered answer an interviewer wants:
+**(1)** You *can* define products of vectors, and we will — the dot product ([GEOM-04]) takes
+two vectors and returns a *number*, and there is a cross product in $\mathbb{R}^3$ — but
+neither is part of the vector-space structure itself; they are extra structure laid on top.
+**(2)** A componentwise product $(x_1 y_1, \dots, x_n y_n)$ exists too (NumPy's `*`), but it
+breaks the geometry: it depends on the choice of axes in a way that addition and scaling do
+not, so it is not a meaningful geometric operation on the underlying arrows. **(3)** The
+deep reason: the moment you allow products of the *variables*, you leave linearity behind —
+$x^2$ and $x_1 x_2$ are nonlinear — and you lose the closed-form, picture-able theory this
+entire track is built on. Linear algebra is powerful *because* it is restrictive.
+:::
+
+# Intuition first: two pictures, before any symbols {#sec-intuition}
+
+Before a single formula, get the two pictures in hand. They are the entire geometric
+content of the article; the algebra that follows is just these pictures written in
+coordinates.
+
+## Picture one — adding is walking tip-to-tail
+
+To add two arrows, **walk the first, then walk the second starting from where the first
+ended.** Place the tail of $\mathbf{w}$ at the tip of $\mathbf{v}$; the sum
+$\mathbf{v} + \mathbf{w}$ is the single arrow from the original start to the final finish.
+This is the *tip-to-tail* rule, and it is just the obvious fact that displacements
+accumulate: go $3$ steps east then $2$ steps north, and your net displacement is the
+straight arrow to where you stand.
+
+There is a second, equivalent picture. If instead you draw both arrows from the *same*
+starting point, they form two sides of a **parallelogram**, and the sum is its diagonal.
+The two pictures agree because the parallelogram's far side is just $\mathbf{w}$ slid over
+to begin at $\mathbf{v}$'s tip — the tip-to-tail walk traced along the top edge. We draw
+both in @fig-add and verify they land on the same point.
+
+## Picture two — scaling slides along a line
+
+To scale an arrow by a number $c$, **stretch it to $c$ times its length, keeping its
+direction** — unless $c$ is negative, in which case you also flip it to point the opposite
+way. Doubling ($c=2$) makes the arrow twice as long; halving ($c=\tfrac12$) shrinks it;
+$c=-1$ reverses it; $c=0$ collapses it to the origin. Crucially, scaling never lets the
+arrow leave the **line through the origin that it already points along** — every scaled
+copy, for every $c$, lies on that one line. That single line, swept out as $c$ ranges over
+all reals, is our first glimpse of a *span* (the subject of [GEOM-02]).
+
+```{python}
+#| label: fig-add
+#| fig-cap: "**Left:** addition as a tip-to-tail walk. Slide the tail of $\\mathbf{w}=(1,2)$ to the tip of $\\mathbf{v}=(3,1)$ (faint copy); the sum $\\mathbf{v}+\\mathbf{w}=(4,3)$ is the arrow from the common origin to where the walk ends. Drawing $\\mathbf{w}$ first and then $\\mathbf{v}$ (the other faint path) lands on the very same point — addition does not care about order. **Right:** scaling slides an arrow along its own line through the origin. Every scalar multiple $c\\mathbf{v}$ of $\\mathbf{v}=(2,1)$ — here $c=2,\\,1,\\,\\tfrac12,\\,-1$ — lies on one line; $c>1$ stretches, $0<c<1$ shrinks, $c<0$ flips to the other side of the origin."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.2))
+
+# --- Left: tip-to-tail and the parallelogram ---
+v = np.array([3, 1]); w = np.array([1, 2]); s = v + w
+draw_vec(axL, (0, 0), v, color=VEC, label=r"$\mathbf{v}$", label_dx=0.05, label_dy=-0.25)
+draw_vec(axL, (0, 0), w, color=ACCENT, label=r"$\mathbf{w}$", label_dx=-0.55, label_dy=0.05)
+# w slid to the tip of v (faint), and v slid to the tip of w (faint): parallelogram
+draw_vec(axL, v, s, color=ACCENT, lw=1.6, z=3)
+axL.annotate("", xy=s, xytext=tuple(w),
+             arrowprops=dict(arrowstyle="-|>", color=VEC, lw=1.6, alpha=0.5,
+                             shrinkA=0, shrinkB=0), zorder=3)
+draw_vec(axL, (0, 0), s, color=SCALED, lw=2.6,
+         label=r"$\mathbf{v}+\mathbf{w}=(4,3)$", label_dx=0.05, label_dy=0.1)
+axL.scatter([0], [0], color="black", s=25, zorder=6)
+axL.set_xlim(-0.5, 5); axL.set_ylim(-0.5, 4)
+axL.set_aspect("equal")
+axL.set_xlabel("axis 1"); axL.set_ylabel("axis 2")
+axL.set_title("Addition: tip-to-tail = parallelogram diagonal")
+
+# --- Right: scalar multiples on one line ---
+vv = np.array([2, 1])
+line_t = np.linspace(-1.6, 2.4, 50)
+axR.plot(line_t * vv[0], line_t * vv[1], color=GREY, ls="--", lw=1.0, zorder=1)
+for c, col, lab in [(2, SCALED, r"$2\mathbf{v}$"),
+                    (1, VEC, r"$\mathbf{v}$"),
+                    (0.5, ACCENT, r"$\frac{1}{2}\mathbf{v}$"),
+                    (-1, PALE, r"$-\mathbf{v}$")]:
+    draw_vec(axR, (0, 0), c * vv, color=col, lw=2.4,
+             label=lab, label_dx=0.08, label_dy=0.04)
+axR.scatter([0], [0], color="black", s=25, zorder=6)
+axR.set_xlim(-3, 5); axR.set_ylim(-2, 3)
+axR.set_aspect("equal")
+axR.set_xlabel("axis 1"); axR.set_ylabel("axis 2")
+axR.set_title("Scaling: every $c\\mathbf{v}$ lies on one line")
+plt.tight_layout()
+```
+
+Those two pictures — *walk arrows tip-to-tail*, *slide an arrow along its line* — are all
+the geometry there is. The rest of this article makes them exact in coordinates, fuses
+them, and audits the rules they obey.
+
+# Formal development {#sec-formal}
+
+We work in $\mathbb{R}^n$, the space of ordered lists of $n$ real numbers fixed in
+[GEOM-00, @def-rn]. Recall the conventions we keep: vectors are lowercase boldface
+$\mathbf{v}, \mathbf{w}, \mathbf{x}$; their components carry a subscript, so
+$\mathbf{v} = (v_1, \dots, v_n)$, written as a column when it matters; and plain lowercase
+letters $c, d, \lambda$ are **scalars** — single real numbers. Both operations below are
+defined **componentwise**, meaning *slot by slot*: we say what happens in coordinate $i$,
+for each $i$ from $1$ to $n$, and that defines the whole vector.
+
+## Vector addition {#sec-addition}
+
+::: {#def-addition}
+**Definition (vector addition).** For two vectors $\mathbf{v} = (v_1, \dots, v_n)$ and
+$\mathbf{w} = (w_1, \dots, w_n)$ in $\mathbb{R}^n$, their **sum** is the vector obtained by
+adding corresponding components:
+$$
+\mathbf{v} + \mathbf{w}
+= \begin{bmatrix} v_1 \\ v_2 \\ \vdots \\ v_n \end{bmatrix}
++ \begin{bmatrix} w_1 \\ w_2 \\ \vdots \\ w_n \end{bmatrix}
+= \begin{bmatrix} v_1 + w_1 \\ v_2 + w_2 \\ \vdots \\ v_n + w_n \end{bmatrix}.
+$$ {#eq-addition}
+The sum is again a vector in $\mathbb{R}^n$ — addition takes two vectors and returns one of
+the same size.
+:::
+
+Read @eq-addition for exactly what it says: the $i$-th slot of the sum is $v_i + w_i$, the
+ordinary sum of two real numbers, and nothing crosses between slots — coordinate $1$ never
+talks to coordinate $2$. Two demands are hidden in the definition and worth surfacing. First,
+the two vectors must have the **same number of components**; you cannot add a vector in
+$\mathbb{R}^3$ to one in $\mathbb{R}^5$, because slot $4$ has no partner. Second, the
+operation is built entirely on the addition of *real numbers* — which is why, as we will see
+in @sec-rules, every algebraic rule of vector addition is just the corresponding rule for
+real numbers, applied in every slot at once.
+
+Now connect @eq-addition to the tip-to-tail picture of @fig-add, because the definition
+should not feel disconnected from the drawing. In $\mathbb{R}^2$, the arrow $\mathbf{v} =
+(v_1, v_2)$ means "go $v_1$ right and $v_2$ up." Walking $\mathbf{w} = (w_1, w_2)$ from
+there means "go a further $w_1$ right and $w_2$ up." Your total horizontal travel is
+$v_1 + w_1$ and your total vertical travel is $v_2 + w_2$ — which is exactly the sum vector
+$(v_1 + w_1,\, v_2 + w_2)$ of @eq-addition. **The componentwise rule and the tip-to-tail
+walk are the same statement**: displacements add coordinate by coordinate because that is
+what "and then keep going" does to each axis independently.
+
+A concrete instance, the one drawn in @fig-add:
+$$
+\mathbf{v} + \mathbf{w}
+= \begin{bmatrix} 3 \\ 1 \end{bmatrix} + \begin{bmatrix} 1 \\ 2 \end{bmatrix}
+= \begin{bmatrix} 3 + 1 \\ 1 + 2 \end{bmatrix}
+= \begin{bmatrix} 4 \\ 3 \end{bmatrix}.
+$$
+
+## Scalar multiplication {#sec-scaling}
+
+::: {#def-scaling}
+**Definition (scalar multiplication).** For a scalar $c \in \mathbb{R}$ and a vector
+$\mathbf{v} = (v_1, \dots, v_n)$ in $\mathbb{R}^n$, the **scalar multiple** $c\mathbf{v}$ is
+obtained by multiplying every component by $c$:
+$$
+c\,\mathbf{v}
+= c \begin{bmatrix} v_1 \\ v_2 \\ \vdots \\ v_n \end{bmatrix}
+= \begin{bmatrix} c\,v_1 \\ c\,v_2 \\ \vdots \\ c\,v_n \end{bmatrix}.
+$$ {#eq-scaling}
+The result is again a vector in $\mathbb{R}^n$.
+:::
+
+Again the rule is slot-by-slot: scale every coordinate by the same number $c$. The
+geometric reading matches the right panel of @fig-add. Multiplying $(v_1, v_2)$ by $c$ sends
+it to $(cv_1, cv_2)$ — every coordinate grows (or shrinks) by the same factor, so the arrow
+keeps its direction and only changes length, *unless* $c < 0$, when every coordinate flips
+sign and the arrow reverses. Three special values are worth naming because they recur:
+
+- $c = 0$ gives $0\mathbf{v} = (0, \dots, 0) = \mathbf{0}$, the zero vector — scaling by
+  zero collapses any arrow to the origin. (We prove this is forced, not just defined, in
+  @sec-rules.)
+- $c = 1$ gives $1\mathbf{v} = \mathbf{v}$ — scaling by one changes nothing.
+- $c = -1$ gives $-\mathbf{v} = (-v_1, \dots, -v_n)$, the **negative** of $\mathbf{v}$: the
+  same arrow pointing the opposite way. This is what lets us *subtract*:
+  $\mathbf{v} - \mathbf{w}$ is shorthand for $\mathbf{v} + (-1)\mathbf{w}$, addition of the
+  flipped vector. So subtraction is not a third operation — it is addition and scaling
+  combined, our first hint that everything reduces to the two.
+
+::: {.callout-tip title="You might be asked"}
+*"Is vector subtraction a separate operation?"* No, and saying so cleanly shows you
+understand the structure. $\mathbf{v} - \mathbf{w}$ is *defined* as
+$\mathbf{v} + (-1)\mathbf{w}$ — scale $\mathbf{w}$ by $-1$, then add. Geometrically,
+$\mathbf{v} - \mathbf{w}$ is the arrow that points **from the tip of $\mathbf{w}$ to the tip
+of $\mathbf{v}$** (slide it to the origin and it is the difference), which is why the
+distance between two data points is the length of their difference vector — a fact we will
+lean on constantly once [GEOM-04] gives us length. The takeaway: the "two operations" of the
+Core really are only two; subtraction, averaging, and every other manipulation are built
+from them.
+:::
+
+## The linear combination: fusing the two operations {#sec-lincomb}
+
+We have addition and we have scaling. The single object the rest of the track is built from
+is what you get when you use **both at once** on a collection of vectors.
+
+::: {#def-lincomb}
+**Definition (linear combination).** Given vectors $\mathbf{v}_1, \mathbf{v}_2, \dots,
+\mathbf{v}_k$ in $\mathbb{R}^n$ and scalars $c_1, c_2, \dots, c_k \in \mathbb{R}$ (the
+**coefficients** or **weights**), the **linear combination** of the $\mathbf{v}_i$ with
+those coefficients is the vector
+$$
+c_1 \mathbf{v}_1 + c_2 \mathbf{v}_2 + \cdots + c_k \mathbf{v}_k
+= \sum_{i=1}^{k} c_i \mathbf{v}_i.
+$$ {#eq-lincomb}
+:::
+
+Read the recipe in @eq-lincomb literally, because it is *only* the two operations in
+sequence: **scale each vector $\mathbf{v}_i$ by its coefficient $c_i$** (that is
+@eq-scaling, done $k$ times), **then add the scaled results** (that is @eq-addition, done
+$k-1$ times). Nothing else. A linear combination is the *compound* move; addition and
+scaling are its two primitive halves.
+
+Let us make the componentwise form explicit so there is no mystery about what
+@eq-lincomb produces. Writing each $\mathbf{v}_i = (v_{1i}, v_{2i}, \dots, v_{ni})$ — where
+$v_{ji}$ is "coordinate $j$ of the $i$-th vector" — and applying the two definitions slot by
+slot, the $j$-th coordinate of the linear combination is
+$$
+\bigl(c_1\mathbf{v}_1 + \cdots + c_k\mathbf{v}_k\bigr)_j
+= c_1 v_{j1} + c_2 v_{j2} + \cdots + c_k v_{jk}
+= \sum_{i=1}^{k} c_i\, v_{ji}.
+$$ {#eq-lincomb-comp}
+Each coordinate of the result is itself an ordinary weighted sum of numbers. That is the
+whole content; @fig-lincomb walks one such combination geometrically.
+
+```{python}
+#| label: fig-lincomb
+#| fig-cap: "A linear combination is *scale each, then add*. Starting from $\\mathbf{v}_1=(2,0)$ and $\\mathbf{v}_2=(1,2)$, form $1.5\\,\\mathbf{v}_1 + 1.0\\,\\mathbf{v}_2$. **Step 1 (faint):** scale — $\\mathbf{v}_1$ stretches to $1.5\\mathbf{v}_1=(3,0)$, $\\mathbf{v}_2$ stays as $1.0\\mathbf{v}_2=(1,2)$. **Step 2:** add the two scaled arrows tip-to-tail, giving $(4,2)$ (red). Componentwise this is $(1.5\\cdot2 + 1\\cdot1,\\ 1.5\\cdot0 + 1\\cdot2)=(4,2)$ — the picture and @eq-lincomb-comp agree."
+v1 = np.array([2, 0]); v2 = np.array([1, 2])
+c1, c2 = 1.5, 1.0
+sv1, sv2 = c1 * v1, c2 * v2
+res = sv1 + sv2
+
+fig, ax = plt.subplots(figsize=(6.6, 4.6))
+# originals
+draw_vec(ax, (0, 0), v1, color=VEC, lw=1.6, label=r"$\mathbf{v}_1$", label_dy=-0.28)
+draw_vec(ax, (0, 0), v2, color=ACCENT, lw=1.6, label=r"$\mathbf{v}_2$", label_dx=-0.55)
+# scaled copies (faint)
+draw_vec(ax, (0, 0), sv1, color=VEC, lw=2.6, z=4,
+         label=r"$1.5\,\mathbf{v}_1$", label_dy=-0.3)
+# v2 scaled equals v2 here (c2=1); show it slid to the tip of sv1 for the add
+ax.annotate("", xy=tuple(res), xytext=tuple(sv1),
+            arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.6,
+                            shrinkA=0, shrinkB=0), zorder=4)
+ax.text(sv1[0] + 0.05, (sv1[1] + res[1]) / 2, r"$+\,1.0\,\mathbf{v}_2$",
+        color=ACCENT, fontsize=11)
+draw_vec(ax, (0, 0), res, color=SCALED, lw=2.8,
+         label=r"$1.5\mathbf{v}_1+1.0\mathbf{v}_2=(4,2)$", label_dx=0.05, label_dy=0.12)
+ax.scatter([0], [0], color="black", s=25, zorder=6)
+ax.set_xlim(-0.5, 5); ax.set_ylim(-0.5, 3)
+ax.set_aspect("equal")
+ax.set_xlabel("axis 1"); ax.set_ylabel("axis 2")
+ax.set_title("Linear combination: scale each, then add")
+plt.tight_layout()
+```
+
+Why does this deserve to be called *the* atom of the subject? Because the headline results
+of the entire track are linear combinations under other names, and naming them now means we
+will recognize them on sight:
+
+- **Coordinates** are a linear combination. GEOM-00's @eq-coords showed every vector is
+  $\mathbf{x} = x_1\mathbf{e}_1 + \cdots + x_n\mathbf{e}_n$ — a linear combination of the
+  axis vectors with the coordinates as coefficients. We promised there to define the
+  operations used; @def-addition and @def-scaling are that promise kept.
+- **Span** ([GEOM-02]) is the set of *all* linear combinations of some vectors — turn the
+  coefficients loose and collect everywhere you can reach.
+- **Matrix–vector products** ([GEOM-08]). The product $A\mathbf{x}$ is exactly the linear
+  combination of $A$'s columns with the entries of $\mathbf{x}$ as coefficients. The whole
+  of "what a matrix does" is "it forms linear combinations of its columns."
+- **A fitted regression** is a linear combination of predictor columns; a **principal
+  component** is a linear combination of features. The list does not stop.
+
+::: {.callout-tip title="You might be asked"}
+*"What is a linear combination, in one sentence, and why does it matter so much?"* "Scale
+each of several vectors by a number and add the results." Why it matters: it is the *only*
+way the two permitted operations can be combined, so **anything** linear algebra can build
+from a set of vectors is a linear combination of them — there is literally nothing else to
+make. That is why span, matrix products, projections, regressions, and PCA all reduce to
+this one expression. An interviewer raising this is checking whether you see linear algebra
+as a pile of separate tricks or as repeated application of one move; the right answer is the
+latter.
+:::
+
+# The eight rules, as the bookkeeping of two operations {#sec-rules}
+
+Textbooks define a "vector space" by eight axioms and present them with some ceremony. We
+take the track's stance ([GEOM-00, @sec-failure]): these are **not** sacred axioms handed
+down to be revered — they are simply the algebraic guarantees that our two componentwise
+operations *happen to satisfy*, inherited one coordinate at a time from the ordinary
+arithmetic of real numbers. We will *state* all eight and *prove* the representative ones
+directly from @def-addition and @def-scaling, so you see they are facts, not assumptions.
+Their job is practical: they are exactly the permissions that let us push vector expressions
+around — regroup, reorder, factor, cancel — as freely as we push numbers around. Without
+them, an expression like $c_1\mathbf{v}_1 + c_2\mathbf{v}_2$ would have no guaranteed meaning
+when we rearrange it.
+
+Throughout, $\mathbf{u}, \mathbf{v}, \mathbf{w} \in \mathbb{R}^n$ and $c, d \in \mathbb{R}$.
+
+::: {#thm-vector-space}
+**The eight rules.** Vector addition and scalar multiplication on $\mathbb{R}^n$ satisfy:
+
+*Rules of addition.*
+1. **Commutativity:** $\mathbf{v} + \mathbf{w} = \mathbf{w} + \mathbf{v}$.
+2. **Associativity:** $(\mathbf{u} + \mathbf{v}) + \mathbf{w} = \mathbf{u} + (\mathbf{v} + \mathbf{w})$.
+3. **Additive identity:** there is a vector $\mathbf{0}$ with $\mathbf{v} + \mathbf{0} = \mathbf{v}$ for all $\mathbf{v}$.
+4. **Additive inverse:** every $\mathbf{v}$ has a vector $-\mathbf{v}$ with $\mathbf{v} + (-\mathbf{v}) = \mathbf{0}$.
+
+*Rules of scaling, and how the two operations interact.*
+5. **Distributivity over vector sums:** $c(\mathbf{v} + \mathbf{w}) = c\mathbf{v} + c\mathbf{w}$.
+6. **Distributivity over scalar sums:** $(c + d)\mathbf{v} = c\mathbf{v} + d\mathbf{v}$.
+7. **Associativity of scaling:** $c(d\mathbf{v}) = (cd)\mathbf{v}$.
+8. **Scalar identity:** $1\,\mathbf{v} = \mathbf{v}$.
+:::
+
+::: {.proof}
+Every proof is the same idea: *go to coordinate $j$, where everything is real numbers, use
+the matching rule for real numbers, and note it held in every slot.* We prove four — one
+addition rule, both distributive laws, and the scaling associativity — which between them
+exhibit every technique; the rest are identical in form.
+
+**Rule 1 (commutativity of addition).** Look at the $j$-th coordinate of each side. By
+@eq-addition, coordinate $j$ of $\mathbf{v} + \mathbf{w}$ is $v_j + w_j$, and coordinate $j$
+of $\mathbf{w} + \mathbf{v}$ is $w_j + v_j$. But $v_j$ and $w_j$ are real numbers, and real
+addition is commutative, so $v_j + w_j = w_j + v_j$. The two vectors agree in every
+coordinate $j = 1, \dots, n$, so they are the same vector. (This is the *tip-to-tail order
+does not matter* fact drawn in the left panel of @fig-add — both walks reach $(4,3)$.)
+
+**Rule 5 (distributing a scalar over a vector sum).** Take coordinate $j$ of the left side,
+$c(\mathbf{v} + \mathbf{w})$. By @eq-addition the inner sum has $j$-th coordinate
+$v_j + w_j$; then by @eq-scaling, multiplying by $c$ gives
+$$
+\bigl[c(\mathbf{v}+\mathbf{w})\bigr]_j = c\,(v_j + w_j).
+$$
+Coordinate $j$ of the right side, $c\mathbf{v} + c\mathbf{w}$, is (by @eq-scaling then
+@eq-addition)
+$$
+\bigl[c\mathbf{v} + c\mathbf{w}\bigr]_j = c v_j + c w_j.
+$$
+The ordinary distributive law for real numbers says $c(v_j + w_j) = c v_j + c w_j$, so the
+two coordinates are equal — for every $j$. Hence the two vectors are equal.
+
+**Rule 6 (distributing over a sum of scalars).** Coordinate $j$ of $(c+d)\mathbf{v}$ is, by
+@eq-scaling, $(c + d)v_j$. Coordinate $j$ of $c\mathbf{v} + d\mathbf{v}$ is $c v_j + d v_j$.
+Real-number distributivity gives $(c+d)v_j = c v_j + d v_j$ in each slot, so the vectors
+agree. (Geometrically this is "stretch by $c$, separately stretch by $d$, add — same as
+stretch by $c+d$," because all three arrows lie on $\mathbf{v}$'s one line.)
+
+**Rule 7 (associativity of scaling).** Coordinate $j$ of $c(d\mathbf{v})$ is, applying
+@eq-scaling twice (inner first), $c\,(d v_j)$. Coordinate $j$ of $(cd)\mathbf{v}$ is
+$(cd)v_j$. Real multiplication is associative, $c(d v_j) = (cd) v_j$, so the vectors are
+equal in every slot.
+
+The remaining rules go the same way. **Rule 2** is associativity of real addition in each
+slot. **Rule 3** holds with $\mathbf{0} = (0, \dots, 0)$, since $v_j + 0 = v_j$ in each
+slot. **Rule 4** holds with $-\mathbf{v} = (-1)\mathbf{v} = (-v_1, \dots, -v_n)$, since
+$v_j + (-v_j) = 0$ in each slot. **Rule 8** is $1 \cdot v_j = v_j$ in each slot. In all
+eight, the vector rule is the real-number rule applied coordinatewise. $\qquad\blacksquare$
+:::
+
+The proof exposes the real content of @thm-vector-space: **$\mathbb{R}^n$ inherits its
+algebra, slot by slot, from $\mathbb{R}$.** There is no new arithmetic to learn; there is
+only old arithmetic done in parallel across $n$ coordinates. That is exactly why we can
+manipulate vector expressions with the same reflexes we use on numbers — and it is the
+license behind every algebraic rearrangement in the rest of the track.
+
+Two small but genuinely useful facts fall straight out of these rules, and we derive them
+rather than assert them, since they will be used silently later.
+
+::: {#lem-consequences}
+**Lemma (forced consequences).** For every $\mathbf{v} \in \mathbb{R}^n$ and every
+$c \in \mathbb{R}$:
+$$
+\text{(a)}\quad 0\,\mathbf{v} = \mathbf{0}, \qquad\qquad
+\text{(b)}\quad (-1)\,\mathbf{v} = -\mathbf{v}, \qquad\qquad
+\text{(c)}\quad c\,\mathbf{0} = \mathbf{0}.
+$$
+:::
+
+::: {.proof}
+**(a)** This *looks* obvious from @eq-scaling, but the point is that it is *forced* by the
+rules even without peeking at coordinates — which is what makes it true in any vector space.
+Start from the real-number fact $0 = 0 + 0$ and apply Rule 6 (distributivity over a sum of
+scalars) with $c = d = 0$:
+$$
+0\,\mathbf{v} = (0 + 0)\,\mathbf{v} = 0\,\mathbf{v} + 0\,\mathbf{v}.
+$$
+Now $0\mathbf{v}$ is some vector; call it $\mathbf{a}$, so $\mathbf{a} = \mathbf{a} +
+\mathbf{a}$. Add its inverse $-\mathbf{a}$ (which exists by Rule 4) to both sides and use
+Rules 2, 4, 3 in turn:
+$$
+\mathbf{a} + (-\mathbf{a}) = (\mathbf{a} + \mathbf{a}) + (-\mathbf{a})
+= \mathbf{a} + \bigl(\mathbf{a} + (-\mathbf{a})\bigr)
+\;\Longrightarrow\; \mathbf{0} = \mathbf{a} + \mathbf{0} = \mathbf{a}.
+$$
+So $\mathbf{a} = 0\mathbf{v} = \mathbf{0}$. Scaling by zero must collapse to the origin — it
+is not a separate decree but a consequence of distributivity.
+
+**(b)** We show $(-1)\mathbf{v}$ is *the* additive inverse of $\mathbf{v}$. Using Rule 8
+($1\mathbf{v} = \mathbf{v}$), then Rule 6, then part (a):
+$$
+\mathbf{v} + (-1)\mathbf{v} = 1\mathbf{v} + (-1)\mathbf{v} = (1 + (-1))\mathbf{v}
+= 0\,\mathbf{v} = \mathbf{0}.
+$$
+Since adding $(-1)\mathbf{v}$ to $\mathbf{v}$ yields $\mathbf{0}$, by definition
+$(-1)\mathbf{v}$ is the inverse $-\mathbf{v}$. This is why "flip the arrow" (the picture) and
+"multiply by $-1$" (the algebra) are the same thing.
+
+**(c)** From $\mathbf{0} = \mathbf{0} + \mathbf{0}$ (Rule 3) and Rule 5 (distributing a
+scalar over a sum): $c\mathbf{0} = c(\mathbf{0} + \mathbf{0}) = c\mathbf{0} + c\mathbf{0}$,
+and the same cancellation as in (a) gives $c\mathbf{0} = \mathbf{0}$. $\qquad\blacksquare$
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why bother with the eight axioms — isn't $\mathbb{R}^n$ obviously well-behaved?"* The
+honest answer has two layers. **First**, for $\mathbb{R}^n$ the rules really are "obvious"
+in the sense we just proved — they descend coordinatewise from real arithmetic, so you will
+never have to *check* them for ordinary numeric vectors. **Second**, and this is the reason
+the axioms are stated abstractly at all: the *same eight rules* are satisfied by objects
+that are not tuples of numbers — polynomials, continuous functions, random variables,
+images. Anything obeying these eight rules is a **vector space**, and *every theorem proved
+from the eight rules alone* (independence, basis, dimension, eigen-everything) applies to
+all of them at once. So the axioms are how a single proof covers $\mathbb{R}^n$ *and*
+function spaces *and* the space of random variables simultaneously. We do not chase that
+abstraction in this track — our payoff lives in $\mathbb{R}^n$ — but knowing the rules are
+the portable interface is the graduate-level point.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the two operations on real, honestly messy data — never a toy rigged to flatter
+the idea. The first example combines feature vectors; the second builds a weighted average
+and shows it *is* a linear combination; the third visits the edge, where forming a linear
+combination is mechanically fine but *meaningless*.
+
+## Example 1 — combining feature vectors into a score {#sec-score}
+
+A common, genuinely used task: collapse several measured features into a single score by a
+weighted sum. We take a small nutrition dataset — five cereals, each a vector of three
+features (grams of sugar, grams of fiber, calories per serving) — and build a crude
+"healthiness score" as a linear combination of the feature *columns*. Reward fiber, penalize
+sugar and calories.
+
+```{python}
+#| label: compute-cereals
+#| echo: false
+names   = ["Bran Flakes", "Sugar Pops", "Oat Squares", "Choco Rings", "Plain Oats"]
+sugar   = np.array([5.,  12.,  6.,  13.,  1.])   # grams
+fiber   = np.array([5.,   1.,  4.,   1.,  4.])   # grams
+calorie = np.array([90., 120., 100., 110., 150.])# kcal
+
+# Each FEATURE is a column vector in R^5 (one entry per cereal).
+# A score is a linear combination of these three feature vectors.
+w_sugar, w_fiber, w_cal = -1.0, 2.0, -0.02
+score = w_sugar * sugar + w_fiber * fiber + w_cal * calorie
+
+print("weights:  sugar = -1.0,  fiber = +2.0,  calories = -0.02")
+print(f"{'cereal':12s} {'sugar':>6s} {'fiber':>6s} {'kcal':>6s} {'score':>8s}")
+for nm, s, f, c, sc in zip(names, sugar, fiber, calorie, score):
+    print(f"{nm:12s} {s:6.0f} {f:6.0f} {c:6.0f} {sc:8.2f}")
+```
+
+The key reframing — the one that makes this an article about linear combinations rather than
+about cereal — is *which vectors are being combined.* We treat each **feature** as a column
+vector in $\mathbb{R}^5$ (one entry per cereal): $\mathbf{s}$ holds the five sugar values,
+$\mathbf{f}$ the five fiber values, $\mathbf{c}$ the five calorie values. The score vector is
+then the single linear combination
+$$
+\mathbf{score} = w_s\,\mathbf{s} + w_f\,\mathbf{f} + w_c\,\mathbf{c}
+= (-1.0)\,\mathbf{s} + (2.0)\,\mathbf{f} + (-0.02)\,\mathbf{c},
+$$
+exactly the form of @def-lincomb with $k = 3$ vectors in $\mathbb{R}^5$. By the
+componentwise rule @eq-lincomb-comp, cereal $j$'s score is
+$-1.0\,s_j + 2.0\,f_j - 0.02\,c_j$ — the printed table is this formula evaluated in each of
+the five slots at once. @fig-score draws the combination building up term by term for one
+cereal and shows the resulting ranking.
+
+```{python}
+#| label: fig-score
+#| fig-cap: "A score as a linear combination of feature vectors. **Left:** for one cereal (Oat Squares) the score is built by scaling each feature by its weight and adding — a waterfall from $0$ up through $-1.0\\cdot\\text{sugar}$, $+2.0\\cdot\\text{fiber}$, $-0.02\\cdot\\text{calories}$ to the final value. This is @eq-lincomb-comp in one slot. **Right:** the whole score vector — the same linear combination evaluated in all five slots — ranks the cereals. Changing the three weights would tilt the whole ranking; the weights *are* the coefficients of the combination."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 4.2))
+
+# --- Left: waterfall for one cereal (index 2: Oat Squares) ---
+j = 2
+contribs = [w_sugar * sugar[j], w_fiber * fiber[j], w_cal * calorie[j]]
+labels = [f"$-1.0\\cdot{sugar[j]:.0f}$", f"$+2.0\\cdot{fiber[j]:.0f}$",
+          f"$-0.02\\cdot{calorie[j]:.0f}$"]
+running = 0.0
+colors_wf = [SCALED, ACCENT, GREY]
+for k, (cb, lab, col) in enumerate(zip(contribs, labels, colors_wf)):
+    axL.bar(k, cb, bottom=running, color=col, alpha=0.9, width=0.6)
+    axL.text(k, running + cb / 2, lab, ha="center", va="center", fontsize=8, color="white")
+    running += cb
+axL.bar(3, running, color=VEC, width=0.6)
+axL.text(3, running / 2, f"score\n$={running:.2f}$", ha="center", va="center",
+         fontsize=9, color="white")
+axL.axhline(0, color="black", lw=0.8)
+axL.set_xticks(range(4))
+axL.set_xticklabels(["sugar", "fiber", "kcal", "total"])
+axL.set_ylabel("contribution to score")
+axL.set_title("One score = scale each feature, add")
+
+# --- Right: the full score vector, ranked ---
+order = np.argsort(score)
+axR.barh([names[i] for i in order], score[order],
+         color=[ACCENT if score[i] >= 0 else SCALED for i in order], alpha=0.9)
+axR.axvline(0, color="black", lw=0.8)
+axR.set_xlabel("healthiness score")
+axR.set_title("Same combination, all 5 slots")
+plt.tight_layout()
+```
+
+The honest reading: the *score* is a genuine linear combination, and that is precisely why
+it is interpretable — each weight is the marginal effect of one more gram (or calorie) on
+the total, and doubling all weights doubles every score without changing the ranking (Rule 7
+and Rule 5 at work). But it is also why the score is *only as good as the weights*: there is
+no learning here, just arithmetic. Choosing the weights from data — so the combination
+predicts something real — is regression, and the linear combination defined here is the
+object regression optimizes over.
+
+## Example 2 — a weighted average is a linear combination summing to one {#sec-weighted}
+
+This is the example the roadmap calls out, and it is worth doing carefully because the
+"sum to one" condition is the single most important special case of a linear combination in
+all of data science. We take four monthly returns of a small stock portfolio — each month a
+vector of three asset returns (in percent) — and ask for the portfolio's *blended* return
+under a fixed allocation.
+
+Suppose we hold $50\%$ in asset A, $30\%$ in asset B, $20\%$ in asset C. The portfolio
+return in any month is
+$$
+\mathbf{r}_{\text{port}} = 0.5\,\mathbf{r}_A + 0.3\,\mathbf{r}_B + 0.2\,\mathbf{r}_C,
+$$
+where $\mathbf{r}_A, \mathbf{r}_B, \mathbf{r}_C \in \mathbb{R}^4$ are the four-month return
+vectors of the three assets. This is a linear combination (@def-lincomb) with coefficients
+$0.5, 0.3, 0.2$ — and notice they **sum to one**. That constraint is what makes it an
+*average* (a "convex combination") rather than an arbitrary blend: the result is guaranteed
+to land *between* the inputs, never outside their range.
+
+```{python}
+#| label: compute-portfolio
+#| echo: false
+months = ["Jan", "Feb", "Mar", "Apr"]
+rA = np.array([ 2.0, -1.5,  3.0,  0.5])   # asset A monthly returns (%)
+rB = np.array([ 1.0,  0.5, -0.5,  2.0])   # asset B
+rC = np.array([-1.0,  2.5,  1.0, -0.5])   # asset C
+
+w = np.array([0.5, 0.3, 0.2])             # allocation weights, sum = 1
+print(f"weights = {w.tolist()},  sum = {w.sum():.2f}")
+r_port = w[0]*rA + w[1]*rB + w[2]*rC
+print(f"{'month':6s} {'A':>6s} {'B':>6s} {'C':>6s} {'port':>8s}")
+for m, a, b, c, p in zip(months, rA, rB, rC, r_port):
+    print(f"{m:6s} {a:6.2f} {b:6.2f} {c:6.2f} {p:8.3f}")
+print(f"\nrange each month: portfolio return lies between min and max asset return")
+```
+
+The componentwise rule @eq-lincomb-comp produces the portfolio column slot by slot; e.g. for
+January, $0.5(2.0) + 0.3(1.0) + 0.2(-1.0) = 1.0 + 0.3 - 0.2 = 1.1$. We can now state the
+general fact cleanly, and prove it, because it is the property that makes "sum to one"
+special.
+
+::: {#lem-convex}
+**Lemma (a sum-to-one combination stays inside the range).** Let $a_1, \dots, a_k$ be real
+numbers (one coordinate of each input vector), and let $c_1, \dots, c_k \ge 0$ with
+$\sum_i c_i = 1$. Then the combination $\sum_i c_i a_i$ lies between the smallest and the
+largest of the $a_i$:
+$$
+\min_i a_i \;\le\; \sum_{i=1}^{k} c_i a_i \;\le\; \max_i a_i.
+$$
+:::
+
+::: {.proof}
+Write $m = \min_i a_i$ and $M = \max_i a_i$, so $m \le a_i \le M$ for every $i$. Multiply
+the inequality $a_i \le M$ by $c_i \ge 0$ (multiplying an inequality by a nonnegative number
+preserves its direction): $c_i a_i \le c_i M$. Sum over $i$:
+$$
+\sum_i c_i a_i \;\le\; \sum_i c_i M = M \sum_i c_i = M \cdot 1 = M,
+$$
+where we pulled the constant $M$ out of the sum and used $\sum_i c_i = 1$. The identical
+argument with $m \le a_i$ multiplied by $c_i \ge 0$ gives $\sum_i c_i a_i \ge m \sum_i c_i =
+m$. Hence $m \le \sum_i c_i a_i \le M$. Because this holds in every coordinate at once, the
+*vector* combination $\sum_i c_i \mathbf{v}_i$ lies, coordinate by coordinate, inside the
+box spanned by the inputs. $\qquad\blacksquare$
+:::
+
+This is precisely why a portfolio's return cannot beat its best asset or trail its worst
+(no leverage, no shorting — those would be coefficients outside $[0,1]$ or summing past
+one). It is also why the **mean** of $n$ data points,
+$\bar{\mathbf{x}} = \frac1n \sum_i \mathbf{x}_i = \sum_i \tfrac1n \mathbf{x}_i$, is a linear
+combination with all coefficients $c_i = 1/n$ — which sum to one — so the centroid always
+sits *inside* the cloud, never outside it. @fig-weighted shows a two-asset blend sweeping as
+the weight moves, tracing the line segment between the two input vectors.
+
+```{python}
+#| label: fig-weighted
+#| fig-cap: "A weighted average traces the segment between its inputs. Two assets' (return, risk) profiles are the vectors $\\mathbf{a}=(3.0,\\,4.0)$ and $\\mathbf{b}=(1.0,\\,1.5)$. The convex combination $t\\,\\mathbf{a}+(1-t)\\,\\mathbf{b}$ — coefficients $t$ and $1-t$, summing to one — sweeps the full line *segment* between them as $t$ runs from $0$ to $1$ (dots, shaded by $t$). It never leaves the segment, the geometric face of @lem-convex: a sum-to-one, nonnegative combination stays inside the convex hull of its inputs. The equal-weight average $t=\\tfrac12$ (green) is the midpoint."
+a = np.array([3.0, 4.0]); b = np.array([1.0, 1.5])
+ts = np.linspace(0, 1, 11)
+pts = np.array([t * a + (1 - t) * b for t in ts])
+
+fig, ax = plt.subplots(figsize=(6.4, 4.4))
+ax.plot([b[0], a[0]], [b[1], a[1]], color=GREY, ls="--", lw=1.2, zorder=1)
+sc = ax.scatter(pts[:, 0], pts[:, 1], c=ts, cmap="viridis", s=55, zorder=3)
+draw_vec(ax, (0, 0), a, color=VEC, lw=1.8, label=r"$\mathbf{a}$ ($t=1$)", label_dx=0.05)
+draw_vec(ax, (0, 0), b, color=SCALED, lw=1.8, label=r"$\mathbf{b}$ ($t=0$)", label_dx=-0.05, label_dy=-0.28)
+mid = 0.5 * a + 0.5 * b
+ax.scatter([mid[0]], [mid[1]], color=ACCENT, s=120, zorder=4,
+           edgecolor="white", linewidth=1.4)
+ax.text(mid[0] + 0.06, mid[1] + 0.05, r"equal-weight avg", color=ACCENT, fontsize=9)
+ax.scatter([0], [0], color="black", s=22, zorder=5)
+fig.colorbar(sc, ax=ax, label="weight $t$ on $\\mathbf{a}$")
+ax.set_xlim(-0.3, 3.6); ax.set_ylim(-0.3, 4.6)
+ax.set_xlabel("expected return"); ax.set_ylabel("risk")
+ax.set_title("Convex combination stays on the segment")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between a linear combination, an affine combination, and a convex
+combination?"* All three are $\sum_i c_i \mathbf{v}_i$; they differ only in what the
+coefficients are allowed to be — and the distinction matters constantly in practice. A
+**linear** combination puts *no* constraint on the $c_i$ (they range over all reals); its
+reachable set is a whole subspace through the origin ([GEOM-02]). An **affine** combination
+adds the single constraint $\sum_i c_i = 1$; it reaches the flat through the points but
+*not* through the origin, and it is the natural setting for "weighted average / interpolation"
+(a regression's *prediction*, $\hat y = \sum \hat\beta_j x_j$, is affine in the inputs once
+the intercept is counted). A **convex** combination adds *both* $\sum_i c_i = 1$ *and*
+$c_i \ge 0$; by @lem-convex it stays inside the convex hull of the points, which is why means,
+mixture weights, attention weights in transformers, and probability-weighted expectations are
+all convex combinations. Being able to name which one a quantity is tells you immediately
+where it can land.
+:::
+
+## Example 3 — the edge: combinations that are mechanically fine but meaningless {#sec-edge}
+
+An honest article shows where the operation, applied blindly, produces nonsense. The two
+operations are defined for *any* lists of equal length, so the arithmetic never complains —
+but a linear combination is only *meaningful* when the coordinates are commensurable
+quantities for which scaling and adding make real-world sense (the boundary GEOM-00 flagged
+for vectors themselves, now inherited by combinations of them).
+
+Consider a customer table whose columns mix true magnitudes with coded categories and an
+identifier:
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability. Two customer rows are added and averaged componentwise; the arithmetic runs without error, but only *some* of the resulting coordinates mean anything. **Age** and **income** combine sensibly (an average age is a real age). **Region code** (1=North, 2=South, 3=West) averages to $2.0$ — a number that points at 'South' purely by accident of the encoding; the label arithmetic is meaningless. **Customer ID** sums to a larger ID that identifies no one. The lesson: the two operations are always *defined*, but a linear combination is *interpretable* only on coordinates where adding and scaling have real meaning."
+labels = ["age", "income\n($000)", "region\ncode", "customer\nID"]
+cust1 = np.array([30.,  55.,  1.,  4001.])
+cust2 = np.array([50.,  85.,  3.,  4007.])
+total = cust1 + cust2
+avg   = 0.5 * cust1 + 0.5 * cust2
+meaningful = [True, True, False, False]
+
+fig, ax = plt.subplots(figsize=(8.4, 4.0))
+x = np.arange(len(labels)); width = 0.28
+for k, (vals, lab, off, col) in enumerate([
+        (cust1, "customer 1", -width, VEC),
+        (cust2, "customer 2", 0.0, ACCENT),
+        (avg,   "average",    width, SCALED)]):
+    bars = ax.bar(x + off, vals, width, label=lab, color=col, alpha=0.9)
+ax.set_xticks(x); ax.set_xticklabels(labels)
+ax.set_yscale("log")
+ax.set_ylabel("value (log scale)")
+ax.set_title("Componentwise average: defined everywhere, meaningful only sometimes")
+for xi, ok in zip(x, meaningful):
+    ax.text(xi, 1.4, "OK" if ok else "nonsense", ha="center",
+            color=(ACCENT if ok else SCALED), fontsize=10, fontweight="bold")
+ax.legend(framealpha=0.9, fontsize=9, loc="upper left")
+plt.tight_layout()
+```
+
+The arithmetic in @fig-edge is flawless and useless in half the columns. Averaging two
+region codes ($1$ and $3$) yields $2$, which the encoding happens to call "South" — but had
+we coded the regions $\{1, 2, 4\}$ the same two customers would average to $2.5$, pointing
+nowhere. The "average customer ID" identifies no customer at all. **This is the honest edge
+of the linear combination: it is the right tool exactly when the coordinates are quantities
+you can legitimately scale and add — magnitudes, counts, rates — and the wrong tool the
+instant a coordinate is a label or an identifier in numeric clothing.** The fix is the one
+GEOM-00 named: one-hot encode categoricals (so each category gets its own honest $0/1$ axis)
+and exclude identifiers from the geometry entirely. The operation does not police its own
+inputs; you must.
+
+# Failure modes and honest boundaries {#sec-failure}
+
+This article defines two operations, so its "failure modes" are the misuses of those
+operations and the places the picture quietly misleads.
+
+::: {.callout-warning title="Pitfall"}
+**A linear combination is only as meaningful as its coordinates, and only as honest as its
+scales.** Three traps, the first two carried forward from GEOM-00 and now sharpened by the
+combination itself:
+
+- **Mixing categorical codes into a combination** (Example 3). Adding or averaging label
+  codes produces a number with no referent. One-hot encode first.
+- **Incommensurable scales.** Combining "income in dollars" (tens of thousands) with "age
+  in years" (tens) in a single weighted sum lets income silently dominate, not because it
+  matters more but because its *numbers* are bigger. Equal-looking weights are not equal
+  influence until the features are standardized. This is benign here but becomes a genuine
+  bug the moment a *distance* is computed ([GEOM-04]), where the large-scale feature drowns
+  the rest.
+- **Forgetting that "sum to one" is what makes an average an average.** A combination with
+  coefficients that do *not* sum to one is a perfectly valid vector, but it is not a weighted
+  average and need not lie among the inputs (@lem-convex needs the constraint). Reporting
+  $1.2\,\mathbf{a} - 0.2\,\mathbf{b}$ as "a blend of A and B" is leverage, not averaging, and
+  can land far outside the data.
+:::
+
+A second, subtler boundary concerns the *picture* versus the *algebra*. The tip-to-tail and
+"slide along a line" drawings are faithful in $\mathbb{R}^2$ and $\mathbb{R}^3$, and they
+*generate* correct intuition in higher dimensions — but, exactly as GEOM-00 warned, the
+drawing is a crutch and the coordinate definition is the truth. A linear combination of
+hundred-dimensional feature vectors is computed slot by slot by @eq-lincomb-comp whether or
+not you can visualize it; trust the arithmetic, use the planar picture only to form
+conjectures. When this article's combinations reappear as the columns of a matrix being
+mixed ([GEOM-08]), there will be no picture at all for the high-dimensional case — only the
+componentwise rule, which is why we were so careful to anchor every drawing to it here.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the linear-combination view the right tool, and when does it break down?"* The
+summary to have ready:
+
+- **Use it** whenever you are blending, weighting, or mixing genuine magnitudes —
+  combining features into a score, averaging observations into a centroid, allocating a
+  portfolio, interpolating between states, mixing distributions. Its virtues are that it is
+  interpretable (each coefficient is a marginal effect), it is the *only* structure linear
+  algebra offers, and everything downstream (span, projection, matrices, regression) is
+  built from it.
+- **It breaks** when (a) a coordinate is a label or identifier rather than a magnitude
+  (Example 3), (b) the true relationship is *non*linear — a product, a threshold, a
+  saturation — in which case scaling-and-adding cannot represent it and you need feature
+  transforms, kernels, or a nonlinear model, or (c) the features live on wildly different
+  scales and you have not standardized, so the weights do not mean what they appear to.
+- **The deepest framing:** "linear" *is* "expressible as scale-and-add." If a phenomenon is
+  not, no choice of coefficients will rescue the linear combination — that is not a tuning
+  problem, it is a modeling-class problem, and it is the boundary where this entire
+  foundational track hands off to the nonlinear methods built later.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You never loop over slots by
+hand. In NumPy, addition and scaling are the operators `+` and `*` on arrays, applied
+elementwise exactly as @eq-addition and @eq-scaling prescribe: `v + w` and `c * v`. A full
+linear combination $\sum_i c_i \mathbf{v}_i$ is most cleanly a matrix–vector product —
+stack the vectors as columns of a matrix `V` and multiply by the coefficient vector `c`,
+`V @ c`, which is precisely the "matrix takes a linear combination of its columns" identity
+of [GEOM-08] that this article sets up. The convenience function `np.average(X, axis=0,
+weights=w)` computes a weighted average (a convex combination) directly and even normalizes
+the weights to sum to one for you — a reminder that the "sum to one" constraint of
+@sec-weighted is common enough to be baked into the library. Whatever the call, the
+operation underneath is the two definitions of this article, done slot by slot.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-00 *What Is a Vector, Really?*]**, which fixed the object — the
+vector as arrow, list, and data row — and repeatedly used "componentwise addition and
+scaling" on credit. This article defined and drew those two operations, fused them into the
+**linear combination**, and proved the eight rules they obey are just real-number arithmetic
+done one coordinate at a time. From here the build continues:
+
+- **[GEOM-02 *Span and Subspaces*]** — the immediate next step: turn the coefficients of a
+  linear combination *loose* over all of $\mathbb{R}$ and ask *which points you can reach*.
+  The answer (the span) is always a flat through the origin (a subspace). Everything in
+  GEOM-02 is the @def-lincomb of this article, quantified over its coefficients.
+- **[GEOM-03 *Linear Independence, Basis, and Dimension*]** — asks when the vectors in a
+  combination carry redundant information (one is already a linear combination of the
+  others) and what the smallest non-redundant set is.
+- **[GEOM-04 *The Dot Product*]** — finally equips $\mathbb{R}^n$ with **length and angle**,
+  so the "stretch" of scaling and the "closeness" of combinations become measurable numbers.
+- **[GEOM-08 *Matrices as Linear Maps*]** — the payoff promised throughout: a matrix acts on a
+  vector by forming a **linear combination of its columns**, with the vector's entries as
+  coefficients. The single most useful reading in the track is this article's @def-lincomb
+  in matrix clothing.
+
+The running thread the track never drops: **a dataset is a cloud of points, and the linear
+combination is the one move by which we build new points from old** — every later technique
+is this move, repeated and constrained in different ways.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The two operations as the *definition* of the subject.** Any modern linear-algebra text
+  (Strang's *Introduction to Linear Algebra*; Axler's *Linear Algebra Done Right*) opens
+  with these two operations and the eight rules; Axler in particular treats the rules as the
+  abstract interface (@thm-vector-space) and develops the entire theory from them with
+  minimal reference to coordinates — the portable-interface view of the "You might be asked"
+  box in @sec-rules.
+- **Convex combinations, taken seriously.** The sum-to-one, nonnegative case (@lem-convex) is
+  the entry point to **convex geometry** — convex hulls, convex sets, and convex
+  optimization — which underpins much of the Optimization track and the theory of why
+  least-squares and many learning problems have unique, findable solutions.
+- **Open threads this article deliberately deferred.** *Which points can a fixed set of
+  vectors reach, and what shape is that set?* — [GEOM-02]. *When is one of the combined
+  vectors redundant?* — [GEOM-03]. *How do we measure the length a scalar stretches an arrow,
+  and the angle between two combined vectors?* — [GEOM-04]. *Why is "take a linear combination
+  of columns" the same thing as "multiply by a matrix"?* — [GEOM-08]. Each is a direct
+  continuation of a promise made above.

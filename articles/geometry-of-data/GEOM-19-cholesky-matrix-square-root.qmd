@@ -1,0 +1,985 @@
+---
+title: "Cholesky and the Matrix Square Root"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / data
+HILITE = "#c1121f"   # eigen-axes / principal directions / Cholesky factor
+ACCENT = "#0a7d4d"   # second axis / highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This article pairs with [GEOM-20 *The Singular Value
+> Decomposition*] to close **Movement V**. It assumes the **spectral theorem** — that a
+> real symmetric matrix factors as $A = Q\Lambda Q^\top$ with $Q$ orthogonal
+> ($Q^\top Q = I$) and $\Lambda$ diagonal ([GEOM-16]); **quadratic forms** $q(x)=x^\top A x$
+> and their classification by eigenvalue sign ([GEOM-17]); and **positive-definite
+> matrices** — the matrices with $x^\top A x > 0$ for all $x \neq 0$, equivalently all
+> eigenvalues positive ([GEOM-18]). It also leans on **solving $Ax=b$** and the meaning of
+> the inverse ([GEOM-11]), the **transpose** algebra $(AB)^\top = B^\top A^\top$ ([GEOM-10]),
+> and the **dot product / norm** $\|x\|^2 = x^\top x$ ([GEOM-04]). The one question: *how do
+> we factor a positive-definite matrix into a "square," and why does that single trick power
+> simulation, whitening, and fast solves?* It sets up [GEOM-26] (Cholesky as the stable
+> positive-definite solve) and **directly discharges Regression's GLS / whitening
+> prerequisite** ([REGR-11]) and the **correlated-Gaussian sampling** that Probability and
+> Inference lean on.
+
+## Abstract {.unnumbered}
+
+A positive-definite matrix $A$ behaves like a positive number: it has a square root.
+This article builds *two* of them, for two different jobs. The **Cholesky factorization**
+$A = LL^\top$ writes $A$ as a lower-triangular matrix times its own transpose; we derive
+$L$ constructively, entry by entry, and prove that the requirement that every entry be
+computable from real arithmetic is *exactly* positive-definiteness — so a
+Cholesky factor exists if and only if $A$ is positive definite, with no separate
+hypothesis. The **symmetric square root** $A^{1/2} = Q\Lambda^{1/2}Q^\top$ comes from the
+spectral theorem instead, and is the unique symmetric positive-definite matrix whose
+square is $A$. Both are "square roots," and the article's single claim is that **the
+choice between them is the choice between speed and symmetry**: Cholesky is the fast,
+triangular workhorse for solving and sampling; the symmetric root is the geometrically
+honest one for whitening and for anything that must itself be symmetric. We carry three
+real payoffs all the way through — **whitening** a correlated dataset ($\Sigma^{-1/2}$,
+the engine of generalized least squares), **sampling** a correlated Gaussian ($Lz$), and
+**solving** a positive-definite system twice as fast as general elimination — and we mark
+the honest edge where positive-definiteness frays and Cholesky quietly fails.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A positive-definite matrix is the matrix world's version of a positive number, and like a
+positive number it has a square root. There are two natural ones.
+
+**Cholesky:** every positive-definite $A$ factors *uniquely* as
+$$A = L L^\top, \qquad L \text{ lower-triangular with positive diagonal.}$$
+$L$ is built directly from the entries of $A$ by a short recursion, and the recursion only
+succeeds — every diagonal entry it needs a square root of comes out positive — *precisely
+when $A$ is positive definite*. So "Cholesky exists" and "$A$ is positive definite" are
+the same statement.
+
+**Symmetric square root:** from the spectral theorem $A = Q\Lambda Q^\top$, take the
+positive square root of each eigenvalue:
+$$A^{1/2} = Q\,\Lambda^{1/2}\,Q^\top, \qquad \Lambda^{1/2} = \operatorname{diag}\bigl(\sqrt{\lambda_1},\dots,\sqrt{\lambda_n}\bigr),$$
+the unique *symmetric* positive-definite matrix with $A^{1/2}A^{1/2} = A$.
+
+Both satisfy "factor $\times$ its transpose $= A$." Cholesky's factor is **triangular**
+(fast to solve with, the natural sampler); the spectral root is **symmetric** (the natural
+whitener). One trick — write $A$ as a square — and three payoffs fall out: **sample**
+correlated noise with $Lz$, **whiten** correlated data with $\Sigma^{-1/2}$, and **solve**
+$Ax=b$ at half the cost of general elimination.
+:::
+
+Everything below orbits that box. The phrase "matrix square root" will at first sound like
+a stretch — matrices are not numbers. By the end it should feel inevitable: a
+positive-definite matrix *is* built from positive numbers (its eigenvalues), and taking
+their square roots, in the right basis, gives a matrix that squares back to the original
+exactly as $\sqrt{a}\cdot\sqrt{a}=a$ does for a positive scalar.
+
+# Why we are doing this: the problem that forced the factorization {#sec-why}
+
+Keep one question in view for the whole article: **why would anyone want to write a matrix
+as a square, and why does positive-definiteness make it possible?** Every step below is in
+service of that.
+
+## A scalar habit we cannot give up
+
+Half of applied mathematics is built on the ability to take a square root of a positive
+number. Standardizing a measurement means subtracting the mean and **dividing by the
+standard deviation** $\sigma = \sqrt{\sigma^2}$. Generating a normal random variable with
+variance $\sigma^2$ means multiplying a standard normal by $\sigma = \sqrt{\sigma^2}$.
+Both moves are "undo, or impose, a known spread," and both run on the scalar square root.
+
+The instant our data have more than one feature, "spread" stops being a single number
+$\sigma^2$ and becomes a **covariance matrix** $\Sigma$ — a symmetric matrix whose diagonal
+holds the per-feature variances and whose off-diagonals hold how features move together.
+(Its construction as a statistical object belongs to Probability; here it is simply a
+symmetric, positive-definite matrix, the canonical one in data science.) And now the two
+scalar habits demand a *matrix* square root:
+
+- **Imposing spread (simulation).** To draw a random vector with covariance $\Sigma$, we
+  need a matrix $B$ with $BB^\top = \Sigma$, because feeding uncorrelated unit noise $z$
+  through $B$ produces $Bz$ with covariance $\Sigma$. $B$ is a "square root" of $\Sigma$.
+- **Undoing spread (whitening).** To strip the correlations *out* of data with covariance
+  $\Sigma$ — to make every direction equally and unitly scattered, which is what unlocks
+  generalized least squares ([REGR-11]) — we need to multiply by $\Sigma^{-1/2}$, the
+  inverse of a square root.
+
+There is no way around it: the multivariate versions of the most basic statistical moves
+*require* a matrix that, multiplied by (a version of) itself, returns $\Sigma$. The whole
+article is the construction and the geometry of such a matrix.
+
+## The third pressure: solving fast, and solving stably
+
+A separate, older pressure comes from solving linear systems. Many systems in
+data science have a **positive-definite** coefficient matrix — the normal equations
+$X^\top X\,\hat\beta = X^\top y$ of least squares ([REGR-05]), the systems Newton's method
+produces from a positive-definite Hessian ([GEOM-24]), the covariance systems of Gaussian
+inference. General Gaussian elimination ([GEOM-11]) solves *any* invertible system, but it
+"wastes" the extra structure positive-definite matrices carry: their symmetry and their
+sign. André-Louis **Cholesky**, a French artillery officer and geodesist, found around
+1910 — while solving the giant least-squares systems of triangulation surveys by hand —
+that for these matrices you can do elimination in *half* the arithmetic by exploiting the
+symmetry, and the answer comes out as $A = LL^\top$. His method was published
+posthumously in 1924 (he was killed in 1918); it is now the default solver for every
+positive-definite system on Earth.
+
+So three independent demands — **simulate** correlated noise, **whiten** correlated data,
+and **solve** positive-definite systems fast — all point at the same object: a square root
+of a positive-definite matrix. We build it twice, because the three jobs do not all want
+the *same* root.
+
+::: {.callout-tip title="You might be asked"}
+*"Why do we get to assume the matrix is positive definite? Isn't that a strong
+restriction?"* It is exactly the right restriction, for the same reason $\sqrt{a}$ needs
+$a \ge 0$. A real square root of a number requires the number to be nonnegative; a real
+"square root" $A = BB^\top$ of a matrix forces $A$ to be **positive semidefinite**, because
+for any $x$, $x^\top A x = x^\top B B^\top x = \|B^\top x\|^2 \ge 0$ — a sum of squares can
+never be negative. So *only* positive-(semi)definite matrices can be squares in the first
+place; the restriction is not a convenience, it is the precondition. And the matrices the
+applications hand us — covariance matrices, Gram matrices $X^\top X$, positive-definite
+Hessians — are positive definite by construction ([GEOM-18]). The interviewer wants to hear
+that $A = BB^\top \Rightarrow A \succeq 0$ is forced, so positive-definiteness is *necessary*,
+not assumed for convenience.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, here is the picture. A positive-definite matrix $A$, seen through its
+quadratic form $q(x) = x^\top A x$, is an **ellipsoidal bowl** ([GEOM-17]): its level sets
+$\{x : x^\top A x = 1\}$ are ellipses (in 2-D) or ellipsoids (in higher dimensions),
+stretched long along the low-curvature directions and squashed short along the
+high-curvature ones. A square root of $A$ is a *map that builds that ellipsoid from a
+sphere.*
+
+Concretely: take the unit circle — the set of $z$ with $\|z\| = 1$. Apply a matrix $B$ to
+every point, getting the set of all $Bz$. That image is an ellipse. **The ellipse you get
+is the unit ellipse of $A = BB^\top$.** Different square roots $B$ trace the *same* final
+ellipse by *different routes*:
+
+- The **symmetric root** $A^{1/2}$ stretches the circle straight along the eigen-axes — a
+  pure scaling in the natural directions of $A$, no rotation. It is the "honest" square
+  root: it deforms the circle the minimal, symmetric way.
+- The **Cholesky factor** $L$ reaches the same ellipse by a *shear* — it stretches the
+  first axis, then skews the second relative to it. The end ellipse is identical, but $L$
+  gets there by a triangular sequence of moves, which is exactly what makes it cheap to
+  compute and to invert.
+
+@fig-two-roots draws this: one ellipse, two factorizations, two different ways the circle
+flows into it.
+
+```{python}
+#| label: fig-two-roots
+#| fig-cap: "Two square roots of the same positive-definite matrix $A=\\begin{psmallmatrix}4&2\\\\2&3\\end{psmallmatrix}$, each mapping the unit circle (grey) to the *same* ellipse $\\{Bz:\\|z\\|=1\\}$ (which is the unit ellipse of $A$). **Left:** the symmetric root $A^{1/2}$ stretches the circle straight along the eigen-axes of $A$ (red, green) — a pure, rotation-free scaling. **Right:** the Cholesky factor $L$ reaches the identical ellipse by a triangular shear: stretch $x_1$, then skew $x_2$. Same destination, different route. The image of the standard axes (blue arrows) shows how each factor moves the coordinate frame."
+A = np.array([[4.0, 2.0], [2.0, 3.0]])
+
+# symmetric root via spectral theorem
+w, Q = np.linalg.eigh(A)
+Ahalf = Q @ np.diag(np.sqrt(w)) @ Q.T
+# Cholesky factor (lower-triangular)
+L = np.linalg.cholesky(A)
+
+theta = np.linspace(0, 2*np.pi, 200)
+circle = np.vstack([np.cos(theta), np.sin(theta)])
+e_sym = Ahalf @ circle
+e_chol = L @ circle
+I2 = np.eye(2)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.6))
+for ax, B, ttl, col in [(axL, Ahalf, "symmetric root $A^{1/2}$", ACCENT),
+                        (axR, L, "Cholesky factor $L$", HILITE)]:
+    ax.plot(circle[0], circle[1], color=GREY, lw=1.4, ls="--", label="unit circle")
+    img = B @ circle
+    ax.plot(img[0], img[1], color=col, lw=2.4, label="image $\\{Bz\\}$ = ellipse of $A$")
+    # where the standard axes land
+    for k in range(2):
+        draw_vec(ax, (0, 0), tuple(B[:, k]), color=VEC, lw=2.2)
+    # eigen-axes of A on the symmetric panel for reference
+    if ax is axL:
+        for k, c in zip(range(2), (HILITE, ACCENT)):
+            draw_vec(ax, (0, 0), tuple(np.sqrt(w[k])*Q[:, k]), color=c, lw=1.6, ls=":")
+    ax.set_aspect("equal"); ax.set_xlim(-3.6, 3.6); ax.set_ylim(-3.6, 3.6)
+    ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$"); ax.set_title(ttl)
+    ax.legend(fontsize=8.5, framealpha=0.9, loc="upper left")
+plt.tight_layout()
+```
+
+Hold this image. Everything below is the careful version of "build the ellipse of $A$ from
+a circle, either by symmetric stretching or by triangular shearing."
+
+# The formal development {#sec-formal}
+
+We need one fact about positive-definite matrices throughout, so we state it cleanly and
+recall why it holds — it is owned by [GEOM-18], but a self-contained article cannot lean on
+the word alone.
+
+::: {#def-pd}
+**Definition (positive definite).** A symmetric matrix $A$ is **positive definite** (written
+$A \succ 0$) if $x^\top A x > 0$ for every nonzero vector $x$. It is **positive
+semidefinite** ($A \succeq 0$) if $x^\top A x \ge 0$ for every $x$.
+:::
+
+The single equivalence we reuse — proved in [GEOM-18] via the quadratic-form classification
+of [GEOM-17], and which we restate so the logic here is complete — is:
+
+> **A symmetric matrix is positive definite if and only if all its eigenvalues are
+> positive.** *(Reason, in one line: by the principal-axis form @eq-principal-recall below,
+> $x^\top A x = \sum_i \lambda_i z_i^2$; this is $> 0$ for all $x \neq 0$ exactly when every
+> $\lambda_i > 0$, since the $z_i^2$ are nonnegative and not all zero.)*
+
+That principal-axis form, imported from [GEOM-17], is: writing $A = Q\Lambda Q^\top$ from
+the spectral theorem and setting $z = Q^\top x$,
+
+$$
+x^\top A x = \sum_{i=1}^n \lambda_i z_i^2, \qquad z_i = q_i^\top x .
+$$ {#eq-principal-recall}
+
+We will use it, and the equivalence above, freely.
+
+## The matrix square root from the spectral theorem {#sec-spectral-root}
+
+The cleanest square root is the one the spectral theorem builds with almost no work, so we
+take it first. Recall ([GEOM-16]) that a real symmetric $A$ factors as
+
+$$
+A = Q\Lambda Q^\top, \qquad Q^\top Q = QQ^\top = I, \qquad
+\Lambda = \operatorname{diag}(\lambda_1, \dots, \lambda_n),
+$$ {#eq-spectral}
+
+with $Q$ orthogonal (its columns the orthonormal eigenvectors $q_i$) and the $\lambda_i$
+the real eigenvalues. If $A$ is positive definite, every $\lambda_i > 0$, so each
+$\sqrt{\lambda_i}$ is a real positive number. Define
+
+$$
+\Lambda^{1/2} = \operatorname{diag}\bigl(\sqrt{\lambda_1}, \dots, \sqrt{\lambda_n}\bigr),
+\qquad
+A^{1/2} := Q\,\Lambda^{1/2}\,Q^\top .
+$$ {#eq-sym-root-def}
+
+::: {#thm-sym-root}
+**Theorem (symmetric square root).** Let $A$ be symmetric positive definite. Then
+$A^{1/2}$ defined by @eq-sym-root-def is symmetric, positive definite, and satisfies
+$A^{1/2}A^{1/2} = A$. It is the **unique** symmetric positive-definite matrix whose square
+is $A$.
+:::
+
+::: {.proof}
+*It squares to $A$.* Multiply $A^{1/2}$ by itself, inserting the definition and using
+$Q^\top Q = I$ to collapse the middle:
+
+$$
+A^{1/2}A^{1/2}
+= \bigl(Q\Lambda^{1/2}Q^\top\bigr)\bigl(Q\Lambda^{1/2}Q^\top\bigr)
+= Q\Lambda^{1/2}\underbrace{(Q^\top Q)}_{=I}\Lambda^{1/2}Q^\top
+= Q\,\Lambda^{1/2}\Lambda^{1/2}\,Q^\top .
+$$
+
+Now $\Lambda^{1/2}\Lambda^{1/2}$ is a product of two diagonal matrices, which multiplies
+entrywise on the diagonal: its $i$-th entry is $\sqrt{\lambda_i}\cdot\sqrt{\lambda_i} =
+\lambda_i$. So $\Lambda^{1/2}\Lambda^{1/2} = \Lambda$, and $A^{1/2}A^{1/2} = Q\Lambda Q^\top
+= A$ by @eq-spectral.
+
+*It is symmetric.* Transpose @eq-sym-root-def using $(MNP)^\top = P^\top N^\top M^\top$
+([GEOM-10]), and that a diagonal matrix is its own transpose:
+$(A^{1/2})^\top = (Q^\top)^\top (\Lambda^{1/2})^\top Q^\top = Q\Lambda^{1/2}Q^\top = A^{1/2}.$
+
+*It is positive definite.* $A^{1/2}$ has the spectral form @eq-spectral with the *same*
+eigenvectors $Q$ and eigenvalues $\sqrt{\lambda_i}$, each positive; by the equivalence in
+@sec-formal, all-positive eigenvalues means positive definite.
+
+*Uniqueness.* Suppose $B$ is also symmetric positive definite with $B^2 = A$. Since $B$ is
+symmetric, the spectral theorem gives $B = P M P^\top$ with $P$ orthogonal and $M$ diagonal
+with positive entries $\mu_j$ (positive because $B \succ 0$). Then $B^2 = PM^2P^\top$, and
+this equals $A$. So $PM^2P^\top$ is a spectral decomposition of $A$: the columns of $P$ are
+eigenvectors of $A$ with eigenvalues $\mu_j^2$. The eigenvalues of $A$ are uniquely the
+$\lambda_i$, so the multiset $\{\mu_j^2\}$ equals $\{\lambda_i\}$, forcing $\mu_j =
+\sqrt{\lambda_{(j)}}$ (positive root, since $\mu_j > 0$). Reordering so $P$ matches $Q$
+eigenvector-by-eigenvector, $M = \Lambda^{1/2}$ and $B = Q\Lambda^{1/2}Q^\top = A^{1/2}$.
+The matching of eigenvectors is exact on each eigenspace because on a repeated eigenvalue
+*any* orthonormal basis is eigenvectors of both $A$ and $B$ with the forced value
+$\sqrt{\lambda}$, so $B$ acts as $\sqrt{\lambda}\,I$ there, identically to $A^{1/2}$.
+$\qquad\blacksquare$
+:::
+
+A few consequences we will use. First, the **inverse square root** is immediate: since $A
+= Q\Lambda Q^\top$ with positive $\lambda_i$, the inverse is $A^{-1} = Q\Lambda^{-1}Q^\top$
+(invert the eigenvalues, keep the eigenvectors — orthogonal $Q$ makes inversion trivial,
+[GEOM-16]), and its symmetric square root is
+
+$$
+A^{-1/2} = Q\,\Lambda^{-1/2}\,Q^\top,
+\qquad \Lambda^{-1/2} = \operatorname{diag}\!\Bigl(\tfrac{1}{\sqrt{\lambda_1}},\dots,\tfrac{1}{\sqrt{\lambda_n}}\Bigr),
+$$ {#eq-inv-root}
+
+which satisfies $A^{-1/2}A^{-1/2} = A^{-1}$ and $A^{-1/2} = (A^{1/2})^{-1}$ by the identical
+algebra. This is the **whitening** matrix of @sec-whitening. Second, the symmetric root
+commutes with $A$: $A^{1/2}A = Q\Lambda^{1/2}Q^\top Q\Lambda Q^\top = Q\Lambda^{3/2}Q^\top =
+AA^{1/2}$, because diagonal matrices commute. The symmetric root lives in the *same eigen-frame*
+as $A$ — it never rotates, it only rescales each principal axis by $\sqrt{\lambda_i}$. That
+is the rotation-free stretching of @fig-two-roots, made precise.
+
+::: {.callout-tip title="You might be asked"}
+*"How many square roots does a positive-definite matrix have?"* If you demand the root be
+**symmetric positive definite**, exactly **one** — the theorem above. If you drop symmetry
+and only ask for some $B$ with $BB^\top = A$, there are **infinitely many**: any $B = A^{1/2}R$
+with $R$ orthogonal works, since $BB^\top = A^{1/2}RR^\top A^{1/2} = A^{1/2}A^{1/2} = A$
+(using $RR^\top = I$). Geometrically, $R$ is a rotation you apply to the unit circle
+*before* stretching — it changes the route but not the final ellipse. The symmetric root is
+the $R = I$ choice; the Cholesky factor is the choice of $R$ that makes $B$ triangular. That
+freedom is exactly why two genuinely different "square roots" can both be correct.
+:::
+
+## The Cholesky factorization, derived entry by entry {#sec-cholesky-derive}
+
+Now the workhorse. We *demand* a factorization $A = LL^\top$ with $L$ lower-triangular, and
+we simply solve for the entries of $L$ one at a time. The triangular shape is what makes
+this both possible in closed form and cheap; let us watch it fall out.
+
+A lower-triangular $L$ has $L_{ij} = 0$ for $j > i$ (zeros above the diagonal). Write out
+the $(i,j)$ entry of the product $LL^\top$. By the definition of matrix multiplication, the
+$(i,j)$ entry of $LL^\top$ is row $i$ of $L$ dotted with column $j$ of $L^\top$, and column
+$j$ of $L^\top$ is row $j$ of $L$:
+
+$$
+(LL^\top)_{ij} = \sum_{k=1}^n L_{ik}\,(L^\top)_{kj} = \sum_{k=1}^n L_{ik} L_{jk} .
+$$
+
+Because $L$ is lower-triangular, $L_{ik} = 0$ once $k > i$ and $L_{jk} = 0$ once $k > j$, so
+the sum runs only up to $k = \min(i,j)$. Setting this equal to $A_{ij}$ gives the **defining
+equations** of Cholesky:
+
+$$
+A_{ij} = \sum_{k=1}^{\min(i,j)} L_{ik} L_{jk} \qquad \text{for all } i \ge j .
+$$ {#eq-chol-system}
+
+(We need only $i \ge j$ — the lower triangle — because $A$ is symmetric, so the upper
+triangle is determined automatically, and indeed $(LL^\top)$ is automatically symmetric.)
+This is a triangular system in the unknowns $L_{ij}$, and we solve it by sweeping
+**column by column, top to bottom**. The trick is to look at @eq-chol-system for a fixed
+$(i,j)$ and peel off the last term of the sum.
+
+**Diagonal entries ($i = j$).** Here $\min(i,j) = j$, so
+
+$$
+A_{jj} = \sum_{k=1}^{j} L_{jk}^2 = \underbrace{\sum_{k=1}^{j-1} L_{jk}^2}_{\text{already known}} + L_{jj}^2 .
+$$
+
+Solving for the one new unknown $L_{jj}$:
+
+$$
+\boxed{\;L_{jj} = \sqrt{\,A_{jj} - \sum_{k=1}^{j-1} L_{jk}^2\,}\;}
+$$ {#eq-chol-diag}
+
+**Off-diagonal entries ($i > j$).** Here $\min(i,j) = j$, so
+
+$$
+A_{ij} = \sum_{k=1}^{j} L_{ik} L_{jk} = \underbrace{\sum_{k=1}^{j-1} L_{ik} L_{jk}}_{\text{already known}} + L_{ij} L_{jj} .
+$$
+
+Solving for the new unknown $L_{ij}$ (dividing by $L_{jj}$, which the diagonal step just
+computed):
+
+$$
+\boxed{\;L_{ij} = \frac{1}{L_{jj}}\Bigl(A_{ij} - \sum_{k=1}^{j-1} L_{ik} L_{jk}\Bigr)\;}
+$$ {#eq-chol-offdiag}
+
+These two boxed formulas **are** the Cholesky algorithm. Read the dependency structure:
+@eq-chol-diag for $L_{jj}$ needs only entries $L_{jk}$ with $k < j$ (earlier columns of row
+$j$); @eq-chol-offdiag for $L_{ij}$ needs $L_{jj}$ (just computed) and earlier-column
+entries of rows $i$ and $j$. So if we process **column $j = 1, 2, \dots, n$ in order**, and
+within each column do the diagonal entry first and then the entries below it, every quantity
+on the right-hand side is already known. The factorization is forced: at each step exactly
+one unknown is determined, so $L$ is **unique** (given the positive-root convention in
+@eq-chol-diag). Let us see it run on a $3\times 3$ to dispel any mystery.
+
+::: {#thm-chol-3x3 .unnumbered}
+**Worked $3\times 3$.** Take
+$$
+A = \begin{pmatrix} 4 & 2 & -2 \\ 2 & 10 & 2 \\ -2 & 2 & 5 \end{pmatrix}.
+$$
+**Column 1.** $L_{11} = \sqrt{A_{11}} = \sqrt{4} = 2$ (no earlier terms). Then $L_{21} =
+A_{21}/L_{11} = 2/2 = 1$ and $L_{31} = A_{31}/L_{11} = -2/2 = -1$.
+**Column 2.** $L_{22} = \sqrt{A_{22} - L_{21}^2} = \sqrt{10 - 1} = 3$. Then $L_{32} =
+(A_{32} - L_{31}L_{21})/L_{22} = (2 - (-1)(1))/3 = 3/3 = 1$.
+**Column 3.** $L_{33} = \sqrt{A_{33} - L_{31}^2 - L_{32}^2} = \sqrt{5 - 1 - 1} = \sqrt{3}$.
+So
+$$
+L = \begin{pmatrix} 2 & 0 & 0 \\ 1 & 3 & 0 \\ -1 & 1 & \sqrt{3} \end{pmatrix}.
+$$
+Multiplying $LL^\top$ back out confirms it. Row 1 of $L$ dotted with itself gives
+$(LL^\top)_{11} = 2^2 = 4 = A_{11}$; row 2 with row 1 gives $(LL^\top)_{21} = 1\cdot2 = 2 = A_{21}$;
+row 2 with itself gives $1^2 + 3^2 = 10 = A_{22}$; row 3 with row 1 gives $(-1)(2) = -2 = A_{31}$;
+row 3 with row 2 gives $(-1)(1) + (1)(3) = 2 = A_{32}$; and row 3 with itself gives
+$(-1)^2 + 1^2 + (\sqrt3)^2 = 1+1+3 = 5 = A_{33}$. Every entry of $A$ is recovered, so
+$LL^\top = A$.
+:::
+
+```{python}
+#| label: chol-3x3-check
+#| echo: true
+import numpy as np
+A = np.array([[4., 2., -2.], [2., 10., 2.], [-2., 2., 5.]])
+L = np.linalg.cholesky(A)            # SciPy/NumPy give the lower-triangular factor
+print("L =\n", np.round(L, 4))
+print("\nL L^T reconstructs A:", np.allclose(L @ L.T, A))
+print("diagonal of L (must be > 0):", np.round(np.diag(L), 4))
+```
+
+The printout matches the hand computation: $L_{33} = \sqrt 3 \approx 1.732$, and $LL^\top$
+returns $A$ exactly. Every step required only the four basic operations plus **one square
+root per diagonal entry** — and that square root is where positive-definiteness enters.
+
+## Existence and uniqueness: Cholesky works *iff* $A$ is positive definite {#sec-chol-exist}
+
+The algorithm of @sec-cholesky-derive runs into exactly one possible obstruction: the
+quantity under the square root in @eq-chol-diag,
+
+$$
+d_j := A_{jj} - \sum_{k=1}^{j-1} L_{jk}^2,
+$$
+
+must be **positive** — otherwise $L_{jj}$ is not a positive real and the recursion dies
+(and even if $d_j = 0$, we cannot divide by $L_{jj} = 0$ in @eq-chol-offdiag). The
+remarkable fact is that "$d_j > 0$ at every step" is not an extra hypothesis to check — it
+is *equivalent* to $A$ being positive definite.
+
+::: {#thm-chol-exist}
+**Theorem (Cholesky existence and uniqueness).** A symmetric matrix $A$ has a factorization
+$A = LL^\top$ with $L$ lower-triangular and **strictly positive diagonal** if and only if
+$A$ is positive definite. When it exists, $L$ is unique.
+:::
+
+::: {.proof}
+**($\Leftarrow$) If $A \succ 0$, the algorithm succeeds.** We show every pivot $d_j > 0$ by
+induction on the column $j$, proving the stronger statement that after processing columns
+$1, \dots, j$, the top-left $j\times j$ block of $A$ equals $L_{(j)}L_{(j)}^\top$, where
+$L_{(j)}$ is the $j\times j$ lower-triangular block built so far, and $L_{(j)}$ has positive
+diagonal.
+
+*Base case $j = 1$:* $d_1 = A_{11} = e_1^\top A e_1 > 0$ since $A \succ 0$ (take $x = e_1$,
+the first standard basis vector, in the definition $x^\top A x > 0$). So $L_{11} = \sqrt{d_1}$
+is real and positive, and the $1\times 1$ block matches.
+
+*Inductive step:* suppose columns $1, \dots, j-1$ are done, so the $(j-1)\times(j-1)$
+leading block satisfies $A_{(j-1)} = L_{(j-1)}L_{(j-1)}^\top$ with $L_{(j-1)}$ having
+positive diagonal — hence invertible (a triangular matrix is invertible iff its diagonal
+has no zeros, since $\det L_{(j-1)} = \prod_{m<j} L_{mm} \neq 0$). We must show the next
+pivot $d_j = A_{jj} - \sum_{k<j} L_{jk}^2$ is positive. The strategy: first build the block
+identity at size $j$ *as an algebraic consequence of the formulas* (with $d_j$ still of
+unknown sign), then use a determinant to read off that sign.
+
+*Build the size-$j$ block identity.* Partition the leading $j\times j$ block of $A$ and the
+candidate factor $L_{(j)}$ as
+$$
+A_{(j)} = \begin{psmallmatrix} A_{(j-1)} & a \\ a^\top & A_{jj} \end{psmallmatrix},
+\qquad
+L_{(j)} = \begin{psmallmatrix} L_{(j-1)} & 0 \\ \ell^\top & L_{jj} \end{psmallmatrix},
+$$
+where $a = (A_{1j}, \dots, A_{j-1,j})^\top$ is the part of column $j$ above the diagonal,
+$\ell = (L_{j1}, \dots, L_{j,j-1})^\top$ is row $j$ of $L$ left of the diagonal (the entries
+@eq-chol-offdiag produces), and for now we carry the diagonal slot through its *square*
+$L_{jj}^2 := d_j$ — we have not yet established $d_j>0$, so we postpone taking the root.
+Multiplying the blocks,
+$$
+L_{(j)}L_{(j)}^\top
+= \begin{psmallmatrix} L_{(j-1)}L_{(j-1)}^\top & L_{(j-1)}\ell \\
+\ell^\top L_{(j-1)}^\top & \ell^\top\ell + L_{jj}^2 \end{psmallmatrix}.
+$$
+The top-left block is $A_{(j-1)}$ by the inductive hypothesis. For the top-right block,
+the $i$-th entry of $L_{(j-1)}\ell$ (for $i = 1,\dots,j-1$) is $\sum_{k=1}^{j-1} L_{ik}L_{jk}$.
+Each $\ell_k = L_{jk}$ was produced by @eq-chol-offdiag applied to the entry $(j,k)$ with
+$k<j$, and @eq-chol-offdiag is precisely the rearrangement of the defining equation
+@eq-chol-system that enforces $\sum_{m=1}^{\min(i,j)} L_{im}L_{jm} = A_{ij}$. For $i<j$ that
+sum runs to $m=i\le j-1$, and since $L_{im}=0$ for $m>i$ it equals $\sum_{k=1}^{j-1}L_{ik}L_{jk}$.
+So the $i$-th entry of $L_{(j-1)}\ell$ is $A_{ij}=a_i$: the top-right block is $a$
+(and the bottom-left block is its transpose). The bottom-right entry is
+$\ell^\top\ell + L_{jj}^2 = \sum_{k<j}L_{jk}^2 + d_j = A_{jj}$ by the *definition* of $d_j$.
+Hence $L_{(j)}L_{(j)}^\top = A_{(j)}$ holds **identically in $d_j$** — it is an algebraic
+rearrangement of @eq-chol-offdiag and the definition of $d_j$, with no sign assumption yet.
+
+*Now read off the sign.* Consider the $j \times j$ leading principal submatrix $A_{(j)}$.
+*Every leading principal submatrix of a positive-definite matrix is positive definite*:
+for any nonzero $y \in \mathbb{R}^j$, pad it with zeros to $\tilde y = (y, 0, \dots, 0)^\top
+\in \mathbb{R}^n$; then $y^\top A_{(j)} y = \tilde y^\top A \tilde y > 0$ because the padding
+zeros out exactly the rows and columns of $A$ outside the block. So $A_{(j)} \succ 0$, hence
+**has positive determinant** (a positive-definite matrix has all eigenvalues
+positive, so $\det = \prod \lambda_i > 0$).
+
+Take determinants of the block identity $A_{(j)} = L_{(j)}L_{(j)}^\top$ just established,
+using $\det(MN) = \det M \det N$, $\det(M^\top)=\det M$, and $\det L_{(j)} = \prod_{m\le j} L_{mm}$ (determinant
+of a triangular matrix is the product of its diagonal, [GEOM-13]):
+
+$$
+\det A_{(j)} = \bigl(\det L_{(j)}\bigr)^2 = \Bigl(\prod_{m=1}^{j} L_{mm}\Bigr)^2
+= \Bigl(\prod_{m=1}^{j-1} L_{mm}\Bigr)^2 \cdot d_j .
+$$
+
+The left side is positive (just shown), and the bracket on the right is positive by the
+inductive hypothesis (earlier diagonals positive). Therefore $d_j = \det A_{(j)} \big/
+\bigl(\prod_{m<j} L_{mm}\bigr)^2 > 0$. So $L_{jj} = \sqrt{d_j}$ is real and positive, the
+recursion continues, and the block identity extends to size $j$. By induction it reaches $j = n$,
+producing the full $A = LL^\top$ with positive diagonal.
+
+**($\Rightarrow$) If such an $L$ exists, $A \succ 0$.** Suppose $A = LL^\top$ with $L$
+lower-triangular and positive diagonal. For any $x \neq 0$,
+
+$$
+x^\top A x = x^\top L L^\top x = (L^\top x)^\top (L^\top x) = \|L^\top x\|^2 \ge 0,
+$$
+
+a sum of squares. Equality $\|L^\top x\|^2 = 0$ would force $L^\top x = 0$; but $L^\top$ is
+upper-triangular with the same positive diagonal as $L$, hence invertible, so $L^\top x = 0$
+implies $x = 0$. Thus for $x \neq 0$ we get $x^\top A x > 0$: $A$ is positive definite.
+
+**Uniqueness** was established constructively in @sec-cholesky-derive: at each step exactly
+one unknown is solved for, and the positive-root convention in @eq-chol-diag removes the
+$\pm$ ambiguity. $\qquad\blacksquare$
+:::
+
+This is the elegant heart of the article: **the algorithm is its own existence test.** You
+do not check positive-definiteness first and then factor; you just *try* to factor, and the
+factorization completes (all pivots positive) if and only if the matrix was positive
+definite. A negative or zero pivot is a *certificate* that $A$ is not positive definite. We
+exploit exactly this in @sec-edge.
+
+::: {.callout-tip title="You might be asked"}
+*"What's the fastest way to test whether a symmetric matrix is positive definite?"*
+**Attempt a Cholesky factorization and see if it succeeds** — i.e. whether every pivot
+$d_j$ stays positive. This is the standard answer, and it is faster and more numerically
+trustworthy than computing all eigenvalues or checking determinants of every leading minor
+(Sylvester's criterion). In code it is `numpy.linalg.cholesky(A)` wrapped in a
+`try/except LinAlgError`: an exception means "not positive definite." Eigenvalues cost more
+and round-off can make a true zero eigenvalue look slightly negative; the Cholesky test
+costs $\tfrac13 n^3$ flops and gives a clean yes/no with the factor as a bonus.
+:::
+
+## Why Cholesky is half the cost: the flop count {#sec-flops}
+
+The "twice as fast" claim deserves its number. The dominant cost of @eq-chol-diag and
+@eq-chol-offdiag is the inner sum $\sum_{k=1}^{j-1}$, each term a multiply–add. Summing the
+work over all entries $i \ge j$:
+
+$$
+\text{multiply–adds} \approx \sum_{j=1}^{n}\sum_{i=j}^{n}\sum_{k=1}^{j-1} 1
+= \sum_{j=1}^{n} (n - j + 1)(j-1) .
+$$
+
+Approximating the sum by an integral for large $n$ (replace $j$ by a continuous variable
+running $0$ to $n$): $\int_0^n (n - j)\,j\,dj = \tfrac{n^3}{2} - \tfrac{n^3}{3} =
+\tfrac{n^3}{6}$. Each multiply–add is two floating-point operations, so Cholesky costs
+about $\tfrac{n^3}{3}$ flops. General **LU / Gaussian elimination** ([GEOM-11]) costs about
+$\tfrac{2n^3}{3}$ flops. So Cholesky is **half** the arithmetic — precisely the saving
+Cholesky himself found by hand, and the reason it is the default for positive-definite
+systems. (It also needs no pivoting for stability: positive-definiteness guarantees the
+pivots stay safely positive, another gift of the structure.)
+
+# The three payoffs {#sec-payoffs}
+
+We now cash in the factorization on the three jobs that motivated it, each carried through
+on honest data. These are not separate tricks; they are the *same* square root, read three
+ways.
+
+## Payoff 1 — Sampling a correlated Gaussian: $x = Lz$ {#sec-sampling}
+
+The simulation problem from @sec-why: we want random vectors with a prescribed covariance
+$\Sigma$, but our random-number generator only produces **uncorrelated** standard
+components — a vector $z$ whose covariance is the identity $I$. We need a matrix $B$ that
+*installs* the correlations. The governing fact is the **transformation rule for
+covariance**, which we derive here so it is not a black box.
+
+Let $z$ be a random vector with mean $0$ and covariance $\operatorname{Cov}(z) =
+\mathbb{E}[zz^\top] = I$ (uncorrelated unit-variance components). Form $x = Bz$ for a fixed
+matrix $B$. Then $x$ has mean $\mathbb{E}[x] = B\,\mathbb{E}[z] = 0$, and its covariance is
+
+$$
+\operatorname{Cov}(x) = \mathbb{E}[xx^\top]
+= \mathbb{E}[(Bz)(Bz)^\top]
+= \mathbb{E}[B z z^\top B^\top]
+= B\,\mathbb{E}[zz^\top]\,B^\top
+= B I B^\top = BB^\top .
+$$ {#eq-cov-transform}
+
+(We pulled the constant matrices $B, B^\top$ outside the expectation — expectation is
+linear — and used $\mathbb{E}[zz^\top] = I$.) So **the covariance of $Bz$ is $BB^\top$**.
+To get covariance $\Sigma$, choose any $B$ with $BB^\top = \Sigma$: a square root. The
+**Cholesky factor $L$** is the natural choice — it is triangular, cheap, and turns the
+sampler into a single matrix-vector product:
+
+$$
+\boxed{\;x = Lz, \qquad L L^\top = \Sigma \;\Longrightarrow\; \operatorname{Cov}(x) = \Sigma.\;}
+$$ {#eq-sampler}
+
+@fig-sampling runs this: standard uncorrelated noise on the left, and on the right the same
+noise after $x = Lz$, now wearing the target covariance ellipse. We verify the empirical
+covariance matches $\Sigma$.
+
+```{python}
+#| label: fig-sampling
+#| fig-cap: "Sampling a correlated Gaussian by $x = Lz$. **Left:** 2000 draws of uncorrelated standard noise $z$ (covariance $\\approx I$, a round cloud). **Right:** the same draws after $x = Lz$ with $L$ the Cholesky factor of the target $\\Sigma=\\begin{psmallmatrix}3&1.8\\\\1.8&2\\end{psmallmatrix}$. The cloud has acquired exactly the target covariance ellipse (red); the empirical covariance (printed) matches $\\Sigma$ to sampling error. The Cholesky factor *installs* the correlation structure."
+rng = np.random.default_rng(0)
+Sigma = np.array([[3.0, 1.8], [1.8, 2.0]])
+L = np.linalg.cholesky(Sigma)
+z = rng.normal(size=(2, 2000))
+x = L @ z
+
+def cov_ellipse(ax, C, color, lw=2.4, nsig=2.0, label=None):
+    w, V = np.linalg.eigh(C)
+    tt = np.linspace(0, 2*np.pi, 200)
+    pts = V @ np.diag(nsig*np.sqrt(w)) @ np.vstack([np.cos(tt), np.sin(tt)])
+    ax.plot(pts[0], pts[1], color=color, lw=lw, label=label)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.4), sharex=True, sharey=True)
+axL.scatter(z[0], z[1], s=6, color=PALE, alpha=0.5)
+cov_ellipse(axL, np.eye(2), GREY, label="target cov $I$")
+axL.set_title("uncorrelated $z$ (cov $\\approx I$)")
+axL.set_aspect("equal"); axL.set_xlabel("$z_1$"); axL.set_ylabel("$z_2$")
+axL.legend(fontsize=9, framealpha=0.9)
+
+axR.scatter(x[0], x[1], s=6, color=PALE, alpha=0.5)
+cov_ellipse(axR, Sigma, HILITE, label="target cov $\\Sigma$")
+axR.set_title("$x=Lz$ (cov $\\approx\\Sigma$)")
+axR.set_aspect("equal"); axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print("target Sigma =\n", Sigma)
+print("empirical cov of x =\n", np.round(np.cov(x), 3))
+```
+
+The empirical covariance lands on $\Sigma$ to within sampling noise — the sampler works.
+Note we could equally have used the symmetric root $\Sigma^{1/2}$ (it also satisfies
+$BB^\top = \Sigma$ since $\Sigma^{1/2}$ is symmetric, so $BB^\top = \Sigma^{1/2}\Sigma^{1/2}
+= \Sigma$), but $L$ is the universal choice in practice: triangular means one cheap
+matrix-vector product and no eigendecomposition. This is *the* method behind drawing from a
+multivariate normal — it is literally what `numpy.random.multivariate_normal` does
+internally (via a Cholesky of the covariance).
+
+## Payoff 2 — Whitening: stripping correlation with $\Sigma^{-1/2}$ {#sec-whitening}
+
+Sampling installed correlation; whitening *removes* it. Given data with covariance
+$\Sigma$, we want to transform it so the new covariance is the identity — every direction
+unit-variance and uncorrelated, a perfectly round cloud. By the transformation rule
+@eq-cov-transform, applying a matrix $W$ to the data gives covariance $W\Sigma W^\top$, and
+we want that to equal $I$:
+
+$$
+W \Sigma W^\top = I .
+$$ {#eq-whiten-cond}
+
+The **symmetric inverse root** $W = \Sigma^{-1/2}$ from @eq-inv-root does it. Check, using
+that $\Sigma^{-1/2}$ is symmetric so $W^\top = W$, and $\Sigma^{-1/2}\Sigma\Sigma^{-1/2} =
+\Sigma^{-1/2}\Sigma^{1/2}\Sigma^{1/2}\Sigma^{-1/2} = I$:
+
+$$
+W\Sigma W^\top = \Sigma^{-1/2}\,\Sigma\,\Sigma^{-1/2}
+= \Sigma^{-1/2}\bigl(\Sigma^{1/2}\Sigma^{1/2}\bigr)\Sigma^{-1/2}
+= \bigl(\Sigma^{-1/2}\Sigma^{1/2}\bigr)\bigl(\Sigma^{1/2}\Sigma^{-1/2}\bigr) = I .
+$$
+
+So $x \mapsto \Sigma^{-1/2}x$ whitens. This is the **symmetric** root's moment to shine:
+because it is symmetric and lives in $\Sigma$'s own eigen-frame, $\Sigma^{-1/2}$ whitens
+*without rotating the data away from its natural axes* — it stretches each principal axis to
+unit length and stops, which is why this particular whitening is called **ZCA** (zero-phase)
+and is the one that keeps the whitened data looking as much like the original as possible.
+
+@fig-whitening shows a correlated cloud collapsing to a round one under $\Sigma^{-1/2}$, and
+contrasts it with the Cholesky whitener $L^{-1}$ (also valid — $L^{-1}\Sigma L^{-\top} =
+L^{-1}LL^\top L^{-\top} = I$ — but it rotates/shears the cloud, since $L$ is triangular not
+symmetric).
+
+```{python}
+#| label: fig-whitening
+#| fig-cap: "Whitening removes correlation. **Left:** a correlated data cloud with covariance $\\Sigma$ and its 2-$\\sigma$ ellipse. **Middle:** after the symmetric whitener $\\Sigma^{-1/2}$ — a round, unit-covariance cloud, with the data left in its natural orientation (no spurious rotation). **Right:** after the Cholesky whitener $L^{-1}$ — also perfectly white (round), but rotated/sheared, because the triangular factor reaches $I$ by a different route. Both achieve $\\mathrm{cov}=I$; the symmetric root is the rotation-free one."
+rng = np.random.default_rng(7)
+Sigma = np.array([[4.0, 2.6], [2.6, 2.5]])
+L = np.linalg.cholesky(Sigma)
+w, Q = np.linalg.eigh(Sigma)
+Sig_inv_half = Q @ np.diag(1/np.sqrt(w)) @ Q.T
+data = (L @ rng.normal(size=(2, 1500)))      # correlated, cov = Sigma
+white_sym = Sig_inv_half @ data
+white_chol = np.linalg.solve(L, data)        # = L^{-1} data
+
+fig, axes = plt.subplots(1, 3, figsize=(11.0, 3.8))
+panels = [(data, Sigma, "raw: cov $=\\Sigma$", PALE, HILITE),
+          (white_sym, np.eye(2), "$\\Sigma^{-1/2}$ whitened", PALE, ACCENT),
+          (white_chol, np.eye(2), "$L^{-1}$ whitened", PALE, VEC)]
+for ax, (d, C, ttl, pc, ec) in zip(axes, panels):
+    ax.scatter(d[0], d[1], s=6, color=pc, alpha=0.55)
+    cov_ellipse(ax, np.cov(d), ec, label="empirical 2$\\sigma$")
+    ax.set_aspect("equal"); ax.set_xlim(-7, 7); ax.set_ylim(-7, 7)
+    ax.set_title(ttl); ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+    ax.legend(fontsize=8, framealpha=0.9, loc="upper left")
+plt.tight_layout()
+
+print("cov after symmetric whitening:\n", np.round(np.cov(white_sym), 3))
+print("cov after Cholesky whitening:\n", np.round(np.cov(white_chol), 3))
+```
+
+Both whitened clouds have covariance $\approx I$ (printed), confirming both factors work;
+the visual difference is the orientation, exactly the "same ellipse, different route" of
+@fig-two-roots run in reverse. **This is the algebraic engine of generalized least
+squares** ([REGR-11]): when regression errors are correlated with covariance $\Sigma$,
+multiplying the whole model $y = X\beta + \varepsilon$ by $\Sigma^{-1/2}$ produces a new
+model whose errors are white, so ordinary least squares applies to the transformed
+problem. We hand Regression the algebra; it supplies the statistics.
+
+::: {.callout-tip title="You might be asked"}
+*"Cholesky or the symmetric root for whitening — does it matter which?"* For making the
+covariance equal to $I$, **no** — both work, as @fig-whitening shows. It matters when you
+care about *what the whitened coordinates mean*. The symmetric root $\Sigma^{-1/2}$ keeps
+the data aligned with its original axes (ZCA whitening, used in image processing precisely
+so whitened images still look like images). The Cholesky whitener $L^{-1}$ imposes an
+*order* on the variables — it whitens the first variable, then the second given the first,
+and so on — which is exactly right when the variables have a natural sequence (a time
+series, a causal ordering) and is far cheaper. So: symmetric for geometric neutrality,
+Cholesky for speed and for ordered/conditional structure.
+:::
+
+## Payoff 3 — Solving $Ax = b$ by forward and back substitution {#sec-solving}
+
+The third payoff is the one Cholesky invented the factorization for. To solve $Ax = b$ with
+$A = LL^\top$ positive definite, substitute the factorization:
+
+$$
+A x = b \;\Longleftrightarrow\; L\underbrace{L^\top x}_{=:\,y} = b .
+$$
+
+This splits one hard solve into **two easy triangular solves**, done in sequence:
+
+1. **Forward substitution:** solve $Ly = b$ for $y$. Because $L$ is lower-triangular, the
+   first equation involves only $y_1$ (so $y_1 = b_1/L_{11}$), the second only $y_1, y_2$
+   (so $y_2 = (b_2 - L_{21}y_1)/L_{22}$), and so on down — each $y_i$ from already-known ones.
+2. **Back substitution:** solve $L^\top x = y$ for $x$. Because $L^\top$ is
+   upper-triangular, the *last* equation involves only $x_n$, the second-to-last only
+   $x_{n-1}, x_n$, and so on **up** — each $x_i$ from already-known ones.
+
+Each triangular solve costs only $\sim n^2$ operations (no inversion, no further
+factoring); the one-time $\tfrac13 n^3$ Cholesky factorization is the only cubic cost, and
+it is reused for *every* right-hand side $b$. We run a $3\times 3$ in full, then verify
+against a direct solve.
+
+```{python}
+#| label: chol-solve
+#| echo: true
+import numpy as np
+
+def forward_sub(L, b):
+    n = len(b); y = np.zeros(n)
+    for i in range(n):
+        y[i] = (b[i] - L[i, :i] @ y[:i]) / L[i, i]
+    return y
+
+def back_sub(U, y):
+    n = len(y); x = np.zeros(n)
+    for i in reversed(range(n)):
+        x[i] = (y[i] - U[i, i+1:] @ x[i+1:]) / U[i, i]
+    return x
+
+A = np.array([[4., 2., -2.], [2., 10., 2.], [-2., 2., 5.]])
+b = np.array([4., 14., 5.])
+L = np.linalg.cholesky(A)
+y = forward_sub(L, b)        # solve L y = b
+x = back_sub(L.T, y)         # solve L^T x = y
+print("y (forward) =", np.round(y, 4))
+print("x (back)    =", np.round(x, 4))
+print("matches np.linalg.solve:", np.allclose(x, np.linalg.solve(A, b)))
+```
+
+The two-stage triangular solve reproduces the direct answer exactly. **Never invert $A$**:
+forming $A^{-1}$ costs more, is less accurate, and — when all you want is $x$ — solves a
+harder problem than you have. The practitioner reflex "*solve, don't invert*" ([GEOM-26])
+is concretely *this*: factor once with Cholesky, then forward/back-substitute.
+
+::: {.callout-warning title="Pitfall"}
+**Do not Cholesky-factor a matrix that is only positive *semi*definite or merely
+symmetric.** If $A$ has a zero eigenvalue (semidefinite), some pivot $d_j$ is zero and the
+division in @eq-chol-offdiag blows up; if $A$ has a negative eigenvalue (indefinite), some
+$d_j < 0$ and @eq-chol-diag takes the square root of a negative number. In floating point
+the failure can be *silent and late*: round-off may keep early pivots barely positive and
+only later produce a tiny-negative pivot, returning an `L` that does **not** satisfy $LL^\top
+= A$. Always either (a) know $A \succ 0$ by construction, or (b) treat a Cholesky failure as
+the diagnosis "not positive definite" rather than a bug to patch. For genuinely semidefinite
+or indefinite matrices, reach for the spectral decomposition or the SVD ([GEOM-20]) instead,
+which never divide by a pivot.
+:::
+
+# Failure modes and the edge of applicability {#sec-edge}
+
+The Core promised a factorization for positive-definite matrices; honesty requires showing
+where positive-definiteness frays and the methods strain or break.
+
+## The edge: near-singular covariance and the pivot collapse {#sec-edge-near}
+
+Real covariance matrices drift toward the boundary of positive-definiteness all the time:
+two features that are nearly redundant (a near-linear dependence) make $\Sigma$ nearly
+**singular** — one eigenvalue close to zero. The matrix is still technically positive
+definite, so Cholesky *succeeds*, but the last pivot $d_n$ is tiny, $L_{nn} = \sqrt{d_n}$ is
+tiny, and dividing by it in subsequent steps amplifies round-off. This is the
+ill-conditioned regime: the unit ellipse of $\Sigma$ is a long thin cigar ([GEOM-17]), and
+both the sampler and the whitener become unstable because they must stretch or crush by a
+near-infinite ratio. @fig-edge tracks the smallest pivot as a covariance is pushed toward
+singular.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability. We build $\\Sigma_\\rho=\\begin{psmallmatrix}1&\\rho\\\\\\rho&1\\end{psmallmatrix}$ and push the correlation $\\rho\\to 1$, where the two features become collinear and $\\Sigma$ approaches singular. **Left:** the smallest Cholesky pivot $d_2 = 1-\\rho^2$ collapses to zero — the factorization survives but barely, $L_{22}=\\sqrt{1-\\rho^2}\\to 0$. **Right:** the resulting covariance ellipse degenerates from a circle ($\\rho=0$) to a near-line ($\\rho=0.99$): the cloud loses a dimension, whitening must divide by $\\sqrt{1-\\rho^2}\\to0$, and the problem is numerically lost before it is mathematically lost."
+rhos = np.linspace(0, 0.999, 200)
+pivots = 1 - rhos**2                  # d_2 for the 2x2 correlation matrix
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 4.2))
+axL.plot(rhos, pivots, color=HILITE)
+axL.axhline(0, color=GREY, lw=1.0)
+axL.set_xlabel("correlation $\\rho$"); axL.set_ylabel("smallest pivot $d_2 = 1-\\rho^2$")
+axL.set_title("Pivot collapses as $\\rho\\to1$")
+
+tt = np.linspace(0, 2*np.pi, 200)
+circ = np.vstack([np.cos(tt), np.sin(tt)])
+for rho, col in [(0.0, ACCENT), (0.8, VEC), (0.97, HILITE)]:
+    S = np.array([[1.0, rho], [rho, 1.0]])
+    Lr = np.linalg.cholesky(S)
+    e = Lr @ circ
+    axR.plot(e[0], e[1], color=col, lw=2.0, label=f"$\\rho={rho}$")
+axR.set_aspect("equal"); axR.set_xlim(-2.2, 2.2); axR.set_ylim(-2.2, 2.2)
+axR.set_xlabel("$x_1$"); axR.set_ylabel("$x_2$")
+axR.set_title("Covariance ellipse degenerates to a line")
+axR.legend(fontsize=9, framealpha=0.9, loc="upper left")
+plt.tight_layout()
+```
+
+The fix when you hit this edge: **regularize** by adding a small positive multiple of the
+identity, $\Sigma + \epsilon I$, which lifts every eigenvalue by $\epsilon$ (since
+$(\Sigma + \epsilon I)$ has eigenvalues $\lambda_i + \epsilon$) and pulls the matrix safely
+back into the well-conditioned interior — this is exactly **ridge regularization**
+([REGR-14]) wearing its linear-algebra clothes, and the "jitter" routinely added to the
+covariance of a Gaussian process before Cholesky. The honest statement: Cholesky does not
+fail gracefully near the boundary; you must keep the matrix away from it.
+
+## When Cholesky is the *wrong* tool {#sec-wrong-tool}
+
+A clean applicability call, the kind an interview expects:
+
+- **The matrix is not (even nearly) positive definite.** Indefinite or semidefinite — e.g.
+  a saddle-shaped Hessian at a non-minimum, or a rank-deficient Gram matrix. Cholesky's
+  square roots go imaginary or its pivots vanish. **Reach for** the eigendecomposition
+  ([GEOM-16]) or the **SVD** ([GEOM-20]), which exist for *every* matrix and never divide
+  by a pivot.
+- **You need the actual eigenvalues / principal axes**, not just a factor — e.g. for PCA,
+  for the condition number, for the directions of maximum variance. Cholesky's $L$ is *not*
+  the eigenstructure; its diagonal entries are pivots, **not eigenvalues** (a common
+  confusion). **Reach for** the spectral decomposition or SVD.
+- **The matrix is rectangular** ($m \times n$, $m \neq n$). Cholesky is for square
+  symmetric matrices only. To "square-root" a data matrix $X$ you instead factor the
+  symmetric $X^\top X$ (which Cholesky *can* handle if it is positive definite), or — better
+  — take the SVD of $X$ directly, which is the numerically sound route and avoids forming
+  $X^\top X$ at all ([GEOM-26] explains why squaring the matrix squares the condition
+  number).
+
+::: {.callout-tip title="You might be asked"}
+*"Cholesky versus the symmetric square root — when do you use each?"* Recite the trade:
+**Cholesky** ($A = LL^\top$, triangular) is the **fast, default** choice for *solving*
+positive-definite systems, for *sampling* a Gaussian ($x = Lz$), and for conditional /
+ordered whitening — half the flops of LU, no eigendecomposition, no pivoting. The
+**symmetric root** ($A^{1/2} = Q\Lambda^{1/2}Q^\top$) is the choice when you need the result
+to *itself be symmetric* or geometrically neutral: rotation-free (ZCA) whitening, defining
+the matrix exponential/logarithm, interpolating between covariances, and anywhere $A^{1/2}$
+appears inside further symmetric algebra. The symmetric root costs an eigendecomposition
+($\sim n^3$ with a larger constant) and is slower; you pay for it only when symmetry
+matters. Default to Cholesky; upgrade to the symmetric root for symmetry or
+interpretability.
+:::
+
+## A non-uniqueness trap {#sec-trap}
+
+Finally, the conceptual edge from @sec-spectral-root, restated as a warning. "The square
+root of $A$" is ambiguous unless you say *which* root. The phrase usually means the
+symmetric one (unique), but `L` from Cholesky is *also* a square root in the
+$BB^\top = A$ sense, and they are different matrices. Worse, some software returns the
+**upper**-triangular Cholesky factor $R = L^\top$ with $A = R^\top R$ (the convention
+matching $A = X^\top X$ from QR, [GEOM-07]) rather than the lower factor. Always check which
+convention a library uses — `numpy.linalg.cholesky` returns **lower** $L$ with $A = LL^\top$;
+`scipy.linalg.cholesky` defaults to **upper** $R$ with $A = R^\top R$. Mixing them transposes
+your factor and silently corrupts a sampler or a solve.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-18 *Positive-Definite Matrices*]**, which characterized the "good"
+matrices — $x^\top A x > 0$, all eigenvalues positive — and promised that "a Cholesky factor
+exists" is yet another equivalent test. This article delivered that promise (@thm-chol-exist)
+and built *both* square roots, the triangular and the symmetric, with their three payoffs.
+It uses the spectral theorem ([GEOM-16]) for the symmetric root, the quadratic-form
+classification ([GEOM-17]) for the positive-definite reasoning, and triangular solving
+([GEOM-11]) for the application. From here the trunk continues:
+
+- **[GEOM-20 *The Singular Value Decomposition*]** — the master factorization that works for
+  *every* matrix, square or not, definite or not, which is exactly what you reach for when
+  Cholesky's positive-definiteness requirement fails. For a symmetric positive-definite $A$
+  the SVD $A = U\Sigma V^\top$ reduces to the spectral decomposition $A = Q\Lambda Q^\top$ of
+  this article (one takes $U = V = Q$ and singular values $\sigma_i = \lambda_i$, since the
+  eigenvalues are already positive) — so the spectral square root and the SVD-based root are
+  the same matrix there; [GEOM-20] proves the general construction.
+- **[GEOM-26 *Condition Number and Numerical Stability*]** — formalizes the edge of
+  @sec-edge-near: why a tiny smallest pivot signals an ill-conditioned matrix, why "solve,
+  don't invert" is the right reflex, and why Cholesky on the normal equations $X^\top X$ can
+  *square* the condition number (so QR/SVD sometimes beat it).
+
+And the cross-track hand-offs this article discharges:
+
+- **[REGR-11 *Generalized Least Squares*]** — the whitening transform $\Sigma^{-1/2}$
+  (@sec-whitening) is GLS's engine: pre-multiply a correlated-error model by $\Sigma^{-1/2}$
+  to make ordinary least squares apply.
+- **Probability / Inference** — the sampler $x = Lz$ (@sec-sampling) is how every correlated
+  multivariate Gaussian is drawn; the covariance-transformation rule @eq-cov-transform is
+  the bridge.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The original.** André-Louis Cholesky's method was published posthumously by Commandant
+  Benoît as "Note sur une méthode de résolution des équations normales…," *Bulletin
+  géodésique* 2 (1924) — written to solve the least-squares normal equations of geodetic
+  triangulation by hand. The factorization predates the computer by decades and was designed
+  for human computers exploiting symmetry to halve the labor.
+- **The standard reference.** Golub & Van Loan, *Matrix Computations* — Chapter 4 treats
+  Cholesky, its flop count, stability, and the banded/sparse variants (where Cholesky's
+  preservation of structure makes it indispensable for large sparse positive-definite
+  systems).
+- **Open threads this article deliberately deferred.** *What if $A$ is symmetric but
+  indefinite?* — there is an $LDL^\top$ factorization with a block-diagonal $D$ (the
+  Bunch–Kaufman variant) that avoids square roots entirely; it generalizes Cholesky past the
+  positive-definite boundary. *What is the "right" square root for matrices that are not even
+  symmetric?* — the polar decomposition and the SVD ([GEOM-20]) answer that. *How do we keep
+  a covariance estimate positive definite when data are scarce?* — shrinkage and
+  regularization, a Statistical-Inference concern that consumes the $\Sigma + \epsilon I$
+  idea of @sec-edge-near.

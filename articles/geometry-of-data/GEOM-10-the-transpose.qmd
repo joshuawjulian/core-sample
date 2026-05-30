@@ -1,0 +1,947 @@
+---
+title: "The Transpose and What It Means Geometrically"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / data
+HILITE = "#c1121f"   # the highlighted vector / image
+ACCENT = "#0a7d4d"   # columns / projections / highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the third article of **Movement III —
+> Matrices as Maps**, the read-as-a-pair sibling of [GEOM-09 *Matrix Multiplication as
+> Composition*] and [GEOM-11 *Solving $A\mathbf{x}=\mathbf{b}$*]. It assumes [GEOM-04 *The
+> Dot Product*] — the operation $\mathbf{x}^\top\mathbf{y}=\sum x_i y_i$ that gives length
+> and angle — and [GEOM-09], where the row-times-column rule for multiplication was derived
+> from the requirement that $AB$ mean "do $B$, then $A$." It rests quietly on [GEOM-08
+> *Matrices as Linear Maps*] (a matrix *does something to space*: $A\mathbf{x}$ is a linear
+> combination of $A$'s columns). Its job is to take the transpose past the bookkeeping
+> slogan "flip rows and columns" and show what it *means* geometrically — and to explain
+> why the object $A^\top A$ keeps appearing everywhere downstream. It sets up the $A^\top A$
+> of the normal equations in [GEOM-06 *Orthogonal Projection*], the pairing of $A$ with
+> $A^\top$ in [GEOM-12 *The Four Fundamental Subspaces*], the symmetric matrices whose
+> spectral theorem is [GEOM-16], and the positive-semidefiniteness of $A^\top A$ proved in
+> [GEOM-17]–[GEOM-18].
+
+## Abstract {.unnumbered}
+
+The transpose $A^\top$ is introduced in every course as a mechanical move — reflect the
+matrix across its diagonal, swap rows for columns — and then used relentlessly without
+anyone saying what it *is*. This article fixes that. The transpose is the unique matrix
+that lets you slide a map across a dot product: $\langle A\mathbf{x},\mathbf{y}\rangle =
+\langle \mathbf{x}, A^\top\mathbf{y}\rangle$ for **every** $\mathbf{x}$ and $\mathbf{y}$.
+That single equation — the **adjoint relation** — is the real definition; "flip the
+indices" is merely how it computes. We derive the flip from the adjoint relation, prove
+the headline identities $(A^\top)^\top = A$ and $(AB)^\top = B^\top A^\top$ from scratch,
+and then follow the relation to its most important consequence: the matrix $A^\top A$,
+whose entries are *all the pairwise dot products of $A$'s columns*. The single claim this
+article defends is that **$A^\top$ is not a clerical operation but a geometric one — the
+adjoint — and that this is why $A^\top A$ is the natural, symmetric, never-absent companion
+of $A$ throughout the rest of the series.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The transpose $A^\top$ is the one matrix that can **move across a dot product**:
+$$
+(A\mathbf{x})^\top\mathbf{y} \;=\; \mathbf{x}^\top(A^\top\mathbf{y})
+\qquad\text{for all } \mathbf{x},\mathbf{y}.
+$$
+Read it as: *measuring $A\mathbf{x}$ against $\mathbf{y}$ is the same as measuring
+$\mathbf{x}$ against $A^\top\mathbf{y}$.* "Flip rows and columns" is just how this gets
+computed. Everything else follows — most of all that $A^\top A$ collects **all the
+pairwise dot products of $A$'s columns** into one symmetric grid, which is exactly why it
+sits at the heart of projection, least squares, covariance, and the spectral story to
+come.
+:::
+
+Everything below orbits that box. The index-flip definition $\,(A^\top)_{ij}=A_{ji}\,$
+will look like an arbitrary convention; by the end you should see it as *forced* — the
+only arrangement of $A$'s entries that makes the dot product slide across cleanly. And
+the object $A^\top A$, which appears in the regression normal equations
+$X^\top X\hat{\boldsymbol\beta}=X^\top\mathbf{y}$, in covariance matrices, and in the SVD,
+should stop looking like a coincidence and start looking like the obvious thing it is: a
+table of how much each column of $A$ aligns with every other.
+
+# Why we are doing this: the problem that forced the transpose {#sec-why}
+
+Keep one question in view for the whole article: **why does $A^\top$ keep showing up
+glued to $A$, and what is it actually doing there?** If a step ever feels like symbol
+shuffling, return here.
+
+## A mechanical operation in search of a meaning
+
+The transpose has the least glamorous origin story in linear algebra. It was, for a long
+time, pure notation. Arthur Cayley, who in his 1858 *Memoir on the Theory of Matrices*
+first treated matrices as objects you can add and multiply, used transposition as a
+formal manipulation; the word *transpose* and the systematic identities came into common
+use through the matrix algebra of the late nineteenth century. Nobody invented the
+transpose to solve a geometry problem. It looked like clerical work: write the rows as
+columns.
+
+But a curious thing happened as matrices spread into every corner of applied mathematics.
+The transpose refused to stay clerical. It kept appearing — always next to the original
+matrix — in places that had nothing to do with rearranging entries:
+
+- In **least squares** (the engine of regression), the best fit solves
+  $X^\top X\hat{\boldsymbol\beta} = X^\top\mathbf{y}$. Why $X^\top X$, and why $X^\top$ on
+  the right?
+- In **statistics**, the covariance matrix of centered data $X$ is proportional to
+  $X^\top X$. The same object.
+- In **the SVD** — the master factorization of [GEOM-20] — every matrix is built from the
+  eigenvectors of $A^\top A$ and $A A^\top$.
+- In **optimization**, the gradient of $\tfrac12\|A\mathbf{x}-\mathbf{b}\|^2$ is
+  $A^\top(A\mathbf{x}-\mathbf{b})$ — there it is again.
+
+Four unrelated-looking problems, one recurring guest. When a "mere notation" turns out to
+be indispensable across every application, that is a signal: it is *not* mere notation.
+There is a geometric object underneath, and the index-flip is only its shadow. This
+article digs out the object. The punchline, stated now so you can watch it arrive, is that
+the transpose is the **adjoint** of the map $A$ — the unique partner map defined by how it
+behaves inside a dot product — and that $A^\top A$ is unavoidable because it is the
+**Gram matrix** of $A$'s columns, the complete record of their lengths and mutual angles.
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what does the transpose do?"* The honest one-liner an interviewer wants
+is: **the transpose is the adjoint — it moves a linear map to the other side of a dot
+product without changing the value.** "Swaps rows and columns" describes the arithmetic;
+"$\langle A\mathbf{x},\mathbf{y}\rangle = \langle\mathbf{x},A^\top\mathbf{y}\rangle$"
+describes the meaning. If you can only say the first, you have memorized the operation; if
+you can say the second, you understand it.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, here is the picture. A matrix $A$ is a machine that takes a vector and
+produces another vector (possibly in a space of a different dimension) — that is [GEOM-08]'s
+whole message. Now imagine you also have a "measuring stick" vector $\mathbf{y}$ in the
+output space, and you want to ask: *how much does the output $A\mathbf{x}$ point along
+$\mathbf{y}$?* That question is a dot product, $(A\mathbf{x})^\top\mathbf{y}$.
+
+Here is the move. There are two ways to answer "how much does $A\mathbf{x}$ align with
+$\mathbf{y}$":
+
+1. **Transform first, then measure.** Push $\mathbf{x}$ through $A$ to get $A\mathbf{x}$ in
+   the output space, then dot it with the measuring stick $\mathbf{y}$ there.
+2. **Pull the measuring stick back, then measure.** Drag $\mathbf{y}$ *backward* through
+   the machine into the input space — getting some new vector — then dot *that* with the
+   original $\mathbf{x}$.
+
+The transpose is precisely the machine that pulls the measuring stick backward. $A$ sends
+inputs forward to outputs; $A^\top$ sends measuring sticks backward from the output space
+to the input space, in exactly the way that keeps the measurement the same. The claim of
+the Core is that these two ways of answering always agree:
+$$
+\underbrace{(A\mathbf{x})^\top\mathbf{y}}_{\text{transform, then measure}}
+\;=\;
+\underbrace{\mathbf{x}^\top(A^\top\mathbf{y})}_{\text{pull back, then measure}}.
+$$
+
+The arithmetic flip falls out of *forcing this agreement* — we will see that nothing but
+the index-swap can make it hold for every $\mathbf{x},\mathbf{y}$. @fig-adjoint-picture
+sketches the two routes.
+
+```{python}
+#| label: fig-adjoint-picture
+#| fig-cap: "The two ways to measure how $A\\mathbf{x}$ aligns with $\\mathbf{y}$. Top route: send $\\mathbf{x}$ forward through $A$ into the output space, then dot with $\\mathbf{y}$ there. Bottom route: pull $\\mathbf{y}$ backward through $A^\\top$ into the input space, then dot with $\\mathbf{x}$ there. The adjoint relation says the two numbers are identical — the transpose is exactly the backward machine that makes them agree."
+fig, ax = plt.subplots(figsize=(7.6, 3.6))
+ax.axis("off")
+ax.set_xlim(0, 10); ax.set_ylim(0, 6)
+
+# input-space box and output-space box
+ax.add_patch(plt.Rectangle((0.4, 0.6), 3.3, 4.8, fill=False, ec=GREY, lw=1.4))
+ax.add_patch(plt.Rectangle((6.3, 0.6), 3.3, 4.8, fill=False, ec=GREY, lw=1.4))
+ax.text(2.05, 5.7, "input space  $\\mathbb{R}^n$", ha="center", color=GREY, fontsize=11)
+ax.text(7.95, 5.7, "output space  $\\mathbb{R}^m$", ha="center", color=GREY, fontsize=11)
+
+ax.text(1.4, 3.4, "$\\mathbf{x}$", color=VEC, fontsize=15)
+ax.text(8.6, 3.9, "$A\\mathbf{x}$", color=HILITE, fontsize=15)
+ax.text(8.6, 2.0, "$\\mathbf{y}$", color=ACCENT, fontsize=15)
+ax.text(1.4, 1.6, "$A^\\top\\mathbf{y}$", color=ACCENT, fontsize=15)
+
+# forward arrow A (top)
+ax.annotate("", xy=(8.3, 3.9), xytext=(1.9, 3.5),
+            arrowprops=dict(arrowstyle="-|>", color=HILITE, lw=2.2))
+ax.text(5.1, 4.35, "$A$  (forward)", color=HILITE, ha="center", fontsize=12)
+# backward arrow A^T (bottom)
+ax.annotate("", xy=(1.9, 1.7), xytext=(8.3, 2.05),
+            arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.2))
+ax.text(5.1, 1.15, "$A^\\top$  (pull back)", color=ACCENT, ha="center", fontsize=12)
+
+ax.text(5.0, 2.95,
+        "$(A\\mathbf{x})^{\\top}\\mathbf{y}\\;=\\;\\mathbf{x}^{\\top}(A^{\\top}\\mathbf{y})$",
+        ha="center", color="black", fontsize=14)
+plt.tight_layout()
+```
+
+# The formal development {#sec-formal}
+
+## The computational definition, and the symbols in it {#sec-def}
+
+We start where every course starts, then immediately interrogate it. Throughout, a matrix
+$A$ with $m$ rows and $n$ columns is written $A\in\mathbb{R}^{m\times n}$, and its entry
+in row $i$, column $j$ is $A_{ij}$ (row index first, always). A vector
+$\mathbf{x}\in\mathbb{R}^n$ is a column of $n$ numbers $x_1,\dots,x_n$, and the **dot
+product** of two vectors of the same length is, from [GEOM-04],
+$$
+\mathbf{x}^\top\mathbf{y} \;=\; \langle\mathbf{x},\mathbf{y}\rangle
+\;=\; \sum_{k=1}^n x_k y_k .
+$$ {#eq-dot}
+We use $\mathbf{x}^\top\mathbf{y}$ and the angle-bracket $\langle\mathbf{x},\mathbf{y}\rangle$
+interchangeably; the bracket form is convenient when we want to talk about the operation
+abstractly rather than compute it.
+
+::: {#def-transpose}
+**Definition (transpose).** Let $A\in\mathbb{R}^{m\times n}$. Its **transpose**
+$A^\top\in\mathbb{R}^{n\times m}$ is the matrix whose entries are
+$$
+(A^\top)_{ij} \;=\; A_{ji}
+\qquad\text{for } i=1,\dots,n,\ \ j=1,\dots,m.
+$$ {#eq-transpose-def}
+:::
+
+In words: the entry of $A^\top$ in row $i$, column $j$ is the entry of $A$ in row $j$,
+column $i$. The indices swap. Two immediate consequences of the swap, both worth saying
+out loud because they are easy to mis-handle:
+
+- **The shape flips.** $A$ is $m\times n$; $A^\top$ is $n\times m$. A tall matrix becomes
+  wide and vice versa. If $A$ has $5$ rows and $3$ columns, $A^\top$ has $3$ rows and $5$
+  columns.
+- **Row $i$ of $A$ becomes column $i$ of $A^\top$,** and column $j$ of $A$ becomes row $j$
+  of $A^\top$. This is the "flip rows and columns" slogan, now stated precisely.
+
+A tiny concrete instance, so @eq-transpose-def is not abstract:
+$$
+A=\begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \end{bmatrix}\in\mathbb{R}^{2\times 3},
+\qquad
+A^\top=\begin{bmatrix} 1 & 4 \\ 2 & 5 \\ 3 & 6 \end{bmatrix}\in\mathbb{R}^{3\times 2}.
+$$
+Check one entry against the rule: $(A^\top)_{31}=A_{13}=3$ — row $3$, column $1$ of $A^\top$
+equals row $1$, column $3$ of $A$. Good. The diagonal entries $A_{ii}$ never move; the
+transpose is a reflection across the main diagonal, which fixes that diagonal and swaps
+everything off it. A **column vector** $\mathbf{x}\in\mathbb{R}^n$ is the special case
+$n\times 1$, so $\mathbf{x}^\top$ is $1\times n$ — a **row vector** — which is exactly why
+the dot product @eq-dot is written $\mathbf{x}^\top\mathbf{y}$: a $1\times n$ row times an
+$n\times 1$ column is a single number.
+
+That is the entire computational content. Now we earn the meaning.
+
+## The adjoint relation: the real definition {#sec-adjoint}
+
+We will now show that the index-flip @eq-transpose-def is *forced* by the geometric
+requirement in the Core. We prove two things in sequence: first that the flip *satisfies*
+the adjoint relation, then that it is the *only* matrix that does — so the relation could
+serve as the definition, with the flip as a theorem rather than a decree.
+
+::: {#thm-adjoint}
+**Theorem (adjoint relation).** For every $A\in\mathbb{R}^{m\times n}$, every
+$\mathbf{x}\in\mathbb{R}^n$, and every $\mathbf{y}\in\mathbb{R}^m$,
+$$
+(A\mathbf{x})^\top\mathbf{y} \;=\; \mathbf{x}^\top(A^\top\mathbf{y}),
+\qquad\text{equivalently}\qquad
+\langle A\mathbf{x},\mathbf{y}\rangle = \langle \mathbf{x}, A^\top\mathbf{y}\rangle .
+$$ {#eq-adjoint}
+:::
+
+::: {.proof}
+We compute both sides as explicit sums and show they are the same number. Everything below
+is the definition of matrix–vector multiplication from [GEOM-08] — the $i$-th entry of
+$A\mathbf{x}$ is the dot product of row $i$ of $A$ with $\mathbf{x}$ — together with the
+dot-product definition @eq-dot. No identity is assumed.
+
+**Left side.** First, $A\mathbf{x}$ is a vector in $\mathbb{R}^m$; its $i$-th entry is
+$$
+(A\mathbf{x})_i \;=\; \sum_{j=1}^{n} A_{ij}\,x_j ,
+$$
+the row-$i$-dot-$\mathbf{x}$ rule. Now dot this $m$-vector with $\mathbf{y}$ using
+@eq-dot (summing over the output index $i$):
+$$
+(A\mathbf{x})^\top\mathbf{y}
+= \sum_{i=1}^{m} (A\mathbf{x})_i\, y_i
+= \sum_{i=1}^{m}\Bigl(\sum_{j=1}^{n} A_{ij}\,x_j\Bigr) y_i
+= \sum_{i=1}^{m}\sum_{j=1}^{n} A_{ij}\,x_j\,y_i .
+$$ {#eq-lhs}
+
+**Right side.** First, $A^\top\mathbf{y}$ is a vector in $\mathbb{R}^n$; its $j$-th entry
+is the row-$j$-of-$A^\top$ dotted with $\mathbf{y}$. By @eq-transpose-def, row $j$ of
+$A^\top$ has entries $(A^\top)_{jk}=A_{kj}$, so
+$$
+(A^\top\mathbf{y})_j \;=\; \sum_{k=1}^{m} (A^\top)_{jk}\, y_k
+= \sum_{k=1}^{m} A_{kj}\, y_k .
+$$
+Now dot this $n$-vector with $\mathbf{x}$ (summing over the input index $j$):
+$$
+\mathbf{x}^\top(A^\top\mathbf{y})
+= \sum_{j=1}^{n} x_j\, (A^\top\mathbf{y})_j
+= \sum_{j=1}^{n} x_j \Bigl(\sum_{k=1}^{m} A_{kj}\, y_k\Bigr)
+= \sum_{j=1}^{n}\sum_{k=1}^{m} A_{kj}\,x_j\,y_k .
+$$ {#eq-rhs}
+
+**Compare.** The double sum in @eq-rhs runs the dummy index $k$ over $1,\dots,m$ and $j$
+over $1,\dots,n$, with summand $A_{kj}\,x_j\,y_k$. Rename the dummy index $k$ to $i$ (a
+summation index is just a label; renaming it changes nothing). The summand becomes
+$A_{ij}\,x_j\,y_i$, and we are summing it over $i=1,\dots,m$ and $j=1,\dots,n$ — which is
+*exactly* @eq-lhs. The order in which we write a finite sum does not matter, so the two
+double sums are equal:
+$$
+(A\mathbf{x})^\top\mathbf{y}
+= \sum_{i,j} A_{ij}\,x_j\,y_i
+= \mathbf{x}^\top(A^\top\mathbf{y}). \qquad\blacksquare
+$$
+:::
+
+So the index-flip *satisfies* the relation. The deeper claim is that it is the **only**
+matrix that does — which is what licenses us to *define* the transpose by @eq-adjoint and
+treat the flip as a derived fact.
+
+::: {#thm-uniqueness}
+**Theorem (the adjoint is unique).** Let $A\in\mathbb{R}^{m\times n}$. If a matrix
+$B\in\mathbb{R}^{n\times m}$ satisfies $(A\mathbf{x})^\top\mathbf{y} =
+\mathbf{x}^\top(B\mathbf{y})$ for all $\mathbf{x}\in\mathbb{R}^n$ and
+$\mathbf{y}\in\mathbb{R}^m$, then $B=A^\top$.
+:::
+
+::: {.proof}
+By @thm-adjoint the genuine transpose already satisfies the relation, so for the same
+$\mathbf{x},\mathbf{y}$ we have $\mathbf{x}^\top(B\mathbf{y}) = (A\mathbf{x})^\top\mathbf{y}
+= \mathbf{x}^\top(A^\top\mathbf{y})$. Subtracting,
+$$
+\mathbf{x}^\top\bigl((B - A^\top)\mathbf{y}\bigr) = 0
+\qquad\text{for all }\mathbf{x},\mathbf{y}.
+$$
+Fix any $\mathbf{y}$ and write $\mathbf{w}=(B-A^\top)\mathbf{y}\in\mathbb{R}^n$. The display
+says $\mathbf{x}^\top\mathbf{w}=0$ for *every* $\mathbf{x}\in\mathbb{R}^n$. The only vector
+orthogonal to everything is the zero vector — to see this concretely, take
+$\mathbf{x}=\mathbf{w}$ itself, giving $\mathbf{w}^\top\mathbf{w}=\sum_k w_k^2 = 0$; a sum
+of squares is zero only when every $w_k=0$, so $\mathbf{w}=\mathbf{0}$. Thus
+$(B-A^\top)\mathbf{y}=\mathbf{0}$ for every $\mathbf{y}$. A matrix that sends every vector
+to zero is the zero matrix (apply it to each standard basis vector $\mathbf{e}_j$: column
+$j$ of $B-A^\top$ equals $(B-A^\top)\mathbf{e}_j=\mathbf{0}$, so every column, hence the
+whole matrix, is zero). Therefore $B-A^\top=0$, i.e. $B=A^\top$. $\qquad\blacksquare$
+:::
+
+This is the conceptual heart of the article. The transpose is **defined by what it does
+inside a dot product**, and the row–column flip is the unique arithmetic that implements
+it. From now on, whenever you see $A^\top$, hear "the map that lets me move $A$ to the
+other side of an inner product."
+
+::: {.callout-tip title="You might be asked"}
+*"Why is $A^\top$ the right notion of 'adjoint' and not, say, $A^{-1}$?"* Because the
+adjoint is defined by the **inner product**, not by undoing the map. $A^{-1}$ (when it
+exists) sends $A\mathbf{x}$ back to $\mathbf{x}$ — it reverses the *action*. $A^\top$
+reverses the *measurement*: it answers "which input vector would dot with $\mathbf{x}$ the
+way $\mathbf{y}$ dots with $A\mathbf{x}$." They coincide only for a special class
+(orthogonal matrices, $A^\top = A^{-1}$, treated in [GEOM-05] and [GEOM-07]), and the fact
+that they usually *differ* is precisely why both objects matter. The adjoint always exists;
+the inverse often does not.
+:::
+
+## The headline identities, each derived {#sec-identities}
+
+Three identities get used constantly downstream. We prove all three — none is asserted.
+
+### Transpose of a transpose {#sec-double-transpose}
+
+::: {#lem-double}
+**Lemma.** $(A^\top)^\top = A$.
+:::
+
+::: {.proof}
+Apply @eq-transpose-def twice. Write $B = A^\top$, so $B_{ij}=A_{ji}$. Then by the same
+rule applied to $B$, the entry of $B^\top$ in row $i$, column $j$ is
+$$
+\bigl((A^\top)^\top\bigr)_{ij} = (B^\top)_{ij} = B_{ji} = A_{ij}.
+$$
+Every entry of $(A^\top)^\top$ equals the corresponding entry of $A$, so the matrices are
+equal. $\qquad\blacksquare$
+:::
+
+Geometrically this is the statement that the adjoint of the adjoint is the original map:
+swapping the two sides of the dot product twice returns you to where you started. Reflecting
+across the diagonal twice is the identity.
+
+### Transpose of a sum and a scalar multiple {#sec-linearity}
+
+::: {#lem-linear}
+**Lemma.** $(A+B)^\top = A^\top + B^\top$ and $(cA)^\top = c\,A^\top$ for any scalar $c$,
+provided $A,B$ have the same shape.
+:::
+
+::: {.proof}
+Entrywise, using @eq-transpose-def and the fact that matrix addition and scalar
+multiplication act entry by entry:
+$$
+\bigl((A+B)^\top\bigr)_{ij} = (A+B)_{ji} = A_{ji}+B_{ji}
+= (A^\top)_{ij} + (B^\top)_{ij} = (A^\top+B^\top)_{ij},
+$$
+$$
+\bigl((cA)^\top\bigr)_{ij} = (cA)_{ji} = c\,A_{ji} = c\,(A^\top)_{ij}.
+$$
+Equal in every entry, hence equal as matrices. $\qquad\blacksquare$
+:::
+
+So the transpose is a **linear** operation — unsurprising, since the index-swap touches
+positions, not values.
+
+### The product rule: transpose reverses order {#sec-product-rule}
+
+This is the identity people get wrong, so we derive it twice — once by the adjoint
+relation (which makes it *obvious*) and once by raw index arithmetic (which makes it
+*airtight*).
+
+::: {#thm-product}
+**Theorem (transpose of a product).** If $A\in\mathbb{R}^{m\times n}$ and
+$B\in\mathbb{R}^{n\times p}$, so that $AB\in\mathbb{R}^{m\times p}$ is defined, then
+$$
+(AB)^\top = B^\top A^\top .
+$$ {#eq-product-rule}
+The order **reverses**.
+:::
+
+::: {.proof}
+**Route 1 — from the adjoint relation (the conceptual proof).** We use @thm-uniqueness: if
+we can show $B^\top A^\top$ satisfies the defining adjoint relation for the map $AB$, then
+by uniqueness it *is* $(AB)^\top$. Take any $\mathbf{x}\in\mathbb{R}^p$ and
+$\mathbf{y}\in\mathbb{R}^m$. Apply the adjoint relation @eq-adjoint twice — once to peel
+$A$ off the left, then once to peel $B$:
+$$
+\bigl((AB)\mathbf{x}\bigr)^\top\mathbf{y}
+= \bigl(A(B\mathbf{x})\bigr)^\top\mathbf{y}
+\overset{(\ast)}{=} (B\mathbf{x})^\top (A^\top\mathbf{y})
+\overset{(\ast\ast)}{=} \mathbf{x}^\top\bigl(B^\top(A^\top\mathbf{y})\bigr)
+= \mathbf{x}^\top\bigl((B^\top A^\top)\mathbf{y}\bigr).
+$$
+Step $(\ast)$ is @eq-adjoint with the matrix $A$ and the vectors $B\mathbf{x}$ and
+$\mathbf{y}$; step $(\ast\ast)$ is @eq-adjoint with the matrix $B$ and the vectors
+$\mathbf{x}$ and $A^\top\mathbf{y}$. The first equality uses associativity of the maps,
+$(AB)\mathbf{x}=A(B\mathbf{x})$, proved in [GEOM-09]. We have shown $B^\top A^\top$ obeys
+the adjoint relation for $AB$ for all $\mathbf{x},\mathbf{y}$; by @thm-uniqueness it equals
+$(AB)^\top$.
+
+The order reversal is now *meaningful*, not a quirk: to move the composite map $AB$ across
+the dot product you peel off the outer map $A$ first (it is nearest the output), then the
+inner map $B$ — so $A^\top$ lands on the inside and $B^\top$ on the outside, reversing the
+order. It mirrors taking off shoes then socks: you undo the last thing done first.
+
+**Route 2 — by indices (the mechanical check).** For completeness, the entry-level proof.
+By the multiplication rule from [GEOM-09], the $(i,j)$ entry of $AB$ sums over the shared
+index $k$:
+$$
+(AB)_{ij} = \sum_{k=1}^{n} A_{ik}B_{kj}.
+$$
+Transpose swaps the two outer indices, so by @eq-transpose-def
+$$
+\bigl((AB)^\top\bigr)_{ij} = (AB)_{ji} = \sum_{k=1}^{n} A_{jk}B_{ki}.
+$$
+Now compute the $(i,j)$ entry of $B^\top A^\top$ directly. Its entry sums over $k$ the
+product of row $i$ of $B^\top$ with column $j$ of $A^\top$; using
+$(B^\top)_{ik}=B_{ki}$ and $(A^\top)_{kj}=A_{jk}$,
+$$
+(B^\top A^\top)_{ij} = \sum_{k=1}^{n} (B^\top)_{ik}(A^\top)_{kj}
+= \sum_{k=1}^{n} B_{ki}A_{jk}
+= \sum_{k=1}^{n} A_{jk}B_{ki}.
+$$
+The two displayed sums are identical term by term (multiplication of scalars commutes,
+$B_{ki}A_{jk}=A_{jk}B_{ki}$). Hence $(AB)^\top = B^\top A^\top$. $\qquad\blacksquare$
+:::
+
+::: {.callout-warning title="Pitfall"}
+**The order reverses; do not write $(AB)^\top = A^\top B^\top$.** The naive version is not
+just wrong in value — it is usually not even *defined*. If $A$ is $m\times n$ and $B$ is
+$n\times p$, then $A^\top$ is $n\times m$ and $B^\top$ is $p\times n$. The product
+$A^\top B^\top$ would require the inner dimensions $m$ and $p$ to match, which they need not.
+But $B^\top A^\top$ is $(p\times n)(n\times m)=p\times m$ — always conformable, and the
+correct shape for $(AB)^\top$ (which is $p\times m$ since $AB$ is $m\times p$). When in
+doubt, **check the shapes**: only the reversed order even fits together.
+:::
+
+A useful corollary, since it is the form we meet most often:
+
+::: {#lem-AtA-square}
+**Corollary.** For any $A\in\mathbb{R}^{m\times n}$, the matrix $A^\top A$ is square
+($n\times n$) and equals its own transpose: $(A^\top A)^\top = A^\top A$.
+:::
+
+::: {.proof}
+Shapes first: $A^\top$ is $n\times m$ and $A$ is $m\times n$, so $A^\top A$ is
+$(n\times m)(m\times n)=n\times n$ — square. For the symmetry, apply @eq-product-rule with
+the two factors $A^\top$ and $A$, and then @lem-double:
+$$
+(A^\top A)^\top = A^\top (A^\top)^\top = A^\top A,
+$$
+where the first equality reverses the order of the product $(A^\top)(A)$ and the second
+uses $(A^\top)^\top = A$. $\qquad\blacksquare$
+:::
+
+We will return to this matrix — it is the protagonist of @sec-gram. First, a definition it
+motivates.
+
+## Symmetric matrices {#sec-symmetric}
+
+@lem-AtA-square produced a matrix equal to its own transpose. That property is important
+enough to name.
+
+::: {#def-symmetric}
+**Definition (symmetric matrix).** A square matrix $S\in\mathbb{R}^{n\times n}$ is
+**symmetric** if $S^\top = S$, i.e. $S_{ij}=S_{ji}$ for all $i,j$.
+:::
+
+Geometrically, by the adjoint relation @eq-adjoint, a symmetric matrix is its own
+adjoint: $\langle S\mathbf{x},\mathbf{y}\rangle = \langle\mathbf{x},S^\top\mathbf{y}\rangle
+= \langle\mathbf{x},S\mathbf{y}\rangle$. It does not matter which of the two vectors the
+map acts on inside the dot product — the measurement is symmetric in $\mathbf{x}$ and
+$\mathbf{y}$. This self-adjointness is the source of every good property symmetric matrices
+have, and it is why they get the cleanest theorem in linear algebra, the **spectral
+theorem** of [GEOM-16]: a real symmetric matrix has only real eigenvalues and an
+*orthonormal* basis of eigenvectors, so it acts by "rotate to special axes, scale along
+each, rotate back" with no shearing. We are not proving that here — it needs eigenvalues,
+which arrive in [GEOM-14] — but we flag *why* symmetry is the precondition: the proof leans
+on exactly the relation $\langle S\mathbf{x},\mathbf{y}\rangle=\langle\mathbf{x},S\mathbf{y}\rangle$
+we just wrote down.
+
+Any square matrix splits cleanly into a symmetric part and an antisymmetric part, a
+decomposition worth seeing once because it shows symmetry is "half" of a general matrix:
+$$
+A = \underbrace{\tfrac12(A+A^\top)}_{\text{symmetric}}
+  + \underbrace{\tfrac12(A-A^\top)}_{\text{antisymmetric}} .
+$$ {#eq-sym-split}
+The first piece is symmetric because $\bigl(\tfrac12(A+A^\top)\bigr)^\top =
+\tfrac12(A^\top + (A^\top)^\top) = \tfrac12(A^\top+A)$ — the same matrix, using
+@lem-linear and @lem-double. The second satisfies $M^\top = -M$ (antisymmetric) by the
+identical computation with a minus sign. Adding the two pieces returns $A$ since the
+$A^\top$ terms cancel. This split is exactly why, when a quadratic form $\mathbf{x}^\top
+A\mathbf{x}$ appears in [GEOM-17], we may assume $A$ is symmetric "without loss of
+generality": the antisymmetric part contributes nothing to $\mathbf{x}^\top A\mathbf{x}$.
+
+```{python}
+#| label: fig-symmetric
+#| fig-cap: "Three matrices as heatmaps with their transposes. **Left:** a general matrix — transposing reflects it across the main diagonal (dashed) and changes it. **Middle:** a symmetric matrix $S=S^\\top$ — reflection leaves it unchanged; the pattern is mirror-image about the diagonal. **Right:** $A^\\top A$ formed from the general matrix on the left — guaranteed symmetric by the corollary, visibly mirror-symmetric about its diagonal."
+rng = np.random.default_rng(3)
+A = rng.integers(-4, 5, size=(4, 4)).astype(float)
+S = np.round((A + A.T) / 2, 1)          # a symmetric matrix
+G = A.T @ A                              # guaranteed symmetric
+
+mats = [(A, "general $A$"), (S, "symmetric $S=S^\\top$"), (G, "$A^\\top A$ (symmetric)")]
+fig, axes = plt.subplots(1, 3, figsize=(9.4, 3.2))
+for ax, (M, title) in zip(axes, mats):
+    vmax = np.abs(M).max()
+    im = ax.imshow(M, cmap="RdBu_r", vmin=-vmax, vmax=vmax)
+    ax.plot([-0.5, M.shape[0]-0.5], [-0.5, M.shape[0]-0.5], color="black", lw=1.2, ls="--")
+    for i in range(M.shape[0]):
+        for j in range(M.shape[1]):
+            ax.text(j, i, f"{M[i,j]:g}", ha="center", va="center", fontsize=8,
+                    color="black")
+    ax.set_title(title, fontsize=11)
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.grid(False)
+plt.tight_layout()
+```
+
+# The object that keeps showing up: the Gram matrix $A^\top A$ {#sec-gram}
+
+We can now answer the motivating question of @sec-why: *why is $A^\top A$ everywhere?*
+The answer is one clean reading of what its entries are.
+
+## Reading the entries of $A^\top A$ {#sec-gram-entries}
+
+Let $A\in\mathbb{R}^{m\times n}$ and write its columns as vectors
+$\mathbf{a}_1,\dots,\mathbf{a}_n\in\mathbb{R}^m$:
+$$
+A = \begin{bmatrix} \big| & \big| & & \big| \\
+\mathbf{a}_1 & \mathbf{a}_2 & \cdots & \mathbf{a}_n \\
+\big| & \big| & & \big| \end{bmatrix}.
+$$
+The rows of $A^\top$ are these same columns laid flat (column $j$ of $A$ is row $j$ of
+$A^\top$, by @eq-transpose-def). Now compute a single entry of $G = A^\top A$. The
+$(i,j)$ entry is row $i$ of $A^\top$ dotted with column $j$ of $A$ — that is, the column
+$\mathbf{a}_i$ dotted with the column $\mathbf{a}_j$:
+$$
+G_{ij} = (A^\top A)_{ij}
+= \sum_{k=1}^{m} (A^\top)_{ik}\,A_{kj}
+= \sum_{k=1}^{m} A_{ki}\,A_{kj}
+= \mathbf{a}_i^\top\mathbf{a}_j
+= \langle \mathbf{a}_i, \mathbf{a}_j\rangle .
+$$ {#eq-gram-entry}
+The middle steps just unfold the multiplication rule and then re-fold the sum
+$\sum_k A_{ki}A_{kj}$ as the dot product of column $i$ with column $j$ (using
+@eq-dot). So:
+
+::: {.callout-important title="What $A^\top A$ is"}
+The $(i,j)$ entry of $A^\top A$ is **the dot product of column $i$ with column $j$ of
+$A$.** The whole matrix is the complete table of *all pairwise dot products of $A$'s
+columns* — every length and every mutual alignment, in one grid. This is the **Gram
+matrix** of the columns.
+:::
+
+Two readings of @eq-gram-entry that we will use repeatedly:
+
+- **Diagonal entries are squared lengths.** $G_{ii} = \mathbf{a}_i^\top\mathbf{a}_i =
+  \|\mathbf{a}_i\|^2$, the squared norm of column $i$ (from [GEOM-04], $\|\mathbf{a}\|^2 =
+  \mathbf{a}^\top\mathbf{a}$). So the diagonal of $A^\top A$ reads off how long each column
+  is.
+- **Off-diagonal entries are alignments.** $G_{ij}=\mathbf{a}_i^\top\mathbf{a}_j =
+  \|\mathbf{a}_i\|\,\|\mathbf{a}_j\|\cos\theta_{ij}$, where $\theta_{ij}$ is the angle
+  between columns $i$ and $j$ (the angle formula of [GEOM-04]). A zero off-diagonal entry
+  means those two columns are **orthogonal**. So $A^\top A$ is diagonal *exactly when* the
+  columns of $A$ are mutually orthogonal — the cleanest possible case, and the reason
+  orthonormal bases ([GEOM-05]) and the QR decomposition ([GEOM-07]) make so many formulas
+  collapse.
+
+The symmetry $G_{ij}=G_{ji}$ from @lem-AtA-square is now obvious from the geometry, not
+just the algebra: a dot product does not care about order,
+$\mathbf{a}_i^\top\mathbf{a}_j = \mathbf{a}_j^\top\mathbf{a}_i$, so the table of pairwise
+dot products is automatically a mirror image about its diagonal.
+
+```{python}
+#| label: fig-gram
+#| fig-cap: "The Gram matrix as a table of pairwise column dot products. **Left:** three column vectors $\\mathbf{a}_1,\\mathbf{a}_2,\\mathbf{a}_3$ in the plane. **Right:** their Gram matrix $A^\\top A$; each cell $(i,j)$ is $\\mathbf{a}_i^\\top\\mathbf{a}_j$. The diagonal holds squared lengths $\\|\\mathbf{a}_i\\|^2$; off-diagonals hold alignments. $\\mathbf{a}_1\\perp\\mathbf{a}_2$ here, so the $(1,2)$ and $(2,1)$ entries are zero. The whole grid is mirror-symmetric about its diagonal."
+a1 = np.array([2.0, 0.0])
+a2 = np.array([0.0, 1.5])     # orthogonal to a1
+a3 = np.array([1.6, 1.2])     # general direction
+A = np.column_stack([a1, a2, a3])
+G = A.T @ A
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+cols = [VEC, ACCENT, HILITE]
+labels = [r"$\mathbf{a}_1$", r"$\mathbf{a}_2$", r"$\mathbf{a}_3$"]
+for v, c, lab in zip([a1, a2, a3], cols, labels):
+    draw_vec(axL, (0, 0), v, color=c, label=lab,
+             label_offset=(0.18, 0.18))
+axL.set_xlim(-0.6, 2.6); axL.set_ylim(-0.6, 2.2)
+axL.set_aspect("equal"); axL.axhline(0, color=GREY, lw=0.8); axL.axvline(0, color=GREY, lw=0.8)
+axL.set_title("Three column vectors")
+
+vmax = np.abs(G).max()
+axR.imshow(G, cmap="RdBu_r", vmin=-vmax, vmax=vmax)
+for i in range(3):
+    for j in range(3):
+        axR.text(j, i, f"{G[i,j]:g}", ha="center", va="center", fontsize=11)
+axR.set_xticks(range(3)); axR.set_yticks(range(3))
+axR.set_xticklabels(labels); axR.set_yticklabels(labels)
+axR.set_title(r"$A^\top A$: pairwise dot products")
+axR.grid(False)
+plt.tight_layout()
+```
+
+## Why this is exactly the object least squares and statistics need {#sec-gram-why}
+
+Now the recurring guest from @sec-why is no longer mysterious. Wherever a problem cares
+about *how the columns of a data matrix relate to one another* — their sizes and their
+overlaps — the Gram matrix $A^\top A$ is the precise object that encodes it.
+
+- **Least squares / projection ([GEOM-06], [REGR-05]).** To project a vector onto the
+  column space of $A$ we must solve the normal equations $A^\top A\,\hat{\mathbf{c}} =
+  A^\top\mathbf{b}$. The left side measures how the candidate combination overlaps each
+  column ($A^\top A$ holds those overlaps); the right side measures how the target
+  $\mathbf{b}$ overlaps each column ($A^\top\mathbf{b}$ holds those). The whole equation is
+  a statement in dot products, which is why $A^\top$ — the dot-product-mover — is on both
+  sides. We give the full geometric derivation in [GEOM-06]; here we have explained *why the
+  $A^\top$ appears at all*.
+- **Covariance ([PROB-17]).** If $X$ holds mean-centered data (one observation per row,
+  one feature per column), then $X^\top X$ is — up to a factor $\tfrac1{n}$ or
+  $\tfrac1{n-1}$ — the **covariance matrix**: its $(i,j)$ entry is the covariance of
+  feature $i$ with feature $j$, by exactly @eq-gram-entry read on centered columns. The
+  diagonal holds variances (squared spread of each feature); the off-diagonals hold
+  feature-to-feature covariances. The geometry "lengths and alignments of columns" *is* the
+  statistics "variances and covariances of features." The probabilistic meaning is
+  [PROB-17]'s to own; here we see why the matrix has the shape it does.
+- **The SVD ([GEOM-20]).** Because $A^\top A$ is symmetric (and, as the next track entries
+  show, positive semidefinite), it has the clean spectral structure that the SVD is built
+  on: the singular values of $A$ are the square roots of the eigenvalues of $A^\top A$.
+  Every matrix's deepest geometry is read through this companion.
+
+::: {.callout-tip title="You might be asked"}
+*"Is $A^\top A$ always invertible?"* No — and knowing when it is *not* is the useful part.
+Since $G_{ij}=\mathbf{a}_i^\top\mathbf{a}_j$, the Gram matrix is invertible **iff the
+columns of $A$ are linearly independent** (full column rank). If two columns are
+proportional — perfectly correlated features — the Gram matrix is singular and the normal
+equations have no unique solution; that is multicollinearity, the failure mode of
+[REGR-07]. We can see the boundary already: if $\mathbf{a}_2 = 2\mathbf{a}_1$, then column
+$2$ of $G$ is twice column $1$ (every entry $\mathbf{a}_i^\top\mathbf{a}_2 =
+2\,\mathbf{a}_i^\top\mathbf{a}_1$), so $G$ has dependent columns and cannot be inverted. The
+full statement — $A^\top A$ is positive *definite* iff $A$ has independent columns,
+positive *semidefinite* always — is proved in [GEOM-18]; this article supplies the symmetry,
+[GEOM-18] supplies the definiteness.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the transpose on real, honestly messy data — and end on a case at the edge of
+applicability, where forming $A^\top A$ is exactly the wrong move.
+
+## Example 1 — the design matrix of a regression, by hand {#sec-ex-design}
+
+The most important transpose in all of data science is $X^\top X$, where $X$ is a
+**design matrix**: one row per observation, one column per feature, with a leading column
+of ones for the intercept. We build a tiny one from a real-flavored dataset — five houses,
+predicting price from size and number of bedrooms — and compute $X^\top X$ entry by entry,
+reading each number as a column dot product per @eq-gram-entry.
+
+```{python}
+#| label: tbl-design
+#| echo: false
+# Five houses: intercept, size (1000 sqft), bedrooms.
+size = np.array([1.4, 2.0, 1.7, 2.6, 3.1])         # thousands of sq ft
+beds = np.array([3,   3,   2,   4,   4], dtype=float)
+X = np.column_stack([np.ones_like(size), size, beds])  # design matrix, 5 x 3
+G = X.T @ X
+print("Design matrix X (cols: 1, size, beds):")
+print(X)
+print("\nGram matrix  G = X^T X  (3 x 3):")
+print(G)
+print("\nReading entries as column dot products (eq-gram-entry):")
+print(f"  G[0,0] = ones . ones = n          = {G[0,0]:.0f}   (squared length of the ones column)")
+print(f"  G[1,1] = sum size_i^2            = {G[1,1]:.2f}")
+print(f"  G[0,1] = sum size_i = sum(1*size)= {G[0,1]:.2f}   (ones . size)")
+print(f"  G[1,2] = sum size_i*beds_i       = {G[1,2]:.2f}   (size . beds)")
+print(f"symmetric? G == G^T :", np.allclose(G, G.T))
+```
+
+Read the printed Gram matrix against the geometry. The design matrix $X$ is $5\times 3$
+(five houses, three columns: a constant, size, bedrooms), so $X^\top X$ is $3\times 3$ by
+@lem-AtA-square. Its entries are exactly the pairwise column dot products:
+
+- $G_{11} = \mathbf{1}^\top\mathbf{1} = \sum_i 1 = n = 5$ — the squared length of the
+  all-ones column is just the sample size. (This is why the count $n$ always lurks in the
+  top-left of a regression's $X^\top X$.)
+- $G_{12} = \mathbf{1}^\top\mathbf{(size)} = \sum_i \text{size}_i$ — dotting the ones column
+  with the size column sums the sizes. Divided by $n$ this is the mean size; this is *how*
+  the intercept term couples to the predictors.
+- $G_{22} = \mathbf{(size)}^\top\mathbf{(size)} = \sum_i \text{size}_i^2$ — the squared
+  length of the size column.
+- $G_{23} = \mathbf{(size)}^\top\mathbf{(beds)} = \sum_i \text{size}_i\,\text{beds}_i$ — the
+  alignment between the size and bedroom columns, large and positive because bigger houses
+  have more bedrooms (the two features are correlated).
+
+The matrix is symmetric, as the printed check confirms. Every entry is a dot product, and
+the whole $3\times 3$ grid is the complete summary of how the three columns relate — which
+is exactly the information least squares needs to disentangle the features. The fact that
+$G_{23}$ is large (size and bedrooms move together) is the geometric face of a real
+modeling worry: correlated predictors, taken up in [REGR-07].
+
+## Example 2 — the adjoint relation as a numerical fact {#sec-ex-adjoint}
+
+The adjoint relation @eq-adjoint is not a slogan; it is an arithmetic identity we can
+watch hold on actual numbers. We take a non-square $A$ (so $A$ and $A^\top$ genuinely live
+in different-sized worlds) and random vectors, and verify
+$\langle A\mathbf{x},\mathbf{y}\rangle = \langle\mathbf{x},A^\top\mathbf{y}\rangle$
+exactly. We also show the "wrong" identity $(AB)^\top \ne A^\top B^\top$ by shape alone.
+
+```{python}
+#| label: fig-adjoint-check
+#| fig-cap: "The adjoint relation verified numerically. For a random $4\\times 3$ matrix $A$ and 200 random pairs $(\\mathbf{x},\\mathbf{y})$, we plot $\\langle A\\mathbf{x},\\mathbf{y}\\rangle$ against $\\langle\\mathbf{x},A^\\top\\mathbf{y}\\rangle$. Every point lands on the identity line $y=x$ to machine precision — the two ways of measuring agree, always, exactly as @thm-adjoint proves."
+rng = np.random.default_rng(42)
+A = rng.normal(size=(4, 3))          # maps R^3 -> R^4
+lhs, rhs = [], []
+for _ in range(200):
+    x = rng.normal(size=3)           # input lives in R^3
+    y = rng.normal(size=4)           # measuring stick lives in R^4
+    lhs.append((A @ x) @ y)          # <A x, y>  in the output space R^4
+    rhs.append(x @ (A.T @ y))        # <x, A^T y> in the input space R^3
+lhs, rhs = np.array(lhs), np.array(rhs)
+
+fig, ax = plt.subplots(figsize=(5.0, 4.6))
+lo, hi = min(lhs.min(), rhs.min()), max(lhs.max(), rhs.max())
+ax.plot([lo, hi], [lo, hi], color=GREY, lw=1.4, ls="--", label="$y=x$")
+ax.scatter(lhs, rhs, color=VEC, s=18, alpha=0.7)
+ax.set_xlabel(r"$\langle A\mathbf{x},\,\mathbf{y}\rangle$")
+ax.set_ylabel(r"$\langle \mathbf{x},\,A^\top\mathbf{y}\rangle$")
+ax.set_title("Adjoint relation holds exactly")
+ax.legend(loc="upper left")
+ax.set_aspect("equal")
+plt.tight_layout()
+
+print(f"max abs difference over 200 trials: {np.max(np.abs(lhs - rhs)):.2e}  (≈ machine epsilon)")
+# Shape demonstration: (AB)^T = B^T A^T, while A^T B^T is not even defined here.
+B = rng.normal(size=(3, 5))          # A is 4x3, B is 3x5  ->  AB is 4x5
+print("\nShapes:  A is 4x3,  B is 3x5,  so AB is 4x5,  (AB)^T is 5x4.")
+print(f"  B^T A^T has shape {(B.T @ A.T).shape}  (correct: 5x4)")
+print(f"  (AB)^T == B^T A^T ? {np.allclose((A @ B).T, B.T @ A.T)}")
+print("  A^T B^T would need a (3x4)(5x3) product -> inner dims 4 != 5 -> UNDEFINED.")
+```
+
+The scatter lies exactly on $y=x$: the two sides of @eq-adjoint are equal to floating-point
+precision on every trial, which is what a proof-by-identity guarantees. The shape printout
+makes the pitfall of @sec-product-rule concrete — $B^\top A^\top$ is the only product that
+even *fits*, and it reproduces $(AB)^\top$ exactly, while $A^\top B^\top$ cannot be formed
+at all.
+
+## Example 3 (edge of applicability) — when forming $A^\top A$ is the *wrong* move {#sec-ex-edge}
+
+The Gram matrix is conceptually perfect and numerically dangerous. Here is the honest
+boundary. Suppose two columns of $A$ are *nearly* identical — two sensors measuring almost
+the same thing, two features that are near-duplicates. The columns are technically
+independent, so $A^\top A$ is technically invertible, and the textbook says "just solve the
+normal equations." Watch what actually happens.
+
+```{python}
+#| label: fig-conditioning
+#| fig-cap: "The edge of applicability. Two columns of $A$ are nearly parallel (a tiny angle $\\varepsilon$ apart), as on the left. Forming $A^\\top A$ **squares** the disparity between the columns' independent and shared parts — the right panel shows the condition number (a measure of numerical fragility, [GEOM-26]) of $A^\\top A$ exploding as the columns align, far faster than that of $A$ itself. Solving via $A^\\top A$ throws away half your significant digits; this is why practitioners reach for QR or SVD instead."
+# Two unit columns separated by a shrinking angle eps.
+eps_vals = np.logspace(-1, -7, 25)
+cond_A, cond_AtA = [], []
+for eps in eps_vals:
+    a1 = np.array([1.0, 0.0])
+    a2 = np.array([np.cos(eps), np.sin(eps)])     # nearly parallel to a1
+    A = np.column_stack([a1, a2])
+    cond_A.append(np.linalg.cond(A))
+    cond_AtA.append(np.linalg.cond(A.T @ A))
+cond_A, cond_AtA = np.array(cond_A), np.array(cond_AtA)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+# left: picture of two nearly-parallel columns at a visible-but-small angle
+e = 0.18
+draw_vec(axL, (0, 0), (1, 0), color=VEC, label=r"$\mathbf{a}_1$", label_offset=(0.08, -0.12))
+draw_vec(axL, (0, 0), (np.cos(e), np.sin(e)), color=HILITE, label=r"$\mathbf{a}_2$",
+         label_offset=(0.05, 0.14))
+axL.annotate(r"angle $\varepsilon$", xy=(0.7, 0.07), color=GREY, fontsize=11)
+axL.set_xlim(-0.2, 1.3); axL.set_ylim(-0.2, 0.6); axL.set_aspect("equal")
+axL.set_title("Two near-duplicate columns")
+
+axR.loglog(eps_vals, cond_A, color=VEC, marker="o", ms=4, label=r"$\kappa(A)$")
+axR.loglog(eps_vals, cond_AtA, color=HILITE, marker="s", ms=4, label=r"$\kappa(A^\top A)$")
+axR.set_xlabel(r"angle $\varepsilon$ between columns (smaller = more parallel)")
+axR.set_ylabel("condition number (log scale)")
+axR.set_title(r"$A^\top A$ squares the conditioning")
+axR.legend(loc="upper right")
+axR.invert_xaxis()
+plt.tight_layout()
+
+print(f"At eps=1e-6:  cond(A) ≈ {cond_A[-1]:.1e},  cond(A^T A) ≈ {cond_AtA[-1]:.1e}")
+print(f"ratio cond(A^T A)/cond(A) ≈ {cond_AtA[-1]/cond_A[-1]:.1e}  (≈ cond(A): the square law)")
+```
+
+The right panel is the warning. The "condition number" (built fully in [GEOM-26]) measures
+how violently the answer to $A^\top A\,\mathbf{c}=\mathbf{d}$ swings when the data wiggle a
+little; bigger is worse. As the two columns approach parallel, $\kappa(A^\top A)$ blows up
+**as the square** of $\kappa(A)$ — forming the Gram matrix *doubles the number of digits you
+lose*. On a computer with about $16$ digits of precision, an $A$ that loses $8$ digits
+becomes an $A^\top A$ that loses all $16$: the answer is numerical noise even though the
+matrix is, on paper, invertible.
+
+::: {.callout-warning title="Pitfall"}
+**$A^\top A$ is the right object to *think* with and often the wrong object to *compute*
+with.** The entries $\mathbf{a}_i^\top\mathbf{a}_j$ are the perfect conceptual summary, but
+explicitly forming and inverting $A^\top A$ squares the conditioning of the problem. When
+columns are nearly collinear (the common case with real, correlated features), solve the
+least-squares problem through the **QR decomposition** ([GEOM-07]) or the **SVD**
+([GEOM-20]) of $A$ directly, which never form $A^\top A$ and keep the conditioning at
+$\kappa(A)$ rather than $\kappa(A)^2$. The slogan, met again in [GEOM-11] and [GEOM-26]:
+*understand with $A^\top A$, but solve through a factorization of $A$.*
+:::
+
+This is the honest edge of the transpose's most celebrated product: indispensable as a
+concept, hazardous as a computation. Knowing both halves is the difference between deriving
+the normal equations and trusting their naive numerical solution.
+
+# Failure modes and things people get wrong {#sec-failure}
+
+Beyond the conditioning hazard of @sec-ex-edge, three smaller traps recur. We name them so
+you do not fall into them.
+
+- **Reversing the order wrong.** $(AB)^\top = B^\top A^\top$, *not* $A^\top B^\top$
+  (@sec-product-rule). The shape check is the foolproof guard: only the reversed product is
+  even conformable in general.
+- **Confusing the adjoint with the inverse.** $A^\top$ moves a map across a dot product;
+  $A^{-1}$ undoes the map. They are equal only for orthogonal matrices ($A^\top A = I$,
+  [GEOM-05]/[GEOM-07]), which is a *special* and very useful coincidence, not the rule. For a
+  general or non-square $A$, $A^{-1}$ may not exist at all while $A^\top$ always does.
+- **Assuming $A^\top A$ is invertible.** It is invertible only when $A$ has full column
+  rank (@sec-gram-why). With redundant or near-duplicate columns it is singular or
+  near-singular — the geometric fact behind multicollinearity ([REGR-07]) and rank
+  deficiency ([GEOM-12]).
+
+::: {.callout-tip title="You might be asked"}
+*"When do you actually use the transpose itself, versus $A^\top A$?"* The bare transpose
+$A^\top$ shows up whenever you need to **move between the input and output spaces of a
+map**: gradients of linear-least-squares losses ($A^\top$ pushes a residual in the output
+space back to a gradient in the parameter space), backpropagation (the transpose of a
+layer's weight matrix routes the error signal backward — it is literally the adjoint), and
+any time you write a quadratic form $\mathbf{x}^\top S\mathbf{x}$. The product $A^\top A$
+(and its sibling $A A^\top$) shows up whenever you need the **relationships among a set of
+vectors** — columns for $A^\top A$, rows for $A A^\top$: Gram matrices for least squares,
+covariance matrices in statistics, kernel matrices in [CLAS]'s kernel methods, and the
+$A^\top A$/$A A^\top$ pair that builds the SVD. One word for both: the transpose is how
+geometry talks to itself across a dot product.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from [GEOM-09 *Matrix Multiplication as Composition*], which made $AB$ mean "do
+$B$, then $A$" — and this article showed that reversing that composition inside a dot
+product is exactly what $(AB)^\top = B^\top A^\top$ records. You also carried in the dot
+product from [GEOM-04], which turned out to be the very thing the transpose is defined to
+respect. From here the trunk and its branches continue:
+
+- **[GEOM-11 *Solving $A\mathbf{x}=\mathbf{b}$*]** — the inverse and its transpose identity
+  $(A^\top)^{-1}=(A^{-1})^\top$, and the first appearance of "solve, don't invert," which
+  @sec-ex-edge previewed.
+- **[GEOM-06 *Orthogonal Projection*]** — the keystone, where the $A^\top A$ of the normal
+  equations $A^\top A\,\hat{\mathbf{c}}=A^\top\mathbf{b}$ is *derived geometrically*: the
+  residual is orthogonal to every column of $A$, which is the statement $A^\top(\text{residual})
+  =\mathbf{0}$ — the transpose mediating the orthogonality.
+- **[GEOM-12 *Rank and the Four Fundamental Subspaces*]** — where $A$ and $A^\top$ are
+  paired: the column space of $A^\top$ is the row space of $A$, and the null space of
+  $A^\top$ is the left null space of $A$. The transpose is the hinge of all four subspaces.
+- **[GEOM-16 *Symmetric Matrices and the Spectral Theorem*]** — the symmetric matrices
+  ($S=S^\top$) introduced here get their crown jewel: real eigenvalues and an orthonormal
+  eigenbasis.
+- **[GEOM-17]–[GEOM-18 *Quadratic Forms and Positive-Definite Matrices*]** — where the
+  symmetric $A^\top A$ is shown to be positive semidefinite, completing the picture of why
+  it is the "good" matrix the rest of the series leans on.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary source.** Arthur Cayley, "A Memoir on the Theory of Matrices," *Philosophical
+  Transactions of the Royal Society* 148 (1858) — the founding document of matrix algebra,
+  where transposition first appears as a systematic operation rather than an ad-hoc
+  rearrangement.
+- **The adjoint, generalized.** The relation $\langle A\mathbf{x},\mathbf{y}\rangle =
+  \langle\mathbf{x},A^\top\mathbf{y}\rangle$ is the finite-dimensional, real case of the
+  **adjoint operator** on inner-product spaces. Over the complex numbers it becomes the
+  *conjugate* transpose (Hermitian adjoint) $A^* = \overline{A}^\top$, defined so that
+  $\langle A\mathbf{x},\mathbf{y}\rangle = \langle\mathbf{x},A^*\mathbf{y}\rangle$ still
+  holds — the conjugate enters to keep the complex inner product real on the diagonal. Same
+  idea, one twist; any functional-analysis text (e.g. Axler, *Linear Algebra Done Right*)
+  develops it.
+- **Open threads this article deliberately deferred.** *Why is $A^\top A$ positive
+  semidefinite, and exactly when positive definite?* — [GEOM-18]. *What does $A^\top$ do to
+  the four subspaces?* — [GEOM-12]. *Why does forming $A^\top A$ square the condition
+  number, made precise?* — [GEOM-26]. *How does the adjoint power backpropagation?* — its
+  geometry is here; its use in training is the Optimization and Classification tracks'.

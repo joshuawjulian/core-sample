@@ -1,0 +1,1006 @@
+---
+title: "Symmetric Matrices and the Spectral Theorem"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / input directions
+HILITE = "#c1121f"   # eigenvectors / principal axes
+ACCENT = "#0a7d4d"   # second eigenvector / highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+```
+
+> **Where this sits in the track.** This is the second half of the **read-as-a-pair** fork
+> that opened with [GEOM-15 *Diagonalization and the Eigendecomposition*], and the summit
+> of **Movement IV — Eigenstructure and the Spectral Picture**. It assumes you can already
+> diagonalize a matrix when it has a full set of independent eigenvectors, writing
+> $A = V\Lambda V^{-1}$ and reading it as "change to the eigenbasis, scale, change back"
+> ([GEOM-15]); that you know what an **orthonormal basis** is and why coordinates in one are
+> just dot products ([GEOM-05]); and that you have met the **transpose** and the meaning of a
+> matrix being **symmetric**, $A = A^\top$ ([GEOM-10]). The one question here: *why are
+> symmetric matrices the best-behaved matrices in all of linear algebra, and what exactly
+> does the spectral theorem promise?* It sets up [GEOM-17] (diagonalizing a quadratic form),
+> [GEOM-18] (positive-definite $\Leftrightarrow$ positive eigenvalues), and [GEOM-20] (the
+> SVD, *built* from the spectral decomposition of $A^\top A$). It is the engine behind
+> **Unsupervised Learning's PCA** and **Inference's Fisher-information matrix**.
+
+## Abstract {.unnumbered}
+
+A general square matrix can be diagonalized only if it happens to have enough independent
+eigenvectors, and even then its eigenvectors can sit at any awkward angles to one another
+and its eigenvalues can be complex numbers. **Symmetric matrices escape every one of these
+defects.** This article proves the **spectral theorem**: every real symmetric matrix $A$
+has only **real** eigenvalues, and it has a full set of eigenvectors that are mutually
+**orthogonal** — so it can always be written
+$$A = Q\Lambda Q^\top,$$
+where $Q$ is an *orthogonal* matrix (its columns are an orthonormal eigenbasis) and
+$\Lambda$ is diagonal. We prove both halves — real eigenvalues, orthogonal eigenvectors —
+from scratch, and read off the geometry: a symmetric matrix acts by *rotate to the
+eigenaxes, stretch along each axis, rotate back* — **it never shears**. The single claim
+this article defends is that this one factorization, available for free and only for
+symmetric matrices, is the reason covariance matrices, Gram matrices $A^\top A$, and
+Hessians are so tractable — it is the algebraic spine under PCA, quadratic forms, and
+second-order optimization.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+For a general matrix, diagonalization $A = V\Lambda V^{-1}$ is a *privilege* — it needs a
+full set of independent eigenvectors, and they can be skewed and complex. A real
+**symmetric** matrix $A = A^\top$ is handed the perfect version of this for free: its
+eigenvalues are all **real**, and its eigenvectors can be chosen **orthonormal**. Because
+the eigenvectors are orthonormal, the change-of-basis matrix $V$ becomes an **orthogonal**
+matrix $Q$, whose inverse is just its transpose, $Q^{-1} = Q^\top$. So the decomposition
+collapses to
+$$A = Q\Lambda Q^\top, \qquad Q^\top Q = I, \qquad \Lambda = \operatorname{diag}(\lambda_1,\dots,\lambda_n).$$
+Geometrically: **rotate to the eigenaxes** ($Q^\top$), **stretch along each axis** by its
+eigenvalue ($\Lambda$), **rotate back** ($Q$). No shear, no rotation left over, no complex
+arithmetic. This is the spectral theorem, and it is why the symmetric matrices that show up
+all over data science — covariance, $A^\top A$, the Hessian — are the easy ones.
+:::
+
+Everything below orbits that box. The two promises — *real eigenvalues* and *orthogonal
+eigenvectors* — are not obvious, and we will earn each one. The payoff is that the most
+important matrices a data scientist ever touches are exactly the symmetric ones, and the
+spectral theorem says they are all, geometrically, the *same kind of object*: a set of
+perpendicular axes, each with a stretch factor.
+
+# Why we are here: the defects of general diagonalization {#sec-why}
+
+Keep one question in view for the whole article: **what goes wrong for a general matrix,
+and why does symmetry fix every bit of it?** Every step below is an answer to some piece of
+that question.
+
+[GEOM-15] gave us the eigendecomposition $A = V\Lambda V^{-1}$: collect $n$ independent
+eigenvectors as the columns of $V$, put their eigenvalues on the diagonal of $\Lambda$, and
+$A$ factors. That article was also honest about how *fragile* this is. Three separate things
+can spoil it, and they are worth naming precisely, because the spectral theorem is exactly
+the statement that symmetry kills all three at once.
+
+**Defect 1 — there may not be enough eigenvectors (defectiveness).** The shear
+$\bigl[\begin{smallmatrix}1&1\\0&1\end{smallmatrix}\bigr]$ has the single eigenvalue
+$\lambda = 1$ repeated twice, but only *one* line of eigenvectors (the $x$-axis). It cannot
+be diagonalized at all — there is no basis of eigenvectors to change into. Such a matrix is
+called **defective**.
+
+**Defect 2 — the eigenvalues may be complex.** A rotation by $90^\circ$,
+$\bigl[\begin{smallmatrix}0&-1\\1&0\end{smallmatrix}\bigr]$, leaves *no* real direction
+fixed (it turns everything), so its eigenvalues are $\pm i$. Diagonalization exists, but
+only over the complex numbers — useless if you wanted real axes to interpret.
+
+**Defect 3 — even when it works, the eigenvectors can be badly skewed.** Take
+$$
+A = \begin{bmatrix} 2 & 3 \\ 0 & 5 \end{bmatrix}.
+$$
+It is diagonalizable with eigenvalues $2$ and $5$, but its two eigenvectors are *not*
+perpendicular. The change-of-basis matrix $V$ is then some general invertible matrix whose
+inverse $V^{-1}$ is a genuine, expensive thing to compute, and "change to the eigenbasis"
+means sliding into a slanted coordinate system.
+
+@fig-three-defects shows all three failures side by side. Now contrast them with what we
+are about to prove. For a symmetric matrix:
+
+- it is **never defective** — a full orthonormal eigenbasis always exists;
+- its eigenvalues are **always real** — no complex arithmetic, every eigenvalue is an
+  honest stretch factor;
+- its eigenvectors are **orthogonal** — the "slanted coordinate system" of Defect 3
+  becomes a clean *rotation*, and $V^{-1}$ degenerates into the free, exact $Q^\top$.
+
+```{python}
+#| label: fig-three-defects
+#| fig-cap: "The three ways general diagonalization fails, and the symmetric matrix that fixes all of them. **(a)** A shear is *defective*: it has only one eigendirection (red), so there is no eigenbasis. **(b)** A rotation has *no real* eigenvectors — every arrow (grey) is turned, none is merely scaled, so its eigenvalues are complex. **(c)** A non-symmetric diagonalizable matrix has *skewed* eigenvectors (red, green) sitting at an awkward angle. **(d)** A symmetric matrix: two *perpendicular* eigendirections (red, green), each simply stretched. The spectral theorem says (d) is the universal picture for symmetric matrices."
+fig, axes = plt.subplots(1, 4, figsize=(11.0, 3.0))
+
+def style(ax, title):
+    ax.set_aspect("equal"); ax.set_xlim(-2.2, 2.2); ax.set_ylim(-2.2, 2.2)
+    ax.axhline(0, color=GREY, lw=0.8, alpha=0.5)
+    ax.axvline(0, color=GREY, lw=0.8, alpha=0.5)
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.set_title(title, fontsize=10)
+
+# (a) shear: one eigendirection
+ax = axes[0]; style(ax, "(a) shear: defective")
+draw_vec(ax, (0, 0), (1.8, 0), color=HILITE, label="$v$", label_offset=(0, -0.3))
+ax.text(0, -1.9, "only ONE\neigendirection", fontsize=8, ha="center", color=GREY)
+
+# (b) rotation: no real eigenvectors
+ax = axes[1]; style(ax, "(b) rotation: complex")
+R = np.array([[0, -1], [1, 0]])   # 90-degree rotation: no real eigenvector
+for ang in np.linspace(0, 2*np.pi, 8, endpoint=False):
+    v = 1.6*np.array([np.cos(ang), np.sin(ang)])      # an input direction
+    w = R @ v                                          # where the rotation sends it
+    draw_vec(ax, (0, 0), tuple(v), color=PALE, lw=1.2, z=2)
+    draw_vec(ax, (0, 0), tuple(w), color=GREY, lw=1.2, z=1)
+ax.text(0, -1.9, "every arrow\nis turned", fontsize=8, ha="center", color=GREY)
+
+# (c) non-symmetric diagonalizable: skew eigenvectors
+ax = axes[2]; style(ax, "(c) skewed eigenbasis")
+v1 = np.array([1.0, 0.0]); v2 = np.array([3.0, 3.0]); v2 = v2/np.linalg.norm(v2)*1.8
+draw_vec(ax, (0, 0), tuple(v1*1.8), color=HILITE, label="$v_1$", label_offset=(0.1, -0.3))
+draw_vec(ax, (0, 0), tuple(v2), color=ACCENT, label="$v_2$", label_offset=(0.3, 0.1))
+ax.text(0, -1.9, "not perpendicular", fontsize=8, ha="center", color=GREY)
+
+# (d) symmetric: orthogonal eigenvectors
+ax = axes[3]; style(ax, "(d) symmetric: orthogonal")
+q1 = np.array([np.cos(np.deg2rad(30)), np.sin(np.deg2rad(30))])
+q2 = np.array([-q1[1], q1[0]])
+draw_vec(ax, (0, 0), tuple(1.8*q1), color=HILITE, label="$q_1$", label_offset=(0.2, -0.2))
+draw_vec(ax, (0, 0), tuple(1.8*q2), color=ACCENT, label="$q_2$", label_offset=(-0.3, 0.1))
+ax.text(0, -1.9, "perpendicular axes", fontsize=8, ha="center", color=GREY)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Diagonalization already exists for lots of matrices — what does symmetry actually buy
+me?"* Three concrete things, and you should give all three. **(1) Guaranteed
+diagonalizability:** you never have to check whether enough eigenvectors exist — they
+always do. **(2) Real, interpretable eigenvalues:** every eigenvalue is a real stretch
+factor you can read as variance, curvature, or energy, never a complex number. **(3) The
+inverse is free and exact:** because the eigenvectors are orthonormal, the change-of-basis
+matrix is *orthogonal*, so $V^{-1} = V^\top$ — no matrix inversion, no loss of precision,
+and the geometry is a rigid rotation rather than a shear. The first two are about
+*existence*; the third is the one that makes the symmetric case *computationally and
+geometrically clean*, and it is the reason the SVD ([GEOM-20]) is built on top of it.
+:::
+
+# Intuition before symbols: a symmetric matrix is a set of stretches on perpendicular axes {#sec-intuition}
+
+Before any proof, here is the picture the theorem will make rigorous. Take a symmetric
+$2\times 2$ matrix and watch what it does to the unit circle — to *every* unit vector at
+once. A general matrix maps the circle to a tilted, sheared ellipse whose "axes" need not
+be perpendicular. A *symmetric* matrix maps the circle to an ellipse whose axes **are**
+perpendicular, and those axes point exactly along the eigenvectors, stretched by the
+eigenvalues. @fig-ellipse shows it.
+
+```{python}
+#| label: fig-ellipse
+#| fig-cap: "A symmetric matrix turns the unit circle into an ellipse whose axes are *perpendicular* and aligned with the eigenvectors. **Left:** the unit circle (grey) with the two orthonormal eigenvectors $q_1, q_2$ (red, green). **Right:** the image $A x$ as $x$ runs around the circle (blue ellipse). The eigenvectors do not rotate — they only stretch, by $\\lambda_1$ and $\\lambda_2$ — so they land exactly on the ellipse's axes. There is no shear: the right angle between $q_1$ and $q_2$ is preserved. This is the entire geometric content of the spectral theorem."
+A = np.array([[3.0, 1.0], [1.0, 2.0]])   # symmetric
+w, V = np.linalg.eigh(A)
+q1, q2 = V[:, 0], V[:, 1]
+lam1, lam2 = w
+
+t = np.linspace(0, 2*np.pi, 400)
+circle = np.vstack([np.cos(t), np.sin(t)])
+ellipse = A @ circle
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
+for ax in (axL, axR):
+    ax.set_aspect("equal")
+    ax.axhline(0, color=GREY, lw=0.8, alpha=0.5)
+    ax.axvline(0, color=GREY, lw=0.8, alpha=0.5)
+
+axL.plot(circle[0], circle[1], color=GREY, lw=1.5)
+draw_vec(axL, (0, 0), tuple(q1), color=HILITE, label="$q_1$", label_offset=(0.15, 0.2))
+draw_vec(axL, (0, 0), tuple(q2), color=ACCENT, label="$q_2$", label_offset=(0.2, 0.15))
+axL.set_xlim(-1.5, 1.5); axL.set_ylim(-1.5, 1.5)
+axL.set_title("unit circle + eigenvectors")
+
+axR.plot(ellipse[0], ellipse[1], color=VEC, lw=2.0)
+draw_vec(axR, (0, 0), tuple(lam1*q1), color=HILITE, label=fr"$\lambda_1 q_1$",
+         label_offset=(0.4, 0.4))
+draw_vec(axR, (0, 0), tuple(lam2*q2), color=ACCENT, label=fr"$\lambda_2 q_2$",
+         label_offset=(0.5, 0.3))
+axR.set_xlim(-4.5, 4.5); axR.set_ylim(-4.5, 4.5)
+axR.set_title(fr"image $Ax$: axes at $\lambda_1={lam1:.2f},\ \lambda_2={lam2:.2f}$")
+plt.tight_layout()
+```
+
+Why should symmetry produce perpendicular axes? Here is the intuition the algebra will
+confirm. A symmetric matrix has no "preferred handedness" — the influence of coordinate
+$i$ on coordinate $j$ (the entry $A_{ij}$) equals the influence of $j$ on $i$ (the entry
+$A_{ji}$). That mutual, balanced coupling is exactly what forbids a shear (a shear is
+one-sided: it pushes $x$ in the direction of $y$ but not the reverse). With no shear left
+to perform, all the matrix *can* do is stretch along some axes — and the balance forces
+those axes to be perpendicular. The rest of the article turns "balance forbids shear" into
+two clean theorems.
+
+# The formal development {#sec-formal}
+
+We will need two pieces of named machinery from earlier in the track, plus a definition.
+We state them, recall why they are true, and then prove the theorem.
+
+## What "symmetric" and "orthogonal" mean, precisely {#sec-defs}
+
+::: {#def-symmetric}
+**Definition (symmetric matrix).** A real $n\times n$ matrix $A$ is **symmetric** if it
+equals its own transpose, $A = A^\top$ — equivalently, $A_{ij} = A_{ji}$ for every pair
+$i,j$. The matrix is mirror-symmetric across its main diagonal.
+:::
+
+::: {#def-orthogonal}
+**Definition (orthogonal matrix).** A real $n\times n$ matrix $Q$ is **orthogonal** if its
+columns are orthonormal — each column is a unit vector and any two distinct columns are
+perpendicular. In one equation,
+$$
+Q^\top Q = I .
+$$ {#eq-orth}
+Because $Q$ is square, @eq-orth also forces $Q Q^\top = I$, so $Q^{-1} = Q^\top$. An
+orthogonal matrix is a *rigid motion*: it preserves all lengths and angles (a rotation,
+possibly with a reflection), which is why it can only "rotate to new axes," never stretch.
+:::
+
+We should not take @eq-orth on faith — let us see *why* "columns orthonormal" is the same
+statement as $Q^\top Q = I$, since the whole theorem hinges on it. Write $Q$ with columns
+$q_1,\dots,q_n$. The $(i,j)$ entry of $Q^\top Q$ is the dot product of the $i$-th row of
+$Q^\top$ with the $j$-th column of $Q$ — and the $i$-th row of $Q^\top$ *is* the $i$-th
+column $q_i$ of $Q$. So
+$$
+\bigl(Q^\top Q\bigr)_{ij} = q_i^\top q_j .
+$$
+"Orthonormal columns" means $q_i^\top q_j = 1$ when $i=j$ (unit length) and $q_i^\top q_j =
+0$ when $i\neq j$ (perpendicular) — which is precisely the statement that $Q^\top Q$ has
+$1$'s on the diagonal and $0$'s off it, i.e. $Q^\top Q = I$. (This unpacking of $Q^\top Q$
+as the matrix of all pairwise dot products of columns is exactly the Gram-matrix reading
+introduced in [GEOM-10]; here it does the central bookkeeping.)
+
+::: {.callout-tip title="You might be asked"}
+*"Why does $Q^{-1} = Q^\top$ matter so much?"* Because the eigendecomposition $A = V\Lambda
+V^{-1}$ needs the inverse of the eigenvector matrix, and inverting a general matrix is
+costly, numerically delicate (it can lose precision badly for ill-conditioned $V$;
+[GEOM-26]), and geometrically a *shear*. When $V$ is orthogonal, its inverse is a free
+transpose — flip rows and columns, done exactly — and the operation it performs is a rigid
+rotation that preserves all the geometry. This single fact, $Q^{-1} = Q^\top$, is what makes
+the symmetric case the one you actually want to compute with.
+:::
+
+## The transpose identity we will lean on {#sec-transpose-tool}
+
+The proof of real eigenvalues rests on one identity, derived in [GEOM-10] and recalled here
+because it is the hinge of the argument. For any matrices of conformable sizes,
+$$
+(AB)^\top = B^\top A^\top .
+$$ {#eq-transpose-product}
+A two-line reminder of why: the $(i,j)$ entry of $AB$ is row $i$ of $A$ dotted with column
+$j$ of $B$; transposing swaps the roles of $i$ and $j$, giving row $j$ of $A$ dotted with
+column $i$ of $B$, which is exactly the $(i,j)$ entry of $B^\top A^\top$ (row $i$ of
+$B^\top$ is column $i$ of $B$; column $j$ of $A^\top$ is row $j$ of $A$). One immediate
+consequence we use constantly: a dot product is a $1\times 1$ matrix, equal to its own
+transpose, so for column vectors $u, v$,
+$$
+u^\top v = (u^\top v)^\top = v^\top u .
+$$ {#eq-dot-symmetric}
+
+We will also use the **adjoint move**: for *symmetric* $A$, a factor of $A$ can hop from one
+side of a dot product to the other for free. Concretely, for any vectors $x, y$,
+$$
+(Ax)^\top y \;\overset{\text{transpose}}{=}\; x^\top A^\top y
+\;\overset{A = A^\top}{=}\; x^\top (A y) .
+$$ {#eq-adjoint}
+In words: $\langle Ax, y\rangle = \langle x, Ay\rangle$ — for a symmetric matrix you may
+move $A$ across the dot product without changing anything. This single sentence does almost
+all the work in both halves of the spectral theorem.
+
+## Half one: the eigenvalues are real {#sec-real-eigenvalues}
+
+A general real matrix can have complex eigenvalues (the rotation of @fig-three-defects). We
+prove a real *symmetric* matrix cannot. The argument needs the **complex conjugate**, so we
+recall it from the floor: for a complex number $z = a + bi$ (with $a,b$ real and
+$i^2=-1$), the conjugate is $\bar z = a - bi$, and the product $z\bar z = a^2 + b^2 = |z|^2$
+is a *nonnegative real number*, zero only when $z=0$. We extend the bar to vectors and
+matrices entrywise: $\bar v$ conjugates every component of $v$, and $\bar A$ conjugates every
+entry of $A$.
+
+Two facts about the bar we will use, both true entry by entry: it distributes over products,
+$\overline{Mw} = \bar M\,\bar w$, and it leaves *real* quantities alone, $\bar A = A$ when
+$A$ is real. The matrix in our theorem is real, so $\bar A = A$ — hold onto that.
+
+::: {#thm-real}
+**Theorem (real eigenvalues).** Every eigenvalue of a real symmetric matrix $A = A^\top$ is
+a real number.
+:::
+
+::: {.proof}
+Let $\lambda$ be any eigenvalue of $A$, with a (possibly complex) eigenvector $v\neq 0$:
+$$
+A v = \lambda v .
+$$
+Our goal is to show $\lambda = \bar\lambda$, because a number equal to its own conjugate has
+zero imaginary part and so is real ($a+bi = a-bi$ forces $b=0$).
+
+The right tool is the quantity $\bar v^\top A v$, a single number we will compute two ways
+and set equal. **First computation.** Use the eigenvalue equation directly:
+$$
+\bar v^\top A v = \bar v^\top (\lambda v) = \lambda\,(\bar v^\top v) .
+$$ {#eq-real-first}
+Here $\bar v^\top v = \sum_k \overline{v_k}\, v_k = \sum_k |v_k|^2$ is a sum of squared
+magnitudes — a *strictly positive real number*, because $v\neq 0$ means at least one
+component is nonzero. Call it $\|v\|^2 > 0$.
+
+**Second computation.** Take the conjugate-transpose of the eigenvalue equation and feed it
+back in. Start from $A v = \lambda v$. Conjugate both sides entrywise; since $A$ is real
+($\bar A = A$),
+$$
+\overline{A v} = \bar A\,\bar v = A\,\bar v, \qquad \overline{\lambda v} = \bar\lambda\,\bar v,
+\qquad\text{so}\qquad A\,\bar v = \bar\lambda\,\bar v .
+$$
+Now transpose this relation and use @eq-transpose-product on the left, recalling
+$A^\top = A$:
+$$
+(A\,\bar v)^\top = \bar v^\top A^\top = \bar v^\top A,
+\qquad
+(\bar\lambda\,\bar v)^\top = \bar\lambda\,\bar v^\top,
+\qquad\text{so}\qquad
+\bar v^\top A = \bar\lambda\,\bar v^\top .
+$$
+Multiply this on the right by $v$:
+$$
+\bar v^\top A v = \bar\lambda\,(\bar v^\top v) = \bar\lambda\,\|v\|^2 .
+$$ {#eq-real-second}
+
+**Set them equal.** The left-hand sides of @eq-real-first and @eq-real-second are the *same
+number* $\bar v^\top A v$, so the right-hand sides agree:
+$$
+\lambda\,\|v\|^2 = \bar\lambda\,\|v\|^2 .
+$$
+Since $\|v\|^2 > 0$ we may divide it out, leaving
+$$
+\lambda = \bar\lambda .
+$$
+A complex number equal to its own conjugate is real. Hence every eigenvalue $\lambda$ is
+real. $\qquad\blacksquare$
+:::
+
+The engine of that proof was @eq-adjoint — we slid $A$ from acting on $v$ (first
+computation) to acting on $\bar v$ (second), and symmetry made the two readings of
+$\bar v^\top A v$ identical. A non-symmetric matrix would have produced $A^\top$ in the
+second computation, $A^\top \neq A$, and the two sides would *not* match — which is exactly
+why a rotation gets to have complex eigenvalues.
+
+::: {.callout-tip title="You might be asked"}
+*"Where in that proof did symmetry actually get used?"* In exactly one place: the step
+$\bar v^\top A^\top = \bar v^\top A$, which needs $A^\top = A$. Strip out symmetry and the
+second computation produces $\bar v^\top A^\top v = \bar\lambda\|v\|^2$, with $A^\top$, not
+$A$ — and you can no longer equate it to the first computation's $\bar v^\top A v$. The
+whole "eigenvalues are real" guarantee lives or dies on that one substitution.
+:::
+
+## Half two: eigenvectors for distinct eigenvalues are orthogonal {#sec-orthogonal-eigvecs}
+
+Now the geometric half. We show that eigenvectors belonging to *different* eigenvalues are
+automatically perpendicular — no choice involved, symmetry forces it.
+
+::: {#thm-orthogonal}
+**Theorem (orthogonal eigenvectors).** Let $A = A^\top$ be real symmetric. If $A v_1 =
+\lambda_1 v_1$ and $A v_2 = \lambda_2 v_2$ with $\lambda_1 \neq \lambda_2$, then
+$v_1^\top v_2 = 0$: the eigenvectors are orthogonal.
+:::
+
+::: {.proof}
+By @thm-real both eigenvalues are real, so there is no conjugation to worry about. Compute
+the single number $v_1^\top A v_2$ two ways, using the adjoint move @eq-adjoint.
+
+**Let $A$ act to the right** (on $v_2$):
+$$
+v_1^\top A v_2 = v_1^\top (\lambda_2 v_2) = \lambda_2\,(v_1^\top v_2) .
+$$
+**Let $A$ act to the left** (on $v_1$), legal because $A$ is symmetric — this is exactly
+@eq-adjoint with $x = v_1,\ y = v_2$:
+$$
+v_1^\top A v_2 = (A v_1)^\top v_2 = (\lambda_1 v_1)^\top v_2 = \lambda_1\,(v_1^\top v_2) .
+$$
+(The first equality regroups $v_1^\top A v_2$ as $(v_1^\top A)\,v_2$ and rewrites the
+left factor: $v_1^\top A = v_1^\top A^\top = (A v_1)^\top$, using $A^\top = A$ and the
+transpose rule $(A v_1)^\top = v_1^\top A^\top$ from @eq-transpose-product. Nothing was
+dropped — $A$ simply moved from acting on $v_2$ on the right to acting on $v_1$ on the
+left, which is the content of @eq-adjoint.) The two results are the same
+number, so
+$$
+\lambda_2\,(v_1^\top v_2) = \lambda_1\,(v_1^\top v_2)
+\qquad\Longrightarrow\qquad
+(\lambda_2 - \lambda_1)\,(v_1^\top v_2) = 0 .
+$$
+Because $\lambda_1 \neq \lambda_2$, the factor $\lambda_2 - \lambda_1$ is nonzero, so the
+*other* factor must vanish:
+$$
+v_1^\top v_2 = 0 .
+$$
+The eigenvectors are orthogonal. $\qquad\blacksquare$
+:::
+
+That is the second pillar. Notice it is the same trick as the first proof — push $A$ across
+a dot product using symmetry — applied to two different eigenvectors instead of one
+eigenvector and its conjugate. Symmetry is the only ingredient.
+
+## What about repeated eigenvalues? {#sec-repeated}
+
+@thm-orthogonal covers *distinct* eigenvalues. But a symmetric matrix can repeat an
+eigenvalue — the identity $I$ has $\lambda = 1$ with multiplicity $n$. We must rule out the
+defectiveness of @fig-three-defects(a): we need to know that a repeated eigenvalue of a
+*symmetric* matrix still supplies a full set of eigenvectors (an **eigenspace** of the right
+dimension), and that within that eigenspace we can *choose* an orthonormal set.
+
+The good news is that the second worry is free: any vector in the $\lambda$-eigenspace is an
+eigenvector for $\lambda$ (if $Av = \lambda v$ and $Aw = \lambda w$ then $A(av+bw) =
+\lambda(av+bw)$ — the eigenspace is a subspace), and **any** basis of a subspace can be
+turned into an orthonormal one spanning the *same* subspace by **Gram–Schmidt** ([GEOM-07]).
+So *within* one eigenspace orthonormality is just bookkeeping. And eigenvectors from
+*different* eigenspaces are already orthogonal by @thm-orthogonal. The only real content
+left is: does a symmetric matrix actually supply enough eigenvectors to fill the space — is
+it never defective? It is not, and the clean way to see it is to build the whole orthonormal
+eigenbasis at once by induction.
+
+::: {#thm-spectral}
+**Spectral theorem (real symmetric matrices).** Every real symmetric $n\times n$ matrix $A$
+can be written
+$$
+A = Q\Lambda Q^\top ,
+$$ {#eq-spectral}
+where $Q$ is orthogonal ($Q^\top Q = I$) and $\Lambda = \operatorname{diag}(\lambda_1,
+\dots,\lambda_n)$ is real diagonal. The columns $q_1,\dots,q_n$ of $Q$ are an orthonormal
+basis of eigenvectors, with $A q_k = \lambda_k q_k$. Equivalently, $A$ is a sum of rank-one
+projections onto perpendicular directions,
+$$
+A = \sum_{k=1}^{n} \lambda_k\, q_k q_k^\top .
+$$ {#eq-spectral-outer}
+:::
+
+::: {.proof}
+We prove the existence of an orthonormal eigenbasis by induction on $n$; the matrix forms
+@eq-spectral and @eq-spectral-outer then follow by pure bookkeeping, shown at the end.
+
+**Base case $n=1$.** A $1\times 1$ matrix $[a]$ is its own eigenvalue with eigenvector
+$[1]$, already orthonormal. Done.
+
+**Inductive step.** Assume every real symmetric $(n-1)\times(n-1)$ matrix has an orthonormal
+eigenbasis; we produce one for the $n\times n$ case. Three named facts get us there, each
+already established or recalled:
+
+*1. $A$ has at least one real eigenvalue with a real eigenvector.* The eigenvalues are the
+roots of the characteristic polynomial $\det(A - \lambda I) = 0$ ([GEOM-14]). A degree-$n$
+real polynomial has at least one root over the complex numbers (this is the **Fundamental
+Theorem of Algebra**, a result about polynomials we import as a known fact — it is below our
+concern here and proved in any complex-analysis course). By @thm-real that root is *real*.
+Call it $\lambda_1$. For a real $\lambda_1$, the matrix $A - \lambda_1 I$ is real and
+singular (its determinant is zero), so its null space ([GEOM-12]) contains a nonzero *real*
+vector; normalize it to a unit eigenvector $q_1$, with $A q_1 = \lambda_1 q_1$ and
+$\|q_1\| = 1$.
+
+*2. The subspace perpendicular to $q_1$ is preserved by $A$.* Let
+$$
+W = \{\, w : q_1^\top w = 0 \,\}
+$$
+be the **orthogonal complement** of $q_1$ — all vectors perpendicular to $q_1$, an
+$(n-1)$-dimensional subspace ([GEOM-05]). Claim: if $w \in W$ then $Aw \in W$ too (we say
+$W$ is *$A$-invariant*). To check it, we must show $q_1^\top (Aw) = 0$. Use the adjoint move
+@eq-adjoint to slide $A$ onto $q_1$, then use that $q_1$ is an eigenvector:
+$$
+q_1^\top (A w) = (A q_1)^\top w = (\lambda_1 q_1)^\top w = \lambda_1\,(q_1^\top w)
+= \lambda_1 \cdot 0 = 0 .
+$$
+So $Aw$ is again perpendicular to $q_1$, i.e. $Aw \in W$. This is the crucial place
+symmetry pays off: *for a symmetric matrix, the orthogonal complement of an eigenvector is
+invariant*, so we can legitimately restrict $A$ to $W$ and recurse. (For a non-symmetric
+matrix this fails — there is no reason $Aw$ stays perpendicular to $q_1$ — which is the
+deep reason non-symmetric matrices can be defective.)
+
+*3. The restriction of $A$ to $W$ is again symmetric.* Build an orthonormal basis
+$u_2,\dots,u_n$ of the $(n-1)$-dimensional space $W$ (Gram–Schmidt, [GEOM-07]), and let $B$
+be the matrix of "apply $A$, expressed in this basis": its $(i,j)$ entry is $B_{ij} =
+u_i^\top A u_j$ (the $i$-th coordinate of $A u_j$ in the orthonormal $u$-basis is the dot
+product $u_i^\top (A u_j)$, by the orthonormal-coordinates fact of [GEOM-05]). Is $B$
+symmetric? Check $B_{ji}$ against $B_{ij}$ with the adjoint move once more:
+$$
+B_{ji} = u_j^\top A u_i = (A u_j)^\top u_i = u_i^\top (A u_j) = B_{ij},
+$$
+using @eq-dot-symmetric for the middle equality ($(Au_j)^\top u_i = u_i^\top (Au_j)$, both
+being the same scalar) and @eq-adjoint to move $A$. So $B = B^\top$: the restricted map is
+an $(n-1)\times(n-1)$ *symmetric* matrix.
+
+*Apply the inductive hypothesis.* By induction, $B$ has an orthonormal eigenbasis
+$z_2,\dots,z_n$ inside $W$, with $A z_k = \mu_k z_k$ for real eigenvalues $\mu_k$. (These
+$z_k$ are eigenvectors of the *original* $A$ acting on $W$, because $B$ is just $A$ written
+in the $u$-basis.) Together with $q_1$, the set
+$$
+q_1,\; z_2,\; \dots,\; z_n
+$$
+is orthonormal: each $z_k \in W$ is perpendicular to $q_1$ by construction of $W$, the
+$z_k$ are mutually orthonormal by the inductive hypothesis, and $q_1$ is a unit vector. That
+is $n$ orthonormal eigenvectors of $A$ — a full orthonormal eigenbasis. The induction is
+complete.
+
+**From the eigenbasis to $A = Q\Lambda Q^\top$.** Assemble the orthonormal eigenvectors as
+the columns of $Q = [\,q_1\ \cdots\ q_n\,]$ and their eigenvalues as $\Lambda =
+\operatorname{diag}(\lambda_1,\dots,\lambda_n)$. The $n$ eigenvalue equations $A q_k =
+\lambda_k q_k$ stacked side by side say, column by column,
+$$
+A Q = A[\,q_1\ \cdots\ q_n\,] = [\,\lambda_1 q_1\ \cdots\ \lambda_n q_n\,] = Q\Lambda ,
+$$
+where the last equality holds because right-multiplying $Q$ by the diagonal $\Lambda$ scales
+its $k$-th column by $\lambda_k$. Now right-multiply $AQ = Q\Lambda$ by $Q^\top$ and use
+$Q Q^\top = I$ (orthogonality, @eq-orth):
+$$
+A = A Q Q^\top = Q\Lambda Q^\top .
+$$
+**The outer-product form.** Expand $Q\Lambda Q^\top$ as a sum. Writing it out, $Q\Lambda$
+has columns $\lambda_k q_k$, and multiplying by $Q^\top$ (whose rows are the $q_k^\top$)
+gives the block/outer-product expansion (the "sum of column-times-row" reading of matrix
+multiplication from [GEOM-09]):
+$$
+A = Q\Lambda Q^\top = \sum_{k=1}^{n} \lambda_k\, q_k q_k^\top ,
+$$
+which is @eq-spectral-outer. $\qquad\blacksquare$
+:::
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+This proof imported exactly one ingredient from outside the Geometry track: the
+**Fundamental Theorem of Algebra** (every nonconstant polynomial has a complex root), used
+only to guarantee that the characteristic polynomial has *some* root, which @thm-real then
+forces to be real. Everything else — the characteristic polynomial ([GEOM-14]), null spaces
+([GEOM-12]), orthogonal complements and orthonormal coordinates ([GEOM-05]), Gram–Schmidt
+([GEOM-07]), the transpose identity ([GEOM-10]), and the outer-product reading of a product
+([GEOM-09]) — lives inside this track and was recalled where used. We flag the FTA rather
+than re-prove it because it is an analysis result, genuinely outside the linear-algebra
+floor; its statement is all the spectral theorem needs.
+:::
+
+## Reading the decomposition three ways {#sec-three-readings}
+
+The single equation @eq-spectral repays being read in three complementary ways. Each is a
+sentence you should be able to say out loud.
+
+**As a change of coordinates.** $A x = Q\Lambda Q^\top x$ says: take $x$, express it in the
+eigenbasis by computing its coordinates $Q^\top x$ (each coordinate is a dot product $q_k^\top
+x$, by [GEOM-05]); scale the $k$-th coordinate by $\lambda_k$ via $\Lambda$; reassemble in the
+standard basis with $Q$. *Rotate, stretch, rotate back.*
+
+**As a sum of projections.** @eq-spectral-outer writes $A = \sum_k \lambda_k q_k q_k^\top$.
+Each $q_k q_k^\top$ is the matrix that **projects** any vector onto the line through $q_k$
+(applied to $x$ it returns $(q_k^\top x)\,q_k$, the component of $x$ along $q_k$; this is the
+single-vector projection of [GEOM-06], and indeed $q_k q_k^\top$ is symmetric and idempotent).
+So $A$ takes a vector apart into its components along the perpendicular eigenaxes, multiplies
+the $k$-th component by $\lambda_k$, and adds the pieces back. A symmetric matrix *is* a
+weighted sum of perpendicular projections.
+
+**As an action on the unit sphere.** Because $Q$ is a rigid rotation, the only shape-changing
+step is $\Lambda$, which stretches axis $k$ by $\lambda_k$. So $A$ maps the unit sphere to an
+**ellipsoid** whose semi-axes point along $q_1,\dots,q_n$ with lengths $|\lambda_1|,\dots,
+|\lambda_n|$ — exactly @fig-ellipse, now understood as a theorem. A negative $\lambda_k$ flips
+that axis; a zero $\lambda_k$ flattens it (the matrix is singular, collapsing that direction).
+
+::: {.callout-warning title="Pitfall"}
+**$Q\Lambda Q^\top$ is not the same as $Q^\top\Lambda Q$, and the order of $Q$'s columns must
+match the order of $\Lambda$'s diagonal.** Two traps catch people. First, the eigenvector
+matrix sits on the *left* and its transpose on the *right* in @eq-spectral; swapping them
+computes a *different* matrix (it diagonalizes in the wrong direction). Second, the $k$-th
+column of $Q$ must be the eigenvector of the $k$-th diagonal entry of $\Lambda$ — if you sort
+the eigenvalues (as `numpy.linalg.eigh` does, ascending) you must carry the eigenvectors
+along in the same permutation, or the product silently reconstructs the wrong matrix. The
+reconstruction check `Q @ Lambda @ Q.T` should return $A$ to machine precision; if it does
+not, your pairing or your transpose is off.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the theorem on real, messy matrices — never one rigged to flatter it. The first we
+do entirely by hand so you watch every promise of the theorem come true on the page; the
+later ones use the symmetric matrices a data scientist actually meets, including one at the
+honest edge of the theorem's reach.
+
+## Example 1 — a $2\times 2$ symmetric matrix, by hand {#sec-ex-byhand}
+
+Take the symmetric matrix
+$$
+A = \begin{bmatrix} 4 & 1 \\ 1 & 4 \end{bmatrix}, \qquad A = A^\top .
+$$
+**Eigenvalues.** Form the characteristic polynomial $\det(A - \lambda I)$ ([GEOM-14]). With
+$A - \lambda I = \bigl[\begin{smallmatrix} 4-\lambda & 1 \\ 1 & 4-\lambda \end{smallmatrix}\bigr]$,
+the $2\times2$ determinant (product of the diagonal minus product of the off-diagonal) is
+$$
+\det(A - \lambda I) = (4-\lambda)^2 - (1)(1) = (4-\lambda)^2 - 1 .
+$$
+Set it to zero: $(4-\lambda)^2 = 1$, so $4 - \lambda = \pm 1$, giving
+$$
+\lambda_1 = 5, \qquad \lambda_2 = 3 .
+$$
+Both **real**, as @thm-real promised. **Eigenvectors.** For $\lambda_1 = 5$, solve
+$(A - 5I)v = 0$:
+$$
+A - 5I = \begin{bmatrix} -1 & 1 \\ 1 & -1 \end{bmatrix},
+\qquad
+\begin{bmatrix} -1 & 1 \\ 1 & -1 \end{bmatrix}
+\begin{bmatrix} v_a \\ v_b \end{bmatrix} = 0
+\;\Longrightarrow\; -v_a + v_b = 0 \;\Longrightarrow\; v_a = v_b .
+$$
+So the eigenvector points along $(1,1)$; normalize to unit length (divide by $\sqrt{1^2+1^2}
+= \sqrt2$):
+$$
+q_1 = \frac{1}{\sqrt2}\begin{bmatrix} 1 \\ 1 \end{bmatrix} .
+$$
+For $\lambda_2 = 3$, solve $(A - 3I)v = 0$:
+$$
+A - 3I = \begin{bmatrix} 1 & 1 \\ 1 & 1 \end{bmatrix}
+\;\Longrightarrow\; v_a + v_b = 0 \;\Longrightarrow\; v_a = -v_b,
+\qquad
+q_2 = \frac{1}{\sqrt2}\begin{bmatrix} 1 \\ -1 \end{bmatrix} .
+$$
+**Check orthogonality** (@thm-orthogonal, no choice involved):
+$$
+q_1^\top q_2 = \frac{1}{\sqrt2}\cdot\frac{1}{\sqrt2}\,(1\cdot 1 + 1\cdot(-1))
+= \frac12(1 - 1) = 0 . \checkmark
+$$
+**Assemble and reconstruct.** With
+$$
+Q = \frac{1}{\sqrt2}\begin{bmatrix} 1 & 1 \\ 1 & -1 \end{bmatrix},
+\qquad
+\Lambda = \begin{bmatrix} 5 & 0 \\ 0 & 3 \end{bmatrix},
+$$
+we verify $A = Q\Lambda Q^\top$ by hand. First $Q\Lambda$ scales the columns of $Q$ by $5$
+and $3$:
+$$
+Q\Lambda = \frac{1}{\sqrt2}\begin{bmatrix} 5 & 3 \\ 5 & -3 \end{bmatrix} .
+$$
+Then multiply by $Q^\top = \frac{1}{\sqrt2}\bigl[\begin{smallmatrix} 1 & 1 \\ 1 & -1
+\end{smallmatrix}\bigr]$:
+$$
+Q\Lambda Q^\top
+= \frac{1}{\sqrt2}\cdot\frac{1}{\sqrt2}
+\begin{bmatrix} 5 & 3 \\ 5 & -3 \end{bmatrix}
+\begin{bmatrix} 1 & 1 \\ 1 & -1 \end{bmatrix}
+= \frac12 \begin{bmatrix} 5+3 & 5-3 \\ 5-3 & 5+3 \end{bmatrix}
+= \frac12\begin{bmatrix} 8 & 2 \\ 2 & 8 \end{bmatrix}
+= \begin{bmatrix} 4 & 1 \\ 1 & 4 \end{bmatrix} = A . \checkmark
+$$
+Every promise of the theorem held: real eigenvalues, perpendicular unit eigenvectors, and an
+exact reconstruction with $Q^{-1}$ replaced for free by $Q^\top$. The code below confirms it
+and draws the geometry.
+
+```{python}
+#| label: fig-ex-byhand
+#| fig-cap: "The hand-worked example $A = \\bigl[\\begin{smallmatrix}4&1\\\\1&4\\end{smallmatrix}\\bigr]$. The eigenvectors $q_1=(1,1)/\\sqrt2$ (red) and $q_2=(1,-1)/\\sqrt2$ (green) are perpendicular; $A$ stretches along $q_1$ by $\\lambda_1=5$ and along $q_2$ by $\\lambda_2=3$, turning the unit circle (grey) into an ellipse (blue) whose axes lie exactly on the eigenvectors. The diagonal symmetry of $A$ shows up as the $45^\\circ$ tilt of the principal axis."
+A = np.array([[4.0, 1.0], [1.0, 4.0]])
+w, V = np.linalg.eigh(A)                 # ascending: lambda=3 then 5
+order = np.argsort(w)[::-1]              # put largest first for plotting
+w, V = w[order], V[:, order]
+q1, q2 = V[:, 0], V[:, 1]
+
+t = np.linspace(0, 2*np.pi, 400)
+circ = np.vstack([np.cos(t), np.sin(t)])
+ell = A @ circ
+
+fig, ax = plt.subplots(figsize=(5.6, 5.2))
+ax.set_aspect("equal")
+ax.axhline(0, color=GREY, lw=0.8, alpha=0.5); ax.axvline(0, color=GREY, lw=0.8, alpha=0.5)
+ax.plot(circ[0], circ[1], color=GREY, lw=1.5, label="unit circle")
+ax.plot(ell[0], ell[1], color=VEC, lw=2.0, label="image $Ax$")
+draw_vec(ax, (0, 0), tuple(w[0]*q1), color=HILITE, label=fr"$\lambda_1 q_1$", label_offset=(0.6, 0.5))
+draw_vec(ax, (0, 0), tuple(w[1]*q2), color=ACCENT, label=fr"$\lambda_2 q_2$", label_offset=(0.7, -0.4))
+ax.set_xlim(-6, 6); ax.set_ylim(-6, 6)
+ax.set_title(fr"$\lambda_1={w[0]:.0f},\ \lambda_2={w[1]:.0f}$; eigenvectors $\perp$")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+Q = V; Lam = np.diag(w)
+recon = Q @ Lam @ Q.T
+print("Q^T Q  =\n", np.round(Q.T @ Q, 12), "   (= I, columns orthonormal)")
+print("max |A - Q Lambda Q^T| =", f"{np.max(np.abs(A - recon)):.2e}", "  (exact to machine precision)")
+```
+
+## Example 2 — a covariance matrix and the geometry of a data cloud {#sec-ex-covariance}
+
+The symmetric matrix a data scientist meets most often is a **covariance matrix**. (Its
+probabilistic meaning — how features co-vary — is owned by the Probability track, PROB-17;
+here we use it only as a concrete *symmetric* matrix and read its geometry.) For two centered
+features, the sample covariance matrix is
+$$
+\Sigma = \frac{1}{n-1} X^\top X
+= \begin{bmatrix} \operatorname{Var}(x_1) & \operatorname{Cov}(x_1,x_2) \\
+                  \operatorname{Cov}(x_1,x_2) & \operatorname{Var}(x_2) \end{bmatrix},
+$$
+symmetric *by construction* because $\operatorname{Cov}(x_1,x_2) = \operatorname{Cov}(x_2,x_1)$
+(equivalently, $X^\top X$ is always symmetric — see [GEOM-10]). The spectral theorem hands us
+the **principal axes** of the cloud: the eigenvectors $q_1,q_2$ are the perpendicular
+directions of greatest and least spread, and the eigenvalues $\lambda_1 \ge \lambda_2$ are the
+variances along them. This is the linear-algebra heart of PCA; the *statistical* procedure
+(centering, choosing components, interpreting variance) is Unsupervised Learning's to own,
+and it links back here for exactly this decomposition.
+
+```{python}
+#| label: fig-covariance
+#| fig-cap: "A correlated data cloud and the principal axes the spectral theorem extracts from its covariance matrix. The points (blue) have correlated $x_1,x_2$. Diagonalizing $\\Sigma = Q\\Lambda Q^\\top$ gives perpendicular eigenvectors $q_1$ (red, direction of maximum variance) and $q_2$ (green, minimum variance); the arrows are scaled by $\\sqrt{\\lambda_k}$ (one standard deviation along each axis). The dashed ellipse is the one-standard-deviation contour $\\{x : x^\\top \\Sigma^{-1} x = 1\\}$ — its axes are exactly the eigenvectors. The eigenstructure of $\\Sigma$ *is* the shape of the cloud."
+rng = np.random.default_rng(3)
+# A genuinely correlated cloud: draw from a known covariance.
+true_cov = np.array([[3.0, 1.6], [1.6, 1.2]])
+L = np.linalg.cholesky(true_cov)
+pts = (L @ rng.normal(size=(2, 300))).T
+pts = pts - pts.mean(axis=0)
+Sigma = np.cov(pts, rowvar=False)
+w, V = np.linalg.eigh(Sigma)
+order = np.argsort(w)[::-1]; w, V = w[order], V[:, order]
+q1, q2 = V[:, 0], V[:, 1]
+
+th = np.linspace(0, 2*np.pi, 200)
+# one-sigma ellipse: x = Q diag(sqrt(lambda)) [cos,sin]
+ell = V @ np.diag(np.sqrt(w)) @ np.vstack([np.cos(th), np.sin(th)])
+
+fig, ax = plt.subplots(figsize=(5.8, 5.2))
+ax.set_aspect("equal")
+ax.scatter(pts[:, 0], pts[:, 1], s=14, color=PALE, alpha=0.8, label="data")
+ax.plot(ell[0], ell[1], color=GREY, ls="--", lw=1.6, label=r"1-$\sigma$ ellipse")
+draw_vec(ax, (0, 0), tuple(np.sqrt(w[0])*q1), color=HILITE,
+         label=r"$\sqrt{\lambda_1}\,q_1$", label_offset=(0.5, 0.5))
+draw_vec(ax, (0, 0), tuple(np.sqrt(w[1])*q2), color=ACCENT,
+         label=r"$\sqrt{\lambda_2}\,q_2$", label_offset=(-0.8, 0.5))
+ax.axhline(0, color=GREY, lw=0.6, alpha=0.4); ax.axvline(0, color=GREY, lw=0.6, alpha=0.4)
+ax.set_xlabel("$x_1$ (centered)"); ax.set_ylabel("$x_2$ (centered)")
+ax.set_title("Principal axes = eigenvectors of the covariance")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print("Sigma =\n", np.round(Sigma, 3))
+print(f"eigenvalues (variances along axes): {w[0]:.3f}, {w[1]:.3f}")
+print(f"q1 (max-variance direction): ({q1[0]:.3f}, {q1[1]:.3f})")
+print(f"q1 . q2 = {q1 @ q2:.2e}  (orthogonal)")
+```
+
+The eigenvalues are the variances along the principal directions and the eigenvectors are
+those directions — perpendicular, as the theorem guarantees, so PCA's "uncorrelated
+components" is not an assumption but a *consequence* of symmetry. Read it as the bridge:
+covariance is symmetric, so it always has a clean orthonormal eigenbasis, so a data cloud
+always has well-defined perpendicular principal axes.
+
+## Example 3 — diagonalizing a Hessian to classify a critical point {#sec-ex-hessian}
+
+The second great family of symmetric matrices is **Hessians** — the matrices of second
+derivatives of a scalar function (symmetric because mixed partials are equal; [GEOM-24]).
+Consider the surface $f(x,y) = x^2 + xy + y^2$, whose Hessian is the constant symmetric
+matrix
+$$
+H = \begin{bmatrix} f_{xx} & f_{xy} \\ f_{yx} & f_{yy} \end{bmatrix}
+= \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix}.
+$$
+Diagonalizing $H = Q\Lambda Q^\top$ turns the surface, near its critical point at the
+origin, into a sum of pure squares along the eigenaxes: writing $z = Q^\top \bigl[\begin{smallmatrix}
+x\\ y\end{smallmatrix}\bigr]$, the quadratic part becomes $\lambda_1 z_1^2 + \lambda_2 z_2^2$ (the
+full machinery of diagonalizing a quadratic form is [GEOM-17]). The **signs of the
+eigenvalues** then classify the critical point — both positive means a bowl (local minimum),
+which is the second-derivative test of [GEOM-24]. This is the spectral theorem doing the work
+that powers second-order optimization.
+
+```{python}
+#| label: fig-hessian
+#| fig-cap: "The spectral theorem reads the shape of a surface off its Hessian. **Left:** contours of $f(x,y)=x^2+xy+y^2$; the level sets are ellipses whose axes are the Hessian's eigenvectors $q_1$ (red), $q_2$ (green). **Right:** the surface itself, a bowl. Both eigenvalues of $H=\\bigl[\\begin{smallmatrix}2&1\\\\1&2\\end{smallmatrix}\\bigr]$ are positive ($\\lambda=3$ and $\\lambda=1$), so the surface curves upward along *both* principal directions — a genuine local minimum. The eigenvalue is the curvature along its eigenvector."
+H = np.array([[2.0, 1.0], [1.0, 2.0]])
+w, V = np.linalg.eigh(H); order = np.argsort(w)[::-1]; w, V = w[order], V[:, order]
+q1, q2 = V[:, 0], V[:, 1]
+
+gx = np.linspace(-2.2, 2.2, 200)
+X, Y = np.meshgrid(gx, gx)
+F = X**2 + X*Y + Y**2
+
+fig = plt.figure(figsize=(9.4, 4.2))
+axL = fig.add_subplot(1, 2, 1)
+cs = axL.contour(X, Y, F, levels=[0.5, 1.5, 3, 5, 8], colors=VEC, linewidths=1.2)
+axL.set_aspect("equal")
+draw_vec(axL, (0, 0), tuple(1.4*q1), color=HILITE, label=r"$q_1$", label_offset=(0.25, 0.2))
+draw_vec(axL, (0, 0), tuple(1.4*q2), color=ACCENT, label=r"$q_2$", label_offset=(0.25, -0.2))
+axL.set_xlim(-2.2, 2.2); axL.set_ylim(-2.2, 2.2)
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+axL.set_title(fr"contours; $\lambda_1={w[0]:.0f},\ \lambda_2={w[1]:.0f}$")
+axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+axR = fig.add_subplot(1, 2, 2, projection="3d")
+axR.plot_surface(X, Y, F, cmap="viridis", alpha=0.9, linewidth=0, antialiased=True)
+axR.set_xlabel("$x$"); axR.set_ylabel("$y$"); axR.set_zlabel("$f$")
+axR.set_title("both eigenvalues > 0: a bowl")
+axR.view_init(elev=30, azim=-120)
+plt.tight_layout()
+print(f"Hessian eigenvalues: {w[0]:.0f} (along q1), {w[1]:.0f} (along q2) -> both > 0 -> local min")
+```
+
+## Example 4 — the honest edge: clustered eigenvalues and near-degeneracy {#sec-ex-edge}
+
+The spectral theorem is unconditional — *every* real symmetric matrix has it. So where is the
+"edge of applicability"? It is not in the theorem's truth but in what the eigenvectors *mean*
+when two eigenvalues are nearly equal. The theorem still hands you an orthonormal eigenbasis,
+but the individual eigenvectors become **ill-defined**: when $\lambda_1 \approx \lambda_2$, any
+rotation of $q_1,q_2$ within their shared (nearly two-dimensional) eigenspace is *almost* an
+eigenbasis too, so tiny perturbations of the matrix — rounding, sampling noise — swing the
+computed eigenvectors wildly while leaving the eigenvalues and the subspace stable. The
+ellipse of @fig-ellipse becomes a near-perfect circle, which has no well-defined principal
+axis. This is the honest boundary: trust the *eigenvalues* and the *eigenspaces*, distrust
+*individual eigenvectors* when their eigenvalues are crowded.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability: near-degenerate eigenvalues. We take a symmetric matrix with two almost-equal eigenvalues ($\\lambda_1 \\approx \\lambda_2$, an almost-circular ellipse) and a clearly separated one ($\\lambda_1 \\gg \\lambda_2$). For each we add tiny random symmetric perturbations and overlay the recomputed top eigenvector (red) across 30 trials. **Left (separated):** the eigenvector barely moves — well-conditioned. **Right (near-degenerate):** the eigenvector spins around the circle — the individual direction is meaningless even though the theorem still holds and the eigenvalues are stable."
+rng = np.random.default_rng(11)
+
+def trials(base, eps=0.02, n=30):
+    dirs = []
+    for _ in range(n):
+        P = rng.normal(scale=eps, size=(2, 2)); P = (P + P.T)/2
+        wv, Vv = np.linalg.eigh(base + P)
+        v = Vv[:, np.argmax(wv)]
+        if v[0] < 0: v = -v          # fix sign for a fair overlay
+        dirs.append(v)
+    return np.array(dirs)
+
+sep = np.array([[3.0, 0.0], [0.0, 1.0]])       # well separated: 3 vs 1
+deg = np.array([[1.02, 0.0], [0.0, 1.00]])     # nearly degenerate: 1.02 vs 1.00
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.4))
+for ax, base, title in ((axL, sep, "separated $\\lambda$: stable"),
+                        (axR, deg, "crowded $\\lambda$: unstable")):
+    th = np.linspace(0, 2*np.pi, 200)
+    ax.plot(np.cos(th), np.sin(th), color=GREY, lw=1.0, alpha=0.5)
+    for v in trials(base):
+        draw_vec(ax, (0, 0), tuple(v), color=HILITE, lw=1.4, z=3)
+    ax.set_aspect("equal"); ax.set_xlim(-1.3, 1.3); ax.set_ylim(-1.3, 1.3)
+    ax.axhline(0, color=GREY, lw=0.6, alpha=0.4); ax.axvline(0, color=GREY, lw=0.6, alpha=0.4)
+    ax.set_title(title)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**The spectral theorem always holds; the *interpretation* of individual eigenvectors does
+not.** When eigenvalues are close, the eigenvectors are numerically and statistically fragile
+— PCA on a dataset with two nearly-equal principal variances will report a "first component"
+that is essentially arbitrary and that flips between bootstrap samples. The robust objects are
+the **eigenvalues** (always well-determined) and the **eigenspaces** spanned by clusters of
+near-equal eigenvalues (stable as a *subspace*). When you genuinely need stable individual
+directions, you need *gap* between eigenvalues; the size of that gap relative to the
+perturbation is governed by the conditioning story of [GEOM-26]. Reporting a single principal
+direction off a near-circular cloud is a classic way to fool yourself.
+:::
+
+# Failure modes and the boundary of the theorem {#sec-failure}
+
+The theorem is airtight *for real symmetric matrices*. The failure modes are all about
+applying it where the hypothesis is not met, or over-reading what it gives.
+
+**Non-symmetric matrices have none of the guarantees.** Drop $A = A^\top$ and every
+promise can fail: complex eigenvalues (rotations), missing eigenvectors (shears,
+defectiveness), or skewed eigenvectors with an expensive $V^{-1}$. If your matrix is not
+symmetric and you need a decomposition that *always* exists with orthonormal factors, you do
+not force an eigendecomposition — you use the **SVD** ([GEOM-20]), which is precisely the
+spectral theorem applied to the symmetric matrices $A^\top A$ and $A A^\top$ that you *can*
+build from any $A$. That is the right tool for the rectangular and non-symmetric world, and
+it is built on this article.
+
+**"Almost symmetric" is not symmetric.** A matrix that is symmetric up to rounding (e.g. a
+covariance estimate computed in a way that left $\Sigma_{12} \neq \Sigma_{21}$ by $10^{-9}$)
+should be *symmetrized* — replace it with $\tfrac12(A + A^\top)$ — before calling a symmetric
+eigensolver. Feeding a slightly-asymmetric matrix to a general eigensolver invites tiny
+imaginary parts in the eigenvalues and a worse-conditioned eigenvector computation. In code,
+prefer the dedicated symmetric routine (`numpy.linalg.eigh`, not `eig`): it *enforces* real
+eigenvalues and orthonormal eigenvectors and is faster and more accurate because it exploits
+the structure the theorem guarantees.
+
+**The eigenvectors are only unique up to sign and (in ties) rotation.** Even with distinct
+eigenvalues, $q_k$ and $-q_k$ are both unit eigenvectors — sign is arbitrary. With repeated
+eigenvalues the eigenbasis within the shared eigenspace is arbitrary (the near-degenerate
+edge of @sec-ex-edge taken to its limit). Any pipeline that depends on a *specific* sign or
+in-eigenspace orientation (some PCA-loading interpretations) must pin down a convention
+itself; the theorem will not do it for you.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the spectral theorem the right tool, and when do you reach for something else?"* The
+honest summary:
+
+- **Use it** whenever your matrix is symmetric (and real): covariance matrices, Gram matrices
+  $A^\top A$, Hessians, graph Laplacians, kernel/Gram matrices, correlation matrices. There it
+  is unbeatable — guaranteed real spectrum, orthonormal eigenbasis, free inverse, clean
+  geometry — and it is the foundation of PCA, quadratic-form analysis, and second-order
+  optimization.
+- **Do not reach for the eigendecomposition** when the matrix is *not* symmetric. For a
+  general or rectangular matrix, use the **SVD** ([GEOM-20]) — it always exists with
+  orthonormal factors and is the correct generalization. For a non-symmetric *square* matrix
+  whose dynamics you care about (e.g. $A^k$), use the general eigendecomposition of [GEOM-15],
+  accepting complex eigenvalues and a non-orthogonal $V$.
+- **Beware the interpretation** when eigenvalues are clustered: trust the eigenvalues and
+  eigenspaces, not individual eigenvectors (@sec-ex-edge, [GEOM-26]).
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You never form the characteristic
+polynomial or solve null spaces by hand at scale — for symmetric matrices the routine is
+`numpy.linalg.eigh` (or `scipy.linalg.eigh`), the "`h`" standing for *Hermitian*, the
+complex cousin of symmetric. It returns the eigenvalues *sorted ascending* and the matching
+orthonormal eigenvectors as columns of $Q$; it is built on the QR algorithm specialized to
+symmetric (tridiagonal) matrices, which is faster and more accurate than the general `eig`
+precisely because it can rely on the two guarantees we proved — real spectrum, orthonormal
+eigenvectors. Two habits that follow directly from this article: (1) call `eigh`, never
+`eig`, on a symmetric matrix, so you get real eigenvalues and an orthonormal $Q$ by
+construction; (2) if a matrix should be symmetric but is not bit-for-bit, symmetrize it with
+`0.5 * (A + A.T)` first. The reconstruction `Q @ np.diag(w) @ Q.T` returns $A$ to machine
+precision — the operational form of @eq-spectral.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-15 *Diagonalization and the Eigendecomposition*]**, which gave the
+general (and fragile) $A = V\Lambda V^{-1}$ and was honest that it needs luck:
+enough eigenvectors, possibly complex, possibly skewed. This article showed that **symmetry
+removes every defect** — real eigenvalues (@thm-real), orthogonal eigenvectors (@thm-orthogonal),
+and the perfect factorization $A = Q\Lambda Q^\top$ (@thm-spectral). From here the trunk
+continues into the quadratic-form world this decomposition unlocks:
+
+- **[GEOM-17 *Quadratic Forms*]** — $x^\top A x$ for symmetric $A$; substituting $x = Qz$ and
+  using @eq-spectral turns every quadratic form into a clean sum $\sum_k \lambda_k z_k^2$, so
+  the eigenvalue *signs* classify bowls, saddles, and ridges. The diagonalization promised
+  in @sec-ex-hessian is done in full there.
+- **[GEOM-18 *Positive-Definite Matrices*]** — "$x^\top A x > 0$ for all $x \neq 0$" turns out
+  to be *exactly* "all eigenvalues positive," proved through this theorem; the good matrices of
+  data science (valid covariances, convex Hessians) are the symmetric ones with positive
+  spectrum.
+- **[GEOM-20 *The Singular Value Decomposition*]** — the master factorization for *every*
+  matrix, **built by applying this theorem to $A^\top A$ and $A A^\top$**: singular values are
+  square roots of those symmetric matrices' eigenvalues, and the singular vectors are their
+  orthonormal eigenvectors. The spectral theorem is the engine; the SVD is what it powers.
+
+Downstream of the track, this article **feeds Unsupervised Learning's PCA** (principal axes =
+eigenvectors of the covariance, @sec-ex-covariance) and **Inference's Fisher-information
+matrix** (a symmetric matrix whose spectrum governs estimator precision).
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The name "spectral."** The word comes from the *spectrum* of a matrix — the set of its
+  eigenvalues — a term Hilbert borrowed in the early 1900s while extending these ideas from
+  finite matrices to infinite-dimensional operators. The finite real-symmetric case we proved
+  is the cornerstone; the infinite-dimensional generalization (the *spectral theorem for
+  self-adjoint operators*) is the backbone of quantum mechanics and functional analysis, where
+  "$A = A^\top$" becomes "$A$ self-adjoint" and the sum @eq-spectral-outer becomes an integral.
+- **Historical thread.** The diagonalization of symmetric (quadratic) forms by an orthogonal
+  change of variables goes back to Cauchy (1829), who proved the eigenvalues of a symmetric
+  matrix are real in the course of studying the principal axes of quadric surfaces — the same
+  ellipse-and-ellipsoid picture of @fig-ellipse. The "principal axis theorem" of classical
+  mechanics is this very result.
+- **Open threads this article deferred.** *Why are the eigenvalues of a covariance matrix
+  nonnegative, not merely real?* — that is positive-semidefiniteness, [GEOM-18]. *What is the
+  analogue for a non-symmetric or rectangular matrix?* — the SVD, [GEOM-20]. *How fragile are
+  the computed eigenvectors, quantitatively?* — eigenvector perturbation and the eigenvalue
+  gap, treated through the condition number in [GEOM-26].
