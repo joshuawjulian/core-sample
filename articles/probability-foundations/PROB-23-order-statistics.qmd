@@ -1,0 +1,1118 @@
+---
+title: "Order Statistics and the Uniform Distribution of Null p-Values"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+from math import comb, factorial
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the theoretical curve
+ACCENT = "#0a7d4d"     # highlights / a special order statistic
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas / histogram bars
+```
+
+> **Where this sits in the track.** This is the closing article of the Probability
+> Foundations track, the second of the two "sampling-theory" articles that the data
+> tracks consume directly (its sibling is [PROB-22 *The Empirical CDF and Sampling With
+> Replacement*]). It assumes you can write down a **probability density** and integrate
+> it ([PROB-4 *Continuous Random Variables*]), that you can **count** selections and
+> arrangements ([PROB-10 *Counting: Permutations and Combinations*]), and that you have
+> met the **Beta distribution** as the model for a random proportion on $[0,1]$
+> ([PROB-14 *Gamma, Exponential & Beta*]). It also leans lightly on **independence and
+> the i.i.d. sample** ([PROB-8]). What it sets up lives mostly in other tracks: the
+> uniform-null-p-value fact derived here is the engine of **multiple-comparison
+> procedures** in Statistical Inference (INFR D5, by explicit request), and the order
+> statistics are the raw material of every quantile estimate, every Q–Q plot, and the
+> extreme-value theory that the track flags but does not build.
+
+## Abstract {.unnumbered}
+
+Sort an i.i.d. sample $X_1,\dots,X_n$ from smallest to largest and you get the **order
+statistics** $X_{(1)}\le X_{(2)}\le\cdots\le X_{(n)}$ — the sample minimum, the maximum,
+and everything between, including the median. This article answers two questions that
+turn out to be the *same* question. First: what is the distribution of the $k$-th smallest
+value? We derive its exact density by a pure counting argument that pays off the
+combinatorics of [PROB-10]. Second: why is a correctly computed p-value **uniformly
+distributed on $(0,1)$ under the null hypothesis**? The bridge between them is one short,
+beautiful fact — the **probability integral transform**, $F(X)\sim\mathrm{Uniform}(0,1)$
+— which also collapses the order statistics of *any* continuous distribution onto the
+order statistics of the uniform, and ties those to the Beta distribution of [PROB-14].
+The single claim this article defends is that **sorting, the uniform null p-value, and
+the Beta distribution are three views of one structure**, and that seeing them as one is
+what lets you read a Q–Q plot, calibrate a test, and run a multiple-comparison correction
+without it feeling like a bag of unrelated tricks.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Push any continuous random variable $X$ through its own cumulative distribution function
+$F$ and you always get the same thing: $U=F(X)$ is **uniform on $(0,1)$**, no matter what
+$F$ was. This one fact — the **probability integral transform** — does double duty. It
+makes a valid p-value uniform under the null (a p-value *is* a tail probability of the
+test statistic, i.e. an $F$ evaluated at the data), and it reduces the order statistics of
+*every* continuous distribution to the order statistics of the uniform. Those uniform
+order statistics have an exact, clean distribution: the $k$-th smallest of $n$ draws is
+$\mathrm{Beta}(k,\,n-k+1)$. Sorting, calibration, and the Beta law are the same picture.
+:::
+
+Everything below orbits that box. The $k$-th order statistic's density will look, at
+first, like an intimidating product of an $F$, an $f$, and a binomial-style coefficient —
+but by the end you should read it the way you read a sentence: *pick which observation
+lands at the value, force $k-1$ of the rest below it and $n-k$ above it, and count the
+ways to do that.* And the uniform p-value is not a separate theorem to memorize; it is the
+probability integral transform wearing a lab coat.
+
+# Why we are here: two problems that were really one {#sec-why}
+
+Keep one question in view for the whole article: **what happens to a sample when we
+sort it, and why does that explain the calibration of a hypothesis test?** Every
+derivation below answers a piece of that. If a step feels arbitrary, come back here.
+
+## Problem one: the tyranny of the extreme
+
+Sorting is the oldest data operation there is, and for most of statistics' history the
+*ends* of a sorted sample mattered more than the middle. A civil engineer sizing a levee
+does not care about the average annual flood; she cares about the **largest** flood in a
+hundred years — the maximum, $X_{(n)}$. An insurer pricing catastrophe cover cares about
+the worst loss, not the typical one. A chip fabricator cares about the **weakest** link in
+a circuit — the minimum strength, $X_{(1)}$ — because that is where it breaks. The median
+$X_{((n+1)/2)}$ is the robust center that a single wild value cannot drag around, the
+reason we report median household income rather than mean. Each of these is an **order
+statistic**: a specific position in the sorted sample. To reason about any of them — to put
+a probability on "the worst flood exceeds the levee" — we need the *distribution* of a
+chosen rank, not of a raw observation. That is the first half of the article.
+
+## Problem two: what does a p-value mean when nothing is going on?
+
+The second problem comes from the other end of statistics, the testing tradition that
+Fisher, Neyman, and Pearson built in the 1920s and 30s. You run an experiment, compute a
+**p-value**, and the rule is: reject the null hypothesis if $p$ is small, say below
+$0.05$. But that rule only makes sense if we know how $p$ behaves *when the null is true*
+— when there is genuinely no effect and the small $p$ would be a false alarm. The whole
+edifice of "a 5% test rejects a true null 5% of the time" rests on a claim that, under the
+null, the p-value is **uniformly distributed on $(0,1)$**: every value in $(0,1)$ is
+equally likely, so $P(p\le 0.05)=0.05$ exactly. Where does that uniformity come from? It is
+not an assumption we impose; it is forced, and the thing that forces it is the same
+transform that lets us reduce all order statistics to uniform ones. The two problems —
+sorting a sample and calibrating a test — share an engine.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does a hypothesis test even have a 'distribution of p-values'? Isn't a p-value just a
+number?"* For one fixed dataset it is one number. But the data are random — run the
+experiment again and you would get a different sample and a different p-value. So $p$ is a
+*function of the random data*, hence itself a random variable, with its own distribution.
+The calibration claim is a statement about that distribution, under the assumption that the
+null hypothesis generated the data. Confusing the single observed $p$ with its distribution
+is the root of most p-value misunderstandings, and we settle it in @sec-pvalue.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture $n$ points dropped at random on a line — say $n=5$ draws from some continuous
+distribution. They land in some scrambled order: maybe the third one you drew is actually
+the smallest, the first is the largest. **Sorting relabels them by position.** The order
+statistic $X_{(k)}$ is "whoever ended up in slot $k$ from the left," not "the $k$-th one I
+drew." @fig-sorting shows one sample, raw and sorted, so the relabelling is concrete.
+
+```{python}
+#| label: fig-sorting
+#| fig-cap: "Sorting relabels a sample by rank. **Top:** five i.i.d. draws in the order they arrived, $X_1,\\dots,X_5$. **Bottom:** the same five values placed on the axis; reading left to right gives the order statistics $X_{(1)}\\le\\cdots\\le X_{(5)}$. The minimum $X_{(1)}$ (green) and maximum $X_{(5)}$ (red) are the extremes; $X_{(3)}$ is the sample median. Which *original* draw lands in which slot is itself random."
+rng = np.random.default_rng(3)
+draws = rng.normal(5, 1.6, size=5)
+order = np.argsort(draws)
+
+fig, (axT, axB) = plt.subplots(2, 1, figsize=(7.2, 3.4), sharex=True)
+axT.scatter(draws, np.zeros_like(draws), color=POINT, s=80, zorder=3)
+for i, d in enumerate(draws):
+    axT.annotate(fr"$X_{{{i+1}}}$", (d, 0), textcoords="offset points",
+                 xytext=(0, 10), ha="center", fontsize=11)
+axT.set_yticks([]); axT.set_title("As drawn (arrival order)")
+axT.set_ylim(-0.5, 0.8)
+
+srt = np.sort(draws)
+colors = [ACCENT] + [POINT]*3 + [LINE]
+for k, (v, c) in enumerate(zip(srt, colors), start=1):
+    axB.scatter([v], [0], color=c, s=80, zorder=3)
+    axB.annotate(fr"$X_{{({k})}}$", (v, 0), textcoords="offset points",
+                 xytext=(0, 10), ha="center", fontsize=11)
+axB.set_yticks([]); axB.set_title("Sorted (order statistics)")
+axB.set_ylim(-0.5, 0.8); axB.set_xlabel("value")
+plt.tight_layout()
+```
+
+Two things are worth feeling before we compute anything.
+
+**The extremes are pulled toward the tails, and they bunch.** The maximum of $n$ draws is,
+on average, further out than any single draw — and the more draws, the further out it
+goes. The minimum is symmetric. So even if each $X_i$ is a tame bell curve, $X_{(n)}$ lives
+out in the right tail and has its *own*, skewed distribution. The middle order statistics,
+by contrast, concentrate tightly around the population median.
+
+**For the uniform distribution, the order statistics spread out evenly.** If you drop $n$
+uniform points on $[0,1]$, they tend to space themselves at roughly $1/(n+1)$, $2/(n+1)$,
+…, $n/(n+1)$ — the line gets cut into $n+1$ pieces of equal *expected* length. That regular
+spacing is the visual seed of the Beta distribution we will derive, and (via the
+probability integral transform) it is the same regularity that makes a column of null
+p-values lie on the diagonal of a Q–Q plot.
+
+# The formal development {#sec-formal}
+
+## Setting up: the sample and its sorted version {#sec-setup}
+
+::: {#def-order-stat}
+**Definition (order statistics).** Let $X_1,X_2,\dots,X_n$ be i.i.d. random variables with
+common cumulative distribution function (CDF) $F(x)=P(X\le x)$ and, where it exists,
+probability density function (pdf) $f(x)=F'(x)$. The **order statistics** are the same
+values sorted into nondecreasing order, written
+$$
+X_{(1)}\le X_{(2)}\le\cdots\le X_{(n)},
+$$
+so that $X_{(1)}=\min_i X_i$ is the sample minimum, $X_{(n)}=\max_i X_i$ is the sample
+maximum, and $X_{(k)}$ is the $k$-th smallest value.
+:::
+
+Two notational reminders, because the subscripts do a lot of work. The plain subscript in
+$X_i$ marks **arrival order** (the $i$-th observation collected); the *parenthesized*
+subscript in $X_{(k)}$ marks **rank** (the $k$-th smallest). They are different random
+variables. "i.i.d." abbreviates *independent and identically distributed*: the $X_i$ are
+drawn independently, each from the same distribution $F$ — the standard model of a clean
+random sample, built in [PROB-8].
+
+We will assume throughout that $X$ is **continuous**, i.e. $F$ has a density $f$. This buys
+us a small but crucial simplification: for a continuous variable, $P(X_i=X_j)=0$ for $i\ne
+j$, so **ties never happen** (with probability one). Every draw is distinct, the sort is
+unambiguous, and the $\le$ signs above can be read as strict $<$. (The discrete case, with
+its ties, is genuinely messier; we flag it in @sec-failure and stay continuous in the
+derivations.)
+
+::: {.callout-tip title="You might be asked"}
+*"Are the order statistics independent?"* No — emphatically not, even though the original
+$X_i$ are. Sorting introduces dependence by construction: knowing $X_{(1)}=3.2$ tells you
+$X_{(2)}\ge 3.2$, so the order statistics are forced into a chain $X_{(1)}\le X_{(2)}\le
+\cdots$. They are a textbook example of variables that are dependent *because of a
+deterministic constraint*, not because the underlying randomness is correlated. This is why
+their joint distribution (@sec-joint) carries an $n!$ and is supported only on the ordered
+region, and it is the single most common interview trap on this topic.
+:::
+
+## The CDF of a single order statistic {#sec-cdf-orderstat}
+
+We want the distribution of one chosen rank, $X_{(k)}$. The cleanest path to its **density**
+goes through its **CDF**, because the CDF of an order statistic is a counting event we can
+write down directly. Fix a value $x$ and ask: what does it *mean* for the $k$-th smallest
+to be at most $x$?
+
+The event $\{X_{(k)}\le x\}$ says the $k$-th smallest value sits at or below $x$. The
+$k$-th smallest is below $x$ **exactly when at least $k$ of the $n$ observations are below
+$x$** — if $k$ or more of them fall in $(-\infty,x]$, then in particular the $k$-th from
+the bottom does. Conversely, if fewer than $k$ fall below $x$, the $k$-th smallest must lie
+above $x$. So the two events are identical:
+$$
+\{X_{(k)}\le x\} \;=\; \{\text{at least } k \text{ of the } X_i \text{ are} \le x\}.
+$$ {#eq-orderstat-event}
+
+This is the whole trick, and it converts an order-statistic question into a **counting**
+question, which is where [PROB-10] pays off. Define, for the fixed threshold $x$, an
+indicator for each observation:
+$$
+B_i = \mathbf{1}\{X_i\le x\}=\begin{cases}1 & X_i\le x,\\[2pt] 0 & X_i> x.\end{cases}
+$$
+Each $B_i$ is a **Bernoulli trial**: it succeeds (equals 1) with probability
+$P(X_i\le x)=F(x)$ and fails with probability $1-F(x)$, and because the $X_i$ are
+independent, so are the $B_i$. Let $N_x=\sum_{i=1}^n B_i$ be the number of observations at
+or below $x$. A sum of $n$ independent Bernoulli$(p)$ trials is, by definition, a
+**Binomial$(n,p)$** variable (this is exactly the construction in [PROB-11]), here with
+success probability $p=F(x)$:
+$$
+N_x \sim \mathrm{Binomial}\bigl(n,\,F(x)\bigr),
+\qquad
+P(N_x=j)=\binom{n}{j}F(x)^j\bigl(1-F(x)\bigr)^{n-j}.
+$$ {#eq-binomial-count}
+
+Now translate @eq-orderstat-event through $N_x$: "at least $k$ observations $\le x$" is
+just $\{N_x\ge k\}$. Therefore the CDF of the $k$-th order statistic is the upper tail of
+this binomial:
+$$
+F_{(k)}(x) \;=\; P\bigl(X_{(k)}\le x\bigr)
+\;=\; P\bigl(N_x\ge k\bigr)
+\;=\; \sum_{j=k}^{n}\binom{n}{j}F(x)^j\bigl(1-F(x)\bigr)^{n-j}.
+$$ {#eq-orderstat-cdf}
+
+Two important special cases fall straight out, and they are worth doing by hand because
+they are the ones you will actually use.
+
+**The maximum, $X_{(n)}$.** The largest value is $\le x$ precisely when *every*
+observation is $\le x$. With $k=n$, @eq-orderstat-cdf has only the $j=n$ term,
+$\binom{n}{n}F(x)^n(1-F(x))^0=F(x)^n$. Or, even more directly, by independence,
+$$
+F_{(n)}(x)=P\bigl(\max_i X_i\le x\bigr)
+=P\bigl(X_1\le x,\dots,X_n\le x\bigr)
+=\prod_{i=1}^n P(X_i\le x)=F(x)^n.
+$$ {#eq-max-cdf}
+
+**The minimum, $X_{(1)}$.** It is cleaner to work with the complement. The smallest value
+*exceeds* $x$ precisely when *every* observation exceeds $x$:
+$$
+P\bigl(X_{(1)}> x\bigr)=P\bigl(X_1> x,\dots,X_n> x\bigr)=\prod_{i=1}^n\bigl(1-F(x)\bigr)
+=\bigl(1-F(x)\bigr)^n,
+$$
+so the CDF of the minimum is
+$$
+F_{(1)}(x)=1-P\bigl(X_{(1)}> x\bigr)=1-\bigl(1-F(x)\bigr)^n.
+$$ {#eq-min-cdf}
+
+::: {.callout-tip title="You might be asked"}
+*"Quick — if I draw $n$ values uniformly on $[0,1]$, what's the probability the maximum is
+below $0.9$?"* Use @eq-max-cdf with $F(x)=x$ on $[0,1]$: $P(X_{(n)}\le 0.9)=0.9^{\,n}$. For
+$n=10$ that is $0.9^{10}\approx 0.349$, so there is about a 65% chance at least one of ten
+uniform draws lands in the top tenth. This is the "max is pulled toward the tail"
+intuition of @sec-intuition made numerical, and it is the kind of one-liner an interviewer
+likes precisely because the independence-product derivation is so short.
+:::
+
+## From CDF to density: the counting derivation {#sec-density}
+
+The CDF in @eq-orderstat-cdf is exact but awkward to differentiate as written (it is a sum
+of many terms). There is a far more illuminating route to the density of $X_{(k)}$ — a
+direct counting argument that makes the formula's structure transparent. We build it as a
+**multinomial** count, which is the natural generalization of the binomial coefficient from
+[PROB-10] to three categories.
+
+We want $f_{(k)}(x)$, the density of $X_{(k)}$ at the value $x$. Recall what a density means
+(from [PROB-4]): $f_{(k)}(x)\,dx$ is, to first order, the probability that $X_{(k)}$ lands
+in a tiny window $[x,x+dx]$. So we ask: in what configurations of the $n$ original draws
+does the $k$-th smallest land in $[x,x+dx]$?
+
+For the $k$-th order statistic to sit in that sliver, the $n$ observations must split into
+**three groups**:
+
+1. Exactly **one** observation lands *inside* the window $[x,x+dx]$ — that one will be
+   $X_{(k)}$ itself.
+2. Exactly **$k-1$** observations land strictly *below* $x$ — they are the ones ranked
+   $1,\dots,k-1$, forced beneath our value.
+3. The remaining **$n-k$** observations land strictly *above* $x+dx$ — ranked
+   $k+1,\dots,n$, forced above.
+
+(We may ignore the vanishingly small chance that two observations land in the same tiny
+window, because for a continuous distribution that probability is of order $(dx)^2$, which
+disappears relative to the $dx$ we are tracking.) Now we attach a probability to each group
+and count the ways to assign the $n$ labelled observations to the groups.
+
+**The probability of each group's placement.** For a single observation, drawn from $F$:
+
+- the chance it falls below $x$ is $P(X\le x)=F(x)$;
+- the chance it falls in the window $[x,x+dx]$ is, by the definition of the density,
+  approximately $f(x)\,dx$ (the area under the density over a width-$dx$ strip);
+- the chance it falls above $x+dx$ is $P(X> x)=1-F(x)$ (and $1-F(x+dx)\to 1-F(x)$ as
+  $dx\to0$, so we write $1-F(x)$).
+
+Because the $n$ observations are independent, the probability of one *specific* assignment
+— these particular $k-1$ observations below, this particular one in the window, those
+particular $n-k$ above — is the product
+$$
+\underbrace{F(x)^{\,k-1}}_{k-1\text{ below}}\;\cdot\;
+\underbrace{f(x)\,dx}_{1\text{ in window}}\;\cdot\;
+\underbrace{\bigl(1-F(x)\bigr)^{\,n-k}}_{n-k\text{ above}}.
+$$
+
+**The count of assignments.** But *which* observations go where is itself something we must
+count, because the observations are distinguishable (observation 1 is not observation 2)
+and any of them could be the one that lands in the window. The number of ways to choose
+which of the $n$ labelled observations form the "below" group of size $k-1$, the "window"
+group of size $1$, and the "above" group of size $n-k$ is the **multinomial coefficient**
+$$
+\binom{n}{\,k-1,\;1,\;n-k\,}=\frac{n!}{(k-1)!\,1!\,(n-k)!}.
+$$ {#eq-multinomial}
+
+This is the three-category generalization of the binomial coefficient: $\binom{n}{a,b,c}$
+counts the ways to deal $n$ distinct items into groups of sizes $a,b,c$ (with
+$a+b+c=n$), and it equals $n!/(a!\,b!\,c!)$. (When there are only two groups it collapses
+to the familiar $\binom{n}{k}=n!/(k!\,(n-k)!)$ of [PROB-10]; the multinomial is the same
+idea with one more bin.) We derive @eq-multinomial inline in @sec-multinomial-derivation
+below so nothing is taken on faith.
+
+**Putting it together.** Multiply the count by the probability of one assignment, and
+divide by $dx$ to turn a probability-of-a-window into a density:
+$$
+\boxed{\;
+f_{(k)}(x)=\frac{n!}{(k-1)!\,(n-k)!}\;F(x)^{\,k-1}\,\bigl(1-F(x)\bigr)^{\,n-k}\,f(x).
+\;}
+$$ {#eq-orderstat-density}
+
+(The $1!=1$ from the window group is invisible, so we drop it.) Read the boxed formula as a
+sentence, exactly as promised in the Core: the coefficient counts *who goes where*;
+$F(x)^{k-1}$ forces $k-1$ observations below; $(1-F(x))^{n-k}$ forces $n-k$ above; and
+$f(x)$ places the lone chosen observation *at* $x$. Every factor has a job.
+
+### Filling the one gap: where the multinomial coefficient comes from {#sec-multinomial-derivation}
+
+We used @eq-multinomial; here is its derivation so no step is implicit. We have $n$
+distinct observations and want to split them into an ordered list of bins of sizes
+$k-1$, $1$, and $n-k$. Build the split in stages and use the multiplication principle of
+[PROB-10]. First choose which $k-1$ observations go below: that is $\binom{n}{k-1}$ ways.
+From the $n-(k-1)$ that remain, choose the single one for the window: $\binom{n-k+1}{1}$
+ways. The last $n-k$ are forced into the "above" bin: $\binom{n-k}{n-k}=1$ way. By the
+multiplication principle the total is the product
+$$
+\binom{n}{k-1}\binom{n-k+1}{1}\binom{n-k}{n-k}
+=\frac{n!}{(k-1)!\,(n-k+1)!}\cdot\frac{(n-k+1)!}{1!\,(n-k)!}\cdot 1.
+$$
+The $(n-k+1)!$ cancels, leaving $\dfrac{n!}{(k-1)!\,1!\,(n-k)!}$, which is exactly
+@eq-multinomial. $\quad\blacksquare$
+
+::: {.callout-tip title="You might be asked"}
+*"Can you get the density by differentiating the CDF instead, and do the two agree?"* Yes,
+and checking is a good way to trust the counting argument. Differentiate @eq-orderstat-cdf
+term by term in $x$ (using the chain rule, $\frac{d}{dx}F(x)=f(x)$). The sum
+$\sum_{j=k}^n\binom{n}{j}F^j(1-F)^{n-j}$ telescopes spectacularly: almost everything
+cancels and you are left with precisely the single term in @eq-orderstat-density. We carry
+out that cancellation in full in @sec-telescoping for the curious; the upshot is that the
+combinatorial derivation and the calculus derivation give the identical formula, as they
+must.
+:::
+
+## A quick sanity check: the density integrates to one {#sec-sanity}
+
+A density must integrate to $1$ over its support ([PROB-4]). Let us confirm
+@eq-orderstat-density does, which also rehearses a substitution we will reuse. Integrate
+over all $x$:
+$$
+\int_{-\infty}^{\infty} f_{(k)}(x)\,dx
+=\frac{n!}{(k-1)!\,(n-k)!}\int_{-\infty}^{\infty}
+   F(x)^{\,k-1}\bigl(1-F(x)\bigr)^{\,n-k} f(x)\,dx.
+$$
+Substitute $u=F(x)$, so $du=f(x)\,dx$ (the chain rule again, from [PROB-4]). As $x$ runs
+from $-\infty$ to $\infty$, $u=F(x)$ runs from $0$ to $1$ (a CDF rises from $0$ to $1$).
+The integral becomes
+$$
+\frac{n!}{(k-1)!\,(n-k)!}\int_{0}^{1} u^{\,k-1}(1-u)^{\,n-k}\,du.
+$$
+That remaining integral is the **Beta function** $B(k,\,n-k+1)=\int_0^1 u^{k-1}(1-u)^{n-k}\,du$,
+and from [PROB-14] we know $B(\alpha,\beta)=\Gamma(\alpha)\Gamma(\beta)/\Gamma(\alpha+\beta)$.
+For integer arguments $\Gamma(m)=(m-1)!$, so
+$$
+B(k,\,n-k+1)=\frac{\Gamma(k)\,\Gamma(n-k+1)}{\Gamma(n+1)}
+=\frac{(k-1)!\,(n-k)!}{n!}.
+$$
+This is exactly the reciprocal of the coefficient out front, so the product is $1$. The
+density is legitimate — and, not by accident, the Beta function just walked on stage. Hold
+that thought; it becomes the headline result in @sec-uniform-beta.
+
+## The minimum, the maximum, and the median made explicit {#sec-special}
+
+With @eq-orderstat-density in hand, the named order statistics are just substitutions.
+
+**Minimum ($k=1$).** Then $k-1=0$ and $n-k=n-1$, and $\frac{n!}{0!\,(n-1)!}=n$, giving
+$$
+f_{(1)}(x)=n\,\bigl(1-F(x)\bigr)^{\,n-1} f(x).
+$$ {#eq-min-density}
+Differentiating @eq-min-cdf directly gives the same thing:
+$\frac{d}{dx}\!\left[1-(1-F)^n\right]=n(1-F)^{n-1}f$. The two routes agree.
+
+**Maximum ($k=n$).** Then $k-1=n-1$ and $n-k=0$, and $\frac{n!}{(n-1)!\,0!}=n$, giving
+$$
+f_{(n)}(x)=n\,F(x)^{\,n-1} f(x),
+$$ {#eq-max-density}
+which is the derivative of $F(x)^n$ from @eq-max-cdf. Agreement again.
+
+**Median.** When $n=2m+1$ is odd, the sample median is the middle order statistic,
+$X_{(m+1)}$, with $k-1=m$ below and $n-k=m$ above. Its density is the symmetric
+$$
+f_{(m+1)}(x)=\frac{(2m+1)!}{m!\,m!}\,F(x)^{m}\bigl(1-F(x)\bigr)^{m} f(x),
+$$
+heavily concentrated near the population median (where $F=1/2$), because $F^m(1-F)^m$ peaks
+sharply at $F=1/2$ as $m$ grows. @fig-order-densities draws these densities for a standard
+normal sample, making the "extremes flee to the tails, the median concentrates" picture of
+@sec-intuition quantitative.
+
+```{python}
+#| label: fig-order-densities
+#| fig-cap: "Densities of selected order statistics for $n=9$ i.i.d. standard-normal draws, from @eq-orderstat-density with $F=\\Phi$, $f=\\varphi$. The minimum $X_{(1)}$ (green) sits in the left tail and the maximum $X_{(9)}$ (red) in the right; both are skewed. The median $X_{(5)}$ (dark) is tight and symmetric around $0$. A single raw draw's density (grey dashed) is shown for scale. Sorting manufactures a whole family of distributions from one parent."
+from scipy.stats import norm
+
+n = 9
+xs = np.linspace(-3.5, 3.5, 600)
+F = norm.cdf(xs)
+f = norm.pdf(xs)
+
+def order_density(k, n, F, f):
+    coef = factorial(n) / (factorial(k-1) * factorial(n-k))
+    return coef * F**(k-1) * (1 - F)**(n-k) * f
+
+fig, ax = plt.subplots(figsize=(7.0, 4.2))
+ax.plot(xs, f, color=GREY, ls="--", lw=1.4, label="single draw  $\\varphi(x)$")
+ax.plot(xs, order_density(1, n, F, f), color=ACCENT, label="min  $X_{(1)}$")
+ax.plot(xs, order_density(3, n, F, f), color="#7048a8", label="$X_{(3)}$")
+ax.plot(xs, order_density(5, n, F, f), color=POINT, label="median  $X_{(5)}$")
+ax.plot(xs, order_density(7, n, F, f), color="#c97a00", label="$X_{(7)}$")
+ax.plot(xs, order_density(9, n, F, f), color=LINE, label="max  $X_{(9)}$")
+ax.set_xlabel("$x$"); ax.set_ylabel("density")
+ax.set_title("Order-statistic densities, $n=9$ standard normals")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+## The joint density of all the order statistics {#sec-joint}
+
+For completeness — and because the uniform-spacing intuition needs it — here is the
+*joint* density of the whole sorted vector, derived by the same counting logic. Suppose we
+want the chance that the sorted values land near a specific increasing sequence
+$y_1<y_2<\cdots<y_n$. The original sample, *as drawn*, has joint density
+$\prod_{i=1}^n f(x_i)$ (independence multiplies densities, [PROB-8]). But the *sorted*
+sample at $(y_1,\dots,y_n)$ could have come from any of the $n!$ orderings of those same
+values — observation 1 might have been any of the $n$ slots, and so on — and each
+permutation has the same density product. So we multiply by $n!$:
+$$
+f_{X_{(1)},\dots,X_{(n)}}(y_1,\dots,y_n)=n!\,\prod_{i=1}^n f(y_i),
+\qquad y_1<y_2<\cdots<y_n,
+$$ {#eq-joint-density}
+and the density is zero off the ordered region $y_1<\cdots<y_n$. The lone factor $n!$ is
+the entire effect of sorting: it concentrates all the probability mass that was spread over
+$n!$ symmetric orderings onto the single ordered one. This is the precise sense in which
+sorting *creates dependence* (the "You might be asked" box of @sec-setup): the support is
+the constrained wedge $y_1<\cdots<y_n$, not the full cube.
+
+# The bridge: the probability integral transform {#sec-pit}
+
+Everything so far worked for a *general* continuous $F$. We now prove the single fact that
+collapses all of it onto the uniform distribution, and that simultaneously explains null
+p-values. It is short. It is the most important thing in the article.
+
+::: {#thm-pit}
+**Theorem (probability integral transform, PIT).** Let $X$ be a continuous random variable
+with CDF $F$. Define the new random variable $U=F(X)$ — that is, run $X$ through its own
+CDF. Then $U$ is **uniformly distributed on $(0,1)$**: $P(U\le u)=u$ for all $u\in[0,1]$,
+regardless of what $F$ was.
+:::
+
+::: {.proof}
+We find the CDF of $U$, i.e. $P(U\le u)$ for a fixed $u\in(0,1)$, and show it equals $u$ —
+the defining CDF of a Uniform$(0,1)$ variable (from [PROB-4], the Uniform$(0,1)$ has
+$P(U\le u)=u$ on $[0,1]$).
+
+Start from the definition $U=F(X)$:
+$$
+P(U\le u)=P\bigl(F(X)\le u\bigr).
+$$
+We want to "undo" $F$ on both sides of the inequality inside. For a *strictly increasing*
+$F$ this is immediate — apply the inverse $F^{-1}$, which preserves the inequality because
+an increasing function preserves order:
+$$
+P\bigl(F(X)\le u\bigr)=P\bigl(X\le F^{-1}(u)\bigr).
+$$
+But the right-hand side is just the CDF $F$ evaluated at $F^{-1}(u)$:
+$$
+P\bigl(X\le F^{-1}(u)\bigr)=F\bigl(F^{-1}(u)\bigr)=u.
+$$
+So $P(U\le u)=u$ on $(0,1)$, which is the Uniform$(0,1)$ CDF. (And $P(U\le u)=0$ for $u<0$,
+$=1$ for $u>1$, since $F$ takes values only in $[0,1]$.) That is the claim. $\quad\blacksquare$
+:::
+
+::: {.callout-note title="The one technical caveat, handled honestly"}
+The clean proof used $F^{-1}$, which requires $F$ to be *strictly* increasing (so the
+inverse is a genuine function). For a general continuous $F$ — one that might be flat on
+some interval where the density is zero — there is no ordinary inverse, so we cannot just
+"apply $F^{-1}$." We do not have to hand-wave past this; the argument is short, and it
+shows precisely where continuity earns its keep.
+
+Define the **generalized inverse** (quantile function)
+$F^{-1}(u)=\inf\{x:F(x)\ge u\}$ — the leftmost value the CDF reaches level $u$ at. Write
+$x_u=F^{-1}(u)$. Two facts about $x_u$, both from elementary properties of $F$:
+
+1. **$F(x_u)=u$ exactly.** By definition of the infimum there are points $x$ just above
+   $x_u$ with $F(x)\ge u$, so right-continuity (a CDF is right-continuous, [PROB-2]) gives
+   $F(x_u)\ge u$; and there are points $x<x_u$ with $F(x)<u$, so $F(x_u)\le u$ by
+   monotonicity and **continuity** — a jump at $x_u$ could leave $F(x_u)$ strictly above
+   $u$, but a *continuous* $F$ cannot skip over the level $u$. Hence $F(x_u)=u$. This is the
+   one and only place continuity is used, and it is exactly the step a discrete $F$ breaks.
+2. **$\{F(X)\le u\}$ and $\{X\le x_u\}$ differ by at most a probability-zero set.** If
+   $x\le x_u$ then $F(x)\le F(x_u)=u$ by monotonicity, so $\{X\le x_u\}\subseteq\{F(X)\le
+   u\}$. The reverse can fail only on a *flat* stretch of $F$ at exactly level $u$: a maximal
+   interval $(x_u,\,b]$ on which $F\equiv u$, where $F(x)=u\le u$ yet $x>x_u$. But $F$ being
+   flat on that interval means the density is zero there, so $P(x_u<X\le b)=F(b)-F(x_u)=u-u=0$
+   — the discrepancy set carries no probability. (If $F$ is strictly increasing there is no
+   flat stretch and the two events are equal outright.)
+
+Therefore $P(F(X)\le u)=P(X\le x_u)$, and
+$$
+P(U\le u)=P\bigl(F(X)\le u\bigr)=P\bigl(X\le x_u\bigr)=F(x_u)=u,
+$$
+recovering the same conclusion as the strictly-increasing case. The honest boundary is the
+**discrete** case: if $F$ jumps, fact 1 fails — $F(X)$ can only land on the jump heights, so
+it is *not* continuous and *not* uniform. We return to this in @sec-failure, because it is
+exactly why p-values from discrete tests are not uniform.
+:::
+
+The PIT has a twin, which we will need to *generate* and to *reason backward*: the inverse
+direction.
+
+::: {#thm-inverse-pit}
+**Theorem (inverse transform).** If $U\sim\mathrm{Uniform}(0,1)$ and $F$ is a CDF with
+quantile function $F^{-1}$, then $X=F^{-1}(U)$ has CDF $F$.
+:::
+
+::: {.proof}
+$P(X\le x)=P\bigl(F^{-1}(U)\le x\bigr)=P\bigl(U\le F(x)\bigr)$ (apply $F$, increasing, to
+both sides of the inequality), and since $U$ is uniform, $P(U\le F(x))=F(x)$. So $X$ has
+CDF $F$. $\quad\blacksquare$
+:::
+
+@thm-inverse-pit is how computers *simulate* any distribution: draw a uniform, push it
+through the quantile function. @thm-pit runs that movie backward. Together they say a
+continuous distribution and the uniform are interchangeable through the lens of $F$ — a
+fact we now cash in twice.
+
+```{python}
+#| label: fig-pit
+#| fig-cap: "The probability integral transform in action. **Left:** a sample of $n=4000$ from a right-skewed Exponential(1) distribution — anything but uniform. **Right:** push each value through its own CDF, $U=F(X)=1-e^{-X}$. The histogram of the $U$ values is flat — Uniform$(0,1)$ — exactly as @thm-pit guarantees, and *independently of the lopsided shape we started with*."
+rng = np.random.default_rng(11)
+x = rng.exponential(scale=1.0, size=4000)
+u = 1 - np.exp(-x)   # F(x) for Exponential(1)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.6))
+axL.hist(x, bins=40, color=FILL, edgecolor="white", density=True)
+xs = np.linspace(0, x.max(), 200)
+axL.plot(xs, np.exp(-xs), color=LINE, label="Exp(1) density")
+axL.set_title("Original $X\\sim$ Exponential(1)")
+axL.set_xlabel("$x$"); axL.set_ylabel("density"); axL.legend(fontsize=9)
+
+axR.hist(u, bins=40, color=FILL, edgecolor="white", density=True)
+axR.axhline(1.0, color=LINE, lw=2, label="Uniform(0,1) density")
+axR.set_title("Transformed $U=F(X)$")
+axR.set_xlabel("$u$"); axR.set_ylabel("density")
+axR.set_ylim(0, 1.6); axR.legend(fontsize=9)
+plt.tight_layout()
+```
+
+# Cashing it in, part one: uniform order statistics and the Beta {#sec-uniform-beta}
+
+Apply @eq-orderstat-density to the uniform itself. For $U\sim\mathrm{Uniform}(0,1)$ the CDF
+is $F(u)=u$ and the density is $f(u)=1$ on $[0,1]$. Substituting into the boxed density,
+$$
+f_{U_{(k)}}(u)=\frac{n!}{(k-1)!\,(n-k)!}\,u^{\,k-1}(1-u)^{\,n-k}\cdot 1,
+\qquad 0\le u\le 1.
+$$ {#eq-uniform-order}
+
+Compare this with the **Beta density** from [PROB-14]: a $\mathrm{Beta}(\alpha,\beta)$
+random variable on $[0,1]$ has density
+$\dfrac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)}u^{\alpha-1}(1-u)^{\beta-1}$.
+Matching exponents, $\alpha-1=k-1$ and $\beta-1=n-k$, i.e. $\alpha=k$ and $\beta=n-k+1$;
+and the constant matches because $\Gamma(n+1)/[\Gamma(k)\Gamma(n-k+1)]=n!/[(k-1)!\,(n-k)!]$
+(integer Gammas are factorials, as in @sec-sanity). Therefore:
+
+::: {#thm-uniform-beta}
+**Theorem (uniform order statistics are Beta).** If $U_1,\dots,U_n$ are i.i.d.
+Uniform$(0,1)$, then the $k$-th order statistic is exactly Beta-distributed:
+$$
+U_{(k)}\sim\mathrm{Beta}(k,\;n-k+1).
+$$
+:::
+
+This is a genuinely clean result, and it instantly hands us moments without any new
+integration. From [PROB-14], a $\mathrm{Beta}(\alpha,\beta)$ has mean
+$\alpha/(\alpha+\beta)$ and variance $\alpha\beta/[(\alpha+\beta)^2(\alpha+\beta+1)]$.
+Plugging $\alpha=k,\ \beta=n-k+1$ (so $\alpha+\beta=n+1$):
+$$
+E\bigl[U_{(k)}\bigr]=\frac{k}{n+1},
+\qquad
+\mathrm{Var}\bigl(U_{(k)}\bigr)=\frac{k\,(n-k+1)}{(n+1)^2\,(n+2)}.
+$$ {#eq-uniform-moments}
+
+The mean $E[U_{(k)}]=k/(n+1)$ is the regular spacing promised in @sec-intuition: $n$
+uniform points cut $[0,1]$ into $n+1$ gaps of equal *expected* length $1/(n+1)$, so the
+$k$-th point sits, on average, at $k/(n+1)$. (This, not $k/n$, is the right "plotting
+position" for a Q–Q plot — a practical payoff we use in @sec-qq.) And because the variance
+$k(n-k+1)/[(n+1)^2(n+2)]$ is largest near $k\approx n/2$ and smallest at the extremes
+$k=1,n$, the *middle* uniform order statistics are the wiggliest and the *extremes* the
+most pinned down — the mirror image of the normal case, a contrast worth carrying.
+
+**And now the general case is free.** Take *any* continuous parent $F$. By the PIT,
+$U_i=F(X_i)$ are i.i.d. uniform. Crucially, because $F$ is increasing, **sorting the
+$X_i$ sorts the $U_i$ in lockstep**: $U_{(k)}=F(X_{(k)})$. So the order statistics of any
+continuous distribution are just $X_{(k)}=F^{-1}(U_{(k)})$ with $U_{(k)}\sim
+\mathrm{Beta}(k,n-k+1)$. That is the structural unification of the Core: *every*
+continuous order-statistics problem is a Beta variable pushed through a quantile function.
+
+```{python}
+#| label: fig-uniform-beta
+#| fig-cap: "The Beta law of uniform order statistics, @thm-uniform-beta. For $n=10$ uniform draws we simulate $200{,}000$ replications and histogram three order statistics. Overlaid (red) are the exact $\\mathrm{Beta}(k,\\,n-k+1)$ densities: $U_{(1)}\\sim\\mathrm{Beta}(1,10)$, $U_{(5)}\\sim\\mathrm{Beta}(5,6)$, $U_{(10)}\\sim\\mathrm{Beta}(10,1)$. The simulated histograms sit right on top of the exact Beta curves. Vertical ticks mark the means $k/(n+1)$ from @eq-uniform-moments."
+from scipy.stats import beta as beta_dist
+
+rng = np.random.default_rng(7)
+n = 10
+reps = 200_000
+U = np.sort(rng.random((reps, n)), axis=1)
+
+fig, axes = plt.subplots(1, 3, figsize=(9.2, 3.3), sharey=True)
+for ax, k in zip(axes, (1, 5, 10)):
+    ax.hist(U[:, k-1], bins=60, density=True, color=FILL, edgecolor="white")
+    uu = np.linspace(0, 1, 300)
+    ax.plot(uu, beta_dist.pdf(uu, k, n - k + 1), color=LINE, lw=2)
+    ax.axvline(k / (n + 1), color=ACCENT, lw=1.6, ls="--")
+    ax.set_title(f"$U_{{({k})}}\\sim$ Beta$({k},{n-k+1})$", fontsize=10)
+    ax.set_xlabel("value")
+axes[0].set_ylabel("density")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What's the expected value of the maximum of $n$ uniform draws? The minimum?"* From
+@eq-uniform-moments, $E[U_{(n)}]=n/(n+1)$ and $E[U_{(1)}]=1/(n+1)$ — beautifully symmetric
+about $1/2$, and the maximum creeps toward $1$ as $n$ grows but never reaches it. If the
+interviewer pushes to a general parent — *"and the expected maximum of $n$ Exponential(1)
+draws?"* — do not quote a formula; derive it from @eq-max-cdf in three honest lines. For a
+non-negative variable, the tail formula for the mean (itself a one-line consequence of
+Fubini / swapping an integral and an expectation, [PROB-5]) gives
+$E[X_{(n)}]=\int_0^\infty P(X_{(n)}>x)\,dx=\int_0^\infty\bigl(1-F(x)^n\bigr)\,dx$. For
+Exponential(1), $F(x)=1-e^{-x}$, so substitute $t=1-e^{-x}$ (hence $x=-\ln(1-t)$ and
+$dx=dt/(1-t)$; as $x:0\to\infty$, $t:0\to1$):
+$$
+E[X_{(n)}]=\int_0^1\frac{1-t^{\,n}}{1-t}\,dt
+=\int_0^1\bigl(1+t+t^2+\cdots+t^{\,n-1}\bigr)\,dt
+=\sum_{j=1}^{n}\frac{1}{j},
+$$
+using the finite geometric-series identity $\frac{1-t^n}{1-t}=\sum_{i=0}^{n-1}t^{\,i}$ and
+integrating each power term. So $E[X_{(n)}]=H_n=\sum_{j=1}^n 1/j\approx\ln n+\gamma$ (the
+harmonic number, with $\gamma\approx 0.577$ the Euler–Mascheroni constant): it grows
+*without* bound, but only **logarithmically** — a clean illustration that the maximum's
+behavior depends entirely on the tail of $F$ (the bounded uniform pins its max at $1$; the
+exponential's lighter-than-uniform tail still lets the max wander off to infinity, just
+slowly), which is the doorway to extreme-value theory flagged in @sec-failure.
+:::
+
+# Cashing it in, part two: why null p-values are uniform {#sec-pvalue}
+
+Now the headline. We make precise what a p-value *is*, then read the PIT off it.
+
+## What a p-value is, exactly {#sec-pvalue-def}
+
+You run a test. You have a **test statistic** $T$ — a number computed from the data
+designed so that larger values are stronger evidence against the null hypothesis $H_0$
+(think of a $t$-statistic, a $\chi^2$, a difference in means). Before seeing data, $T$ is a
+random variable; under the null it has some distribution with CDF $G(t)=P_{H_0}(T\le t)$.
+You observe a particular value $t_{\text{obs}}$. The (one-sided, upper-tail) **p-value** is
+the probability, *computed under the null*, of getting a test statistic at least as extreme
+as the one you saw:
+$$
+p=P_{H_0}\bigl(T\ge t_{\text{obs}}\bigr)=1-G(t_{\text{obs}}).
+$$ {#eq-pvalue-def}
+
+That is the definition, no more: a p-value is a **null tail probability of the test
+statistic**. Note what kind of object it is — it is the null CDF $G$ (well, its
+complement) *evaluated at the random data*. That is precisely the shape $F(X)$ from the
+PIT. The result is now one line away.
+
+## The theorem {#sec-pvalue-thm}
+
+::: {#thm-uniform-pvalue}
+**Theorem (uniform null p-values).** Suppose the test statistic $T$ has a **continuous**
+distribution under $H_0$, with CDF $G$. Then the p-value $P=1-G(T)$, viewed as a random
+variable over repeated sampling *when $H_0$ is true*, is uniformly distributed on $(0,1)$:
+$$
+P_{H_0}(P\le \alpha)=\alpha
+\qquad\text{for every } \alpha\in[0,1].
+$$
+:::
+
+::: {.proof}
+Work under $H_0$, so $T$ has CDF $G$. Apply the PIT (@thm-pit) to $T$: since $G$ is the
+continuous CDF of $T$, the variable $G(T)$ is Uniform$(0,1)$. Now $P=1-G(T)$, and "one
+minus a uniform" is again uniform — if $U\sim\mathrm{Uniform}(0,1)$ then so is $1-U$, by the
+trivial symmetry $P(1-U\le \alpha)=P(U\ge 1-\alpha)=1-(1-\alpha)=\alpha$. Hence $P$ is
+Uniform$(0,1)$, which is exactly the displayed statement $P_{H_0}(P\le\alpha)=\alpha$.
+$\quad\blacksquare$
+:::
+
+Read what we just proved. The probability that a true null produces a p-value below the
+threshold $\alpha$ is *exactly* $\alpha$. So the rule "reject when $p\le 0.05$" rejects a
+true null with probability exactly $0.05$ — the test has the **Type I error rate it
+advertises**. This is not a definition or a convention; it is forced by the PIT the moment
+the test statistic is continuous. The entire promise of frequentist testing — "a level-$\alpha$
+test has false-positive rate $\alpha$" — rests on this single transform.
+
+::: {.callout-important title="Read the Core again"}
+The order-statistics density (@eq-orderstat-density) and the uniform null p-value
+(@thm-uniform-pvalue) are not two topics that happen to share an article. They are both
+outputs of the probability integral transform: one collapses sorted samples onto Beta
+variables, the other collapses null test statistics onto the uniform. *Same engine, two
+exhausts.* That is the unification the Core promised.
+:::
+
+```{python}
+#| label: fig-uniform-pvalues
+#| fig-cap: "Null p-values are uniform — @thm-uniform-pvalue, simulated. We generate $50{,}000$ datasets under a *true* null (two groups of $n=20$ standard normals, no real difference) and run a two-sample $t$-test on each. **Left:** the histogram of the resulting p-values is flat across $(0,1)$, so each value is equally likely. **Right:** their empirical CDF lies on the diagonal $P(P\\le\\alpha)=\\alpha$ (red), confirming a level-$\\alpha$ test rejects exactly an $\\alpha$ fraction of true nulls. The dashed line marks $\\alpha=0.05$."
+rng = np.random.default_rng(2024)
+reps = 50_000
+ngrp = 20
+pvals = np.empty(reps)
+for r in range(reps):
+    a = rng.standard_normal(ngrp)
+    b = rng.standard_normal(ngrp)   # SAME distribution: null is TRUE
+    _, pvals[r] = stats.ttest_ind(a, b)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+axL.hist(pvals, bins=40, density=True, color=FILL, edgecolor="white")
+axL.axhline(1.0, color=LINE, lw=2, label="Uniform(0,1)")
+axL.set_xlabel("p-value"); axL.set_ylabel("density")
+axL.set_title("Null p-values are flat"); axL.set_ylim(0, 1.5); axL.legend(fontsize=9)
+
+grid = np.linspace(0, 1, 200)
+ecdf = np.searchsorted(np.sort(pvals), grid, side="right") / reps
+axR.plot(grid, ecdf, color=POINT, lw=2, label="empirical CDF of $p$")
+axR.plot(grid, grid, color=LINE, lw=1.5, ls="-", label="diagonal $P(p\\le\\alpha)=\\alpha$")
+axR.axvline(0.05, color=GREY, ls="--", lw=1.2)
+axR.set_xlabel(r"$\alpha$"); axR.set_ylabel(r"$P(p\le\alpha)$")
+axR.set_title("False-positive rate matches $\\alpha$"); axR.legend(fontsize=9, loc="lower right")
+plt.tight_layout()
+print(f"empirical P(p <= 0.05) under the null = {np.mean(pvals <= 0.05):.4f}  (target 0.0500)")
+```
+
+The printed false-positive rate lands right on $0.05$, the operational meaning of the
+theorem.
+
+## The payoff downstream: uniform order statistics meet null p-values {#sec-bh}
+
+Here is where the two halves of the article fuse into one tool, and why the track points
+this article at multiple-comparison procedures. Suppose you run $m$ hypothesis tests at
+once — $m$ genes, $m$ ad variants, $m$ outcomes — and *all* the nulls are true. Then you
+have $m$ i.i.d. Uniform$(0,1)$ p-values. Sort them: $p_{(1)}\le p_{(2)}\le\cdots\le
+p_{(m)}$. By @thm-uniform-beta, the $k$-th smallest p-value is
+$p_{(k)}\sim\mathrm{Beta}(k,m-k+1)$, with mean $k/(m+1)$. So *under the global null we know
+exactly where each sorted p-value should sit* — that is the reference against which a
+procedure decides which sorted p-values are "too small to be null." The Benjamini–Hochberg
+false-discovery-rate procedure (Statistical Inference D5) compares the sorted $p_{(k)}$ to
+the line $\alpha k/m$ for exactly this reason: the order statistics of the uniform are the
+yardstick. @fig-bh shows the picture.
+
+```{python}
+#| label: fig-bh
+#| fig-cap: "The bridge that powers multiple testing. Sorted p-values from $m=50$ tests, plotted against rank $k$. **Grey:** all nulls true — the points hug the diagonal $E[p_{(k)}]=k/(m+1)$ (dashed) exactly as the Beta law predicts, and stay above the Benjamini–Hochberg threshold line $\\alpha k/m$ (red, $\\alpha=0.1$), so nothing is (correctly) flagged. **Blue:** the same with 8 genuine effects injected — their small p-values peel below the threshold at the left, which is how a false-discovery-rate procedure detects them. Knowing the *null* order-statistic positions is what makes the detection possible."
+rng = np.random.default_rng(5)
+m = 50
+alpha = 0.10
+
+p_null = np.sort(rng.random(m))
+
+p_mixed = rng.random(m)
+p_mixed[:8] = rng.random(8) * 0.01   # 8 real effects -> tiny p-values
+p_mixed = np.sort(p_mixed)
+
+k = np.arange(1, m + 1)
+fig, ax = plt.subplots(figsize=(7.0, 4.2))
+ax.plot(k, p_null, "o", color=GREY, ms=4, label="all nulls true")
+ax.plot(k, p_mixed, "o", color=POINT, ms=4, label="8 real effects mixed in")
+ax.plot(k, k / (m + 1), color=ACCENT, ls="--", lw=1.5, label=r"null mean  $k/(m+1)$")
+ax.plot(k, alpha * k / m, color=LINE, lw=1.8, label=r"BH threshold  $\alpha k/m$")
+ax.set_xlabel("rank $k$"); ax.set_ylabel("sorted p-value $p_{(k)}$")
+ax.set_ylim(0, 1.02)
+ax.set_title("Sorted p-values vs. the uniform-null yardstick")
+ax.legend(fontsize=8.5, loc="upper left")
+plt.tight_layout()
+```
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on honest problems — one where it is the perfect tool, one near
+the edge, and one where it quietly fails.
+
+## Example 1 — flood engineering: the distribution of the annual maximum {#sec-flood}
+
+A levee must withstand the largest river crest of the year. Suppose daily peak stage
+(height) over the $n=365$ days of a year behaves like i.i.d. draws from a distribution $F$
+(a real simplification — see the honesty note below — but a standard first model). The
+quantity the engineer cares about is the **annual maximum** $X_{(365)}$, and its CDF is
+@eq-max-cdf, $F_{(n)}(x)=F(x)^n$. For a "100-year flood" we want the level $x_{0.99}$ that
+the annual max exceeds only 1% of years, i.e. $P(X_{(n)}> x)=0.01$, so
+$F(x)^n=0.99\Rightarrow F(x)=0.99^{1/n}$. @fig-flood works it for an exponential-tailed
+stage distribution.
+
+```{python}
+#| label: fig-flood
+#| fig-cap: "Annual-maximum river stage, $n=365$ i.i.d. daily peaks from an Exponential(rate 1, in meters above baseline). **Left:** the density of a single day's peak (grey) versus the density of the *annual maximum* $X_{(365)}$ (red, from @eq-max-density) — the max lives far out in the tail, near 6 m, where any single day almost never reaches. **Right:** the annual-max CDF $F(x)^{365}$; the dashed lines read off the 100-year level (the $x$ where the curve hits $0.99$). Sorting is the entire content of a 'return level'."
+from scipy.stats import expon
+
+n = 365
+xs = np.linspace(0, 9, 500)
+f1 = expon.pdf(xs)
+F1 = expon.cdf(xs)
+f_max = n * F1**(n - 1) * f1
+F_max = F1**n
+
+x99 = expon.ppf(0.99**(1/n))   # 100-year level
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+axL.plot(xs, f1, color=GREY, ls="--", label="single day")
+axL.plot(xs, f_max, color=LINE, label="annual max $X_{(365)}$")
+axL.set_xlabel("stage (m)"); axL.set_ylabel("density")
+axL.set_title("One day vs. the year's worst day"); axL.legend(fontsize=9)
+
+axR.plot(xs, F_max, color=POINT, lw=2)
+axR.axhline(0.99, color=GREY, ls="--", lw=1.0)
+axR.axvline(x99, color=LINE, ls="--", lw=1.2)
+axR.annotate(f"100-yr level\n$x\\approx{x99:.2f}$ m", (x99, 0.5),
+             textcoords="offset points", xytext=(-95, 0), fontsize=9, color=LINE)
+axR.set_xlabel("stage (m)"); axR.set_ylabel("$P(\\mathrm{annual\\ max}\\le x)$")
+axR.set_title("Annual-max CDF $F(x)^{365}$")
+plt.tight_layout()
+print(f"100-year flood level (annual-max 99th pct) = {x99:.3f} m")
+print(f"single-day prob of exceeding that level    = {1-expon.cdf(x99):.2e}")
+```
+
+The single-day exceedance probability is minuscule, yet over 365 chances the annual maximum
+routinely reaches it — the arithmetic of $F(x)^n$ made physical. This is exactly the regime
+order statistics were invented for, and the computation is honest and clean.
+
+::: {.callout-warning title="Pitfall"}
+**The i.i.d. assumption here is a real simplification, and you should say so.** Daily river
+stages are *not* independent (wet weeks cluster) nor identically distributed (snowmelt
+seasons differ), so $F(x)^{365}$ is a first approximation, not gospel. The serious tool for
+maxima — and the honest edge of this article — is **extreme-value theory**, which we flag
+in @sec-failure: under broad conditions the *distribution of the maximum itself* converges
+to one of three shapes (Gumbel, Fréchet, Weibull), and engineers fit those directly to
+annual maxima rather than trusting a daily $F$.
+:::
+
+## Example 2 — calibration on the diagonal: the uniform Q–Q plot {#sec-qq}
+
+A practitioner's most frequent encounter with this article's machinery is the **Q–Q plot**
+(quantile–quantile plot), and the cleanest version asks: *are these numbers uniform?* —
+which, after a PIT, is the question *is this distribution what I think it is?* The recipe
+falls straight out of @eq-uniform-moments: if $U_{(1)}\le\cdots\le U_{(n)}$ are uniform
+order statistics, then $E[U_{(k)}]=k/(n+1)$, so we plot the sorted data against the
+theoretical positions $k/(n+1)$ and check for the diagonal.
+
+We use this twice: once on genuinely uniform data (it lies on the line), once to *diagnose*
+a test whose statistic distribution we got wrong (it bends off the line) — the everyday
+honest use.
+
+```{python}
+#| label: fig-qq
+#| fig-cap: "Uniform Q–Q plots, the practitioner's calibration check. Sorted values plotted against the order-statistic means $k/(n+1)$ from @eq-uniform-moments. **Left:** $n=200$ genuinely Uniform(0,1) values — the points track the diagonal, calibration confirmed. **Right:** p-values from a mis-specified test (we wrongly used a $z$-test when the true null statistic is heavier-tailed $t_3$); the systematic bow *off* the diagonal is the visual signature of a miscalibrated test that would not control its error rate. The Q–Q plot turns @thm-uniform-pvalue into a diagnostic you can see."
+from scipy.stats import t as t_dist, norm as norm_dist
+
+rng = np.random.default_rng(99)
+n = 200
+positions = np.arange(1, n + 1) / (n + 1)
+
+good = np.sort(rng.random(n))
+
+# A test whose statistic is really t_3 but analyzed as if standard normal:
+stat = t_dist.rvs(df=3, size=n, random_state=rng)
+p_wrong = 1 - norm_dist.cdf(stat)        # WRONG null CDF -> miscalibrated p-values
+p_wrong = np.sort(p_wrong)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+for ax, data, ttl in [(axL, good, "Genuinely uniform"),
+                      (axR, p_wrong, "Miscalibrated test")]:
+    ax.plot([0, 1], [0, 1], color=LINE, lw=1.5)
+    ax.scatter(positions, data, color=POINT, s=14, zorder=3)
+    ax.set_xlabel("theoretical position $k/(n+1)$")
+    ax.set_ylabel("sorted value")
+    ax.set_title(ttl)
+plt.tight_layout()
+```
+
+The right panel is the honest applied payoff: a test that *looks* fine until you plot its
+null p-values against the uniform reference and watch them peel off the diagonal. That
+bow is a miscalibrated false-positive rate, invisible in any single p-value but obvious in
+the order statistics.
+
+## Example 3 — the edge: a discrete test, where uniformity breaks {#sec-discrete-example}
+
+Now the dishonest-looking case that is in fact the most instructive. The PIT — and hence
+the uniform-p-value theorem — needs a **continuous** test statistic. Many real tests are
+**discrete**: Fisher's exact test, a binomial test, a permutation test on a small sample.
+Their statistics take finitely many values, so $G$ has jumps, $G(T)$ can only land on those
+jump heights, and the p-value is **not** uniform — it is *conservative* (stochastically
+larger than uniform), meaning the true Type I error is *below* the nominal $\alpha$.
+@fig-discrete shows it.
+
+```{python}
+#| label: fig-discrete
+#| fig-cap: "The edge of applicability: discrete tests do NOT give uniform null p-values. $30{,}000$ binomial tests of $H_0: p=0.5$ with $n=20$ Bernoulli trials, simulated under the *true* null. **Left:** the p-value distribution is a staircase, not flat — it can only take the discrete values the binomial tail allows. **Right:** its empirical CDF lies *below* the diagonal, so $P(p\\le 0.05)<0.05$: the test is conservative, rejecting *less* often than advertised. The continuity hypothesis of @thm-uniform-pvalue is not a technicality — drop it and uniformity is gone."
+from scipy.stats import binomtest
+
+rng = np.random.default_rng(7)
+reps = 30_000
+n = 20
+pvals = np.empty(reps)
+for r in range(reps):
+    successes = rng.binomial(n, 0.5)             # null is TRUE
+    pvals[r] = binomtest(successes, n, 0.5, alternative="two-sided").pvalue
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+axL.hist(pvals, bins=40, density=True, color=FILL, edgecolor="white")
+axL.axhline(1.0, color=LINE, lw=2, label="uniform (continuous case)")
+axL.set_xlabel("p-value"); axL.set_ylabel("density")
+axL.set_title("Discrete test: a staircase"); axL.legend(fontsize=9)
+
+grid = np.linspace(0, 1, 200)
+ecdf = np.searchsorted(np.sort(pvals), grid, side="right") / reps
+axR.plot(grid, ecdf, color=POINT, lw=2, label="empirical CDF")
+axR.plot(grid, grid, color=LINE, lw=1.5, label="diagonal (would-be uniform)")
+axR.set_xlabel(r"$\alpha$"); axR.set_ylabel(r"$P(p\le\alpha)$")
+axR.set_title("Conservative: CDF below the diagonal"); axR.legend(fontsize=9, loc="lower right")
+plt.tight_layout()
+print(f"empirical P(p <= 0.05) for discrete test = {np.mean(pvals <= 0.05):.4f}  (< 0.05: conservative)")
+```
+
+The empirical rejection rate sits *below* $0.05$: the discrete test throws away power to
+stay valid. The honest fix is the **mid-p-value** or a randomized test, which restores
+uniformity in expectation; either way, the lesson is that the clean theorem is exactly as
+strong as its continuity hypothesis, no stronger.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+This is the section that separates "can write the density" from "knows when it lies."
+
+## Ties and discreteness break everything cleanly {#sec-ties}
+
+The whole derivation assumed a **continuous** parent so that ties have probability zero and
+the PIT holds exactly. With discrete data:
+
+- **The order-statistic density does not exist** (there is no density at all); you work
+  with the order-statistic *pmf*, and the clean multinomial product picks up correction
+  terms for tied values.
+- **Null p-values are not uniform** but conservative (@sec-discrete-example), so naive
+  multiple-testing corrections built on the uniform yardstick are themselves conservative.
+
+The reach-for-instead: exact discrete combinatorics, mid-p adjustments, or — increasingly —
+permutation/Monte-Carlo p-values that are *continuous by construction* (they are
+themselves uniform-on-a-grid and approach true uniformity as the number of permutations
+grows), which is why resampling tests (built on [PROB-22]) are the modern default when
+continuity is in doubt.
+
+## Dependence destroys the simple formulas {#sec-dependence}
+
+Every result here assumed **i.i.d.** Drop independence and the binomial count
+@eq-binomial-count is wrong (the indicators $B_i$ are no longer independent), the joint
+$n!\prod f$ of @eq-joint-density is wrong, and the maximum's $F(x)^n$ is wrong. Real
+time-series maxima (the flood example) and spatially correlated data violate this. The
+order statistics still exist and still sort; what fails is the *distribution theory* — you
+lose the closed forms and must simulate or use dependence-aware extreme-value models.
+
+## Extreme order statistics have non-normal limits {#sec-evt}
+
+A natural but wrong instinct, fresh off the central limit theorem, is to expect
+$X_{(n)}$ to be asymptotically normal. It is not. The sample **maximum**, suitably
+centered and scaled, converges not to a Gaussian but to one of exactly three
+**extreme-value** laws — Gumbel, Fréchet, or Weibull — depending only on the *tail* of
+$F$ (the Fisher–Tippett–Gnedenko theorem). This is the honest boundary the track flags but
+does not build: the *middle* order statistics (sample quantiles) are asymptotically normal
+and behave as your CLT intuition expects, but the *extremes* obey a different limit theory
+entirely. If your question is genuinely about the tail — worst loss, record flood, maximum
+load — reach for extreme-value theory, not for normal approximations.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the order-statistics / uniform-p-value machinery the right tool, and when is it
+the wrong one?"* The recitable summary:
+
+- **Use it** when (a) the data or the test statistic is **continuous**, (b) the sample is
+  **i.i.d.** (or close enough that the dependence is mild), and (c) you care about a
+  *specific rank* — a quantile, the median, the max — or about *calibrating / combining*
+  p-values (Q–Q plots, false-discovery control). In that regime it is exact, closed-form,
+  and beautiful: Beta order statistics, uniform null p-values, the lot.
+- **Do not lean on it** when the statistic is **discrete** (p-values go conservative — use
+  mid-p or permutation tests), when the data are strongly **dependent** (the closed forms
+  fail — simulate), or when you are chasing the **far tail** of the maximum/minimum
+  (use extreme-value theory, not the i.i.d. $F^n$ extrapolated naively).
+- **The deepest caveat:** a uniform p-value is a statement about *frequencies under the
+  null over repeated samples*. It says nothing about the probability that *this* null is
+  true given *this* p-value — that is a Bayesian posterior, a different object entirely
+  ([INFR E4]). Confusing the two is the classic interview trap and the source of most
+  p-value abuse.
+:::
+
+# A loose end, tied off: the telescoping derivative {#sec-telescoping}
+
+We promised in @sec-density that differentiating the CDF @eq-orderstat-cdf gives the same
+density as the counting argument. Here is the cancellation in full, for the reader who wants
+no gap. Write $G(x)=\sum_{j=k}^{n}\binom{n}{j}F^{j}(1-F)^{\,n-j}$ with $F=F(x)$, and
+differentiate using the product and chain rules, with $F'=f$:
+$$
+G'(x)=\sum_{j=k}^{n}\binom{n}{j}\Bigl[\,j F^{j-1}(1-F)^{n-j}
+       - (n-j)F^{j}(1-F)^{\,n-j-1}\Bigr]f.
+$$
+Use the identities $\binom{n}{j} j = n\binom{n-1}{j-1}$ and $\binom{n}{j}(n-j)=n\binom{n-1}{j}$
+(each is one line of factorial algebra: $\binom{n}{j}j=\frac{n!}{(j-1)!(n-j)!}=n\frac{(n-1)!}{(j-1)!(n-j)!}=n\binom{n-1}{j-1}$,
+and similarly for the second). Then
+$$
+G'(x)=n f\sum_{j=k}^{n}\Bigl[\binom{n-1}{j-1}F^{j-1}(1-F)^{n-j}
+        - \binom{n-1}{j}F^{j}(1-F)^{\,n-1-j}\Bigr].
+$$
+Re-index the first sum with $i=j-1$ (so $i$ runs $k-1$ to $n-1$) and leave the second with
+index $j$ (running $k$ to $n-1$, since the $j=n$ term has $\binom{n-1}{n}=0$). Both sums now
+have the identical summand $\binom{n-1}{\cdot}F^{\cdot}(1-F)^{\,n-1-\cdot}$, so this is a
+**telescoping difference**: every term of the second sum cancels a term of the first,
+leaving only the first sum's earliest term ($i=k-1$):
+$$
+G'(x)=n f\,\binom{n-1}{k-1}F^{\,k-1}(1-F)^{\,n-k}
+=\frac{n!}{(k-1)!\,(n-k)!}\,F^{\,k-1}(1-F)^{\,n-k}\,f,
+$$
+using $n\binom{n-1}{k-1}=\frac{n!}{(k-1)!(n-k)!}$. This is identical to
+@eq-orderstat-density. The two derivations agree exactly, as the "You might be asked" box
+in @sec-density claimed — claim discharged, no hand-waving. $\quad\blacksquare$
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived at the **end of the Probability Foundations track**. This article consumed the
+counting of **[PROB-10]** (the multinomial coefficient), the densities of **[PROB-4]**, the
+Beta distribution of **[PROB-14]**, and the i.i.d. sample of **[PROB-8]**, and it is the
+sibling of **[PROB-22 *The Empirical CDF*]** — together they are the two "objects sampling
+theory is built from" that the data tracks consume. From here the threads run outward, into
+other tracks:
+
+- **Statistical Inference D5 (multiple comparisons)** consumes the headline pairing of this
+  article — uniform null p-values plus their Beta order statistics — to build
+  Bonferroni, Benjamini–Hochberg, and the false-discovery-rate machinery (@sec-bh).
+- **The bootstrap (INFR E1)**, resting on the empirical CDF of [PROB-22], uses
+  order-statistic-based **percentile confidence intervals** — the $\alpha/2$ and
+  $1-\alpha/2$ order statistics of the resampled estimates.
+- **Q–Q plots and goodness-of-fit** (INFR, and every applied track) are the
+  order-statistic-versus-quantile picture of @sec-qq, generalized from the uniform to any
+  reference distribution via the PIT.
+- **Extreme-value theory** (flagged in @sec-evt) is the proper home of the maximum and
+  minimum when the tail is what matters — the rabbit hole this article deliberately opened
+  but did not descend.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** H. A. David and H. N. Nagaraja, *Order Statistics* (3rd ed., 2003)
+  is the canonical reference for everything in @sec-formal, including the discrete and
+  dependent cases this article only flagged. For the p-value uniformity in its testing
+  context, J. Neyman and E. S. Pearson's 1933 paper on the theory of testing and R. A.
+  Fisher's *Statistical Methods for Research Workers* are the origin.
+- **The multiple-testing payoff.** Y. Benjamini and Y. Hochberg, "Controlling the False
+  Discovery Rate," *JRSS-B* 57 (1995): the procedure of @sec-bh, built directly on the
+  uniform order statistics derived here.
+- **The extreme-value rabbit hole.** S. Coles, *An Introduction to Statistical Modeling of
+  Extreme Values* (2001), for the Fisher–Tippett–Gnedenko trichotomy behind @sec-evt — the
+  honest tool for the flood problem of @sec-flood.
+- **Open threads deliberately deferred.** *What is the joint distribution of two order
+  statistics* (needed for the variance of a sample range or interquartile range)? — a
+  two-dimensional version of the counting argument in @sec-density. *How fast do sample
+  quantiles converge, and to what?* — the Bahadur representation and the asymptotic
+  normality of central order statistics, which sit at the boundary with the convergence
+  theory of [PROB-21].

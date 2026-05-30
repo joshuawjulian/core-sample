@@ -1,0 +1,1194 @@
+---
+title: "Linear Transforms of Random Vectors"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CLOUD  = "#2b3a67"     # the raw point cloud
+MAPPED = "#c1121f"     # the transformed cloud / fitted object
+ACCENT = "#0a7d4d"     # highlights / the mean vector
+GREY   = "#6c757d"
+
+def cov_ellipse_xy(mean, cov, n_std=2.0, n_pts=200):
+    """Return the (x, y) coordinates of the n_std covariance ellipse of a 2-D
+    Gaussian with the given mean and 2x2 covariance. Uses the eigendecomposition
+    Sigma = V L V^T, so the ellipse axes point along the eigenvectors with
+    half-lengths n_std * sqrt(eigenvalue) -- exactly the geometry this article
+    explains. Used only to DRAW the pictures, never to derive anything."""
+    vals, vecs = np.linalg.eigh(cov)            # ascending eigenvalues
+    t = np.linspace(0.0, 2.0 * np.pi, n_pts)
+    circle = np.stack([np.cos(t), np.sin(t)])   # unit circle, shape (2, n_pts)
+    # scale each axis by n_std * sqrt(eigenvalue), then rotate by the eigenvectors
+    axes_scaled = (vecs * (n_std * np.sqrt(vals))) @ circle
+    return mean[0] + axes_scaled[0], mean[1] + axes_scaled[1]
+```
+
+> **Where this sits in the track.** This is the second of the two **random-vector**
+> articles that close Movement 4 of the Probability Foundations track. It assumes
+> [PROB-17 *Random Vectors, Mean Vectors, and Covariance Matrices*] for the three objects
+> we operate on here — a random vector $\mathbf X=(X_1,\dots,X_d)$, its mean vector
+> $\boldsymbol\mu=E[\mathbf X]$, and its covariance matrix $\boldsymbol\Sigma$ with
+> variances on the diagonal and covariances off it. It also leans on [PROB-5
+> *Expectation*] (linearity of expectation, the single workhorse identity), [PROB-6
+> *Variance*] and [PROB-7 *Joint Distributions, Covariance, and Correlation*] (covariance
+> and its bilinearity), and on the closure facts of [PROB-13 *The Normal Distribution*]
+> when we transform the Gaussian. We use vectors and matrices *operationally* — addition,
+> multiplication, transpose — and build every matrix manipulation on the page; the
+> linear-algebra **theory** (eigendecomposition, positive-definiteness, matrix square
+> roots) belongs to the Geometry of Data track and is flagged, not assumed, where we
+> touch it. It **sets up**, by name, the single identity that downstream tracks consume:
+> [REGR-6] derives the sampling covariance $\operatorname{Var}(\hat{\boldsymbol\beta}) =
+> \sigma^2 (X^\top X)^{-1}$ directly from the rule proved here; [REGR-11] (generalized
+> least squares) runs on the whitening transform of @sec-whitening; and the
+> Geometry-of-Data and Optimization tracks reuse the quadratic form $\mathbf
+> a^\top\boldsymbol\Sigma\mathbf a$.
+
+## Abstract {.unnumbered}
+
+Take a random vector $\mathbf X$ with mean vector $\boldsymbol\mu$ and covariance matrix
+$\boldsymbol\Sigma$, hit it with a fixed matrix $A$ and a fixed shift $\mathbf b$, and ask
+what happens to its first two moments. The answer is two formulas, and the whole article
+is their derivation from nothing above the random-vector definitions:
+$$
+E[A\mathbf X + \mathbf b] = A\boldsymbol\mu + \mathbf b,
+\qquad
+\operatorname{Cov}(A\mathbf X + \mathbf b) = A\,\boldsymbol\Sigma\,A^\top .
+$$
+The single claim this article defends is that **these two lines are the engine room of
+multivariate statistics**: the mean rule is just linearity of expectation wearing a
+matrix coat, the covariance rule is the matrix shadow of the scalar fact
+$\operatorname{Var}(aX)=a^2\operatorname{Var}(X)$ — the $A(\cdot)A^\top$ "sandwich" is
+where the *square* went — and once you have them, the scalar variance of a portfolio, the
+sampling distribution of a regression coefficient, the rotation of a covariance ellipse,
+and the *whitening* transform that decorrelates data all fall out as special cases of one
+identity.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A linear map $\mathbf X \mapsto A\mathbf X + \mathbf b$ acts on the two summaries of a
+random vector in the simplest way you could hope for. The **mean vector goes through the
+map unchanged in form** — $E[A\mathbf X+\mathbf b]=A\boldsymbol\mu+\mathbf b$ — because
+expectation is linear and a constant shift just shifts the average. The **covariance
+matrix gets sandwiched** — $\operatorname{Cov}(A\mathbf X+\mathbf b)=A\boldsymbol\Sigma
+A^\top$ — with the shift $\mathbf b$ *vanishing* (sliding a cloud never changes its
+spread) and the matrix $A$ appearing *twice*, once on each side, because variance is built
+from a product of two deviations and each deviation gets multiplied by $A$. That second
+$A^\top$ is the matrix fingerprint of the scalar "$a^2$" in
+$\operatorname{Var}(aX)=a^2\operatorname{Var}(X)$.
+:::
+
+Everything below orbits that box. The sandwich $A\boldsymbol\Sigma A^\top$ will look at
+first like a rule to memorize, but by the end it should feel forced: covariance is an
+*expectation of a product of two centered factors*, a linear map multiplies each factor by
+$A$, and a transpose appears the instant one of those factors sits on the right of the
+other. Hold onto the picture of a cloud of points being stretched and rotated — that is
+all $A$ does to $\boldsymbol\Sigma$, and the formula is just its bookkeeping.
+
+# Why we are doing this: the problem that forced the formula {#sec-why}
+
+Keep one question in view for the whole article: **when we run a random vector through a
+linear map, where do its mean and its spread go, and why exactly there?** Every algebraic
+step below answers a piece of that.
+
+## The original problem: too many measurements, combined linearly
+
+The need for these formulas is as old as least squares itself, and it comes from the same
+place (the astronomy and geodesy of @sec-why in [REGR-1]). An astronomer around 1800 did
+not observe one quantity; he observed a *vector* of noisy measurements — several sightings
+of a planet, several angles of a survey triangle — and the quantity he actually cared
+about was some **linear combination** of them: a weighted average, a difference, a
+predicted position computed from a fitted orbit. Each raw measurement carried random
+error, those errors were often *correlated* (the same instrument, the same atmosphere
+distorts several readings together), and the practical question was unavoidable: *if I
+form this linear combination of correlated noisy numbers, how noisy — and how correlated —
+is the result?*
+
+Gauss answered it for the scalar pieces, and the answer is the propagation-of-error rule
+every lab course still teaches: the variance of a sum is the sum of the variances plus
+twice the covariances (the identity built in [PROB-7]). What [PROB-17] gave us was a way to
+*package* all those variances and covariances into one object, the covariance matrix
+$\boldsymbol\Sigma$. What this article does is package the *propagation rule* to match: a
+single matrix identity, $A\boldsymbol\Sigma A^\top$, that does in one line what would
+otherwise be a page of bookkeeping over every pair of components. The motivation is
+compression — but compression that *reveals structure*, because the matrix form makes
+properties (symmetry, non-negativity, the rotation of the ellipse) visible that the
+component-by-component sums hide.
+
+::: {.callout-tip title="You might be asked"}
+*"Why bother with the matrix form $A\boldsymbol\Sigma A^\top$ — isn't it the same content
+as the scalar variance-of-a-sum rule from [PROB-7]?"* It is exactly the same content, and
+that is the point you should make. The matrix form is not new probability; it is the
+scalar rule $\operatorname{Var}(\sum_i a_i X_i)=\sum_{i}\sum_j a_i a_j
+\operatorname{Cov}(X_i,X_j)$ written so that *all* the linear combinations you might form
+(every row of $A$) and *all* their pairwise covariances are computed at once. The payoff is
+threefold: (i) you stop re-deriving the double sum every time; (ii) the result is
+automatically a valid covariance matrix (symmetric, positive semidefinite — proved in
+@sec-psd); and (iii) properties of the map $A$ (rotation, scaling, projection) translate
+into geometry of the spread. Interviewers ask this to check that you see the matrix
+identity as *organized scalar algebra*, not as a separate magic rule.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, picture what a linear map does to a *cloud* of points. A random vector
+$\mathbf X$ in two dimensions is a cloud scattered in the plane; its mean vector
+$\boldsymbol\mu$ is the cloud's center of mass, and its covariance matrix $\boldsymbol\Sigma$
+is encoded by an *ellipse* drawn around that center — wide in directions where the cloud
+spreads, narrow where it is tight, tilted if the two coordinates are correlated.
+
+A map $\mathbf X\mapsto A\mathbf X+\mathbf b$ does two visually separate things:
+
+- The shift $+\mathbf b$ **slides the whole cloud** rigidly. Its center moves from
+  $\boldsymbol\mu$ to $\boldsymbol\mu+\mathbf b$. Sliding changes *where* the cloud is but
+  not *how it is shaped* — so $\mathbf b$ must appear in the mean and be *absent* from the
+  covariance. Hold that prediction; the algebra will confirm it.
+- The matrix $A$ **stretches, rotates, and shears** the cloud about the origin. It is the
+  part that reshapes the ellipse. A diagonal $A$ stretches along the axes; a rotation $A$
+  spins the ellipse; a general $A$ does both at once and can also flatten the cloud onto a
+  line (if $A$ collapses a dimension).
+
+@fig-cloud-map shows exactly this: the same cloud before and after a map that rotates and
+stretches it, with the covariance ellipse riding along. The entire formal content of the
+article is the claim that the new ellipse is the one with covariance $A\boldsymbol\Sigma
+A^\top$ — and you can already *see* it is a rotated, stretched version of the old one.
+
+```{python}
+#| label: fig-cloud-map
+#| fig-cap: "A linear map reshapes a cloud. **Left:** a sample from a random vector with mean $\\boldsymbol\\mu$ (green) and covariance $\\boldsymbol\\Sigma$; the dashed ellipse is the 2-standard-deviation contour of $\\boldsymbol\\Sigma$. **Right:** every point pushed through $\\mathbf x\\mapsto A\\mathbf x+\\mathbf b$. The cloud is rotated and stretched, its center slides to $A\\boldsymbol\\mu+\\mathbf b$, and the new ellipse is exactly the contour of $A\\boldsymbol\\Sigma A^\\top$ (drawn from that formula, not fit to the points). The picture *is* the theorem."
+rng = np.random.default_rng(3)
+mu = np.array([1.0, 0.5])
+Sigma = np.array([[1.6, 0.0],
+                  [0.0, 0.35]])
+# draw a sample using a known factor of Sigma (sqrt of diagonal here)
+L = np.array([[np.sqrt(1.6), 0.0], [0.0, np.sqrt(0.35)]])
+Z = rng.normal(size=(2, 400))
+X = mu[:, None] + L @ Z
+
+theta = np.deg2rad(40.0)
+A = np.array([[np.cos(theta), -np.sin(theta)],
+              [np.sin(theta),  np.cos(theta)]]) @ np.array([[1.4, 0.0], [0.0, 1.0]])
+b = np.array([0.5, 1.0])
+Y = A @ X + b[:, None]
+
+mu_Y = A @ mu + b
+Sigma_Y = A @ Sigma @ A.T
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.0))
+axL.scatter(X[0], X[1], s=12, color=CLOUD, alpha=0.5)
+ex, ey = cov_ellipse_xy(mu, Sigma, n_std=2.0)
+axL.plot(ex, ey, color=CLOUD, ls="--", lw=1.6)
+axL.scatter([mu[0]], [mu[1]], color=ACCENT, s=80, edgecolor="white", zorder=5)
+axL.set_title(r"Before: mean $\mu$, covariance $\Sigma$")
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$"); axL.set_aspect("equal")
+
+axR.scatter(Y[0], Y[1], s=12, color=MAPPED, alpha=0.5)
+ex2, ey2 = cov_ellipse_xy(mu_Y, Sigma_Y, n_std=2.0)
+axR.plot(ex2, ey2, color=MAPPED, ls="--", lw=1.6)
+axR.scatter([mu_Y[0]], [mu_Y[1]], color=ACCENT, s=80, edgecolor="white", zorder=5)
+axR.set_title(r"After: mean $A\mu+b$, covariance $A\Sigma A^\top$")
+axR.set_xlabel("$y_1$"); axR.set_ylabel("$y_2$"); axR.set_aspect("equal")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the shift $\mathbf b$ drop out of the covariance but not the mean?"* Because
+the mean records *location* and the covariance records *spread about that location*.
+Sliding a cloud changes its location (so $\mathbf b$ shows up in the mean) but leaves every
+point's distance from the center unchanged (so $\mathbf b$ cannot affect the spread). When
+we center to compute covariance, the shift cancels against itself — you will see it cancel
+explicitly in @eq-b-cancels. This is the multivariate echo of $\operatorname{Var}(X+c) =
+\operatorname{Var}(X)$ from [PROB-6].
+:::
+
+# The formal development {#sec-formal}
+
+## What we are operating on: notation, fixed on the page {#sec-notation}
+
+We work with a **random vector**, the object built in [PROB-17]. We restate every symbol so
+nothing is implicit.
+
+::: {#def-random-vector}
+**Definition (random vector, mean vector, covariance matrix).** A **random vector** is a
+column of $d$ random variables stacked together,
+$$
+\mathbf X = \begin{pmatrix} X_1 \\ X_2 \\ \vdots \\ X_d \end{pmatrix},
+$$
+each $X_i$ a scalar random variable on the same sample space. Its **mean vector** is the
+column of component means,
+$$
+\boldsymbol\mu \;=\; E[\mathbf X] \;=\;
+\begin{pmatrix} E[X_1] \\ \vdots \\ E[X_d] \end{pmatrix},
+$$
+i.e. expectation is applied **component by component**. Its **covariance matrix** is the
+$d\times d$ matrix
+$$
+\boldsymbol\Sigma \;=\; \operatorname{Cov}(\mathbf X)
+\;=\; E\!\big[(\mathbf X-\boldsymbol\mu)(\mathbf X-\boldsymbol\mu)^\top\big],
+$$
+whose $(i,j)$ entry is $\operatorname{Cov}(X_i,X_j)=E[(X_i-\mu_i)(X_j-\mu_j)]$ — variances
+$\operatorname{Var}(X_i)$ on the diagonal ($i=j$) and covariances off it.
+:::
+
+Two pieces of that definition deserve a slow line, because the whole article rides on them.
+
+**Why expectation is "component by component."** The expectation of a vector is *defined*
+to be the vector of expectations — there is no other sensible meaning, since the only
+arithmetic we have on $\mathbf X$ is done coordinate by coordinate. We will use this
+together with one fact imported from linear algebra: matrix–vector multiplication produces
+each output coordinate as a *sum* of input coordinates times fixed numbers. That is the
+only property of matrices we need, and we state it explicitly now.
+
+::: {#def-matrix-row}
+**Definition (the one matrix fact we use).** If $A$ is an $m\times d$ matrix with entries
+$A_{ki}$ and $\mathbf X$ is a $d$-vector, then $A\mathbf X$ is the $m$-vector whose $k$-th
+component is
+$$
+(A\mathbf X)_k \;=\; \sum_{i=1}^{d} A_{ki}\,X_i .
+$$
+That is the *definition* of matrix–vector multiplication: each output coordinate is a
+fixed-weighted sum of the input coordinates. Everything matrix-shaped below is built from
+this one rule and the corresponding rule for a matrix product, $(AB)_{kj}=\sum_i
+A_{ki}B_{ij}$.
+:::
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+We use matrices *operationally* — the multiplication rule of @def-matrix-row, the transpose
+$(AB)^\top = B^\top A^\top$, and (in @sec-whitening) the eigendecomposition of a symmetric
+matrix. These are notation and mechanics, and we manipulate them in full on the page. The
+linear-algebra **theory** that explains *why* a symmetric matrix has an eigendecomposition,
+what positive-definiteness means geometrically, and how the singular value decomposition
+generalizes all this, is owned by the **Geometry of Data** track. We import the mechanics
+here so the probability argument can run end to end; we do not re-derive linear algebra.
+:::
+
+The map we study is the **affine map** (a linear part plus a constant shift):
+$$
+\mathbf Y \;=\; A\mathbf X + \mathbf b ,
+$$ {#eq-map}
+where $A$ is a **fixed, non-random** $m\times d$ matrix and $\mathbf b$ is a **fixed,
+non-random** $m$-vector. "Fixed" is doing heavy lifting: $A$ and $\mathbf b$ carry no
+randomness, so they slide outside any expectation, exactly as a constant does in the scalar
+linearity rule $E[aX+c]=aE[X]+c$. The output $\mathbf Y$ is an $m$-vector — note $m$ need
+not equal $d$; a linear map can change the dimension (a row vector $A$ collapses $\mathbf X$
+to a single number, the case in @sec-scalar).
+
+## A two-minute refresher: linearity of expectation, in vector form {#sec-linearity-refresher}
+
+The scalar tool is **linearity of expectation**, proved in [PROB-5]: for scalar random
+variables and fixed numbers $a, c$,
+$$
+E[aX + c] = a\,E[X] + c, \qquad E[X_1 + X_2] = E[X_1] + E[X_2],
+$$ {#eq-scalar-linearity}
+and crucially this holds *whether or not the variables are independent* — it is a property
+of summation, not of independence. We need exactly the second form, additivity, lifted to
+vectors. Because vector expectation is component-wise (@def-random-vector), additivity is
+inherited coordinate by coordinate: if $\mathbf U$ and $\mathbf V$ are random vectors of the
+same length, then the $k$-th component of $E[\mathbf U+\mathbf V]$ is
+$E[U_k+V_k]=E[U_k]+E[V_k]$ by @eq-scalar-linearity, which is the $k$-th component of
+$E[\mathbf U]+E[\mathbf V]$. Since this holds for every $k$,
+$$
+E[\mathbf U + \mathbf V] = E[\mathbf U] + E[\mathbf V].
+$$ {#eq-vector-additivity}
+That is the only expectation property the mean rule needs.
+
+## The mean rule: $E[A\mathbf X + \mathbf b]=A\boldsymbol\mu+\mathbf b$ {#sec-mean-rule}
+
+::: {#thm-mean}
+**Theorem (mean of a linear transform).** For a random vector $\mathbf X$ with
+$E[\mathbf X]=\boldsymbol\mu$, a fixed $m\times d$ matrix $A$, and a fixed $m$-vector
+$\mathbf b$,
+$$
+E[A\mathbf X + \mathbf b] \;=\; A\boldsymbol\mu + \mathbf b .
+$$ {#eq-mean-rule}
+:::
+
+::: {.proof}
+We prove it one output coordinate at a time, using only @def-matrix-row and
+@eq-scalar-linearity, then reassemble. Fix an output index $k\in\{1,\dots,m\}$. By
+@def-matrix-row the $k$-th component of $A\mathbf X+\mathbf b$ is
+$$
+(A\mathbf X + \mathbf b)_k \;=\; \sum_{i=1}^{d} A_{ki} X_i \;+\; b_k .
+$$
+Take the (scalar) expectation of this single coordinate. Expectation is linear
+(@eq-scalar-linearity): it passes through the finite sum, the fixed numbers $A_{ki}$ pull
+out front, and the fixed constant $b_k$ comes straight through:
+$$
+E\!\left[\sum_{i=1}^{d} A_{ki} X_i + b_k\right]
+= \sum_{i=1}^{d} A_{ki}\,E[X_i] + b_k
+= \sum_{i=1}^{d} A_{ki}\,\mu_i + b_k .
+$$
+Here we used $E[X_i]=\mu_i$, the $i$-th component of $\boldsymbol\mu$ from
+@def-random-vector. Now read the right-hand side: $\sum_i A_{ki}\mu_i$ is, by
+@def-matrix-row applied to the vector $\boldsymbol\mu$, exactly $(A\boldsymbol\mu)_k$. So
+$$
+\big(E[A\mathbf X + \mathbf b]\big)_k = (A\boldsymbol\mu)_k + b_k = (A\boldsymbol\mu + \mathbf b)_k .
+$$
+This holds for every coordinate $k$, and two vectors equal in every coordinate are the same
+vector. Therefore $E[A\mathbf X+\mathbf b]=A\boldsymbol\mu+\mathbf b$. $\qquad\blacksquare$
+:::
+
+That is the entire mean rule: linearity of expectation, applied in each coordinate, then
+repackaged. Notice we never assumed anything about the components of $\mathbf X$ — no
+independence, no particular distribution. The mean rule is as universal as linearity of
+expectation itself, which is to say *always true*.
+
+::: {.callout-tip title="You might be asked"}
+*"Does the mean rule need the components of $\mathbf X$ to be independent, or normal, or
+anything?"* No. It is pure linearity of expectation, and linearity holds for any random
+variables whose means exist — correlated, dependent, any distribution. The only requirement
+is that the means $\mu_i$ are finite (an integral or sum that converges; [PROB-5] shows a
+heavy-tailed case where it does not). This unconditional universality is exactly why the
+mean rule is so heavily used and so rarely worried about.
+:::
+
+## A refresher on covariance, and the matrix form we will need {#sec-cov-refresher}
+
+The covariance rule needs more care, so we set up the centered vector first. Define the
+**centered** random vector
+$$
+\tilde{\mathbf X} \;=\; \mathbf X - \boldsymbol\mu ,
+$$ {#eq-centered}
+the deviation of $\mathbf X$ from its mean. By @def-random-vector the covariance matrix is
+$\boldsymbol\Sigma = E[\tilde{\mathbf X}\,\tilde{\mathbf X}^\top]$. We must be completely
+explicit about what the **outer product** $\tilde{\mathbf X}\,\tilde{\mathbf X}^\top$ is,
+because the whole sandwich comes from it. A column $d$-vector times a row $d$-vector is a
+$d\times d$ matrix whose $(i,j)$ entry is the product of the $i$-th entry of the column and
+the $j$-th entry of the row:
+$$
+\big(\tilde{\mathbf X}\,\tilde{\mathbf X}^\top\big)_{ij}
+= \tilde X_i\,\tilde X_j = (X_i-\mu_i)(X_j-\mu_j).
+$$
+Taking expectations entry by entry,
+$$
+\boldsymbol\Sigma_{ij}
+= E[(X_i-\mu_i)(X_j-\mu_j)] = \operatorname{Cov}(X_i,X_j),
+$$ {#eq-Sigma-entries}
+which recovers exactly the definition. The reason we write covariance as the expectation of
+an *outer product* — rather than as a table of pairwise covariances — is that the outer
+product is what plays nicely with matrix multiplication: when we hit $\tilde{\mathbf X}$
+with $A$ on the left, the transpose in $\tilde{\mathbf X}^\top$ forces an $A^\top$ on the
+right, and that is the origin of the sandwich. We make that precise now.
+
+We need one more mechanical fact, the **transpose of a product**, which we state and use but
+do not re-derive (it is linear-algebra mechanics, owned by Geometry of Data): for any
+conformable matrices,
+$$
+(A\,\mathbf v)^\top = \mathbf v^\top A^\top, \qquad (AB)^\top = B^\top A^\top .
+$$ {#eq-transpose-rule}
+The intuition is that transposing reverses the order and flips each factor — the same way
+$(ab)^{-1}=b^{-1}a^{-1}$ reverses order for inverses.
+
+We also need that a fixed matrix slides out of an expectation. This is the vector version of
+"$E[aX]=aE[X]$," and we justify it rather than assert it.
+
+::: {#lem-pull-out}
+**Lemma (a constant matrix pulls out of expectation).** If $A$ is a fixed $m\times d$
+matrix and $\mathbf X$ is a random $d$-vector with finite means, then
+$$
+E[A\mathbf X] = A\,E[\mathbf X],
+$$
+and likewise for a fixed matrix multiplying on the right of a random matrix:
+$E[\mathbf Z\,C]=E[\mathbf Z]\,C$ for fixed $C$.
+:::
+
+::: {.proof}
+The left case is the linear part of @thm-mean (set $\mathbf b=\mathbf 0$): coordinate $k$
+of $A\mathbf X$ is $\sum_i A_{ki}X_i$, whose expectation is $\sum_i A_{ki}E[X_i]$ by scalar
+linearity, which is coordinate $k$ of $A\,E[\mathbf X]$. For the right case, let $\mathbf Z$
+be a random matrix with $(k,\ell)$ entry $Z_{k\ell}$ and $C$ fixed. The $(k,j)$ entry of
+$\mathbf Z C$ is $\sum_\ell Z_{k\ell}C_{\ell j}$; its expectation is $\sum_\ell
+E[Z_{k\ell}]C_{\ell j}$ by scalar linearity (the $C_{\ell j}$ are fixed), which is the
+$(k,j)$ entry of $E[\mathbf Z]\,C$. Equal in every entry, hence equal. $\qquad\blacksquare$
+:::
+
+## The covariance rule: $\operatorname{Cov}(A\mathbf X + \mathbf b)=A\boldsymbol\Sigma A^\top$ {#sec-cov-rule}
+
+This is the headline result — the single identity [REGR-6] consumes by name. We build it
+slowly.
+
+::: {#thm-cov}
+**Theorem (covariance of a linear transform).** For a random vector $\mathbf X$ with
+covariance matrix $\boldsymbol\Sigma$, a fixed $m\times d$ matrix $A$, and a fixed
+$m$-vector $\mathbf b$,
+$$
+\operatorname{Cov}(A\mathbf X + \mathbf b) \;=\; A\,\boldsymbol\Sigma\,A^\top .
+$$ {#eq-cov-rule}
+In particular the shift $\mathbf b$ does not appear.
+:::
+
+::: {.proof}
+Write $\mathbf Y = A\mathbf X+\mathbf b$. By the definition of a covariance matrix
+(@def-random-vector) applied to $\mathbf Y$,
+$$
+\operatorname{Cov}(\mathbf Y)
+= E\!\big[(\mathbf Y - E[\mathbf Y])(\mathbf Y - E[\mathbf Y])^\top\big].
+$$
+So we need the *centered* version of $\mathbf Y$. We already know its mean: by @thm-mean,
+$E[\mathbf Y]=A\boldsymbol\mu+\mathbf b$. Subtract it from $\mathbf Y=A\mathbf X+\mathbf b$:
+$$
+\mathbf Y - E[\mathbf Y]
+= (A\mathbf X + \mathbf b) - (A\boldsymbol\mu + \mathbf b)
+= A\mathbf X - A\boldsymbol\mu + \underbrace{\mathbf b - \mathbf b}_{=\,\mathbf 0}
+= A(\mathbf X - \boldsymbol\mu) = A\,\tilde{\mathbf X}.
+$$ {#eq-b-cancels}
+There is the promised cancellation: **the shift $\mathbf b$ subtracts against the $\mathbf
+b$ inside its own mean and is gone.** Centering kills constants — the multivariate echo of
+$\operatorname{Var}(X+c)=\operatorname{Var}(X)$. What remains is the centered input
+$\tilde{\mathbf X}=\mathbf X-\boldsymbol\mu$ from @eq-centered, multiplied by $A$.
+
+Now substitute $\mathbf Y - E[\mathbf Y]=A\tilde{\mathbf X}$ into the covariance definition.
+The transpose of the second factor is $(A\tilde{\mathbf X})^\top=\tilde{\mathbf X}^\top
+A^\top$ by the transpose-of-a-product rule @eq-transpose-rule:
+$$
+\operatorname{Cov}(\mathbf Y)
+= E\!\big[(A\tilde{\mathbf X})(A\tilde{\mathbf X})^\top\big]
+= E\!\big[A\,\tilde{\mathbf X}\,\tilde{\mathbf X}^\top A^\top\big].
+$$
+Inside the expectation sits $A\,(\tilde{\mathbf X}\tilde{\mathbf X}^\top)\,A^\top$: a fixed
+matrix $A$ on the *left*, a random matrix $\tilde{\mathbf X}\tilde{\mathbf X}^\top$ in the
+*middle*, a fixed matrix $A^\top$ on the *right*. By @lem-pull-out, fixed matrices slide out
+of the expectation on whichever side they sit — $A$ pulls out left, $A^\top$ pulls out
+right:
+$$
+\operatorname{Cov}(\mathbf Y)
+= A\;E\!\big[\tilde{\mathbf X}\,\tilde{\mathbf X}^\top\big]\;A^\top .
+$$
+The middle expectation is, by @def-random-vector and @eq-Sigma-entries, precisely the
+covariance matrix $\boldsymbol\Sigma$ of $\mathbf X$. Therefore
+$$
+\operatorname{Cov}(A\mathbf X + \mathbf b) = A\,\boldsymbol\Sigma\,A^\top . \qquad\blacksquare
+$$
+:::
+
+Read the proof back for *where each piece of the formula came from*, because that is what
+makes it memorable rather than memorized:
+
+- **The $A$ on the left** is the $A$ that multiplied $\mathbf X$ in the map.
+- **The $A^\top$ on the right** is forced by the transpose in the covariance definition: a
+  covariance is an outer product $(\cdot)(\cdot)^\top$, and transposing $A\tilde{\mathbf
+  X}$ flips $A$ to $A^\top$ and sends it to the other side (@eq-transpose-rule).
+- **The shift $\mathbf b$ is absent** because it cancelled in @eq-b-cancels when we
+  centered.
+
+So the sandwich is not arbitrary. The two $A$'s are the two centered factors of a
+covariance, each carrying its own $A$, with a transpose between them.
+
+::: {.callout-tip title="You might be asked"}
+*"Where did the 'square' in $\operatorname{Var}(aX)=a^2\operatorname{Var}(X)$ go in the
+matrix version?"* It became the *two separate appearances* of $A$, one on each side. In the
+scalar case both factors of the covariance carry the same number $a$, so they collapse into
+$a\cdot a=a^2$. In the matrix case the two factors carry $A$ and $A^\top$ (the transpose
+appearing because of the outer-product structure), and they cannot collapse into a single
+"$A^2$" because $A\boldsymbol\Sigma A^\top \neq A^2\boldsymbol\Sigma$ in general. So the
+matrix generalization of "$a^2$" is the sandwich $A(\cdot)A^\top$, and recognizing that is
+the single most useful thing to carry out of this article. We confirm the exact scalar
+reduction next in @sec-scalar.
+:::
+
+## Recovering the scalar special cases {#sec-scalar}
+
+A new formula earns trust by reproducing the ones you already know. Two checks.
+
+**One row of $A$: the variance of a linear combination.** Take $A$ to be a single row
+$\mathbf a^\top=(a_1,\dots,a_d)$ and $\mathbf b=0$, so $\mathbf Y$ is the *scalar*
+$\mathbf a^\top\mathbf X=\sum_i a_i X_i$ — a weighted combination of the components. The
+covariance rule @eq-cov-rule gives a $1\times 1$ matrix, i.e. an ordinary number:
+$$
+\operatorname{Var}(\mathbf a^\top\mathbf X) = \mathbf a^\top\boldsymbol\Sigma\,\mathbf a .
+$$ {#eq-quadratic-form}
+Let us confirm this *is* the variance-of-a-sum rule from [PROB-7], not a new claim. Expand
+the quadratic form using @def-matrix-row twice (once for $\boldsymbol\Sigma\mathbf a$, once
+for the outer dot product):
+$$
+\mathbf a^\top\boldsymbol\Sigma\,\mathbf a
+= \sum_{i=1}^d\sum_{j=1}^d a_i\,\boldsymbol\Sigma_{ij}\,a_j
+= \sum_{i=1}^d\sum_{j=1}^d a_i a_j\operatorname{Cov}(X_i,X_j) ,
+$$
+using @eq-Sigma-entries for $\boldsymbol\Sigma_{ij}$. Split the double sum into its
+diagonal ($i=j$, where $\operatorname{Cov}(X_i,X_i)=\operatorname{Var}(X_i)$) and
+off-diagonal terms, and note the off-diagonal terms pair up symmetrically
+($\operatorname{Cov}(X_i,X_j)=\operatorname{Cov}(X_j,X_i)$, so the $(i,j)$ and $(j,i)$
+terms are equal):
+$$
+\mathbf a^\top\boldsymbol\Sigma\,\mathbf a
+= \sum_{i=1}^d a_i^2\operatorname{Var}(X_i)
+\;+\; 2\!\!\sum_{1\le i<j\le d}\!\! a_i a_j\operatorname{Cov}(X_i,X_j) .
+$$
+For $d=2$ this is exactly $\operatorname{Var}(a_1X_1+a_2X_2)=a_1^2\operatorname{Var}(X_1)
++a_2^2\operatorname{Var}(X_2)+2a_1a_2\operatorname{Cov}(X_1,X_2)$, the identity proved by
+hand in [PROB-7]. So @eq-quadratic-form is the variance-of-a-sum rule, *for every number of
+terms at once*. This is the form the **Optimization** track (quadratic forms) and
+portfolio theory (@sec-portfolio) consume directly.
+
+**A diagonal $A$ with one entry: the scalar $a^2$ rule.** Take $d=m=1$, so $A=(a)$ is a
+single number, $\boldsymbol\Sigma=(\sigma^2)$, and @eq-cov-rule reads $a\,\sigma^2\,a^\top =
+a\sigma^2 a = a^2\sigma^2$ — the transpose of a number is itself, the two $A$'s collapse to
+$a^2$, and we recover $\operatorname{Var}(aX)=a^2\operatorname{Var}(X)$ exactly. The matrix
+rule contains the scalar rule as its smallest case.
+
+## The covariance rule guarantees a *valid* covariance matrix {#sec-psd}
+
+A covariance matrix cannot be just any matrix. From its definition it must be **symmetric**
+($\operatorname{Cov}(X_i,X_j)=\operatorname{Cov}(X_j,X_i)$) and **positive semidefinite**
+($\mathbf a^\top\boldsymbol\Sigma\mathbf a\ge 0$ for every $\mathbf a$, because that
+quantity is a variance and variances cannot be negative — exactly @eq-quadratic-form). A
+healthy worry: does the output $A\boldsymbol\Sigma A^\top$ of @eq-cov-rule still satisfy
+these? If it did not, the formula would be producing nonsense matrices. It does, and the
+proof is short and worth seeing.
+
+::: {#lem-psd}
+**Lemma (closure under the sandwich).** If $\boldsymbol\Sigma$ is symmetric positive
+semidefinite, then so is $A\boldsymbol\Sigma A^\top$ for any conformable $A$.
+:::
+
+::: {.proof}
+**Symmetry.** Transpose the product using @eq-transpose-rule (reverse order, flip each
+factor) and use that $\boldsymbol\Sigma^\top=\boldsymbol\Sigma$ (given) and
+$(A^\top)^\top=A$:
+$$
+(A\boldsymbol\Sigma A^\top)^\top
+= (A^\top)^\top\,\boldsymbol\Sigma^\top\,A^\top
+= A\,\boldsymbol\Sigma\,A^\top .
+$$
+A matrix equal to its own transpose is symmetric. **Positive semidefiniteness.** Take any
+vector $\mathbf c$ (of the output dimension $m$) and form the quadratic form, grouping the
+factors:
+$$
+\mathbf c^\top (A\boldsymbol\Sigma A^\top)\,\mathbf c
+= (A^\top\mathbf c)^\top\,\boldsymbol\Sigma\,(A^\top\mathbf c)
+= \mathbf w^\top\boldsymbol\Sigma\,\mathbf w \ge 0,
+$$
+where $\mathbf w = A^\top\mathbf c$ and the final inequality is the positive
+semidefiniteness of $\boldsymbol\Sigma$ itself (applied to the vector $\mathbf w$). Since
+this holds for every $\mathbf c$, the matrix $A\boldsymbol\Sigma A^\top$ is positive
+semidefinite. $\qquad\blacksquare$
+:::
+
+This is reassuring and also conceptually important: it says the *set of valid covariance
+matrices is closed under linear maps*. You can never accidentally leave the world of
+legitimate spreads by applying a matrix — which is exactly what you want, since
+$A\boldsymbol\Sigma A^\top$ is supposed to be the spread of a genuine random vector
+$A\mathbf X+\mathbf b$.
+
+::: {.callout-tip title="You might be asked"}
+*"When is $A\boldsymbol\Sigma A^\top$ positive *definite* (invertible), not merely
+semidefinite?"* When $A$ has full row rank and $\boldsymbol\Sigma$ is positive definite,
+because then $\mathbf w=A^\top\mathbf c=\mathbf 0$ forces $\mathbf c=\mathbf 0$, so the
+quadratic form is strictly positive for $\mathbf c\neq\mathbf 0$. It degenerates to merely
+semidefinite (singular) the moment $A$ collapses a dimension — e.g. if a row of $A$ is a
+copy of another, two outputs are perfectly correlated and the output ellipse flattens onto a
+lower-dimensional subspace. That flattening is the geometric meaning of a singular
+covariance, and it is the multivariate face of the degenerate $S_{xx}=0$ boundary in
+[REGR-1].
+:::
+
+# The geometry: how a linear map moves the covariance ellipse {#sec-geometry}
+
+The algebra is settled; now we *see* it. A covariance matrix is pictured by its **ellipse
+of constant spread** — for a $2$-D vector, the set of points at a fixed "statistical
+distance" from the mean. The shape of that ellipse is set by $\boldsymbol\Sigma$: its axes
+point along the eigenvectors of $\boldsymbol\Sigma$ and their half-lengths are proportional
+to the square roots of the eigenvalues (the eigendecomposition is linear-algebra theory,
+flagged to Geometry of Data; here we use it only to *draw*). The covariance rule
+@eq-cov-rule says the map $A$ transforms this ellipse into the ellipse of
+$A\boldsymbol\Sigma A^\top$. @fig-ellipse-decomp pulls a general $A$ apart into its three
+elementary actions so you can watch each one reshape the ellipse.
+
+```{python}
+#| label: fig-ellipse-decomp
+#| fig-cap: "How a linear map reshapes the covariance ellipse, built up one action at a time, all drawn from $A\\Sigma A^\\top$. **(a)** the original isotropic spread $\\Sigma=I$ (a circle). **(b)** a diagonal $A=\\operatorname{diag}(2,0.7)$ stretches it into an axis-aligned ellipse. **(c)** a rotation $A=R(35^\\circ)$ spins that ellipse, introducing correlation (the tilt). **(d)** a shear $A=\\bigl[\\begin{smallmatrix}1&0.8\\\\0&1\\end{smallmatrix}\\bigr]$ slants it. In every panel the ellipse is computed from the formula, never fit to data."
+def R(deg):
+    t = np.deg2rad(deg)
+    return np.array([[np.cos(t), -np.sin(t)], [np.sin(t), np.cos(t)]])
+
+I2 = np.eye(2)
+configs = [
+    ("(a) original  $\\Sigma=I$", I2),
+    ("(b) stretch  $A=\\mathrm{diag}(2,0.7)$", np.array([[2.0, 0.0], [0.0, 0.7]])),
+    ("(c) rotate  $A=R(35^\\circ)$", R(35.0) @ np.array([[2.0, 0.0], [0.0, 0.7]])),
+    ("(d) shear", np.array([[1.0, 0.8], [0.0, 1.0]]) @ R(35.0) @ np.array([[2.0, 0.0], [0.0, 0.7]])),
+]
+fig, axes = plt.subplots(1, 4, figsize=(11.0, 3.0))
+origin = np.zeros(2)
+for ax, (title, A) in zip(axes, configs):
+    Sig = A @ I2 @ A.T
+    ex, ey = cov_ellipse_xy(origin, Sig, n_std=2.0)
+    ax.plot(ex, ey, color=MAPPED, lw=2.0)
+    # draw the eigen-axes to show the principal directions
+    vals, vecs = np.linalg.eigh(Sig)
+    for k in range(2):
+        v = vecs[:, k] * 2.0 * np.sqrt(vals[k])
+        ax.plot([0, v[0]], [0, v[1]], color=CLOUD, lw=1.4)
+    ax.set_title(title, fontsize=9)
+    ax.set_xlim(-5, 5); ax.set_ylim(-5, 5); ax.set_aspect("equal")
+    ax.axhline(0, color=GREY, lw=0.6); ax.axvline(0, color=GREY, lw=0.6)
+plt.tight_layout()
+```
+
+The figure carries the conceptual headline of the article: **the covariance matrix and the
+ellipse are the same information, and the matrix $A$ does to the ellipse exactly what it
+does to any shape — stretch, rotate, shear.** Off-diagonal covariance is *tilt*. A
+correlation appears precisely when the ellipse is not aligned with the axes, and that
+tilt is introduced by the rotational part of $A$. This is why, in @sec-whitening, we will
+be able to *remove* correlation by applying the right $A$: undo the tilt and the stretch,
+and the ellipse becomes a circle — a covariance matrix equal to the identity.
+
+# The Gaussian is closed under linear maps {#sec-gaussian-closure}
+
+So far we have tracked only the mean and the covariance — the first two moments — and for a
+general $\mathbf X$ those two summaries do *not* pin down the whole distribution. There is
+one family where they do, and where linear maps are especially clean: the **multivariate
+normal**. The bell curve introduced in [PROB-13], lifted to vectors in [PROB-17], has the
+remarkable property that a linear map of a Gaussian is *again* a Gaussian — so for it the
+two formulas of this article describe the entire transformed distribution, not just its
+first two moments.
+
+::: {#thm-gaussian-closure}
+**Theorem (closure of the multivariate normal under affine maps).** If $\mathbf X \sim
+\mathcal N(\boldsymbol\mu,\boldsymbol\Sigma)$ (multivariate normal with mean vector
+$\boldsymbol\mu$ and covariance $\boldsymbol\Sigma$), $A$ is a fixed $m\times d$ matrix, and
+$\mathbf b$ a fixed $m$-vector, then
+$$
+A\mathbf X + \mathbf b \;\sim\; \mathcal N\!\big(A\boldsymbol\mu + \mathbf b,\; A\boldsymbol\Sigma A^\top\big).
+$$
+The mean and covariance are forced by @thm-mean and @thm-cov; the content of *this* theorem
+is that the result is still **normal**.
+:::
+
+We do not give the full density-level proof here — it rests on the moment generating
+function / characteristic function machinery that is the subject of [PROB-20], which owns
+the transform tools and *will* prove this closure cleanly as one of its showcase results.
+But we can give the complete logical chain so the claim is not left dangling, and flag the
+one imported ingredient.
+
+::: {.proof}
+**(Chain, with the transform fact imported from [PROB-20].)** The defining property of the
+multivariate normal that [PROB-20] establishes is its characteristic function: $\mathbf X
+\sim\mathcal N(\boldsymbol\mu,\boldsymbol\Sigma)$ if and only if, for every fixed vector
+$\mathbf t$,
+$$
+E\!\big[e^{\,i\,\mathbf t^\top \mathbf X}\big]
+= \exp\!\Big(i\,\mathbf t^\top\boldsymbol\mu - \tfrac12\,\mathbf t^\top\boldsymbol\Sigma\,\mathbf t\Big).
+$$
+(This single formula encodes the entire distribution; [PROB-20] derives it and proves that
+the characteristic function determines the distribution uniquely — the one fact we import.)
+Now compute the characteristic function of $\mathbf Y=A\mathbf X+\mathbf b$ at an arbitrary
+$\mathbf s$, moving the fixed shift out and regrouping the exponent with the transpose rule
+@eq-transpose-rule:
+$$
+E\!\big[e^{\,i\,\mathbf s^\top \mathbf Y}\big]
+= E\!\big[e^{\,i\,\mathbf s^\top (A\mathbf X + \mathbf b)}\big]
+= e^{\,i\,\mathbf s^\top\mathbf b}\;E\!\big[e^{\,i\,(A^\top\mathbf s)^\top \mathbf X}\big].
+$$
+The remaining expectation is the characteristic function of $\mathbf X$ evaluated at the
+vector $\mathbf t = A^\top\mathbf s$. Substitute it:
+$$
+= e^{\,i\,\mathbf s^\top\mathbf b}\;
+\exp\!\Big(i\,(A^\top\mathbf s)^\top\boldsymbol\mu
+ - \tfrac12\,(A^\top\mathbf s)^\top\boldsymbol\Sigma\,(A^\top\mathbf s)\Big).
+$$
+Simplify each piece with $(A^\top\mathbf s)^\top = \mathbf s^\top A$: the linear part of the
+exponent is $i\,\mathbf s^\top\mathbf b + i\,\mathbf s^\top A\boldsymbol\mu = i\,\mathbf
+s^\top(A\boldsymbol\mu+\mathbf b)$, and the quadratic part is $-\tfrac12\,\mathbf
+s^\top(A\boldsymbol\Sigma A^\top)\mathbf s$. Hence
+$$
+E\!\big[e^{\,i\,\mathbf s^\top \mathbf Y}\big]
+= \exp\!\Big(i\,\mathbf s^\top(A\boldsymbol\mu+\mathbf b)
+ - \tfrac12\,\mathbf s^\top (A\boldsymbol\Sigma A^\top)\,\mathbf s\Big).
+$$
+This is *exactly* the characteristic function of a $\mathcal N(A\boldsymbol\mu+\mathbf b,\,
+A\boldsymbol\Sigma A^\top)$ distribution. Because the characteristic function determines the
+distribution uniquely (the imported [PROB-20] fact), $\mathbf Y$ has that distribution.
+$\qquad\blacksquare$
+:::
+
+@fig-gaussian-closure makes the closure visible: a Gaussian cloud mapped by $A$ stays a
+Gaussian cloud (elliptical, with a single mode), and even projecting it down to one
+dimension yields a univariate bell curve whose mean and variance match
+$A\boldsymbol\mu+\mathbf b$ and $A\boldsymbol\Sigma A^\top$.
+
+```{python}
+#| label: fig-gaussian-closure
+#| fig-cap: "Closure of the Gaussian under a linear map. **Left:** a sample from $\\mathbf X\\sim\\mathcal N(\\boldsymbol\\mu,\\boldsymbol\\Sigma)$ with its 2-SD ellipse. **Middle:** $\\mathbf Y=A\\mathbf X$ is still elliptical and unimodal -- still Gaussian -- with ellipse $A\\Sigma A^\\top$. **Right:** the linear combination $w=\\mathbf a^\\top\\mathbf X$ (a 1-D projection) is a univariate normal; the curve is the $\\mathcal N(\\mathbf a^\\top\\boldsymbol\\mu,\\,\\mathbf a^\\top\\Sigma\\mathbf a)$ density predicted by the rules, overlaid on the histogram of the projected sample."
+rng = np.random.default_rng(11)
+mu = np.array([0.0, 0.0])
+Sigma = np.array([[2.0, 1.1], [1.1, 1.0]])
+# a genuine matrix square root via eigendecomposition, to SAMPLE a known Gaussian
+vals, vecs = np.linalg.eigh(Sigma)
+Lroot = vecs @ np.diag(np.sqrt(vals)) @ vecs.T
+Z = rng.normal(size=(2, 3000))
+X = mu[:, None] + Lroot @ Z
+
+A = np.array([[1.0, -0.6], [0.4, 1.2]])
+Y = A @ X
+Sigma_Y = A @ Sigma @ A.T
+
+a = np.array([1.0, -1.0])               # projection direction
+w = a @ X
+mean_w = a @ mu
+var_w = a @ Sigma @ a
+
+fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(11.2, 3.4))
+ax1.scatter(X[0], X[1], s=6, color=CLOUD, alpha=0.4)
+ex, ey = cov_ellipse_xy(mu, Sigma, 2.0)
+ax1.plot(ex, ey, color=CLOUD, lw=1.8)
+ax1.set_title(r"$\mathbf X\sim\mathcal N(\mu,\Sigma)$"); ax1.set_aspect("equal")
+ax1.set_xlabel("$x_1$"); ax1.set_ylabel("$x_2$")
+
+ax2.scatter(Y[0], Y[1], s=6, color=MAPPED, alpha=0.4)
+ex2, ey2 = cov_ellipse_xy(A @ mu, Sigma_Y, 2.0)
+ax2.plot(ex2, ey2, color=MAPPED, lw=1.8)
+ax2.set_title(r"$\mathbf Y=A\mathbf X$ (still Gaussian)"); ax2.set_aspect("equal")
+ax2.set_xlabel("$y_1$"); ax2.set_ylabel("$y_2$")
+
+ax3.hist(w, bins=40, density=True, color=GREY, alpha=0.55)
+grid = np.linspace(w.min(), w.max(), 200)
+dens = np.exp(-0.5 * (grid - mean_w) ** 2 / var_w) / np.sqrt(2 * np.pi * var_w)
+ax3.plot(grid, dens, color=ACCENT, lw=2.2,
+         label=fr"$\mathcal N({mean_w:.2f},\,{var_w:.2f})$")
+ax3.set_title(r"$w=\mathbf a^\top\mathbf X$ (univariate normal)")
+ax3.set_xlabel("$w$"); ax3.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**Closure is a property of the *normal* family, not of linear maps in general.** The mean
+rule @eq-mean-rule and covariance rule @eq-cov-rule hold for *any* random vector with finite
+moments — but the *distributional* closure of @thm-gaussian-closure holds only because the
+Gaussian is determined by its first two moments. For a non-Gaussian $\mathbf X$, $A\mathbf
+X+\mathbf b$ has mean $A\boldsymbol\mu+\mathbf b$ and covariance $A\boldsymbol\Sigma A^\top$
+(those are always right), but its *shape* can change completely: a sum of independent
+uniforms is not uniform, it bends toward a bell (that bending, taken to the limit, is the
+Central Limit Theorem, owned by the Inference track). Do not silently assume the output is
+the same distributional family as the input unless you started Gaussian.
+:::
+
+# The whitening transform: using the formula to *manufacture* a covariance {#sec-whitening}
+
+So far we have *computed* the covariance of an output. Now we run the formula in reverse:
+*choose* $A$ to make the output covariance be whatever we want — specifically, the identity.
+This is **whitening** (or sphering), and it is the single most useful application of
+@eq-cov-rule. It is the engine of generalized least squares ([REGR-11]) and of the
+preprocessing step that lets correlated features be treated as if they were independent.
+
+The goal: given $\mathbf X$ with covariance $\boldsymbol\Sigma$ (assume positive definite,
+so it is invertible and has an invertible square root), find a matrix $W$ so that $\mathbf
+Z = W\mathbf X$ has $\operatorname{Cov}(\mathbf Z)=I$ — uncorrelated components, each of unit
+variance. By the covariance rule @eq-cov-rule, $\operatorname{Cov}(\mathbf Z)=W\boldsymbol
+\Sigma W^\top$, so we need
+$$
+W\,\boldsymbol\Sigma\,W^\top = I .
+$$ {#eq-whitening-goal}
+We must produce a $W$ solving this. We use one imported tool, the **symmetric matrix square
+root**, and we are explicit about what it is and that it is imported.
+
+::: {.callout-note title="The one imported ingredient"}
+Because $\boldsymbol\Sigma$ is symmetric and positive definite, linear algebra (owned by
+**Geometry of Data**) guarantees it can be written $\boldsymbol\Sigma = V\Lambda V^\top$
+with $V$ orthogonal ($V^\top V = I$) and $\Lambda$ diagonal with **positive** entries (the
+eigenvalues). From this one defines the **inverse square root**
+$$
+\boldsymbol\Sigma^{-1/2} := V\,\Lambda^{-1/2}\,V^\top,
+\qquad \Lambda^{-1/2} = \operatorname{diag}\!\big(\lambda_1^{-1/2},\dots,\lambda_d^{-1/2}\big),
+$$
+which is itself symmetric ($(\boldsymbol\Sigma^{-1/2})^\top = \boldsymbol\Sigma^{-1/2}$,
+since $V\Lambda^{-1/2}V^\top$ transposed is itself) and satisfies
+$\boldsymbol\Sigma^{-1/2}\boldsymbol\Sigma\,\boldsymbol\Sigma^{-1/2} = I$. We import the
+*existence* of this decomposition; we verify the whitening identity from it ourselves
+below.
+:::
+
+Take $W = \boldsymbol\Sigma^{-1/2}$. We check it whitens, using only @eq-cov-rule, the
+symmetry of $\boldsymbol\Sigma^{-1/2}$, and the property
+$\boldsymbol\Sigma^{-1/2}\boldsymbol\Sigma\,\boldsymbol\Sigma^{-1/2}=I$ just stated:
+$$
+\operatorname{Cov}(\boldsymbol\Sigma^{-1/2}\mathbf X)
+= \boldsymbol\Sigma^{-1/2}\,\boldsymbol\Sigma\,(\boldsymbol\Sigma^{-1/2})^\top
+= \boldsymbol\Sigma^{-1/2}\,\boldsymbol\Sigma\,\boldsymbol\Sigma^{-1/2}
+= I .
+$$
+The middle step replaced $(\boldsymbol\Sigma^{-1/2})^\top$ with
+$\boldsymbol\Sigma^{-1/2}$ (symmetry), and the last step is the defining property of the
+inverse square root. So
+$$
+\boxed{\;\mathbf Z = \boldsymbol\Sigma^{-1/2}\,(\mathbf X - \boldsymbol\mu)
+\quad\text{has}\quad E[\mathbf Z]=\mathbf 0,\;\;\operatorname{Cov}(\mathbf Z)=I.\;}
+$$ {#eq-whitening}
+(We also subtracted $\boldsymbol\mu$ to center, using the mean rule to send the mean to
+$\boldsymbol\Sigma^{-1/2}(\boldsymbol\mu-\boldsymbol\mu)=\mathbf 0$.) The transformed vector
+$\mathbf Z$ is "white": zero mean, unit variance in every direction, **no correlation
+between any pair of components** — a perfectly round cloud. @fig-whitening shows a
+correlated cloud being whitened into a circular one.
+
+```{python}
+#| label: fig-whitening
+#| fig-cap: "Whitening in action. **Left:** a strongly correlated cloud, $\\boldsymbol\\Sigma$ has a tilted, elongated ellipse. **Right:** after $\\mathbf Z=\\boldsymbol\\Sigma^{-1/2}(\\mathbf X-\\boldsymbol\\mu)$ the cloud is a unit circle -- covariance $I$, drawn from the formula. Whitening *undoes* the stretch and tilt that $\\boldsymbol\\Sigma$ encodes; it is the inverse of the reshaping in @fig-ellipse-decomp. Generalized least squares ([REGR-11]) applies exactly this map to correlated regression errors so that ordinary least squares becomes valid again."
+rng = np.random.default_rng(7)
+mu = np.array([2.0, 1.0])
+Sigma = np.array([[3.0, 2.1], [2.1, 1.8]])
+vals, vecs = np.linalg.eigh(Sigma)
+Lroot = vecs @ np.diag(np.sqrt(vals)) @ vecs.T            # a square root, to sample
+Z0 = rng.normal(size=(2, 1500))
+X = mu[:, None] + Lroot @ Z0
+
+Sig_inv_sqrt = vecs @ np.diag(vals ** -0.5) @ vecs.T       # the whitening matrix
+Zw = Sig_inv_sqrt @ (X - mu[:, None])
+Sigma_Z = Sig_inv_sqrt @ Sigma @ Sig_inv_sqrt.T            # should be ~ I
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.0))
+axL.scatter(X[0], X[1], s=8, color=CLOUD, alpha=0.4)
+ex, ey = cov_ellipse_xy(mu, Sigma, 2.0)
+axL.plot(ex, ey, color=CLOUD, lw=1.8)
+axL.set_title(r"Correlated: $\Sigma$ tilted ellipse"); axL.set_aspect("equal")
+axL.set_xlabel("$x_1$"); axL.set_ylabel("$x_2$")
+
+axR.scatter(Zw[0], Zw[1], s=8, color=MAPPED, alpha=0.4)
+ex2, ey2 = cov_ellipse_xy(np.zeros(2), Sigma_Z, 2.0)
+axR.plot(ex2, ey2, color=MAPPED, lw=1.8)
+axR.set_title(r"Whitened: $\mathrm{Cov}=I$ (a circle)"); axR.set_aspect("equal")
+axR.set_xlabel("$z_1$"); axR.set_ylabel("$z_2$")
+plt.tight_layout()
+print("Covariance of the whitened vector (should be the identity):")
+print(np.round(Sigma_Z, 6))
+```
+
+The printed matrix is the identity to six decimals — the formula did exactly what
+@eq-whitening promises.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the whitening matrix unique?"* No, and this is a favorite follow-up. Any $W$ with
+$W\boldsymbol\Sigma W^\top = I$ whitens, and there are infinitely many: if $W_0$ whitens,
+so does $QW_0$ for **any** orthogonal matrix $Q$, since $(QW_0)\boldsymbol\Sigma(QW_0)^\top
+= Q(W_0\boldsymbol\Sigma W_0^\top)Q^\top = QIQ^\top = QQ^\top = I$. Geometrically: once the
+cloud is a perfect circle, you can rotate it freely and it stays a circle. The symmetric
+choice $W=\boldsymbol\Sigma^{-1/2}$ (ZCA whitening) is the unique *symmetric* one and rotates
+the data least; the choice $W=\Lambda^{-1/2}V^\top$ (PCA whitening) aligns the result with
+the principal axes. Same covariance $I$, different rotation — exactly the non-uniqueness the
+orthogonal $Q$ describes.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the two formulas on honest problems — and end on one near the edge of applicability.
+
+## Example 1 — portfolio variance: combining correlated returns {#sec-portfolio}
+
+The cleanest real use of @eq-quadratic-form is finance. Let $\mathbf X=(X_1,X_2,X_3)$ be the
+random one-period returns of three assets, with mean vector $\boldsymbol\mu$ (expected
+returns) and covariance matrix $\boldsymbol\Sigma$ (the risk model — variances on the
+diagonal, return co-movements off it). A portfolio puts weight $w_i$ in asset $i$ (the $w_i$
+sum to $1$), so its return is the *scalar* linear combination $R = \mathbf w^\top\mathbf X$.
+The investor wants two numbers: the portfolio's expected return and its risk (variance).
+Both are our formulas with $A=\mathbf w^\top$ a single row:
+$$
+E[R] = \mathbf w^\top\boldsymbol\mu, \qquad
+\operatorname{Var}(R) = \mathbf w^\top\boldsymbol\Sigma\,\mathbf w .
+$$
+
+```{python}
+#| label: fig-portfolio
+#| fig-cap: "Portfolio risk from the covariance rule. Each grey point is a random weighting of three correlated assets; its expected return $\\mathbf w^\\top\\boldsymbol\\mu$ and risk $\\sqrt{\\mathbf w^\\top\\boldsymbol\\Sigma\\mathbf w}$ are computed entirely from the two formulas of this article. The red frontier traces the lowest risk attainable at each return -- the classic mean-variance efficient frontier, which exists *only because* correlation ($\\mathrm{Cov}<0$ between assets 1 and 3 here) lets a mix be less risky than its parts. The single asset markers show that diversification sits inside, not on, the individual assets."
+rng = np.random.default_rng(20)
+mu = np.array([0.08, 0.12, 0.10])                 # expected annual returns
+sd = np.array([0.15, 0.25, 0.20])                 # annual volatilities
+corr = np.array([[1.0,  0.30, -0.40],
+                 [0.30, 1.0,   0.20],
+                 [-0.40, 0.20, 1.0 ]])
+Sigma = np.outer(sd, sd) * corr                   # covariance = D corr D
+
+# random long-only portfolios (weights >= 0, sum to 1)
+W = rng.dirichlet(np.ones(3), size=4000)
+ret = W @ mu
+risk = np.sqrt(np.einsum("ij,jk,ik->i", W, Sigma, W))   # w^T Sigma w per row
+
+# crude efficient frontier: min risk in each return bucket
+order = np.argsort(ret)
+ret_s, risk_s = ret[order], risk[order]
+bins = np.linspace(ret_s.min(), ret_s.max(), 40)
+idx = np.digitize(ret_s, bins)
+fr_ret, fr_risk = [], []
+for b in range(1, len(bins) + 1):
+    m = idx == b
+    if m.any():
+        fr_ret.append(ret_s[m].mean()); fr_risk.append(risk_s[m].min())
+
+fig, ax = plt.subplots(figsize=(6.6, 4.4))
+ax.scatter(risk, ret, s=6, color=GREY, alpha=0.35, label="random portfolios")
+ax.plot(fr_risk, fr_ret, color=MAPPED, lw=2.4, label="efficient frontier")
+for i, name in enumerate(["asset 1", "asset 2", "asset 3"]):
+    ax.scatter([sd[i]], [mu[i]], color=CLOUD, s=80, zorder=5, edgecolor="white")
+    ax.annotate(name, (sd[i], mu[i]), textcoords="offset points", xytext=(6, 4), fontsize=9)
+ax.set_xlabel(r"risk  $\sqrt{\mathbf w^\top\Sigma\,\mathbf w}$")
+ax.set_ylabel(r"expected return  $\mathbf w^\top\boldsymbol\mu$")
+ax.set_title("Mean-variance frontier from $A\\Sigma A^\\top$")
+ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The lesson is the off-diagonal: if the assets were uncorrelated, $\mathbf w^\top
+\boldsymbol\Sigma\mathbf w$ would be just $\sum_i w_i^2\sigma_i^2$ and diversification would
+only ever average risk. The *negative* covariance between assets 1 and 3 makes the
+cross-terms subtract, so a mix can be **less risky than any single asset** — the bulge of the
+frontier to the left of the asset markers. That entire phenomenon is the off-diagonal of
+$\boldsymbol\Sigma$ acting through @eq-quadratic-form; it is invisible to the variances
+alone. This is why $A\boldsymbol\Sigma A^\top$, and not a list of separate variances, is the
+right object.
+
+## Example 2 — error propagation: from polar to Cartesian coordinates {#sec-error-prop}
+
+A second honest use, from the metrology that birthed the method. A surveyor measures a
+point in **polar** coordinates: a range $r$ and a bearing $\theta$, each with measurement
+noise. The downstream computation needs **Cartesian** coordinates $x=r\cos\theta$,
+$y=r\sin\theta$. How does the measurement uncertainty propagate? The map is *not* linear —
+but for small errors it is well approximated by its linear part (the **Jacobian** matrix of
+first partial derivatives, the multivariable cousin of the single-variable derivative used
+in [PROB-4]'s change of variables). Near the measured values $(r_0,\theta_0)$,
+$$
+\begin{pmatrix} \delta x \\ \delta y \end{pmatrix}
+\approx
+\underbrace{\begin{pmatrix} \cos\theta_0 & -r_0\sin\theta_0 \\ \sin\theta_0 & r_0\cos\theta_0 \end{pmatrix}}_{J}
+\begin{pmatrix} \delta r \\ \delta\theta \end{pmatrix},
+$$
+so $\mathbf{(\delta x,\delta y)} \approx J\,\mathbf{(\delta r,\delta\theta)}$ — a linear map
+with $A=J$. The covariance rule @eq-cov-rule then propagates the polar covariance into the
+Cartesian one:
+$$
+\boldsymbol\Sigma_{xy} \approx J\,\boldsymbol\Sigma_{r\theta}\,J^\top .
+$$
+This *is* the propagation-of-error formula of every physics lab, derived as a one-line
+special case of this article's theorem.
+
+```{python}
+#| label: fig-error-prop
+#| fig-cap: "Error propagation through a coordinate change. **Left:** independent range and bearing errors -- the polar covariance is diagonal (an axis-aligned ellipse in the $r,\\theta$ plane). **Right:** mapped to Cartesian coordinates via $J\\Sigma J^\\top$, the uncertainty ellipse is *rotated and stretched*, and the once-independent errors are now correlated (the tilt). The dashed ellipse is computed from the formula; the points are a simulated sample for comparison. A larger bearing uncertainty would stretch the ellipse *along the arc*, the honest geometric meaning of angular error at range."
+rng = np.random.default_rng(1)
+r0, th0 = 50.0, np.deg2rad(35.0)
+Sig_rt = np.array([[0.8 ** 2, 0.0],
+                   [0.0, np.deg2rad(2.0) ** 2]])     # 0.8 m range SD, 2 deg bearing SD
+J = np.array([[np.cos(th0), -r0 * np.sin(th0)],
+              [np.sin(th0),  r0 * np.cos(th0)]])
+Sig_xy = J @ Sig_rt @ J.T
+
+# simulate to overlay
+vals, vecs = np.linalg.eigh(Sig_rt)
+Lr = vecs @ np.diag(np.sqrt(vals)) @ vecs.T
+d_rt = Lr @ rng.normal(size=(2, 1200))
+d_xy = J @ d_rt
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.0))
+axL.scatter(d_rt[0], np.rad2deg(d_rt[1]), s=8, color=CLOUD, alpha=0.4)
+# ellipse in (r, theta-in-degrees) space: scale the theta axis to degrees for display
+ex, ey = cov_ellipse_xy(np.zeros(2), Sig_rt, 2.0)
+axL.plot(ex, np.rad2deg(ey), color=CLOUD, ls="--", lw=1.8)
+axL.set_title(r"Polar errors: independent")
+axL.set_xlabel(r"$\delta r$ (m)"); axL.set_ylabel(r"$\delta\theta$ (deg)")
+
+axR.scatter(d_xy[0], d_xy[1], s=8, color=MAPPED, alpha=0.4)
+ex2, ey2 = cov_ellipse_xy(np.zeros(2), Sig_xy, 2.0)
+axR.plot(ex2, ey2, color=MAPPED, ls="--", lw=1.8)
+axR.set_title(r"Cartesian errors: $J\Sigma J^\top$ (correlated)")
+axR.set_xlabel(r"$\delta x$ (m)"); axR.set_ylabel(r"$\delta y$ (m)"); axR.set_aspect("equal")
+plt.tight_layout()
+```
+
+Two honest notes. First, this is the *approximate* application — the map is nonlinear and we
+linearized; the covariance rule is exact only for the linear approximation, and the
+approximation degrades as the errors grow. That is the boundary, and it leads directly into
+the next example. Second, the propagated covariance is correlated even though the inputs were
+independent — the Jacobian's rotation introduced the tilt, exactly as $A$ did in
+@fig-ellipse-decomp.
+
+## Example 3 (edge of applicability) — when only two moments is not enough {#sec-edge}
+
+Here is the honest limit. The formulas @eq-mean-rule and @eq-cov-rule are *exactly* correct
+for any $\mathbf X$ — but they describe only the **mean and the covariance**, and for a
+non-Gaussian, non-linear, or heavy-tailed situation those two summaries can badly mislead
+about the thing you actually care about. We show two failure shapes.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "Where 'mean and covariance' stops being the whole story. **Left:** a strongly *nonlinear* map $\\,(x_1,x_2)\\mapsto(x_1,\\,x_1^2+x_2)$ turns a round Gaussian cloud into a curved boomerang; the covariance-rule ellipse (computed by linearizing at the mean, dashed) is a hopeless summary of a banana-shaped cloud -- the linear formula has no curvature to give. **Right:** a *heavy-tailed* input (a bivariate Student-$t$ with 2 degrees of freedom) has a covariance matrix that barely exists and is wildly unstable from sample to sample; the ellipse drawn from one sample's $\\Sigma$ (dashed) ignores the extreme points the tails routinely produce. In both regimes the two formulas are not *wrong*, they are *insufficient*."
+rng = np.random.default_rng(4)
+
+# Left: nonlinear map
+mu = np.array([0.0, 0.0]); Sig = np.array([[1.0, 0.0], [0.0, 1.0]])
+X = rng.normal(size=(2, 1500))
+Yx = X[0]
+Yy = X[0] ** 2 + X[1]
+# linearized Jacobian at the mean (0,0): d(x1)=[1,0], d(x1^2+x2)=[2*x1, 1] -> at 0: [0,1]
+Jlin = np.array([[1.0, 0.0], [0.0, 1.0]])
+Sig_lin = Jlin @ Sig @ Jlin.T
+
+# Right: heavy-tailed bivariate t (df=2) built as Gaussian / sqrt(chi2/df)
+df = 2
+G = rng.normal(size=(2, 1500))
+chi = rng.chisquare(df, size=1500) / df
+T = G / np.sqrt(chi)
+Sig_t_sample = np.cov(T)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.0))
+axL.scatter(Yx, Yy, s=8, color=CLOUD, alpha=0.4)
+ex, ey = cov_ellipse_xy(np.array([0.0, 1.0]), Sig_lin, 2.0)  # mean of x1^2 is 1
+axL.plot(ex, ey, color=MAPPED, ls="--", lw=2.0)
+axL.set_title("Nonlinear map: ellipse misses the curve")
+axL.set_xlabel("$y_1$"); axL.set_ylabel("$y_2$")
+
+axR.scatter(T[0], T[1], s=8, color=CLOUD, alpha=0.4)
+ex2, ey2 = cov_ellipse_xy(np.zeros(2), Sig_t_sample, 2.0)
+axR.plot(ex2, ey2, color=MAPPED, ls="--", lw=2.0)
+axR.set_title("Heavy tails: $\\Sigma$ unstable, ignores outliers")
+axR.set_xlabel("$z_1$"); axR.set_ylabel("$z_2$")
+axR.set_xlim(-12, 12); axR.set_ylim(-12, 12)
+plt.tight_layout()
+```
+
+The takeaway, stated plainly: **the two formulas are tools for the first two moments, and
+they are exact for those — but the first two moments are a complete description only for the
+Gaussian (and a faithful one for mild, nearly-linear, light-tailed situations).** When the
+map is strongly nonlinear, linearizing and applying $J\boldsymbol\Sigma J^\top$ gives an
+ellipse where the truth is a banana. When the input is heavy-tailed (a Student-$t$ with few
+degrees of freedom, [PROB-15]), the covariance may barely exist and is so sample-unstable
+that the ellipse is nearly meaningless. The honest practitioner move is to *check the
+regime first*: is the map close to linear over the spread of the inputs, and does
+$\mathbf X$ have light enough tails that $\boldsymbol\Sigma$ is a stable, representative
+summary? If yes, these formulas are the right and complete tool. If no, you reach for
+something that tracks more than two moments — full simulation (push samples through the
+actual map, no linearization), or a model that does not lean on covariance at all.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Collecting the honest boundaries, so the applicability call is one place.
+
+::: {.callout-warning title="Pitfall"}
+**The formulas are about moments, not distributions.** $E[A\mathbf X+\mathbf
+b]=A\boldsymbol\mu+\mathbf b$ and $\operatorname{Cov}(A\mathbf X+\mathbf
+b)=A\boldsymbol\Sigma A^\top$ are *unconditionally* true whenever the moments exist — no
+independence, no normality needed. But they tell you only the mean and the covariance of the
+output. They do **not** tell you its distribution unless you imported a closure fact (and the
+only clean one is the Gaussian's, @thm-gaussian-closure). Confusing "I know the output's
+covariance" with "I know the output's distribution" is the central trap.
+:::
+
+The three concrete boundaries:
+
+- **Strong nonlinearity (@sec-error-prop, @sec-edge).** Applying $A\boldsymbol\Sigma
+  A^\top$ to a nonlinear map requires linearizing (the Jacobian), and the result is only as
+  good as that linear approximation. Over large input spreads it can be badly wrong. *Reach
+  for:* Monte-Carlo propagation — push many samples through the exact map and measure the
+  output spread directly.
+- **Heavy tails / non-existent moments (@sec-edge).** If $\boldsymbol\Sigma$ barely exists
+  (Student-$t$ with low df, Cauchy with no variance at all — the divergent case flagged in
+  [PROB-5]), the formula's inputs are unstable or undefined. *Reach for:* robust scatter
+  estimates, or quantile-based descriptions of spread.
+- **Degeneracy / rank-deficiency (@sec-psd).** If $A$ collapses a dimension (rank-deficient)
+  or $\boldsymbol\Sigma$ is singular, the output covariance is singular and the cloud lives
+  on a lower-dimensional subspace — and $\boldsymbol\Sigma^{-1/2}$ for whitening does not
+  exist. *Reach for:* the pseudo-inverse / a reduced-rank treatment (Geometry of Data).
+
+::: {.callout-tip title="You might be asked"}
+*"When is the linear-transform machinery the right tool, and when not?"* The summary to be
+able to recite:
+
+- **Use it** whenever you need the mean or covariance of a *linear* (or locally-linear)
+  combination of random quantities whose first two moments are well-defined and stable:
+  portfolio risk, error propagation in measurement, the sampling covariance of a linear
+  estimator like $\hat{\boldsymbol\beta}$ in [REGR-6], any preprocessing that decorrelates
+  features (whitening, GLS). For the Gaussian it gives the *entire* output distribution.
+- **Do not lean on it** when the map is strongly nonlinear over the input spread (linearize
+  only if the curvature is mild, else simulate), when the input is heavy-tailed enough that
+  $\boldsymbol\Sigma$ is unstable or undefined, or when you need a *full distribution* of a
+  non-Gaussian output (the moments alone will not give it).
+- **The deepest caveat:** $A\boldsymbol\Sigma A^\top$ summarizes spread, not shape — it
+  cannot see skew, multimodality, or fat tails, and treating it as if it does is how
+  "two-moment" risk models miss the events that matter.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You never form
+$A\boldsymbol\Sigma A^\top$ by the double sum. In any numerical stack it is two matrix
+multiplies — `A @ Sigma @ A.T` in NumPy — and the mean is `A @ mu + b`. For *whitening*, do
+**not** literally invert $\boldsymbol\Sigma$ and take a square root by eigendecomposition in
+performance code; the numerically preferred route is a **Cholesky factorization**
+$\boldsymbol\Sigma = LL^\top$ with $L$ lower-triangular (a cheap, stable factorization),
+after which $W=L^{-1}$ whitens — because $L^{-1}\boldsymbol\Sigma(L^{-1})^\top =
+L^{-1}LL^\top L^{-\top} = I$ — and triangular solves avoid forming an explicit inverse. The
+symmetric $\boldsymbol\Sigma^{-1/2}$ of @sec-whitening is the choice when you specifically
+want the *symmetric* (minimal-rotation) whitening; the eigendecomposition that defines it is
+also what the **Geometry of Data** track uses for PCA, tying whitening and principal
+components to the same factorization. Whichever route, the *answer* is the one this article
+derived: mean $A\boldsymbol\mu+\mathbf b$, covariance $A\boldsymbol\Sigma A^\top$.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-17 *Random Vectors, Mean Vectors, and Covariance Matrices*]**,
+which built the three objects — the random vector, its mean vector $\boldsymbol\mu$, and its
+covariance matrix $\boldsymbol\Sigma$ — and established that $\boldsymbol\Sigma$ is symmetric
+and positive semidefinite via $\mathbf a^\top\boldsymbol\Sigma\mathbf a =
+\operatorname{Var}(\mathbf a^\top\mathbf X)\ge 0$. This article took those objects and asked
+what a linear map does to them, deriving the mean rule and the sandwich covariance rule from
+linearity of expectation alone. From here Movement 4 branches:
+
+- **[PROB-19 *Chebyshev's Inequality*]** — with the variance of a linear combination
+  ($\mathbf a^\top\boldsymbol\Sigma\mathbf a$) in hand, we bound how much probability can sit
+  far from the mean, and sketch why averages concentrate.
+- **[PROB-20 *Moment Generating and Characteristic Functions*]** — the transform tools that
+  *prove* the Gaussian closure we imported in @thm-gaussian-closure, and that turn sums of
+  independents into products.
+
+And the cross-track payoffs this article was built to deliver, by name:
+
+- **[REGR-6]** derives the sampling covariance $\operatorname{Var}(\hat{\boldsymbol\beta}) =
+  \sigma^2(X^\top X)^{-1}$ by writing $\hat{\boldsymbol\beta}=(X^\top X)^{-1}X^\top\mathbf y$
+  as a linear transform $A\mathbf y$ of the response and applying @eq-cov-rule — *this exact
+  identity*.
+- **[REGR-11]** (generalized least squares) whitens correlated errors with the transform of
+  @sec-whitening, turning a correlated problem back into an ordinary-least-squares one.
+- **Geometry of Data** owns the eigendecomposition, positive-definiteness theory, and matrix
+  square root we imported; the covariance matrix is the bridge — its probabilistic meaning
+  here, its spectral analysis (and PCA) there.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The propagation-of-error lineage.** Gauss's *Theoria combinationis observationum
+  erroribus minimis obnoxiae* (1823) is the origin of the variance-propagation rule that
+  @sec-error-prop is a special case of; every modern metrology guide (e.g. the *GUM*, the
+  Guide to the Expression of Uncertainty in Measurement) restates $J\boldsymbol\Sigma
+  J^\top$ as its core formula.
+- **Mean-variance portfolio theory.** Harry Markowitz, "Portfolio Selection," *Journal of
+  Finance* 7 (1952): the efficient frontier of @sec-portfolio is exactly $\min \mathbf
+  w^\top\boldsymbol\Sigma\mathbf w$ subject to a target return — a quadratic form in the
+  covariance matrix, optimized.
+- **Whitening and its cousins.** The comparison of ZCA whitening
+  ($\boldsymbol\Sigma^{-1/2}$, symmetric, minimal rotation) and PCA whitening
+  ($\Lambda^{-1/2}V^\top$) is laid out in Kessy, Lewin & Strimmer, "Optimal Whitening and
+  Decorrelation," *The American Statistician* 72 (2018) — the cleanest modern reference for
+  the non-uniqueness discussed in @sec-whitening.
+- **Open threads this article deliberately deferred.** *Why is the Gaussian the one family
+  closed under linear maps?* — the characteristic-function argument is completed in
+  [PROB-20]. *What does the eigenstructure of $\boldsymbol\Sigma$ mean, and how does the
+  matrix square root actually get computed?* — Geometry of Data. *What if the "map" is the
+  sample mean of many vectors — where does its covariance go as $n\to\infty$?* — that is the
+  multivariate Central Limit Theorem, owned by the Statistical Inference track, with the
+  shrink $\boldsymbol\Sigma/n$ falling straight out of @eq-cov-rule.

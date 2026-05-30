@@ -1,0 +1,1262 @@
+---
+title: "The Normal (Gaussian) Distribution"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE  = "#2b3a67"     # the density curve / data
+CURVE2 = "#c1121f"     # comparison curve / fitted line
+ACCENT = "#0a7d4d"     # highlights / the mean
+GREY   = "#6c757d"
+
+def normal_pdf(x, mu=0.0, sigma=1.0):
+    """The Gaussian density this article derives, used here only to draw
+    the pictures: (1/sqrt(2 pi sigma^2)) exp(-(x-mu)^2 / (2 sigma^2))."""
+    x = np.asarray(x, dtype=float)
+    z = (x - mu) / sigma
+    return np.exp(-0.5 * z * z) / (sigma * np.sqrt(2.0 * np.pi))
+```
+
+> **Where this sits in the track.** This is the fourth stop in the **distribution
+> catalog** of the Probability Foundations track. It assumes [PROB-4 *Continuous Random
+> Variables: the Probability Density Function*] for what a density *is* and how
+> $P(a\le X\le b)=\int_a^b f$ recovers probabilities; [PROB-5 *Expectation*] and
+> [PROB-6 *Variance*] for how we compute a mean and a variance from a density; and
+> [PROB-8 *Independence and the i.i.d. Sample*] for the rule that the joint density of
+> independent variables factors. We touch exactly one tool above the Calculus-I floor —
+> a single *double* integral evaluated in *polar coordinates* (the Gaussian-integral
+> trick) — and we build it on the page rather than assume it, flagging it as it arrives.
+> It **sets up** [PROB-15 *Chi-Square, Student's t, and F*], which are all manufactured
+> out of normals; [PROB-17–PROB-18 *Random Vectors* and *Linear Transforms*], where the
+> bell curve becomes the multivariate normal; and [PROB-20 *Moment Generating
+> Functions*], which re-derives several facts proved here by hand. Downstream it is
+> consumed almost everywhere: by [REGR-2] and [REGR-9] (the Gaussian error model and its
+> inference) and across the Statistical Inference track.
+
+## Abstract {.unnumbered}
+
+The normal distribution is the function
+$$
+f(x)=\frac{1}{\sqrt{2\pi\sigma^2}}\,\exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr),
+$$
+the bell curve. This article does three things and defends one claim. It **derives the
+mysterious constant $1/\sqrt{2\pi\sigma^2}$ from scratch** — the only step above the
+Calculus-I floor, the polar-coordinates evaluation of the Gaussian integral, built in
+full. It shows that $\mu$ and $\sigma^2$ really are the mean and variance, by computing
+both integrals. And it proves the one structural property that makes the normal special
+among all distributions: **an independent sum of normals is itself normal**, with means
+and variances simply adding. The single claim the article defends is that the bell curve
+is not important because it is common in nature — that story is mostly folklore — but
+because it is the **fixed point of averaging**: the shape that sums and averages of many
+independent things are dragged toward, and the shape that stays itself under the linear
+operations statistics is built from. We close on the honest boundary: its tails are so
+thin that trusting them on heavy-tailed data is one of the most expensive mistakes in
+applied work.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The normal distribution $\mathcal N(\mu,\sigma^2)$ has density proportional to
+$\exp\!\bigl(-(x-\mu)^2/2\sigma^2\bigr)$ — a smooth hump centered at $\mu$, with width
+set by $\sigma$. Two facts make it the most important distribution in statistics. First,
+**it is closed under the operations we use most**: shift it, scale it, or add independent
+copies of it, and you get another normal — the means add, the variances add, the *shape*
+never changes. Second, by the Central Limit Theorem it is the **universal limit of
+standardized sums** of independent pieces, so the moment you average data the bell curve
+appears whether or not the data themselves were ever bell-shaped. Its one liability is
+the same exponential that makes it tractable: its tails vanish so fast that it
+catastrophically under-rates rare extreme events.
+:::
+
+Everything below orbits that box. The intimidating constant out front,
+$1/\sqrt{2\pi\sigma^2}$, will look like it was handed down from a mountain; by
+@sec-gaussian-integral you will have *derived* the $\sqrt{2\pi}$ yourself, and it will be
+the only thing it could have been. The closure property — sums of normals are normal —
+will be proved in @sec-closure as the engine behind why estimators in every downstream
+track end up normal.
+
+# Why we are here: the curve that came out of *errors* {#sec-why}
+
+Keep one question in view for the whole article: **why this exact curve, and why does it
+deserve its place at the center of statistics?** Every derivation below answers a piece of
+it. If a step ever feels arbitrary, come back here.
+
+## The problem it was invented to solve
+
+The bell curve was not discovered by staring at heights or test scores. It came out of
+the same eighteenth-century problem that produced least squares (the origin story of
+[REGR-1]): astronomers and surveyors had **many noisy measurements of one quantity** —
+the position of a comet, the length of a meridian arc — that refused to agree. They needed
+a principled answer to two questions: how are these measurement *errors* distributed, and
+given the disagreeing numbers, what is the best single estimate?
+
+Abraham de Moivre stumbled on the shape first, around 1733, while doing something
+completely different: approximating the binomial distribution for large $n$. If you flip a
+fair coin $n$ times, the number of heads is $\mathrm{Binomial}(n,\tfrac12)$ (built in
+[PROB-11]); de Moivre found that for large $n$ the staircase of binomial bars is hugged by
+a smooth exponential curve. He had found the bell curve as a *limit of sums* — which, as
+we will see in @sec-why-everywhere, is exactly why it matters — but he had no framework to
+make it mean anything.
+
+Carl Friedrich Gauss gave it that meaning in 1809. He asked the inverse question: *if* the
+most natural estimate of a quantity from repeated measurements is their arithmetic
+average, what must the error distribution be? He showed the answer is forced to be
+$\exp(-(x-\mu)^2/2\sigma^2)$ — the average is the most-likely value precisely when errors
+follow this curve and no other. That is why it is called the *Gaussian*, and why it is
+welded to the method of least squares: minimizing squared error *is* finding the
+most-likely line under Gaussian noise, the equivalence we derived step by step in
+@sec-why-gaussian of [REGR-1]. Pierre-Simon Laplace then connected it to averaging in
+general, the seed of the Central Limit Theorem.
+
+So the *why* is baked into the formula from birth. The curve exists to model the scatter
+of independent errors around a true value, and its defining algebraic features — the
+*squared* deviation in the exponent, the symmetry, the single peak at $\mu$ — are the
+fingerprints of that origin. We will see each of those features fall out with a reason
+attached, never by decree.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the normal distribution common because nature loves bell curves?"* No, and saying so
+is the mark of someone who has not thought it through. Plenty of natural quantities are
+*not* normal — incomes, city sizes, file sizes, and financial returns are famously heavy-
+tailed; waiting times are skewed (the exponential and gamma of [PROB-14]); counts are
+discrete (Poisson, [PROB-12]). The normal earns its place not by describing raw data but
+by being the distribution of **averages and sums** of many independent contributions (the
+Central Limit Theorem) and by being **closed under the linear operations** statistics runs
+on. It is the distribution of *processed* data — estimates, totals, means — far more
+reliably than of *raw* data. Volunteer that distinction and you have answered the deeper
+question.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Strip the constants away and look at the heart of the curve:
+$$
+f(x)\ \propto\ \exp\!\Bigl(-\tfrac{1}{2}\Bigl(\tfrac{x-\mu}{\sigma}\Bigr)^2\Bigr).
+$$
+Read it as a story in three moves, none of which needs a symbol manipulated yet.
+
+1. **$(x-\mu)$** measures how far $x$ is from the center $\mu$. The curve only cares about
+   *distance from the center*, so it is automatically **symmetric**: $x=\mu+3$ and
+   $x=\mu-3$ get identical heights. Errors above and below the truth are equally likely.
+2. **The square, $(x-\mu)^2$**, says a deviation of size $2$ is penalized *four* times as
+   hard as a deviation of size $1$ — the same quadratic penalty that defines least squares.
+   Big errors are not just less likely, they are *disproportionately* less likely.
+3. **The $\exp(-\,\cdot\,)$** turns that growing penalty into a *shrinking* height, and it
+   shrinks **fast** — faster than any polynomial. This is the source of both the curve's
+   greatest strength (everything is finite and tractable) and its greatest danger (the
+   tails are absurdly light, @sec-failure).
+
+The role of $\sigma$ is set by the ratio $(x-\mu)/\sigma$: it is a *yardstick*. Measuring
+the deviation in units of $\sigma$ means the curve has the *same shape* for every $\sigma$,
+just stretched horizontally. Double $\sigma$ and the hump gets twice as wide; the height
+out front, $1/\sqrt{2\pi\sigma^2}$, drops to keep the total area at $1$. @fig-shapes shows
+this: change $\mu$ to slide the curve, change $\sigma$ to stretch it, and nothing else
+about its form ever changes.
+
+```{python}
+#| label: fig-shapes
+#| fig-cap: "The two parameters do exactly two things. **Left:** changing the mean $\\mu$ slides the identical bell along the axis without reshaping it. **Right:** changing the standard deviation $\\sigma$ stretches it — larger $\\sigma$ is wider and shorter (the height drops as $1/\\sigma$ to keep the enclosed area equal to $1$). Every normal curve is the same curve under a shift and a stretch."
+x = np.linspace(-8, 12, 600)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+
+for mu, c in [(0.0, CURVE), (3.0, CURVE2), (6.0, ACCENT)]:
+    axL.plot(x, normal_pdf(x, mu, 1.5), color=c, label=fr"$\mu={mu:.0f},\ \sigma=1.5$")
+axL.set_title(r"Changing $\mu$ slides the curve")
+axL.set_xlabel("$x$"); axL.set_ylabel("density $f(x)$")
+axL.legend(fontsize=8.5, framealpha=0.9)
+
+for sg, c in [(0.7, CURVE), (1.5, CURVE2), (3.0, ACCENT)]:
+    axR.plot(x, normal_pdf(x, 2.0, sg), color=c, label=fr"$\mu=2,\ \sigma={sg}$")
+axR.set_title(r"Changing $\sigma$ stretches the curve")
+axR.set_xlabel("$x$"); axR.set_ylabel("density $f(x)$")
+axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+The whole formal job of the article is now visible. We have a *shape*,
+$\exp(-(x-\mu)^2/2\sigma^2)$. To make it a legitimate probability density it must enclose
+total area $1$ ([PROB-4]). So we must find the one number $c$ for which
+$c\int_{-\infty}^{\infty}\exp(-(x-\mu)^2/2\sigma^2)\,dx = 1$. Computing that integral —
+which has no elementary antiderivative and so cannot be done by the Calc-1 method of
+finding an antiderivative — is the central technical event of the article, and it is where
+the famous $\sqrt{2\pi}$ comes from.
+
+# Formal development {#sec-formal}
+
+## The definition, with the constant left as a mystery {#sec-def}
+
+::: {#def-normal}
+**Definition (normal distribution).** A continuous random variable $X$ is **normally
+distributed** with mean $\mu\in\mathbb R$ and variance $\sigma^2>0$, written
+$X\sim\mathcal N(\mu,\sigma^2)$, if its probability density function is
+$$
+f(x)=\frac{1}{\sqrt{2\pi\sigma^2}}\,
+\exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr),
+\qquad x\in\mathbb R.
+$$ {#eq-density}
+The special case $\mu=0,\ \sigma^2=1$ is the **standard normal**, with density
+denoted $\varphi$ and CDF denoted $\Phi$:
+$$
+\varphi(z)=\frac{1}{\sqrt{2\pi}}\,e^{-z^2/2},
+\qquad
+\Phi(z)=\int_{-\infty}^{z}\varphi(t)\,dt.
+$$ {#eq-std-density}
+:::
+
+Every symbol earns its keep. $\mu$ is the **location** (we will *prove* it is the mean in
+@sec-mean); $\sigma^2$ is the **scale-squared** (we will *prove* it is the variance in
+@sec-variance); the exponential supplies the bell shape from @sec-intuition; and the front
+factor $1/\sqrt{2\pi\sigma^2}$ is the **normalizing constant** whose only job is to force
+the total area to $1$. Right now that constant is asserted, not earned. We do not assert
+things in this series, so we now derive it.
+
+A note on $\Phi$: the standard-normal CDF in @eq-std-density genuinely has *no* closed
+form — there is no finite combination of elementary functions equal to it. This is not a
+gap in our knowledge; it is a theorem (the antiderivative of $e^{-t^2}$ is non-elementary).
+We therefore compute $\Phi$ numerically and tabulate it; that is why "$z$-tables" exist.
+We will use $\Phi$ freely below as a *defined* object, the area to the left under the
+standard bell.
+
+## Deriving the normalizing constant: the Gaussian integral {#sec-gaussian-integral}
+
+The entire definition stands or falls on one claim: that the area under the bare bell shape
+is finite and equal to a specific number. We prove it for the standard case; the general
+case follows by a substitution we also do in full. This is the one place in the article we
+reach above the Calculus-I floor — to a *double* integral evaluated in *polar
+coordinates* — so we build that tool as we use it and flag it explicitly.
+
+::: {#thm-gaussian-integral}
+**Theorem (the Gaussian integral).**
+$$
+\int_{-\infty}^{\infty} e^{-x^2/2}\,dx \;=\; \sqrt{2\pi}.
+$$ {#eq-gaussian-integral}
+:::
+
+::: {.proof}
+Call the unknown value $I=\int_{-\infty}^{\infty}e^{-x^2/2}\,dx$. It is a positive number
+(the integrand is positive and the area is finite, since $e^{-x^2/2}$ decays faster than,
+say, $1/x^2$ in the tails). We cannot attack $I$ directly — $e^{-x^2/2}$ has no elementary
+antiderivative, so the Calc-1 fundamental-theorem route is closed. The trick, due to
+Poisson, is to compute **$I^2$** instead, because squaring turns one stubborn
+one-dimensional integral into a two-dimensional one that polar coordinates crack open.
+
+**Step 1 — write $I^2$ as a double integral.** Since $I$ is just a number, $I^2=I\cdot I$.
+Write the two copies with *different* dummy variables, $x$ for one and $y$ for the other —
+legitimate, because the name of the variable of integration is irrelevant:
+$$
+I^2=\left(\int_{-\infty}^{\infty}e^{-x^2/2}\,dx\right)
+     \left(\int_{-\infty}^{\infty}e^{-y^2/2}\,dy\right).
+$$
+The first integral is a constant with respect to $y$, so we may slide it *inside* the
+$y$-integral, and then the $x$-integral's integrand is constant with respect to $y$ so it
+slides inside too:
+$$
+I^2=\int_{-\infty}^{\infty}\!\!\left(\int_{-\infty}^{\infty}e^{-x^2/2}\,dx\right)e^{-y^2/2}\,dy
+   =\int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty} e^{-x^2/2}\,e^{-y^2/2}\,dx\,dy.
+$$
+Now combine the two exponentials with the rule $e^a e^b=e^{a+b}$:
+$$
+I^2=\int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty}
+      e^{-(x^2+y^2)/2}\,dx\,dy.
+$$ {#eq-double}
+This is a double integral over the entire $xy$-plane. (A **double integral** is the
+straightforward two-variable cousin of the Calc-1 integral: it sums the value
+$e^{-(x^2+y^2)/2}$ over every little patch $dx\,dy$ of the plane. Its value is the *volume*
+under the surface $z=e^{-(x^2+y^2)/2}$, just as a single integral is the area under a
+curve. That is all we need to know about it.) The flag: this surface and its volume are the
+one above-floor object in the article.
+
+**Step 2 — recognize the symmetry.** Look at the integrand $e^{-(x^2+y^2)/2}$. It depends
+on $x$ and $y$ *only through* $x^2+y^2$, which is the squared distance from the origin.
+So the surface is perfectly circular — a radially symmetric bell mound over the plane, the
+same height at every point a given distance from the origin. A function with circular
+symmetry is begging to be integrated in **polar coordinates**, where distance-from-origin
+is itself one of the coordinates.
+
+**Step 3 — change to polar coordinates.** Replace the Cartesian pair $(x,y)$ with the polar
+pair $(r,\theta)$, where $r\ge 0$ is the distance from the origin and
+$\theta\in[0,2\pi)$ is the angle, related by
+$$
+x=r\cos\theta,\qquad y=r\sin\theta,\qquad x^2+y^2=r^2.
+$$
+The last equality is the Pythagorean identity $\cos^2\theta+\sin^2\theta=1$:
+$x^2+y^2=r^2\cos^2\theta+r^2\sin^2\theta=r^2(\cos^2\theta+\sin^2\theta)=r^2$. So the
+integrand becomes simply $e^{-r^2/2}$.
+
+We need one more ingredient: when we trade $dx\,dy$ for $dr\,d\theta$, the area element is
+**not** $dr\,d\theta$ but $r\,dr\,d\theta$. Here is why, at the floor's level, no Jacobian
+machinery assumed. A little patch of the plane between radii $r$ and $r+dr$ and between
+angles $\theta$ and $\theta+d\theta$ is, to first order, a tiny rectangle: its *radial*
+side has length $dr$, and its *tangential* side is a small arc of a circle of radius $r$
+subtending angle $d\theta$, whose length is (radius)$\times$(angle) $=r\,d\theta$. The area
+of that little rectangle is therefore $dr\times r\,d\theta=r\,dr\,d\theta$. The extra
+factor of $r$ is just "the farther out you are, the more area each degree of angle sweeps."
+@fig-polar draws this patch.
+
+Covering the whole plane means letting $r$ run from $0$ to $\infty$ and $\theta$ run from
+$0$ to $2\pi$ (one full turn). So @eq-double becomes
+$$
+I^2=\int_{0}^{2\pi}\!\!\int_{0}^{\infty} e^{-r^2/2}\,\underbrace{r\,dr}_{\text{radial}}\,d\theta.
+$$
+
+**Step 4 — now it is elementary.** The reason the whole trick works: that stray factor of
+$r$ is exactly the derivative-friendly piece that makes the inner integral a routine
+Calc-1 substitution. Hold $\theta$ fixed and do the inner integral over $r$. Substitute
+$u=r^2/2$, so $du=r\,dr$ — and there is the $r\,dr$, waiting for us. When $r=0$, $u=0$; as
+$r\to\infty$, $u\to\infty$. Thus
+$$
+\int_{0}^{\infty} e^{-r^2/2}\,r\,dr
+=\int_{0}^{\infty} e^{-u}\,du
+=\Bigl[-e^{-u}\Bigr]_{0}^{\infty}
+=\bigl(0\bigr)-\bigl(-1\bigr)=1.
+$$
+The inner integral is just $1$. The outer integral is then immediate — integrating the
+constant $1$ over $\theta\in[0,2\pi)$ multiplies it by the length $2\pi$ of that interval:
+$$
+I^2=\int_{0}^{2\pi} 1\,d\theta = 2\pi.
+$$
+
+**Step 5 — finish.** We have $I^2=2\pi$, and $I>0$ (it is the integral of a positive
+function), so taking the positive square root,
+$$
+I=\int_{-\infty}^{\infty}e^{-x^2/2}\,dx=\sqrt{2\pi}.\qquad\blacksquare
+$$
+:::
+
+```{python}
+#| label: fig-polar
+#| fig-cap: "Where the $\\sqrt{2\\pi}$ comes from. We compute $I^2$ as the volume under the radially symmetric mound $e^{-(x^2+y^2)/2}$ over the plane. **Left:** the mound; its circular symmetry is the whole point. **Right:** the polar area patch — radial side $dr$, tangential arc $r\\,d\\theta$, area $r\\,dr\\,d\\theta$. That extra factor of $r$ is exactly what makes the radial integral a one-line substitution, yielding $I^2=2\\pi$."
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+fig = plt.figure(figsize=(8.8, 3.9))
+
+axL = fig.add_subplot(1, 2, 1, projection="3d")
+gx = np.linspace(-3, 3, 60)
+GX, GY = np.meshgrid(gx, gx)
+Z = np.exp(-(GX**2 + GY**2) / 2.0)
+axL.plot_surface(GX, GY, Z, cmap="viridis", linewidth=0, antialiased=True, alpha=0.9)
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+axL.set_zlabel(r"$e^{-(x^2+y^2)/2}$")
+axL.set_title("Radially symmetric mound")
+axL.view_init(elev=32, azim=-122)
+
+axR = fig.add_subplot(1, 2, 2)
+r0, dr, th0, dth = 1.6, 0.55, 0.55, 0.6
+ang = np.linspace(th0, th0 + dth, 40)
+# the four bounding arcs/segments of the polar patch
+axR.plot(r0*np.cos(ang), r0*np.sin(ang), color=CURVE, lw=2)
+axR.plot((r0+dr)*np.cos(ang), (r0+dr)*np.sin(ang), color=CURVE, lw=2)
+axR.plot([r0*np.cos(th0), (r0+dr)*np.cos(th0)],
+         [r0*np.sin(th0), (r0+dr)*np.sin(th0)], color=CURVE, lw=2)
+axR.plot([r0*np.cos(th0+dth), (r0+dr)*np.cos(th0+dth)],
+         [r0*np.sin(th0+dth), (r0+dr)*np.sin(th0+dth)], color=CURVE, lw=2)
+# light radial grid
+for tt in np.linspace(0, np.pi/2, 5):
+    axR.plot([0, 2.6*np.cos(tt)], [0, 2.6*np.sin(tt)], color=GREY, lw=0.6, alpha=0.4)
+axR.annotate(r"$dr$", (1.95*np.cos(th0+dth/2), 1.95*np.sin(th0+dth/2)),
+             color=CURVE2, fontsize=11)
+axR.annotate(r"$r\,d\theta$", (r0*np.cos(th0+dth)*0.78, r0*np.sin(th0+dth)+0.16),
+             color=ACCENT, fontsize=11)
+axR.set_xlim(0, 2.6); axR.set_ylim(0, 2.6); axR.set_aspect("equal")
+axR.set_xlabel("$x$"); axR.set_ylabel("$y$")
+axR.set_title("Polar area patch  $r\\,dr\\,d\\theta$")
+axR.grid(False)
+plt.tight_layout()
+```
+
+Now we cash the theorem in. We must confirm that @eq-density really integrates to $1$.
+Take the general density and substitute the **standardizing** change of variable
+$z=(x-\mu)/\sigma$, so $x=\mu+\sigma z$ and $dx=\sigma\,dz$ (a Calc-1 linear substitution;
+the limits stay $-\infty$ to $\infty$ since $z\to\pm\infty$ as $x\to\pm\infty$):
+$$
+\int_{-\infty}^{\infty}\frac{1}{\sqrt{2\pi\sigma^2}}
+   \exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr)dx
+=\frac{1}{\sqrt{2\pi\sigma^2}}\int_{-\infty}^{\infty} e^{-z^2/2}\,\sigma\,dz
+=\frac{\sigma}{\sqrt{2\pi\sigma^2}}\int_{-\infty}^{\infty} e^{-z^2/2}\,dz.
+$$
+The exponent simplified because $(x-\mu)^2/(2\sigma^2)=(\sigma z)^2/(2\sigma^2)=z^2/2$. The
+front factor simplifies with $\sqrt{2\pi\sigma^2}=\sqrt{2\pi}\,\sigma$ (since
+$\sigma>0$), so $\sigma/\sqrt{2\pi\sigma^2}=\sigma/(\sqrt{2\pi}\,\sigma)=1/\sqrt{2\pi}$.
+Using @eq-gaussian-integral for the remaining integral,
+$$
+=\frac{1}{\sqrt{2\pi}}\cdot\sqrt{2\pi}=1.
+$$
+The area is exactly $1$. The constant $1/\sqrt{2\pi\sigma^2}$ was *forced*: it is precisely
+the number that cancels the $\sqrt{2\pi}$ the geometry of the plane produced. There was
+never any freedom in it.
+
+::: {.callout-tip title="You might be asked"}
+*"Where does the $\pi$ in a probability distribution possibly come from? There are no
+circles here."* There is a circle — you just have to square the integral to see it.
+Computing $I^2$ turns the problem into a volume over the plane, and the integrand's
+**circular symmetry** ($x^2+y^2=r^2$) is what invites polar coordinates; the $2\pi$ is
+literally the radians in one full turn around that circle, surviving from the
+$\int_0^{2\pi}d\theta$. The appearance of $\pi$ is the signature of that hidden rotational
+symmetry. This is a favorite interview question precisely because the answer is so
+satisfying: the $\pi$ is geometric, not probabilistic.
+:::
+
+## $\mu$ really is the mean {#sec-mean}
+
+We named the parameter $\mu$ "the mean" in @def-normal, but a name is not a proof. The
+expectation of a continuous random variable is $E[X]=\int_{-\infty}^{\infty}x f(x)\,dx$
+([PROB-5]). We compute it.
+
+::: {#thm-mean}
+**Theorem (mean of the normal).** If $X\sim\mathcal N(\mu,\sigma^2)$ then $E[X]=\mu$.
+:::
+
+::: {.proof}
+By definition of expectation for a continuous variable ([PROB-5]),
+$$
+E[X]=\int_{-\infty}^{\infty} x\,\frac{1}{\sqrt{2\pi\sigma^2}}
+   \exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr)dx.
+$$
+Substitute the standardizing change $z=(x-\mu)/\sigma$ again, so $x=\mu+\sigma z$ and
+$dx=\sigma\,dz$. As in @sec-gaussian-integral the front factor and the $\sigma$ from $dx$
+collapse the constant to $1/\sqrt{2\pi}$, and the exponent becomes $-z^2/2$:
+$$
+E[X]=\frac{1}{\sqrt{2\pi}}\int_{-\infty}^{\infty}(\mu+\sigma z)\,e^{-z^2/2}\,dz.
+$$
+Split the integral across the sum $\mu+\sigma z$ — legal because integration is linear:
+$$
+E[X]=\mu\cdot\underbrace{\frac{1}{\sqrt{2\pi}}\int_{-\infty}^{\infty}e^{-z^2/2}\,dz}_{(A)}
+     \;+\;\sigma\cdot\underbrace{\frac{1}{\sqrt{2\pi}}\int_{-\infty}^{\infty}z\,e^{-z^2/2}\,dz}_{(B)}.
+$$
+Term $(A)$ is $\frac{1}{\sqrt{2\pi}}\sqrt{2\pi}=1$ by the Gaussian integral
+@eq-gaussian-integral.
+
+Term $(B)$ is $0$, and we show it two ways so nothing is taken on faith. *By symmetry:* the
+function $g(z)=z\,e^{-z^2/2}$ is **odd**, meaning $g(-z)=-g(z)$ (because $-z$ flips the sign
+of the $z$ in front while leaving $e^{-z^2/2}$ unchanged), and the integral of any odd
+function over a symmetric interval $(-\infty,\infty)$ cancels to zero — every contribution
+at $+z$ is undone by its mirror at $-z$. *By antiderivative,* to be fully explicit: the
+chain rule gives $\frac{d}{dz}\bigl(-e^{-z^2/2}\bigr)=z\,e^{-z^2/2}$, so
+$$
+\int_{-\infty}^{\infty}z\,e^{-z^2/2}\,dz
+=\Bigl[-e^{-z^2/2}\Bigr]_{-\infty}^{\infty}
+=\bigl(0\bigr)-\bigl(0\bigr)=0,
+$$
+since $e^{-z^2/2}\to 0$ at both ends. Either way $(B)=0$. Therefore
+$$
+E[X]=\mu\cdot 1+\sigma\cdot 0=\mu.\qquad\blacksquare
+$$
+:::
+
+The mean is $\mu$ because the curve is symmetric about $\mu$ — the balance point of a
+symmetric mass sits at its center of symmetry. Term $(B)$ vanishing *is* that symmetry,
+made arithmetic.
+
+## $\sigma^2$ really is the variance {#sec-variance}
+
+Likewise we must earn the name "variance." The variance is
+$\operatorname{Var}(X)=E[(X-\mu)^2]$ ([PROB-6]). The computation needs one genuine tool
+beyond the last — **integration by parts** — which is a Calc-1 technique, so we state it
+and use it openly.
+
+::: {#thm-variance}
+**Theorem (variance of the normal).** If $X\sim\mathcal N(\mu,\sigma^2)$ then
+$\operatorname{Var}(X)=\sigma^2$.
+:::
+
+::: {.proof}
+By definition ([PROB-6]) and the same substitution $z=(x-\mu)/\sigma$ (now $(x-\mu)^2$
+becomes $\sigma^2 z^2$, and the constant collapses to $1/\sqrt{2\pi}$ as before):
+$$
+\operatorname{Var}(X)=E\bigl[(X-\mu)^2\bigr]
+=\int_{-\infty}^{\infty}(x-\mu)^2\,\frac{1}{\sqrt{2\pi\sigma^2}}
+   \exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr)dx
+=\frac{\sigma^2}{\sqrt{2\pi}}\int_{-\infty}^{\infty} z^2\,e^{-z^2/2}\,dz.
+$$
+Everything now rides on the integral $J=\int_{-\infty}^{\infty}z^2 e^{-z^2/2}\,dz$. We
+evaluate it by **integration by parts**, $\int u\,dv = uv-\int v\,du$. The clever split is
+to write $z^2 e^{-z^2/2}$ as $z\cdot\bigl(z\,e^{-z^2/2}\bigr)$ and set
+$$
+u=z,\qquad dv = z\,e^{-z^2/2}\,dz.
+$$
+Then $du=dz$, and $v=\int z\,e^{-z^2/2}\,dz=-e^{-z^2/2}$ (the antiderivative we already
+found in @sec-mean). Apply the parts formula:
+$$
+J=\Bigl[\,\underbrace{z\cdot\bigl(-e^{-z^2/2}\bigr)}_{uv}\,\Bigr]_{-\infty}^{\infty}
+  -\int_{-\infty}^{\infty}\bigl(-e^{-z^2/2}\bigr)\,dz.
+$$
+The boundary term $\bigl[-z\,e^{-z^2/2}\bigr]_{-\infty}^{\infty}$ is $0$: as
+$z\to\pm\infty$, the exponential $e^{-z^2/2}$ crushes the linear $z$ to zero (the
+exponential decays faster than any power of $z$ grows). The remaining integral is
+$$
+J=0+\int_{-\infty}^{\infty} e^{-z^2/2}\,dz=\sqrt{2\pi},
+$$
+again by the Gaussian integral @eq-gaussian-integral. Substitute back:
+$$
+\operatorname{Var}(X)=\frac{\sigma^2}{\sqrt{2\pi}}\cdot J
+=\frac{\sigma^2}{\sqrt{2\pi}}\cdot\sqrt{2\pi}=\sigma^2.\qquad\blacksquare
+$$
+:::
+
+So the parameters are exactly what their names promised — and notice that the *same*
+Gaussian integral that normalized the density also delivered both moments. The constant
+$\sqrt{2\pi}$ is the keystone of the entire distribution.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the most probable single value of a normal variable, and is it the mean?"* The
+density @eq-density is largest where the exponent is largest, i.e. where $(x-\mu)^2$ is
+*smallest*, which is at $x=\mu$. So the **mode** is $\mu$. Because the curve is symmetric,
+the **median** (the point with half the area on each side) is also $\mu$. For the normal,
+mean = median = mode = $\mu$ — and this is no accident but a *forced consequence* of two
+features we have already nailed down: unimodality (the single peak) pins the mode at the
+center, and symmetry about $\mu$ (the mean computation of @sec-mean) pins the mean and the
+median there too. They coincide *because* the curve is symmetric and single-peaked, and they
+come emphatically *apart* for the skewed distributions in [PROB-14], where neither condition
+holds and separating the three is the whole point.
+:::
+
+## Standardization: every normal is the standard normal in disguise {#sec-standardize}
+
+We have used the substitution $z=(x-\mu)/\sigma$ three times to evaluate integrals. It is
+worth elevating to a named result, because it is how *all* normal probabilities are
+actually computed — by reducing any normal to the single tabulated standard one.
+
+::: {#thm-standardize}
+**Theorem (standardization).** If $X\sim\mathcal N(\mu,\sigma^2)$ then the standardized
+variable
+$$
+Z=\frac{X-\mu}{\sigma}
+$$
+is standard normal, $Z\sim\mathcal N(0,1)$. Consequently, for any $a<b$,
+$$
+P(a\le X\le b)=\Phi\!\Bigl(\frac{b-\mu}{\sigma}\Bigr)-\Phi\!\Bigl(\frac{a-\mu}{\sigma}\Bigr).
+$$ {#eq-standardize}
+:::
+
+::: {.proof}
+We find the density of $Z$ by going through its CDF — the cleanest fully-explicit route
+for a monotone transform ([PROB-4]). For any number $z$,
+$$
+F_Z(z)=P(Z\le z)=P\!\Bigl(\frac{X-\mu}{\sigma}\le z\Bigr)
+=P\bigl(X\le \mu+\sigma z\bigr)=F_X(\mu+\sigma z),
+$$
+where the third step multiplied both sides of the inequality by $\sigma>0$ (which
+preserves the direction of $\le$) and added $\mu$. Differentiate both ends with respect to
+$z$ to get the density of $Z$, using the chain rule on the right (the inner derivative of
+$\mu+\sigma z$ is $\sigma$):
+$$
+f_Z(z)=f_X(\mu+\sigma z)\cdot\sigma.
+$$
+Now plug in $f_X$ from @eq-density at the point $x=\mu+\sigma z$. There the deviation is
+$x-\mu=\sigma z$, so $(x-\mu)^2/(2\sigma^2)=z^2/2$, and
+$$
+f_Z(z)=\frac{1}{\sqrt{2\pi\sigma^2}}\,e^{-z^2/2}\cdot\sigma
+=\frac{\sigma}{\sqrt{2\pi}\,\sigma}\,e^{-z^2/2}
+=\frac{1}{\sqrt{2\pi}}\,e^{-z^2/2}=\varphi(z).
+$$
+That is exactly the standard-normal density @eq-std-density, so $Z\sim\mathcal N(0,1)$. The
+probability statement @eq-standardize then follows: $a\le X\le b$ is the same event as
+$\frac{a-\mu}{\sigma}\le Z\le\frac{b-\mu}{\sigma}$, whose probability is the difference of
+the standard CDF $\Phi$ at the two endpoints. $\qquad\blacksquare$
+:::
+
+This is why a single $z$-table (or one `Phi` function in code) suffices for *every* normal
+problem: subtract the mean, divide by the standard deviation, look up $\Phi$. It is also the
+origin of the famous **68–95–99.7 rule** — within $1$, $2$, $3$ standard deviations of the
+mean lie about $68\%$, $95\%$, $99.7\%$ of the mass — which is nothing more than
+$\Phi(1)-\Phi(-1)$, $\Phi(2)-\Phi(-2)$, $\Phi(3)-\Phi(-3)$. @fig-empirical computes those
+exact areas.
+
+```{python}
+#| label: fig-empirical
+#| fig-cap: "The 68–95–99.7 rule is just three values of $\\Phi$. Shaded bands show the probability within $1$, $2$, and $3$ standard deviations of the mean for the standard normal; the printed numbers are the exact areas $\\Phi(k)-\\Phi(-k)$. Because of standardization (@thm-standardize) these percentages hold for *every* normal, whatever its $\\mu$ and $\\sigma$."
+from scipy.stats import norm
+
+z = np.linspace(-4, 4, 800)
+fig, ax = plt.subplots(figsize=(7.0, 4.0))
+ax.plot(z, norm.pdf(z), color=CURVE)
+bands = [(1, "#bcd0e8", 0.9), (2, "#dbe6f2", 0.55), (3, "#eef3f9", 0.35)]
+for k, col, a in reversed(bands):
+    mask = (z >= -k) & (z <= k)
+    ax.fill_between(z[mask], norm.pdf(z[mask]), color=col, alpha=a, zorder=0)
+for k in (1, 2, 3):
+    p = norm.cdf(k) - norm.cdf(-k)
+    ax.annotate(fr"$\pm{k}\sigma:\ {100*p:.1f}\%$",
+                xy=(0, norm.pdf(k) + 0.012 + 0.045*(k-1)),
+                ha="center", fontsize=10, color=CURVE)
+ax.axvline(0, color=ACCENT, lw=1.2, ls="--")
+ax.set_xlabel(r"standardized value $z=(x-\mu)/\sigma$")
+ax.set_ylabel("density $\\varphi(z)$")
+ax.set_title("The 68–95–99.7 rule")
+plt.tight_layout()
+print(f"P(|Z| <= 1) = {norm.cdf(1)-norm.cdf(-1):.4f}")
+print(f"P(|Z| <= 2) = {norm.cdf(2)-norm.cdf(-2):.4f}")
+print(f"P(|Z| <= 3) = {norm.cdf(3)-norm.cdf(-3):.4f}")
+```
+
+## The defining property: independent normals add to a normal {#sec-closure}
+
+Now the structural fact that, more than the bell shape, is *why* the normal sits at the
+center of statistics. Add two independent normals and you get a normal — not approximately,
+exactly — with the means and variances simply adding. No other family of distributions is
+so perfectly stable under addition while keeping a free location and scale.
+
+::: {#thm-closure}
+**Theorem (closure under independent sums).** Let $X_1\sim\mathcal N(\mu_1,\sigma_1^2)$ and
+$X_2\sim\mathcal N(\mu_2,\sigma_2^2)$ be **independent**. Then
+$$
+X_1+X_2\ \sim\ \mathcal N\bigl(\mu_1+\mu_2,\ \sigma_1^2+\sigma_2^2\bigr).
+$$
+:::
+
+We first prove the **means and variances add** — which holds even more generally — and
+then prove the harder part, that the *shape stays normal*.
+
+That the parameters add needs no normality at all. For *any* random variables,
+expectation is linear ([PROB-5]), so $E[X_1+X_2]=E[X_1]+E[X_2]=\mu_1+\mu_2$. And for
+*independent* variables the variance of a sum is the sum of the variances ([PROB-8]),
+$\operatorname{Var}(X_1+X_2)=\operatorname{Var}(X_1)+\operatorname{Var}(X_2)=\sigma_1^2+\sigma_2^2$.
+So *whatever* $X_1+X_2$ turns out to be, its mean and variance are pinned. The real content
+of the theorem is that the sum is again **normal** — that the shape survives.
+
+::: {.proof}
+**Setup.** The density of a sum of independent continuous variables is the **convolution**
+of their densities ([PROB-8]): if $S=X_1+X_2$, then for the value $S=s$, we sum over all
+the ways $X_1=t$ and $X_2=s-t$ can combine,
+$$
+f_S(s)=\int_{-\infty}^{\infty} f_{X_1}(t)\,f_{X_2}(s-t)\,dt.
+$$
+To keep the algebra readable we prove the case $\mu_1=\mu_2=0$; the general case is this
+result shifted, since adding constants $\mu_1,\mu_2$ just slides each variable (and we
+already know the means add). Write $\sigma_1^2=a$ and $\sigma_2^2=b$ for brevity. Then
+$$
+f_S(s)=\int_{-\infty}^{\infty}
+   \frac{1}{\sqrt{2\pi a}}e^{-t^2/2a}\,
+   \frac{1}{\sqrt{2\pi b}}e^{-(s-t)^2/2b}\,dt
+=\frac{1}{2\pi\sqrt{ab}}\int_{-\infty}^{\infty}
+   \exp\!\Bigl(-\tfrac12\bigl[\tfrac{t^2}{a}+\tfrac{(s-t)^2}{b}\bigr]\Bigr)dt.
+$$
+
+**The whole game is the exponent.** Everything hinges on rewriting the bracket
+$Q(t)=\dfrac{t^2}{a}+\dfrac{(s-t)^2}{b}$ as a perfect square in $t$ plus a leftover that
+does not involve $t$ — the algebraic move called **completing the square**. First put it
+over the common denominator $ab$ and expand $(s-t)^2=s^2-2st+t^2$:
+$$
+Q(t)=\frac{b\,t^2+a\,(s-t)^2}{ab}
+=\frac{b t^2 + a t^2 - 2a s t + a s^2}{ab}
+=\frac{(a+b)\,t^2 - 2as\,t + a s^2}{ab}.
+$$
+Factor the coefficient $(a+b)/ab$ out of the two $t$-terms so the leading coefficient of
+$t^2$ inside is $1$:
+$$
+Q(t)=\frac{a+b}{ab}\left[\,t^2-\frac{2as}{a+b}\,t\,\right]+\frac{a s^2}{ab}.
+$$
+Complete the square inside the bracket. For $t^2-2\beta t$ we add and subtract $\beta^2$ to
+form $(t-\beta)^2-\beta^2$; here $\beta=\dfrac{as}{a+b}$:
+$$
+t^2-\frac{2as}{a+b}t=\Bigl(t-\frac{as}{a+b}\Bigr)^2-\Bigl(\frac{as}{a+b}\Bigr)^2.
+$$
+Substitute back:
+$$
+Q(t)=\frac{a+b}{ab}\Bigl(t-\frac{as}{a+b}\Bigr)^2
+     -\frac{a+b}{ab}\cdot\frac{a^2 s^2}{(a+b)^2}
+     +\frac{a s^2}{ab}.
+$$
+Now simplify the two leftover ($t$-free) terms. The middle term is
+$-\dfrac{a^2 s^2}{ab(a+b)}=-\dfrac{a s^2}{b(a+b)}$. Combine with the last term
+$\dfrac{a s^2}{ab}=\dfrac{s^2}{b}$ over the common denominator $b(a+b)$:
+$$
+-\frac{a s^2}{b(a+b)}+\frac{s^2}{b}
+=\frac{-a s^2 + s^2(a+b)}{b(a+b)}
+=\frac{s^2\,b}{b(a+b)}
+=\frac{s^2}{a+b}.
+$$
+So, cleanly,
+$$
+Q(t)=\frac{a+b}{ab}\Bigl(t-\frac{as}{a+b}\Bigr)^2+\frac{s^2}{a+b}.
+$$
+The first piece carries *all* the $t$-dependence; the second, $s^2/(a+b)$, is constant in
+$t$ and can leave the integral.
+
+**Do the integral.** Insert this $Q(t)$ and pull the $t$-free factor out:
+$$
+f_S(s)=\frac{1}{2\pi\sqrt{ab}}\,e^{-s^2/2(a+b)}
+   \int_{-\infty}^{\infty}\exp\!\Bigl(-\frac{1}{2}\cdot\frac{a+b}{ab}
+   \Bigl(t-\frac{as}{a+b}\Bigr)^2\Bigr)dt.
+$$
+The remaining integral is a Gaussian integral in $t$. It has the form
+$\int e^{-(t-c)^2/2v}\,dt$ with center $c=as/(a+b)$ and "variance" $v=ab/(a+b)$, and we
+already know (it is the normalization computation of @sec-gaussian-integral, run in
+reverse) that
+$$
+\int_{-\infty}^{\infty} e^{-(t-c)^2/2v}\,dt=\sqrt{2\pi v}.
+$$
+(Explicitly: substitute $w=(t-c)/\sqrt v$, $dt=\sqrt v\,dw$, giving
+$\sqrt v\int e^{-w^2/2}dw=\sqrt v\,\sqrt{2\pi}=\sqrt{2\pi v}$.) Here
+$\sqrt{2\pi v}=\sqrt{2\pi\,ab/(a+b)}$. Therefore
+$$
+f_S(s)=\frac{1}{2\pi\sqrt{ab}}\,e^{-s^2/2(a+b)}\cdot\sqrt{\frac{2\pi ab}{a+b}}.
+$$
+Collect the constants out front: $\dfrac{1}{2\pi\sqrt{ab}}\sqrt{\dfrac{2\pi ab}{a+b}}
+=\dfrac{1}{2\pi\sqrt{ab}}\cdot\dfrac{\sqrt{2\pi}\sqrt{ab}}{\sqrt{a+b}}
+=\dfrac{\sqrt{2\pi}}{2\pi\sqrt{a+b}}=\dfrac{1}{\sqrt{2\pi(a+b)}}$. Hence
+$$
+f_S(s)=\frac{1}{\sqrt{2\pi(a+b)}}\,\exp\!\Bigl(-\frac{s^2}{2(a+b)}\Bigr).
+$$
+This is *exactly* the normal density @eq-density with mean $0$ and variance $a+b$. So
+$S=X_1+X_2\sim\mathcal N(0,\,\sigma_1^2+\sigma_2^2)$ in the centered case, and restoring the
+means slides it to $\mathcal N(\mu_1+\mu_2,\ \sigma_1^2+\sigma_2^2)$. $\qquad\blacksquare$
+:::
+
+This proof was long, and that length is the point: the shape's survival is a real algebraic
+miracle (the completed square *is* a normal density in $t$), not a slogan. There is a
+shorter route through moment generating functions, which [PROB-20] takes — but it is shorter
+only because it borrows machinery built there; here we did it with the bare convolution
+integral and Calc-1 algebra, owing nothing.
+
+Two consequences follow immediately, and they are the ones every downstream track uses.
+
+::: {#cor-affine}
+**Corollary (affine transforms and i.i.d. means).** Let $X\sim\mathcal N(\mu,\sigma^2)$ and
+let $a\neq 0,b$ be constants. Then $aX+b\sim\mathcal N(a\mu+b,\ a^2\sigma^2)$. Consequently,
+if $X_1,\dots,X_n$ are i.i.d. $\mathcal N(\mu,\sigma^2)$, the sample mean is
+$$
+\bar X=\frac1n\sum_{i=1}^n X_i\ \sim\ \mathcal N\!\Bigl(\mu,\ \frac{\sigma^2}{n}\Bigr).
+$$
+:::
+
+::: {.proof}
+**The affine claim.** Set $Y=aX+b$ with $a\neq 0$. We find the density of $Y$ by the same
+CDF route used in @thm-standardize, but now we must handle the *sign* of $a$ explicitly,
+because dividing an inequality by a negative number flips its direction — a step the
+standardization proof never faced (there the divisor $1/\sigma$ was positive). We take the
+two cases in turn and watch them reunite.
+
+*Case $a>0$.* For any number $y$, dividing the inequality $aX+b\le y$ by the positive $a$
+keeps its direction:
+$$
+F_Y(y)=P(aX+b\le y)=P\!\Bigl(X\le \frac{y-b}{a}\Bigr)=F_X\!\Bigl(\frac{y-b}{a}\Bigr).
+$$
+Differentiate both ends in $y$, using the chain rule on the right (the inner derivative of
+$(y-b)/a$ is $1/a$):
+$$
+f_Y(y)=f_X\!\Bigl(\frac{y-b}{a}\Bigr)\cdot\frac1a .
+$$
+
+*Case $a<0$.* Now dividing $aX+b\le y$ by the negative $a$ *reverses* the inequality:
+$$
+F_Y(y)=P(aX+b\le y)=P\!\Bigl(X\ge \frac{y-b}{a}\Bigr)=1-F_X\!\Bigl(\frac{y-b}{a}\Bigr),
+$$
+where the last step used $P(X\ge c)=1-P(X<c)=1-F_X(c)$ (the event $X<c$ and $X\ge c$
+partition the line, and $P(X<c)=F_X(c)$ for a continuous variable, since the single point
+$c$ carries no probability, [PROB-4]). Differentiate in $y$; the chain rule again brings
+down the inner derivative $1/a$, and the leading $1$ differentiates to $0$:
+$$
+f_Y(y)=-\,f_X\!\Bigl(\frac{y-b}{a}\Bigr)\cdot\frac1a .
+$$
+
+*The two cases are one formula.* When $a>0$, $1/a=1/|a|$; when $a<0$, $-1/a=1/|a|$. So both
+cases collapse to the single statement
+$$
+f_Y(y)=\frac{1}{|a|}\,f_X\!\Bigl(\frac{y-b}{a}\Bigr).
+$$
+Now substitute $f_X$ from @eq-density at the point $x=(y-b)/a$. The deviation there is
+$$
+x-\mu=\frac{y-b}{a}-\mu=\frac{y-b-a\mu}{a}=\frac{y-(a\mu+b)}{a},
+$$
+so, squaring and dividing by $2\sigma^2$,
+$$
+\frac{(x-\mu)^2}{2\sigma^2}=\frac{\bigl(y-(a\mu+b)\bigr)^2}{2\,a^2\sigma^2}.
+$$
+The front factor picks up the $1/|a|$: using $\sqrt{2\pi\sigma^2}=\sqrt{2\pi}\,\sigma$
+(since $\sigma>0$) and $|a|\,\sigma=\sqrt{a^2\sigma^2}$,
+$$
+\frac{1}{|a|}\cdot\frac{1}{\sqrt{2\pi\sigma^2}}
+=\frac{1}{|a|\,\sqrt{2\pi}\,\sigma}
+=\frac{1}{\sqrt{2\pi}\,\sqrt{a^2\sigma^2}}
+=\frac{1}{\sqrt{2\pi\,a^2\sigma^2}}.
+$$
+Assembling the two pieces,
+$$
+f_Y(y)=\frac{1}{\sqrt{2\pi\,a^2\sigma^2}}\,
+\exp\!\Bigl(-\frac{\bigl(y-(a\mu+b)\bigr)^2}{2\,a^2\sigma^2}\Bigr),
+$$
+which is *exactly* the normal density @eq-density with mean $a\mu+b$ and variance
+$a^2\sigma^2$. Hence $aX+b\sim\mathcal N(a\mu+b,\ a^2\sigma^2)$ — the shape is not merely
+inferred from its mean and variance, it is read straight off the density. (As a consistency
+check, those parameters match the model-free identities $E[aX+b]=a\mu+b$ by linearity
+([PROB-5]) and $\operatorname{Var}(aX+b)=a^2\sigma^2$ by the scaling rule for variance
+([PROB-6]); the derivation above is what additionally certifies the result is *normal*.)
+
+**The i.i.d. mean.** Each $X_i\sim\mathcal N(\mu,\sigma^2)$ and they are independent;
+summing $n$ of them, @thm-closure (applied $n-1$ times, folding in one more independent
+normal at each step) gives $\sum_{i=1}^n X_i\sim\mathcal N(n\mu,\ n\sigma^2)$. Then
+$\bar X=\frac1n\sum X_i$ is the affine transform $aS+b$ of $S=\sum X_i$ with $a=1/n$ and
+$b=0$, so the affine claim just proved gives
+$$
+\bar X\sim\mathcal N\!\Bigl(\tfrac1n\cdot n\mu,\ \tfrac{1}{n^2}\cdot n\sigma^2\Bigr)
+=\mathcal N\!\Bigl(\mu,\ \frac{\sigma^2}{n}\Bigr). \qquad\blacksquare
+$$
+:::
+
+That last result is the quiet workhorse of all of inference: the sample mean of normal data
+is *itself* normal, centered at the true $\mu$, with its spread shrinking like
+$\sigma/\sqrt n$. The $\sqrt n$ — not $n$ — is exactly the rate flagged back in [PROB-8].
+@fig-closure shows the closure property and this shrinking in action.
+
+```{python}
+#| label: fig-closure
+#| fig-cap: "Closure under addition and averaging, verified by simulation. **Left:** the histogram of $X_1+X_2$ for independent $X_1\\sim\\mathcal N(1,1)$ and $X_2\\sim\\mathcal N(3,4)$ (so $\\sigma_2^2=4$) lands exactly on the predicted $\\mathcal N(4,5)$ curve — means and variances added. **Right:** the sampling distribution of $\\bar X$ for $n=1,4,16,64$ i.i.d. $\\mathcal N(0,1)$ draws; each is normal, centered at $0$, with standard deviation $1/\\sqrt n$ — the curve sharpens but never changes shape."
+from scipy.stats import norm
+rng = np.random.default_rng(13)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+
+N = 200_000
+s = rng.normal(1, 1, N) + rng.normal(3, 2, N)   # sigma2 = 2 => var 4
+grid = np.linspace(s.min(), s.max(), 400)
+axL.hist(s, bins=120, density=True, color="#cfd8e8", edgecolor="none")
+axL.plot(grid, norm.pdf(grid, 4, np.sqrt(5)), color=CURVE2,
+         label=r"predicted $\mathcal N(4,5)$")
+axL.set_title(r"$X_1+X_2$ is normal, params add")
+axL.set_xlabel("$x_1+x_2$"); axL.set_ylabel("density")
+axL.legend(fontsize=9, framealpha=0.9)
+
+zz = np.linspace(-3, 3, 600)
+for nn, c in [(1, GREY), (4, ACCENT), (16, CURVE), (64, CURVE2)]:
+    axR.plot(zz, norm.pdf(zz, 0, 1/np.sqrt(nn)), color=c, label=fr"$n={nn}$")
+axR.set_title(r"Sampling dist. of $\bar X$: SD $=1/\sqrt{n}$")
+axR.set_xlabel(r"$\bar x$"); axR.set_ylabel("density")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Why it is *everywhere*: the Central Limit Theorem, previewed honestly {#sec-why-everywhere}
+
+We can now say precisely why the bell curve keeps appearing — and be honest that the full
+theorem is not ours to prove here. The **Central Limit Theorem (CLT)** says: if
+$X_1,\dots,X_n$ are i.i.d. with *any* finite mean $\mu$ and finite variance $\sigma^2$ — not
+necessarily normal — then the standardized sum converges to a standard normal as
+$n\to\infty$:
+$$
+\frac{\bar X-\mu}{\sigma/\sqrt n}\ \xrightarrow{\ d\ }\ \mathcal N(0,1).
+$$
+The closure property we just proved is the CLT's shadow: the normal is the *only* shape that
+is perfectly stable under the averaging the CLT performs, so it is the only possible limit —
+it is the **fixed point of averaging**. De Moivre's binomial-to-bell observation
+(@sec-why) was the very first instance: the binomial is a sum of i.i.d. Bernoullis, so its
+standardized version goes normal.
+
+This is the honest origin of "the normal is everywhere." It is not that raw measurements are
+bell-shaped; it is that anything built by **adding or averaging many independent small
+contributions** ends up bell-shaped, regardless of the pieces' own distributions.
+Measurement error is a sum of many tiny independent perturbations — hence Gaussian, hence
+Gauss. @fig-clt watches a decidedly non-normal source (a coin-flip / Bernoulli) march toward
+the bell as we sum more of it.
+
+```{python}
+#| label: fig-clt
+#| fig-cap: "The Central Limit Theorem at work, starting from the *least* bell-shaped source there is. We average $n$ independent fair coin flips (each $0$ or $1$) and standardize. At $n=1$ the distribution is two spikes; by $n=2$ it is a triangle; by $n=10$ and $n=50$ it is visually indistinguishable from the standard normal (red). The normal emerges from summing, not from the pieces being normal — they could not be less normal."
+from scipy.stats import norm
+rng = np.random.default_rng(21)
+fig, axes = plt.subplots(2, 2, figsize=(8.6, 6.0))
+zz = np.linspace(-3.5, 3.5, 400)
+for ax, n in zip(axes.ravel(), (1, 2, 10, 50)):
+    flips = rng.integers(0, 2, size=(120_000, n)).mean(axis=1)
+    # standardize: Bernoulli(0.5) has mean .5, var .25 => mean has var .25/n
+    z = (flips - 0.5) / (0.5 / np.sqrt(n))
+    ax.hist(z, bins=60, density=True, color="#cfd8e8", edgecolor="none")
+    ax.plot(zz, norm.pdf(zz), color=CURVE2, lw=2)
+    ax.set_title(fr"$n={n}$ flips averaged", fontsize=10)
+    ax.set_xlim(-3.5, 3.5); ax.set_xlabel("standardized mean")
+plt.tight_layout()
+```
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+The CLT is stated here, not proved. Its proper home is the **Statistical Inference** track
+([INFR-A2]), which owns the limit theorems; the machinery it runs on — moment generating
+and characteristic functions ([PROB-20]) and the modes of convergence behind the
+"$\xrightarrow{d}$" arrow ([PROB-21]) — is built later in *this* track. We previewed the CLT
+only to explain *why* the normal is central, because that "why" is the spine of the whole
+article. The closure property (@thm-closure), by contrast, we proved in full and own
+outright.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the distribution on real, honest problems — including one where it is the *wrong*
+tool, so the boundary is visible and not a highlight reel.
+
+## Example 1 — adult heights, computed by hand {#sec-heights}
+
+Human adult heights within one sex are about as normal as real data gets, for exactly the
+CLT reason: height is the sum of many small genetic and environmental contributions. For
+U.S. adult men, height is well approximated by $\mathcal N(\mu,\sigma^2)$ with $\mu=70$
+inches and $\sigma=3$ inches. We answer three questions by hand, using only standardization
+(@thm-standardize) and a $\Phi$-table (here, `scipy`'s `norm.cdf`).
+
+```{python}
+#| label: tbl-heights
+#| echo: false
+from scipy.stats import norm
+mu, sigma = 70.0, 3.0
+
+# Q1: P(X > 72)
+z1 = (72 - mu) / sigma
+p1 = 1 - norm.cdf(z1)
+# Q2: P(68 <= X <= 74)
+zl, zh = (68 - mu)/sigma, (74 - mu)/sigma
+p2 = norm.cdf(zh) - norm.cdf(zl)
+# Q3: the 95th percentile height
+z95 = norm.ppf(0.95)
+x95 = mu + sigma * z95
+
+print(f"Q1  z = (72-70)/3        = {z1:.4f};  P(X>72) = 1-Phi(z) = {p1:.4f}")
+print(f"Q2  z_low=(68-70)/3={zl:.4f},  z_high=(74-70)/3={zh:.4f}")
+print(f"    P(68<=X<=74) = Phi({zh:.3f})-Phi({zl:.3f}) = {p2:.4f}")
+print(f"Q3  z_0.95 = {z95:.4f};  x = 70 + 3*z = {x95:.3f} inches")
+```
+
+Walk the arithmetic the code printed, plugging straight into @eq-standardize:
+
+- **What fraction of men are taller than 6 feet (72 in)?** Standardize the cutoff:
+  $z=(72-70)/3=`{python} f"{z1:.3f}"`$. We want the right tail,
+  $P(X>72)=1-\Phi(`{python} f"{z1:.3f}"`)=`{python} f"{p1:.4f}"`$ — about
+  $`{python} f"{100*p1:.0f}"`\%$. The subtraction from $1$ is because $\Phi$ gives the area
+  to the *left* and we want the area to the *right*.
+- **What fraction are between 68 and 74 inches?** Standardize both ends:
+  $z_{\text{low}}=(68-70)/3=`{python} f"{zl:.3f}"`$ and
+  $z_{\text{high}}=(74-70)/3=`{python} f"{zh:.3f}"`$. By @eq-standardize the answer is
+  $\Phi(`{python} f"{zh:.3f}"`)-\Phi(`{python} f"{zl:.3f}"`)=`{python} f"{p2:.4f}"`$ — about
+  $`{python} f"{100*p2:.0f}"`\%$. (These limits are roughly $\pm 1.33\sigma$, consistent
+  with the 68–95 rule.)
+- **How tall must a man be to be in the tallest 5%?** Now we invert: we need the value
+  $x_{0.95}$ with $\Phi$ of its $z$-score equal to $0.95$. The $z$ with
+  $\Phi(z)=0.95$ is $z_{0.95}=`{python} f"{z95:.3f}"`$ (read off the table, or `norm.ppf`),
+  so $x_{0.95}=\mu+\sigma z_{0.95}=70+3(`{python} f"{z95:.3f}"`)=`{python} f"{x95:.2f}"`$
+  inches. Un-standardizing — multiply by $\sigma$, add $\mu$ — turns a $z$-score back into a
+  height.
+
+@fig-heights shades these three regions.
+
+```{python}
+#| label: fig-heights
+#| fig-cap: "Adult-male heights as $\\mathcal N(70,3^2)$. The three shaded regions are the three questions of @sec-heights: the right tail past $72''$ (about $25\\%$), the central band $68$–$74''$ (about $68\\%$), and the $95$th-percentile cutoff at $\\approx 74.9''$ (dashed). Every answer is one or two evaluations of $\\Phi$ after standardizing."
+from scipy.stats import norm
+mu, sigma = 70.0, 3.0
+x = np.linspace(58, 82, 700)
+pdf = norm.pdf(x, mu, sigma)
+
+fig, (a1, a2, a3) = plt.subplots(1, 3, figsize=(9.2, 3.3), sharey=True)
+for ax in (a1, a2, a3):
+    ax.plot(x, pdf, color=CURVE)
+    ax.set_xlabel("height (in)")
+a1.fill_between(x[x>=72], pdf[x>=72], color="#f3c0c4")
+a1.set_title(r"$P(X>72)\approx 25\%$", fontsize=10); a1.set_ylabel("density")
+m = (x>=68)&(x<=74)
+a2.fill_between(x[m], pdf[m], color="#bcd0e8")
+a2.set_title(r"$P(68\le X\le74)\approx 68\%$", fontsize=10)
+x95 = mu + sigma*norm.ppf(0.95)
+a3.fill_between(x[x>=x95], pdf[x>=x95], color="#bfe3cf")
+a3.axvline(x95, color=ACCENT, ls="--", lw=1.4)
+a3.set_title(fr"95th pct $\approx {x95:.1f}''$", fontsize=10)
+plt.tight_layout()
+```
+
+## Example 2 — summing independent normals: a manufacturing tolerance stack {#sec-tolerance}
+
+This example shows @thm-closure paying off where engineers actually use it. A machined shaft
+assembly stacks three independent components end to end. Each component's length is normal,
+manufactured to its own mean and tolerance:
+$$
+L_1\sim\mathcal N(40,\ 0.05^2),\quad
+L_2\sim\mathcal N(25,\ 0.04^2),\quad
+L_3\sim\mathcal N(15,\ 0.03^2)\ \ (\text{mm}),
+$$
+and the lengths are independent (different machines, different runs). The total length is
+$T=L_1+L_2+L_3$. The assembly is in spec if $T$ lands within $\pm 0.1$ mm of the nominal
+$80$ mm. What fraction of assemblies pass?
+
+By @thm-closure (extended to three terms by applying it twice), $T$ is normal with the means
+and variances added — *variances*, not standard deviations, which is the trap:
+
+```{python}
+#| label: tbl-tolerance
+#| echo: false
+from scipy.stats import norm
+means = np.array([40.0, 25.0, 15.0])
+sds   = np.array([0.05, 0.04, 0.03])
+mu_T  = means.sum()
+var_T = (sds**2).sum()
+sd_T  = np.sqrt(var_T)
+zlo, zhi = (79.9 - mu_T)/sd_T, (80.1 - mu_T)/sd_T
+p_pass = norm.cdf(zhi) - norm.cdf(zlo)
+sd_wrong = sds.sum()  # the tempting but WRONG "add the SDs" answer
+print(f"mu_T  = 40+25+15                      = {mu_T:.3f} mm")
+print(f"var_T = 0.05^2+0.04^2+0.03^2          = {var_T:.5f} mm^2")
+print(f"sd_T  = sqrt(var_T)                   = {sd_T:.5f} mm")
+print(f"  (WRONG if you add SDs: {sd_wrong:.3f} mm -- do not do this)")
+print(f"P(in spec) = Phi({zhi:.3f}) - Phi({zlo:.3f}) = {p_pass:.4f}")
+```
+
+The total mean is $\mu_T=40+25+15=`{python} f"{mu_T:.1f}"`$ mm. The total *variance* is
+$\sigma_T^2=0.05^2+0.04^2+0.03^2=`{python} f"{var_T:.5f}"`$ mm$^2$, so the total standard
+deviation is $\sigma_T=\sqrt{`{python} f"{var_T:.5f}"`}=`{python} f"{sd_T:.4f}"`$ mm. The
+in-spec probability standardizes the $\pm 0.1$ window:
+$$
+P(79.9\le T\le 80.1)
+=\Phi\!\Bigl(\tfrac{0.1}{`{python} f"{sd_T:.4f}"`}\Bigr)-\Phi\!\Bigl(\tfrac{-0.1}{`{python} f"{sd_T:.4f}"`}\Bigr)
+=`{python} f"{p_pass:.4f}"`,
+$$
+about $`{python} f"{100*p_pass:.1f}"`\%$ pass. The figure shows the stacked distribution.
+
+::: {.callout-warning title="Pitfall"}
+**Variances add; standard deviations do not.** It is tempting to total the tolerances as
+$0.05+0.04+0.03=`{python} f"{0.05+0.04+0.03:.2f}"`$ mm and call that the assembly's spread.
+That is wrong, and it *overstates* the spread badly. The correct combination adds the
+*squares*: $\sigma_T=\sqrt{\sigma_1^2+\sigma_2^2+\sigma_3^2}=`{python} f"{sd_T:.4f}"`$ mm.
+Independent errors partially cancel — some components run long while others run short — so
+the assembly is *tighter* than the naive sum of tolerances suggests. This "root-sum-square"
+rule is the entire basis of statistical tolerance analysis, and it is just @thm-closure read
+out loud.
+:::
+
+```{python}
+#| label: fig-tolerance
+#| fig-cap: "Tolerance stack-up. The three independent component lengths (left, each normal with its own small spread) sum to a normal total $T\\sim\\mathcal N(80, 0.0707^2)$ (right). The shaded band is the $\\pm0.1$ mm spec window; its area is the pass rate. The total spread $0.0707$ mm is the root-sum-square of the parts, *smaller* than the naive sum $0.12$ mm of the tolerances."
+from scipy.stats import norm
+means = np.array([40.0, 25.0, 15.0]); sds = np.array([0.05, 0.04, 0.03])
+mu_T, sd_T = means.sum(), np.sqrt((sds**2).sum())
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+for m, s, c, lab in zip(means, sds, [CURVE, ACCENT, CURVE2], ["$L_1$","$L_2$","$L_3$"]):
+    xx = np.linspace(m-4*s, m+4*s, 300)
+    axL.plot(xx - m, norm.pdf(xx, m, s), color=c, label=lab)  # centered to overlay
+axL.set_title("Component spreads (centered)")
+axL.set_xlabel("deviation from nominal (mm)"); axL.set_ylabel("density")
+axL.legend(fontsize=9, framealpha=0.9)
+
+xt = np.linspace(mu_T-4*sd_T, mu_T+4*sd_T, 500)
+axR.plot(xt, norm.pdf(xt, mu_T, sd_T), color=CURVE)
+m = (xt>=79.9)&(xt<=80.1)
+axR.fill_between(xt[m], norm.pdf(xt[m], mu_T, sd_T), color="#bfe3cf")
+axR.axvline(79.9, color=ACCENT, ls="--", lw=1.2); axR.axvline(80.1, color=ACCENT, ls="--", lw=1.2)
+axR.set_title(r"Total $T\sim\mathcal N(80,\,0.0707^2)$")
+axR.set_xlabel("total length (mm)"); axR.set_ylabel("density")
+plt.tight_layout()
+```
+
+## Example 3 — the edge of applicability: daily stock returns {#sec-returns}
+
+Now the honest counterexample, the one that keeps the article from being a highlight reel.
+Finance leaned on the normal model for decades — the Black–Scholes option-pricing formula
+assumes log-returns are normal — and the assumption is *seductively* close to true in the
+middle and catastrophically wrong in the tails. We fit a normal to real-looking daily
+returns of a stock index and look at where it lies to us.
+
+```{python}
+#| label: fig-returns
+#| fig-cap: "Why the normal fails on financial returns. We simulate daily log-returns from a heavy-tailed Student's-$t$ (the realistic model, [PROB-15]) and overlay the best-fit normal (matching mean and variance). **Left:** in the bulk the normal looks fine — this is the seduction. **Right:** the same data on a log-density scale exposes the tails: the empirical returns (bars) have far more extreme days than the normal (red) allows. The Q-Q-style mismatch in the tails is where real money is lost."
+from scipy.stats import norm, t as student_t
+rng = np.random.default_rng(7)
+
+# Realistic heavy-tailed daily returns: Student-t with 3 df, scaled to ~1% daily vol
+nu = 3
+raw = student_t.rvs(nu, size=300_000, random_state=rng)
+ret = 0.01 * raw / np.sqrt(nu/(nu-2))   # scale so SD ~ 1%
+mu_f, sd_f = ret.mean(), ret.std()
+grid = np.linspace(-0.08, 0.08, 600)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.hist(ret, bins=200, range=(-0.05, 0.05), density=True,
+         color="#cfd8e8", edgecolor="none")
+axL.plot(grid, norm.pdf(grid, mu_f, sd_f), color=CURVE2, label="best-fit normal")
+axL.set_xlim(-0.05, 0.05)
+axL.set_title("In the bulk, the normal looks fine")
+axL.set_xlabel("daily return"); axL.set_ylabel("density")
+axL.legend(fontsize=9, framealpha=0.9)
+
+axR.hist(ret, bins=200, range=(-0.08, 0.08), density=True,
+         color="#cfd8e8", edgecolor="none")
+axR.plot(grid, norm.pdf(grid, mu_f, sd_f), color=CURVE2, label="best-fit normal")
+axR.set_yscale("log"); axR.set_ylim(1e-2, 1e2)
+axR.set_title("On a log scale, the tails betray it")
+axR.set_xlabel("daily return"); axR.set_ylabel("density (log)")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+# How badly does the normal under-rate a big move?
+big = 0.05  # a 5% down day
+p_norm = norm.cdf(-big, mu_f, sd_f)
+p_emp  = np.mean(ret <= -big)
+print(f"P(daily return <= -5%):  normal says {p_norm:.2e},  data shows {p_emp:.2e}")
+print(f"The normal under-rates this crash by a factor of ~{p_emp/p_norm:.0f}.")
+
+# values reused in the prose below
+p_norm_crash = norm.cdf(-0.05, 0.0, 0.01)
+p_5sigma = 2 * (1 - norm.cdf(5))
+```
+
+The normal model says a $5\%$ single-day drop has probability about
+`{python} f"{p_norm_crash:.0e}"`
+— effectively never. The heavy-tailed reality produces such days orders of magnitude more
+often, as the printed factor shows. The exponential tail of @eq-density, which made every
+integral in this article converge so cleanly, is precisely what makes the model *deny* the
+existence of crashes that do, in fact, happen. **When you reach for something else:** for
+heavy-tailed data use the Student's $t$ ([PROB-15]) or other fat-tailed families, model the
+tail directly with extreme-value theory (flagged in [PROB-23]), or work with returns whose
+tails you have actually checked rather than assumed. The lesson is the Core's liability made
+concrete.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The normal is the right tool astonishingly often and the wrong tool in a few predictable
+places. Knowing which is which is the difference between using it and being used by it.
+
+## Thin tails: the central liability {#sec-thin-tails}
+
+The exponential $e^{-z^2/2}$ decays *faster than any power* of $z$. That is mathematically
+delightful — it is why every moment of the normal exists and every integral in
+@sec-formal converged — and practically dangerous. A "$5$-sigma event" has probability
+about $`{python} f"{p_5sigma:.1e}"`$
+under the normal, i.e. roughly one in three million; many real systems (markets, network
+traffic, insurance losses, material failures) produce such extremes monthly. **If your data
+have heavy tails, the normal will lull you into under-pricing risk**, exactly as in
+@sec-returns. The diagnostic is cheap and you should make it a reflex: plot the data against
+normal quantiles (a Q–Q plot). A normal sample falls on a straight line; heavy tails bend
+the ends upward.
+
+## Skew and bounded support: the wrong shape entirely {#sec-skew}
+
+The normal is symmetric and lives on the entire real line $(-\infty,\infty)$. Two common
+data types violate this outright:
+
+- **Inherently positive, skewed quantities** — incomes, response times, concentrations,
+  rainfall — pile up near a floor of zero and trail off to the right. A normal fit puts
+  positive probability on *negative* values that cannot occur, and mis-centers because mean
+  $\neq$ median under skew. Reach for the **gamma, exponential, or log-normal** ([PROB-14]),
+  or model $\log(\text{data})$ if a log-transform straightens the skew.
+- **Counts and proportions** — a count is a non-negative integer (use Poisson, [PROB-12], or
+  negative-binomial, [PROB-11]); a proportion is trapped in $[0,1]$ (use the **Beta**,
+  [PROB-14]). The normal's unbounded, continuous support is simply the wrong sample space,
+  even though the normal *approximation* to a binomial (de Moivre's original find) is
+  serviceable when $np$ and $n(1-p)$ are both large.
+
+```{python}
+#| label: fig-failure
+#| fig-cap: "Two shapes the normal cannot be. **Left:** a right-skewed positive quantity (a gamma-distributed response time); the best-fit normal (red) is symmetric, mis-centers, and absurdly assigns probability to negative times (shaded). **Right:** a Q–Q plot of the heavy-tailed returns from @sec-returns against normal quantiles — a normal sample would track the dashed line, but the tails bend sharply away, the visual fingerprint of excess kurtosis."
+from scipy.stats import norm, gamma, probplot, t as student_t
+rng = np.random.default_rng(3)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+
+# skewed positive data
+k, theta = 2.0, 1.3
+xs = np.linspace(-3, 12, 500)
+axL.plot(xs, gamma.pdf(xs, k, scale=theta), color=CURVE, label="true (gamma, skewed)")
+m_g, v_g = k*theta, k*theta**2
+axL.plot(xs, norm.pdf(xs, m_g, np.sqrt(v_g)), color=CURVE2, label="best-fit normal")
+axL.fill_between(xs[xs<0], norm.pdf(xs[xs<0], m_g, np.sqrt(v_g)), color="#f3c0c4")
+axL.set_title("Skewed, positive data"); axL.set_xlabel("response time"); axL.set_ylabel("density")
+axL.legend(fontsize=8.5, framealpha=0.9)
+
+nu = 3
+ret = student_t.rvs(nu, size=4000, random_state=rng)
+probplot(ret, dist="norm", plot=axR)
+axR.get_lines()[0].set_color(CURVE); axR.get_lines()[0].set_markersize(3)
+axR.get_lines()[1].set_color(GREY); axR.get_lines()[1].set_linestyle("--")
+axR.set_title("Q–Q plot: tails betray non-normality")
+axR.set_xlabel("normal quantiles"); axR.set_ylabel("sample quantiles")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"When is assuming normality safe, and when is it dangerous?"* The summary you should be
+able to recite:
+
+- **Safe** when the quantity is a **sum or average of many independent comparable
+  pieces** (the CLT regime — measurement error, sample means, aggregate sums), when a Q–Q
+  plot is roughly straight, and when you care about the *center* of the distribution, not
+  its extremes.
+- **Dangerous** when you care about the **tails** (risk, rare-event probabilities,
+  worst-case design) — thin tails systematically under-rate extremes; when the data are
+  **skewed or bounded** (positive quantities, proportions, counts) — wrong shape and wrong
+  support; and when the data are **heavy-tailed** (finance, network, insurance) — the variance
+  may not even be a meaningful summary.
+- **The deepest catch:** normality of a *statistic* (like $\bar X$, by the CLT) does not
+  require normality of the *data*. Conflating the two — "I need my raw data to be normal" —
+  is a classic error. Most procedures that "assume normality" actually only need the
+  *sampling distribution of the estimate* to be approximately normal, which the CLT often
+  supplies for free.
+:::
+
+## What the normal is *not* a limit of {#sec-not-limit}
+
+The CLT needs a **finite variance**. If the pieces being summed have infinite variance — the
+Cauchy distribution is the canonical case, with tails so heavy that $E[X^2]$ and even
+$E[|X|]$ diverge (the boundary example flagged back in [PROB-5]) — then averaging does **not**
+produce a normal. A sample mean of Cauchy variables is *itself* Cauchy, no matter how large
+$n$ is; the averaging never tames it. This is the precise statement of the CLT's fine print:
+the bell curve is the fixed point of averaging *only* when the second moment is finite. When
+it is not, you are in the world of stable distributions and extreme-value theory, not the
+world of this article.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the discrete catalog — [PROB-11 *Bernoulli, Binomial, Negative-Binomial*]
+and [PROB-12 *Poisson*] — and from the continuous-density groundwork of [PROB-4]. This
+article built the first and most important *continuous named distribution* end to end:
+its constant ([PROB-13] @sec-gaussian-integral), its moments, its standardization, and the
+closure property that makes it the backbone of statistics. From here the catalog and the
+vector/limit spine both continue:
+
+- **[PROB-14 *Gamma, Exponential, and Beta*]** — the skewed and bounded distributions the
+  normal *cannot* model (@sec-skew); the right tools when symmetry and full-line support
+  fail.
+- **[PROB-15 *Chi-Square, Student's t, and F*]** — manufactured directly out of normals: a
+  sum of squared standard normals is chi-square, and the heavy-tailed $t$ of @sec-returns is
+  a normal over a scaled chi-square root. Everything classical inference does with normal
+  samples flows through here.
+- **[PROB-17 *Random Vectors* ] and [PROB-18 *Linear Transforms*]** — the bell curve in
+  many dimensions: the **multivariate normal**, where @thm-closure becomes "linear maps of a
+  Gaussian vector are Gaussian," the workhorse of [REGR-6].
+- **[PROB-20 *Moment Generating Functions*]** — re-proves @thm-closure in three lines using
+  the normal's MGF $e^{\mu t+\sigma^2 t^2/2}$, and supplies the transform machinery the CLT
+  proof needs.
+- **Across the tracks:** the Gaussian error model of [REGR-2]/[REGR-9], and essentially all
+  of Statistical Inference, run on the facts proved here.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Abraham de Moivre, *The Doctrine of Chances* (2nd ed., 1738), where
+  the bell curve first appears as the large-$n$ binomial approximation; Carl Friedrich
+  Gauss, *Theoria Motus Corporum Coelestium* (1809), which derived the curve as the unique
+  error law making the arithmetic mean the most-likely estimate, welding it to least squares
+  ([REGR-1]); Pierre-Simon Laplace, who connected it to general averaging (the proto-CLT).
+- **The honest-tails classic.** Benoit Mandelbrot and the long literature on heavy tails in
+  finance is the permanent antidote to @sec-returns; Nassim Taleb's *The Black Swan* is the
+  popular sermon on the same point — the normal's thin tails as a source of real-world ruin.
+- **Open threads this article deliberately deferred.** *Why* is the normal the unique limit
+  of standardized sums? — the Central Limit Theorem, proved in [INFR-A2] using the MGF/CF
+  machinery of [PROB-20]. *What replaces the bell when variance is infinite?* — stable
+  distributions and extreme-value theory, flagged in @sec-not-limit and [PROB-23]. *What does
+  the normal look like in many correlated dimensions?* — the multivariate normal,
+  [PROB-17]–[PROB-18]. *Is there a single algebraic form that contains the normal, the
+  Poisson, the gamma, and the rest as special cases?* — yes, the exponential family,
+  [PROB-16].

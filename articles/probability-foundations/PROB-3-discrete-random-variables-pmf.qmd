@@ -1,0 +1,830 @@
+---
+title: "Discrete Random Variables: The Probability Mass Function"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples / mass
+LINE   = "#c1121f"     # the CDF / theoretical value
+ACCENT = "#0a7d4d"     # highlights / cumulative
+GREY   = "#6c757d"
+STEM   = "#2b3a67"     # pmf stems
+```
+
+> **Where this sits in the track.** This is the first of the two concrete kinds of random
+> variable, the left fork after [PROB-2 *Random Variables: Turning Outcomes into Numbers*].
+> PROB-2 built the random variable as a function $X:\Omega\to\mathbb{R}$ and named the one
+> object that describes *any* such variable — the cumulative distribution function
+> $F(x)=P(X\le x)$. Here we specialize to the case where $X$ lands on a **countable** set
+> of values, and we meet the object that makes that case computable: the **probability
+> mass function** $p(x)=P(X=x)$. We assume only [PROB-0 *What Is Probability?*] (sample
+> spaces and the Kolmogorov axioms) and [PROB-2]. It sets up [PROB-5 *Expectation*] (the
+> long-run average is a sum *weighted by the mass*), and the named discrete distributions —
+> [PROB-11 *Bernoulli, Binomial & Negative-Binomial*] and [PROB-12 *The Poisson
+> Distribution*] — which are nothing but particular mass functions. The companion fork is
+> [PROB-4 *Continuous Random Variables*], where the continuum forces a density in place of
+> a mass.
+
+## Abstract {.unnumbered}
+
+When a random variable takes only countably many values — the face of a die, a count of
+defects, a number of clicks — its entire probabilistic behavior is captured by one table:
+how much **probability mass** sits on each value. This article builds that table, the
+**probability mass function** $p(x)=P(X=x)$, directly from the Kolmogorov axioms, proves
+the two properties that make a function a legitimate pmf ($p(x)\ge 0$ and $\sum_x p(x)=1$),
+and shows how *every* event probability — $P(X\le 3)$, $P(X\text{ is even})$, $P(2\le X<
+7)$ — is just a sum of mass over the values the event contains. We then make the pmf and
+the CDF of [PROB-2] two views of the same object: the CDF is the running total of the mass
+(a sum), and the mass is the size of the CDF's jumps (a difference). The single claim this
+article defends is that **for a discrete variable there is nothing more to know than where
+the mass sits** — once you have the pmf, the CDF, every probability, and (next article) the
+mean and variance are all just bookkeeping on that one table. We carry it through on honest,
+*un-named* examples — a loaded die, a casino payout, real customer-arrival counts — so the
+machinery is clear before the catalog ever attaches a name to it.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A **discrete** random variable $X$ lands on a countable set of values
+$\{x_1,x_2,\dots\}$. Everything about it is encoded in one function, the **probability mass
+function**
+$$
+p(x) = P(X = x),
+$$
+which records how much probability sits exactly on each value. Two rules make a function a
+legitimate pmf — the mass is never negative and it sums to one:
+$$
+p(x)\ge 0 \quad\text{for all }x, \qquad \sum_{x} p(x) = 1 .
+$$
+Then the probability of *any* event is a single move: **add up the mass on the values the
+event contains**, $P(X\in A)=\sum_{x\in A} p(x)$. The CDF $F(x)=P(X\le x)$ is the running
+total of that mass, and the mass is the size of the CDF's jumps — two views of one table.
+:::
+
+Everything below orbits that box. The phrase "add up the mass" will look almost too simple
+to be the whole story, but by the end you should see that for a discrete variable it
+genuinely *is* the whole story: there is no integral, no density, no calculus beyond
+addition. The subtlety is never in the arithmetic — it is in being honest about *which*
+values carry mass and *which* event you are summing over, which is exactly where the
+classic mistakes live (@sec-failure).
+
+# Why we are here: the problem the pmf solves {#sec-why}
+
+Keep one question in view for the whole article: **once we have turned random outcomes into
+numbers, how do we actually compute the probability of anything we care about?** Every step
+below is an answer to a piece of that question. If a move feels arbitrary, return here.
+
+## What PROB-2 left us, and what it left undone
+
+[PROB-2] performed the move that lets arithmetic touch chance: it defined a **random
+variable** as a function $X:\Omega\to\mathbb{R}$ that attaches a number to every outcome in
+the sample space $\Omega$ built in [PROB-0]. Roll two dice; the outcome is a pair like
+$(3,5)$, but what we care about is the *total*, $X=8$. The variable $X$ is the rule
+"add the two faces." That rule turns the messy space of outcomes into plain numbers we can
+order, add, and average.
+
+PROB-2 also named the one descriptor that works for *every* random variable — discrete,
+continuous, or a hybrid — the **cumulative distribution function**
+$$
+F(x) = P(X \le x),
+$$ {#eq-cdf}
+the probability that $X$ comes out at or below the level $x$. The CDF is universal and
+powerful, but it is awkward for a variable that lands on separated values. If I ask "what is
+the chance the dice total is *exactly* $8$?", the CDF answers only indirectly — I would have
+to take $F(8)-F(7^-)$, the height of a jump, and explain what "$7^-$" means. For a discrete
+variable there is a far more natural object: a function that just tells me, value by value,
+how much probability sits *on* that value. That object is the probability mass function, and
+this article is its full story.
+
+## Why "discrete" is the easy, honest case to do first
+
+A random variable is called **discrete** when its possible values form a *countable* set —
+either finite ($\{1,2,3,4,5,6\}$ for one die) or countably infinite ($\{0,1,2,3,\dots\}$ for
+a count with no fixed ceiling). "Countable" is the precise word for *listable*: you can put
+the values in a sequence $x_1,x_2,x_3,\dots$ and not miss any. (The integers are countable;
+the real numbers in $[0,1]$ are not — that is exactly the gap [PROB-4] must cross with a
+density, and why this article and that one split.)
+
+The reason discreteness is the right place to start is that it lets us assign probability the
+way [PROB-0]'s axioms most naturally allow. Recall **Kolmogorov's axioms** from [PROB-0]:
+$P(E)\ge 0$ for every event $E$; $P(\Omega)=1$; and for a sequence of *disjoint* events
+$E_1,E_2,\dots$,
+$$
+P\!\left(\bigcup_{i} E_i\right) = \sum_{i} P(E_i)
+\qquad\text{(countable additivity).}
+$$ {#eq-additivity}
+When $X$ takes countably many values, the events "$X=x_1$", "$X=x_2$", "$\dots$" are
+disjoint (a single draw of $X$ cannot equal two different numbers at once) and together they
+cover everything $X$ can do. So @eq-additivity says the probabilities on the individual
+values are the whole budget, and they must sum to the total mass $P(\Omega)=1$. **The pmf is
+nothing more than that budget, written down value by value.** Everything in this article is
+a consequence of that one observation.
+
+::: {.callout-tip title="You might be asked"}
+*"What exactly makes a random variable discrete — is it that it takes whole-number values?"*
+No. Discreteness is about the values being **countable**, not about them being integers. A
+payout that takes the values $\{-2.50, 0, 17.00\}$ is discrete (three values, finite). A
+variable that takes every value in the interval $[0,1]$ is *not* discrete (that interval is
+uncountable), even though every value is a perfectly ordinary number. The dividing line is
+listability, and it is the line that decides whether you describe the variable with a mass
+function (this article) or a density ([PROB-4]). Some variables are neither pure — a rainfall
+amount that is $0$ with positive probability but otherwise spreads over a continuum is a
+*mixture*; the CDF of [PROB-2] is what handles all three on equal footing.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formal definition, here is the picture to carry. Imagine you have exactly one
+unit — one kilogram, say — of "probability clay," and a number line in front of you. To
+describe a discrete random variable, you place little lumps of that clay on the specific
+values the variable can take. A fair die: six equal lumps of $1/6$ kg, one on each of
+$1$ through $6$. A loaded die: the same six locations, but the lumps are uneven. A coin
+counted as $0$/$1$: two lumps. The **mass function** is just the answer to "how heavy is
+the lump at value $x$?" — and the iron rule is that **all the clay you have is exactly one
+kilogram**, no more, no less. That is the $\sum_x p(x)=1$ in the Core.
+
+Two consequences fall straight out of the clay picture, and they are worth seeing before any
+algebra:
+
+- **Probability of a region = total clay in that region.** Want $P(2\le X \le 5)$? Sweep up
+  the lumps sitting on $2,3,4,5$ and weigh them. There is no integral to do because the clay
+  lives at isolated points — you just add the lump weights. This is the whole computational
+  content of a discrete variable.
+- **The CDF is a "clay so far" gauge.** Walk left to right along the number line dragging a
+  scoop; $F(x)$ is how much clay you have collected by the time you reach $x$. It starts at
+  $0$ (no clay to the far left), and it climbs in sudden *jumps* — flat between lumps, then
+  stepping up by exactly the lump's weight each time you pass one — until it reaches $1$ once
+  every lump is behind you. The jumps *are* the masses.
+
+@fig-pmf-cdf draws both views for a single small variable so the relationship is concrete
+before we prove it.
+
+```{python}
+#| label: fig-pmf-cdf
+#| fig-cap: "Two views of one discrete variable. **Left:** the probability mass function — a lump of probability \"clay\" on each value, heights summing to $1$. **Right:** the cumulative distribution function $F(x)=P(X\\le x)$, the running total of that mass. It is a right-continuous step function: flat between values, jumping up by exactly $p(x)$ at each value (jumps marked with the dashed arrows). The pmf is the height of the jumps; the CDF is the running sum of the heights. Filled dots mark the value the step actually takes; open dots mark the limit from the left."
+vals = np.array([0, 1, 2, 3, 4])
+pmf  = np.array([0.10, 0.25, 0.30, 0.20, 0.15])
+cdf  = np.cumsum(pmf)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+
+# --- pmf as a stem plot ---
+axL.vlines(vals, 0, pmf, color=STEM, lw=3)
+axL.scatter(vals, pmf, color=STEM, s=55, zorder=3)
+for v, p in zip(vals, pmf):
+    axL.text(v, p + 0.012, f"{p:.2f}", ha="center", fontsize=9, color=STEM)
+axL.set_ylim(0, 0.37)
+axL.set_xlabel("value $x$"); axL.set_ylabel("$p(x)=P(X=x)$")
+axL.set_title("Probability mass function")
+
+# --- CDF as a right-continuous step function ---
+xs_pad = np.concatenate(([vals[0] - 1], vals, [vals[-1] + 1]))
+axR.hlines(0, xs_pad[0], vals[0], color=LINE, lw=2)             # F = 0 to the left
+for i, v in enumerate(vals):
+    right = vals[i + 1] if i + 1 < len(vals) else xs_pad[-1]
+    axR.hlines(cdf[i], v, right, color=LINE, lw=2)              # flat at this level
+    axR.scatter([v], [cdf[i]], color=LINE, s=45, zorder=4)      # filled: value taken here
+    prev = cdf[i - 1] if i > 0 else 0.0
+    axR.scatter([v], [prev], facecolors="white", edgecolors=LINE,
+                s=45, zorder=4, linewidths=1.6)                  # open: limit from left
+    axR.annotate("", xy=(v, cdf[i]), xytext=(v, prev),
+                 arrowprops=dict(arrowstyle="->", color=GREY, ls="--", lw=1.2))
+axR.set_ylim(-0.03, 1.05)
+axR.set_xlabel("value $x$"); axR.set_ylabel("$F(x)=P(X\\le x)$")
+axR.set_title("Cumulative distribution function")
+plt.tight_layout()
+```
+
+That figure is the entire article in one image; the rest is making each claim in it precise
+and proving it from the axioms.
+
+# The formal development {#sec-formal}
+
+## The probability mass function, defined {#sec-def-pmf}
+
+::: {#def-pmf}
+**Definition (probability mass function).** Let $X$ be a discrete random variable taking
+values in a countable set $\mathcal{X}=\{x_1,x_2,\dots\}\subseteq\mathbb{R}$. Its
+**probability mass function** (pmf) is the function $p:\mathbb{R}\to[0,1]$ defined by
+$$
+p(x) = P(X = x) ,
+$$ {#eq-pmf-def}
+the probability that $X$ takes the exact value $x$. For values $x$ that $X$ cannot take, the
+event $\{X=x\}$ is empty, so $p(x)=P(\varnothing)=0$ by [PROB-0].
+:::
+
+Unpack every symbol in @eq-pmf-def, because each earns its place. The set $\mathcal{X}$ is
+the **support** of $X$ — the values that actually carry positive mass (made precise in
+@sec-support). The event "$X=x$" is shorthand for the set of outcomes $\omega\in\Omega$ for
+which the function $X$ returns the number $x$; formally $\{X=x\}=\{\omega\in\Omega: X(\omega)=x\}$,
+which is a genuine event in the sense of [PROB-0], so $P$ is allowed to act on it. The pmf is
+defined for *every* real $x$, but it is zero everywhere except on the countable support — the
+clay sits only at the lumps.
+
+A point of notation we will hold to: lowercase $x$ is a *particular number* (a value the
+variable might equal), while uppercase $X$ is the *random variable* itself (the rule, not yet
+evaluated). The statement $P(X=x)$ reads "the probability that the random thing $X$ comes out
+equal to the fixed number $x$." When several variables are in play we write $p_X(x)$ to mark
+*whose* mass function it is.
+
+## The two defining properties — derived, not declared {#sec-properties}
+
+The Core asserts that a pmf satisfies $p(x)\ge 0$ and $\sum_x p(x)=1$. We do not declare
+these; we derive them from the Kolmogorov axioms of [PROB-0], because that is where their
+authority comes from.
+
+::: {#thm-pmf-props}
+**Theorem (the pmf axioms).** For any discrete random variable $X$ with pmf $p$,
+$$
+\textbf{(i)}\quad p(x)\ge 0 \text{ for every } x\in\mathbb{R},
+\qquad\qquad
+\textbf{(ii)}\quad \sum_{x\in\mathcal{X}} p(x) = 1 ,
+$$
+where the sum runs over the support $\mathcal{X}$. Conversely, any function $p$ satisfying
+(i) and (ii) on a countable set is the pmf of *some* discrete random variable.
+:::
+
+::: {.proof}
+**Property (i).** By the first Kolmogorov axiom, *every* event has probability at least zero.
+The set $\{X=x\}$ is an event, so $p(x)=P(X=x)\ge 0$. That is the whole argument — non-negativity
+of mass is just non-negativity of probability, inherited unchanged.
+
+**Property (ii).** This is where countable additivity does the work. List the support as
+$\mathcal{X}=\{x_1,x_2,\dots\}$. Consider the events
+$$
+E_i = \{X = x_i\}, \qquad i = 1,2,\dots
+$$
+These events are **pairwise disjoint**: if $\omega\in E_i\cap E_j$ with $i\ne j$, then
+$X(\omega)=x_i$ *and* $X(\omega)=x_j$, forcing $x_i=x_j$, a contradiction since the listed
+values are distinct. A single evaluation of $X$ returns one number, so it cannot belong to
+two different "$X=x_i$" events at once.
+
+These events are also **exhaustive**: every outcome $\omega\in\Omega$ produces *some* value
+$X(\omega)$, and since $X$ is discrete that value lies in $\mathcal{X}$, so $\omega$ belongs
+to exactly one $E_i$. Therefore their union is the entire sample space,
+$$
+\bigcup_{i} E_i = \Omega .
+$$
+Now apply countable additivity @eq-additivity to this disjoint union, and then the second
+axiom $P(\Omega)=1$:
+$$
+\sum_{i} p(x_i)
+= \sum_{i} P(E_i)
+\;\overset{\text{@eq-additivity}}{=}\;
+P\!\left(\bigcup_{i} E_i\right)
+= P(\Omega) = 1 .
+$$
+That is exactly $\sum_{x\in\mathcal{X}} p(x)=1$. The total mass is one because the values
+partition the sample space and probability is countably additive across a partition.
+
+**Converse.** Suppose $p\ge 0$ on a countable set $\{x_1,x_2,\dots\}$ with $\sum_i p(x_i)=1$.
+Take $\Omega=\{x_1,x_2,\dots\}$ itself, define $P(\{x_i\})=p(x_i)$ and extend to any subset by
+summing (which satisfies the axioms precisely because $p\ge0$ and the total is $1$), and let
+$X$ be the identity map $X(x_i)=x_i$. Then $P(X=x_i)=p(x_i)$, so $p$ is realized as a genuine
+pmf. This is the licence to *invent* a discrete variable just by writing down a valid mass
+table — which is exactly what we do for the loaded die and the payout below. $\qquad\blacksquare$
+:::
+
+The converse is not a technicality; it is the working permission for the rest of the track.
+When [PROB-11] writes down the binomial mass $p(k)=\binom{n}{k}p^k(1-p)^{n-k}$, the only thing
+it must check to be allowed to call it a distribution is that those numbers are non-negative
+and sum to one. @thm-pmf-props says that check is *sufficient* — nothing else is required.
+
+::: {.callout-tip title="You might be asked"}
+*"Can a probability mass ever exceed $1$?"* No — and the reason is property (i)–(ii) together,
+not a separate rule. Each $p(x)$ is one term of a sum of non-negative numbers that totals
+exactly $1$, so no single term can exceed the total: $0\le p(x)\le 1$. Watch this carefully,
+because it is **the cleanest contrast with the continuous case**: a probability *density*
+([PROB-4]) routinely exceeds $1$, since a density is mass *per unit length*, not mass. A mass
+is a probability and is capped at $1$; a density is not a probability and is not capped. Mixing
+the two up is the single most common conceptual error when crossing from this article to the
+next.
+:::
+
+## The support {#sec-support}
+
+::: {#def-support}
+**Definition (support).** The **support** of $X$ is the set of values carrying positive mass,
+$$
+\mathcal{X} = \{\, x \in \mathbb{R} : p(x) > 0 \,\}.
+$$
+:::
+
+The support is the honest answer to "what can this variable actually do?" Everything outside
+it has $p(x)=0$ and may be ignored in every sum — including it changes nothing, since adding
+zeros to a sum is free. We will routinely write $\sum_x$ to mean $\sum_{x\in\mathcal{X}}$,
+because the zero terms are harmless. The support can be finite (a die: $\{1,\dots,6\}$) or
+countably infinite (a Poisson count: $\{0,1,2,\dots\}$). When it is infinite, property (ii)
+becomes a statement about an *infinite series* converging to $1$ — a real constraint we
+exploit in @sec-geometric.
+
+## Event probabilities are sums over the mass {#sec-events}
+
+Here is the payoff property — the one that makes the pmf worth defining. To get the
+probability of *any* event described in terms of $X$, you add up the mass on the values that
+event allows.
+
+::: {#thm-event}
+**Theorem (event probability as a sum).** For any set $A\subseteq\mathbb{R}$,
+$$
+P(X\in A) = \sum_{x\in A} p(x) ,
+$$ {#eq-event-sum}
+where the sum runs over the values in $A$ that lie in the support (the rest contribute $0$).
+:::
+
+::: {.proof}
+The event $\{X\in A\}$ is the set of outcomes for which $X$ lands in $A$. Decompose it by
+*which* value of the support $X$ hits:
+$$
+\{X\in A\} = \bigcup_{x\in A\cap\mathcal{X}} \{X = x\} .
+$$
+This is a union of the single-value events $\{X=x\}$, taken over the supported values inside
+$A$. As established in the proof of @thm-pmf-props, distinct single-value events are pairwise
+disjoint — a draw of $X$ equals only one number — so this is a disjoint union of a countable
+collection. Countable additivity @eq-additivity applies term by term:
+$$
+P(X\in A) = \sum_{x\in A\cap\mathcal{X}} P(X=x) = \sum_{x\in A\cap\mathcal{X}} p(x)
+= \sum_{x\in A} p(x),
+$$
+the last equality because values of $A$ outside the support contribute $p(x)=0$.
+$\qquad\blacksquare$
+:::
+
+@eq-event-sum is the engine of every discrete probability calculation. Three immediate
+specializations cover almost everything you will ever compute:
+
+- **An interval / range:** $P(a \le X \le b) = \sum_{x:\, a\le x\le b} p(x)$. Just sweep up the
+  mass between the endpoints. Mind whether the endpoints are *included* — that is where the
+  off-by-one mistakes live (@sec-failure).
+- **A condition:** $P(X\text{ is even}) = \sum_{x\text{ even}} p(x)$, $P(X > 3)=\sum_{x>3}p(x)$.
+  Any rule that selects values selects the masses to add.
+- **The complement shortcut:** $P(X \ge 4) = 1 - P(X\le 3)$, because the two events partition
+  the line and the total mass is $1$. Often the complement is the shorter sum — a habit worth
+  forming.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is $P(a\le X\le b)$ a sum here, but an integral for a continuous variable?"* Because the
+mass lives at *isolated points*. Probability "in a region" means "the probability assigned to
+the region," and for a discrete variable the region's probability is the sum of the point
+masses inside it — there is no width to integrate over, the clay sits at the lumps. In [PROB-4]
+the probability is smeared continuously, so the analogous total is $\int_a^b f(x)\,dx$. The
+$\sum$ here and the $\int$ there are the *same idea* — total the probability in the region —
+under two different ways probability can be distributed. Seeing them as one idea, not two
+formulas, is what an interviewer is probing.
+:::
+
+## The CDF is the running sum; the pmf is the jump {#sec-cdf-pmf}
+
+We now make precise the right-hand picture of @fig-pmf-cdf: the pmf and the CDF of [PROB-2]
+are two views of one table, related by summing in one direction and differencing in the other.
+
+**From pmf to CDF (sum).** Apply @eq-event-sum with $A=(-\infty, x]$:
+$$
+F(x) = P(X \le x) = \sum_{t\,\le\, x} p(t) ,
+$$ {#eq-cdf-from-pmf}
+the running total of all mass at or below $x$. As $x$ increases past a supported value, the
+sum gains that value's mass; between supported values, no new mass is added and $F$ stays
+flat. So $F$ is a **step function**: flat stretches punctuated by upward jumps. It is
+**right-continuous** — at a supported value $x_0$, the sum @eq-cdf-from-pmf already *includes*
+$p(x_0)$ (the inequality is $t\le x$, not $t<x$), so $F$ takes the post-jump value *at* $x_0$;
+this is exactly the filled-dot/open-dot convention in @fig-pmf-cdf. These are the three
+defining CDF properties from [PROB-2] — monotone, right-continuous, limits $0$ and $1$ —
+specialized to a step function.
+
+**From CDF to pmf (difference).** The mass at $x_0$ is the *height of the jump* there. Writing
+$F(x_0^-)=\lim_{x\uparrow x_0}F(x)$ for the limit approached from the left (the height *just
+before* the jump),
+$$
+p(x_0) = F(x_0) - F(x_0^-) .
+$$ {#eq-pmf-from-cdf}
+This is the inverse of @eq-cdf-from-pmf: where summing built the steps, differencing recovers
+the step heights.
+
+::: {#lem-jump}
+**Lemma (the jump is the mass).** For any $x_0$, $\;F(x_0)-F(x_0^-)=P(X=x_0)=p(x_0)$.
+:::
+
+::: {.proof}
+By @eq-cdf-from-pmf, $F(x_0)=\sum_{t\le x_0}p(t)$. The left limit $F(x_0^-)$ collects all mass
+*strictly* below $x_0$: as $x$ rises toward $x_0$ without reaching it, the sum
+$\sum_{t\le x}p(t)$ includes every supported value below $x_0$ but not $x_0$ itself, and in
+the limit it equals $\sum_{t< x_0}p(t)$. (More carefully: for $x$ between $x_0$ and the next
+supported value below it, $\sum_{t\le x}p(t)=\sum_{t<x_0}p(t)$ exactly, since no supported
+value lies in that gap; so the left limit *is* that constant value.) Subtracting,
+$$
+F(x_0)-F(x_0^-) = \sum_{t\le x_0}p(t) - \sum_{t< x_0}p(t) = p(x_0),
+$$
+because the two sums differ in exactly the single term $t=x_0$. And $p(x_0)=P(X=x_0)$ by
+@def-pmf. So the jump height equals the point mass. Where $x_0$ carries no mass, $p(x_0)=0$ and
+$F$ has no jump — it is continuous there. $\qquad\blacksquare$
+:::
+
+@lem-jump is more than bookkeeping: it is the reason discreteness is *visible* in the CDF.
+A discrete variable's CDF is a pure staircase (all of its rise happens in jumps); a continuous
+variable's CDF rises smoothly with no jumps (every $P(X=x)=0$); a mixture has both. The shape
+of $F$ tells you which kind of variable you have, which is precisely the diagnostic [PROB-2]
+promised and the seam between this article and [PROB-4].
+
+::: {.callout-tip title="You might be asked"}
+*"Given a CDF, how do you recover $P(X=3)$, $P(X<3)$, and $P(X\le 3)$ — and why are they
+different?"* Use the staircase. $P(X\le 3)=F(3)$ reads the step *at* $3$ (right-continuous, so
+$F(3)$ already includes the mass at $3$). $P(X<3)=F(3^-)$ reads the height *just before* the
+jump at $3$ — it *excludes* the mass at $3$. And $P(X=3)=F(3)-F(3^-)$ is the jump itself, the
+difference of the two. They differ by exactly $p(3)$. For a *continuous* variable ([PROB-4])
+the point mass is $p(3)=P(X=3)=0$, so the jump height is zero and $F(3^-)=F(3)$; substituting
+that into the three expressions gives $P(X<3)=F(3^-)=F(3)=P(X\le 3)$ and $P(X=3)=F(3)-F(3^-)=0$
+— so all three collapse to the same number. That is precisely why the strict-vs-weak inequality
+matters here, where $p(3)>0$, but not there, where it is $0$. Getting this triple right is a
+standard exam discriminator.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on three honest examples — none of them a *named* distribution yet,
+so you watch the pmf, CDF, and event-sums work as raw definitions before [PROB-11]/[PROB-12]
+ever attach a name. The first we carry through entirely by hand.
+
+## Example 1 — a loaded die {#sec-loaded-die}
+
+A casino's six-sided die is suspected of being shaved so that high faces come up more often.
+Independent testing produced the following mass function for the face $X\in\{1,2,3,4,5,6\}$.
+This is a pmf we simply *declare* — the converse half of @thm-pmf-props licenses it, provided
+the numbers are non-negative and sum to one, which we verify first.
+
+```{python}
+#| label: tbl-die
+faces = np.array([1, 2, 3, 4, 5, 6])
+p_die = np.array([0.10, 0.12, 0.13, 0.15, 0.20, 0.30])
+print("face x:    ", "  ".join(f"{f:>4d}" for f in faces))
+print("p(x):      ", "  ".join(f"{p:>4.2f}" for p in p_die))
+print(f"\n(i)  all p(x) >= 0 ? {np.all(p_die >= 0)}")
+print(f"(ii) sum p(x)     = {p_die.sum():.2f}   (must be 1)")
+```
+
+Both pmf axioms hold, so this is a legitimate discrete variable. Now compute three event
+probabilities *by hand*, each a direct application of @eq-event-sum — adding the mass on the
+allowed faces.
+
+**The chance of rolling at least a $5$.** The event $A=\{X\ge 5\}$ contains the faces $5$ and
+$6$, so we sum their mass:
+$$
+P(X\ge 5) = p(5) + p(6) = 0.20 + 0.30 = 0.50 .
+$$
+Half the time this die shows a $5$ or $6$ — a fair die would do that only a third of the time,
+which is exactly the shaving the casino feared.
+
+**The chance of an even face.** The event $\{X\text{ even}\}=\{2,4,6\}$:
+$$
+P(X\text{ even}) = p(2)+p(4)+p(6) = 0.12 + 0.15 + 0.30 = 0.57 .
+$$
+
+**A range, the long way and the short way.** For $P(2\le X\le 4)$ we add directly,
+$$
+P(2\le X\le 4) = p(2)+p(3)+p(4) = 0.12+0.13+0.15 = 0.40 ,
+$$
+or use the complement shortcut from @sec-events: $P(2\le X\le 4)=F(4)-F(1)$, where
+$F(4)=p(1)+\dots+p(4)=0.50$ and $F(1)=0.10$, giving $0.50-0.10=0.40$ — the same answer,
+confirming @eq-cdf-from-pmf. @fig-die shows the pmf and its staircase CDF, with the "$X\ge 5$"
+event shaded.
+
+```{python}
+#| label: fig-die
+#| fig-cap: "The loaded die. **Left:** the pmf, with the event $\\{X\\ge 5\\}$ shaded — its total height ($0.20+0.30=0.50$) is $P(X\\ge 5)$ by @eq-event-sum. **Right:** the CDF as a staircase; each jump height equals the corresponding mass (@lem-jump), and the total rise is exactly $1$. The fair-die mass $1/6\\approx0.167$ is drawn as a dashed reference — the die's mass is clearly tilted toward the high faces."
+cdf_die = np.cumsum(p_die)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+
+# pmf with the {X>=5} event shaded
+colors = [ACCENT if f >= 5 else STEM for f in faces]
+axL.vlines(faces, 0, p_die, color=colors, lw=4)
+axL.scatter(faces, p_die, color=colors, s=55, zorder=3)
+axL.axhline(1/6, color=GREY, ls="--", lw=1.3, label="fair die $1/6$")
+for f, p in zip(faces, p_die):
+    axL.text(f, p + 0.008, f"{p:.2f}", ha="center", fontsize=8.5, color=STEM)
+axL.set_ylim(0, 0.34)
+axL.set_xlabel("face $x$"); axL.set_ylabel("$p(x)$")
+axL.set_title("pmf (shaded: $X\\ge 5$)"); axL.legend(fontsize=9, loc="upper left")
+
+# CDF staircase
+axR.hlines(0, 0, faces[0], color=LINE, lw=2)
+for i, f in enumerate(faces):
+    right = faces[i + 1] if i + 1 < len(faces) else 7
+    axR.hlines(cdf_die[i], f, right, color=LINE, lw=2)
+    axR.scatter([f], [cdf_die[i]], color=LINE, s=40, zorder=4)
+    prev = cdf_die[i - 1] if i > 0 else 0.0
+    axR.scatter([f], [prev], facecolors="white", edgecolors=LINE, s=40, zorder=4, lw=1.5)
+axR.set_ylim(-0.03, 1.05)
+axR.set_xlabel("face $x$"); axR.set_ylabel("$F(x)$")
+axR.set_title("CDF (staircase; jumps = masses)")
+plt.tight_layout()
+```
+
+## Example 2 — a casino game payout {#sec-payout}
+
+Now a variable whose values are not the outcomes themselves but a *function* of them — the
+single most useful move in the whole subject, because it is what turns "what happened" into
+"what it cost me." A small game: pay \$1 to roll the *fair* die above's honest cousin (a fair
+six-sided die). You win \$5 on a $6$, win \$1 on a $5$, and otherwise win nothing. Let $X$ be
+your **net profit** in dollars (winnings minus the \$1 stake). Then $X$ is a discrete variable
+on three values, and we build its pmf from the die's pmf by the rule from [PROB-2]: the mass
+of a value of $X$ is the total mass of the outcomes that *map to* it.
+
+The fair die has $p(\text{face})=1/6$ each. Mapping faces to net profit:
+
+- A $6$ pays \$5, net $\$5-\$1 = \$4$. Only the face $6$ does this: mass $1/6$.
+- A $5$ pays \$1, net $\$1-\$1 = \$0$. Only the face $5$: mass $1/6$.
+- Faces $1,2,3,4$ pay \$0, net $\$0-\$1 = -\$1$. Four faces: mass $4/6 = 2/3$.
+
+So the net-profit variable $X$ has support $\{-1, 0, 4\}$ with the pmf below. This is
+@eq-event-sum used in reverse: each profit value's mass is the *sum* of the masses of the
+faces producing it.
+
+```{python}
+#| label: tbl-payout
+prof   = np.array([-1, 0, 4])
+p_prof = np.array([4/6, 1/6, 1/6])
+print("net profit x:  ", "   ".join(f"{v:>3d}" for v in prof))
+print("p(x):          ", "   ".join(f"{p:>4.3f}" for p in p_prof))
+print(f"\n(i)  all p(x) >= 0 ? {np.all(p_prof >= 0)}")
+print(f"(ii) sum p(x)     = {p_prof.sum():.3f}")
+print(f"\nP(profit >= 0) = p(0) + p(4) = {p_prof[1] + p_prof[2]:.3f}")
+print(f"P(loss)        = p(-1)        = {p_prof[0]:.3f}")
+```
+
+The mass on $-1$ is the heaviest: you lose your stake two-thirds of the time, and the rare \$4
+win on a $6$ is what the game dangles to keep you playing. We are *not* yet computing whether
+the game is worth playing on average — that is **expectation**, $E[X]=\sum_x x\,p(x)$, the
+weighted sum of the values against this very mass, and it is the entire subject of [PROB-5].
+The point here is narrower and prior: the pmf of a transformed variable is built by *pooling
+the mass* of the outcomes that land on each new value. @fig-payout draws it.
+
+```{python}
+#| label: fig-payout
+#| fig-cap: "The casino game's net-profit pmf. Each bar's height is the pooled mass of the die faces that produce that profit: four faces collapse onto a \\$1 loss (mass $2/3$), one face each onto break-even and a \\$4 win (mass $1/6$). The heavy mass on the loss is the house edge made visible — turning this picture into a single \"is it worth it?\" number is the job of expectation in [PROB-5]."
+fig, ax = plt.subplots(figsize=(6.0, 3.8))
+bars = ax.bar(prof, p_prof, width=0.4, color=[LINE, GREY, ACCENT])
+for v, p in zip(prof, p_prof):
+    ax.text(v, p + 0.012, f"{p:.3f}", ha="center", fontsize=10)
+ax.set_xticks(prof)
+ax.set_xticklabels(["$-\\$1$ (loss)", "$\\$0$ (even)", "$+\\$4$ (win)"])
+ax.set_ylim(0, 0.75)
+ax.set_ylabel("$p(x)$"); ax.set_xlabel("net profit $x$")
+ax.set_title("pmf of net profit (fair-die game)")
+plt.tight_layout()
+```
+
+## Example 3 — real arrival counts, and the edge of the finite case {#sec-geometric}
+
+The first two examples had finite support. Many real discrete variables do not: a *count* —
+support tickets in an hour, photons hitting a detector, customers through a door — has no
+fixed ceiling, so its support is the countably infinite set $\{0,1,2,\dots\}$. We take a real
+operational dataset and confront the one genuinely new wrinkle: property (ii) now demands an
+**infinite series** sum to $1$.
+
+We use hourly counts of arriving customers at a small store, recorded over many hours. The
+**empirical pmf** — the fraction of hours showing exactly $k$ arrivals — is itself a perfectly
+valid mass function (non-negative, sums to one), and it is the data's own estimate of the
+underlying mass. (That this empirical object converges to the truth as data accumulate is the
+content of the *empirical CDF* in [PROB-22]; here we just use it as a real, honest pmf.)
+
+```{python}
+#| label: fig-arrivals
+#| fig-cap: "Real-style hourly arrival counts ($1{,}500$ hours). **Left:** the empirical pmf — the fraction of hours with exactly $k$ arrivals — overlaid (red dots) with a fitted geometric-tail mass $p(k)=(1-r)r^{k}$ for comparison. **Right:** the empirical CDF as a staircase climbing toward $1$ but never quite finished — the visible signature of *infinite support*. The tail mass beyond the plotted range is small but genuinely nonzero, which is exactly why property (ii) is a statement about a convergent series, not a finite sum."
+rng = np.random.default_rng(2024)
+# A realistic right-skewed count with a long thin tail (no fixed ceiling).
+counts = rng.geometric(p=0.28, size=1500) - 1   # support {0,1,2,...}
+kmax = 14
+ks = np.arange(0, kmax + 1)
+emp = np.array([(counts == k).mean() for k in ks])
+
+# A geometric mass p(k) = (1-r) r^k fitted by matching the mean.
+mean_hat = counts.mean()
+r = mean_hat / (1 + mean_hat)          # mean of geometric-on-{0,1,..} is r/(1-r)
+geom = (1 - r) * r**ks
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.vlines(ks, 0, emp, color=STEM, lw=3)
+axL.scatter(ks, emp, color=STEM, s=30, zorder=3, label="empirical $p(k)$")
+axL.plot(ks, geom, "o", color=LINE, ms=4, label=r"geometric $(1-r)r^k$")
+axL.set_xlabel("arrivals in an hour, $k$"); axL.set_ylabel("$p(k)$")
+axL.set_title("Empirical pmf of arrivals"); axL.legend(fontsize=9)
+
+emp_cdf = np.cumsum(emp)
+axR.hlines(0, -1, ks[0], color=LINE, lw=2)
+for i, k in enumerate(ks):
+    right = ks[i + 1] if i + 1 < len(ks) else kmax + 1
+    axR.hlines(emp_cdf[i], k, right, color=LINE, lw=2)
+    axR.scatter([k], [emp_cdf[i]], color=LINE, s=22, zorder=4)
+axR.axhline(1.0, color=GREY, ls="--", lw=1.2)
+axR.set_ylim(-0.03, 1.05)
+axR.set_xlabel("arrivals $k$"); axR.set_ylabel("$F(k)$")
+axR.set_title("Empirical CDF (climbing toward 1)")
+plt.tight_layout()
+print(f"sample mean arrivals/hour = {mean_hat:.3f}")
+print(f"empirical mass on k=0..14 = {emp.sum():.4f}  (the rest is in the tail)")
+```
+
+The empirical pmf sums to almost — but not exactly — one over the plotted range, with a sliver
+of mass out in the tail. That is the honest face of infinite support. To make the point with a
+clean closed form, fit the overlaid **geometric** mass $p(k)=(1-r)r^k$ for $k=0,1,2,\dots$
+(this is a *named* distribution we are borrowing early; [PROB-11] builds it properly). Watch
+property (ii) become a convergence statement, and watch us *prove* it converges to one rather
+than asserting it.
+
+We need the sum $\sum_{k=0}^\infty (1-r) r^k$ to equal $1$, which requires the **geometric
+series** identity. We do not assume it — we derive it from Calc-1 algebra. Let $0<r<1$ and
+consider the partial sum of the first $n+1$ terms,
+$$
+S_n = \sum_{k=0}^{n} r^k = 1 + r + r^2 + \dots + r^n .
+$$
+Multiply through by $r$ and subtract — the classic telescoping trick:
+$$
+S_n - r S_n = (1 + r + \dots + r^n) - (r + r^2 + \dots + r^{n+1}) = 1 - r^{\,n+1},
+$$
+since every interior term cancels with its shifted copy, leaving only the first term of the
+first sum and the last term of the second. Factor the left side, $S_n(1-r)=1-r^{n+1}$, and
+divide by $1-r$ (nonzero, as $r\ne 1$):
+$$
+S_n = \frac{1 - r^{\,n+1}}{1 - r}.
+$$
+Now take the limit as $n\to\infty$. Because $0<r<1$, the power $r^{\,n+1}\to 0$ (raising a
+number below one to ever-higher powers drives it to zero — a Calc-1 limit), so
+$$
+\sum_{k=0}^{\infty} r^k = \lim_{n\to\infty} S_n = \frac{1 - 0}{1-r} = \frac{1}{1-r} .
+$$ {#eq-geometric}
+Multiply by the constant $(1-r)$ out front of our mass:
+$$
+\sum_{k=0}^{\infty} (1-r) r^k = (1-r)\cdot\frac{1}{1-r} = 1 .
+$$
+Property (ii) holds — the total mass is one — *and we have proved the series converges*, not
+taken it on faith. The same identity will return repeatedly in the catalog (it is the
+backbone of the geometric and negative-binomial distributions in [PROB-11]).
+
+::: {.callout-tip title="You might be asked"}
+*"With infinite support, how can the probabilities possibly add to one?"* Because the masses
+shrink geometrically (or faster) and a convergent infinite series *can* total a finite value —
+here exactly $1$, by @eq-geometric. The intuition: each value gets a positive sliver of mass,
+but the slivers vanish fast enough that the whole infinite collection still weighs one
+kilogram. The requirement is not "finitely many values" but "the series converges to one." A
+function that put **equal** positive mass on every one of the infinitely many integers would
+fail, and here is the actual argument — not just the clay picture. Suppose $p(x)=c$ for every
+integer $x$ in an infinite support, with $c$ the same constant everywhere. There are only two
+cases. If $c>0$, then property (ii) demands $\sum_x p(x)=\sum_x c$, and adding a fixed positive
+number to itself infinitely often diverges — the partial sums $c, 2c, 3c, \dots$ grow without
+bound and never settle on the finite value $1$, so the series cannot equal $1$. If $c=0$, then
+every term is $0$ and the sum is $0\ne 1$, so property (ii) fails the other way. No constant
+$c$ works, so **a *uniform* distribution on a countably infinite set does not exist** — the very
+thing that forces the mass to *decay* (geometrically here, or faster) rather than stay flat.
+This is itself a clean interview trap.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The pmf is almost foolproof to *use* — it is addition. The mistakes are never arithmetic; they
+are about *which* mass you are summing and *whether* a mass function is the right object at all.
+This section is what separates "can add up a table" from "knows what the table means."
+
+## The strict-vs-weak inequality off-by-one {#sec-offbyone}
+
+The single most common error in discrete probability is confusing $P(X\le k)$ with $P(X<k)$,
+or $P(X\ge k)$ with $P(X>k)$. For a *continuous* variable these are interchangeable (the
+single point carries zero mass), so habits formed there transfer wrongly. For a discrete
+variable they differ by exactly the endpoint mass $p(k)$, which is generally not zero.
+
+```{python}
+#| label: fig-offbyone
+#| fig-cap: "Why the inequality direction matters for a discrete variable. Using the loaded die: $P(X\\le 4)=0.50$ (shaded, *includes* the mass at $4$) versus $P(X<4)=0.35$ (excludes it). The two differ by exactly $p(4)=0.15$ — the boxed mass. For a continuous variable this gap vanishes; here it does not, and treating $\\le$ and $<$ as the same is the classic off-by-one bug."
+F4   = p_die[:4].sum()    # P(X <= 4)
+Flt4 = p_die[:3].sum()    # P(X <  4)
+fig, ax = plt.subplots(figsize=(6.4, 3.8))
+incl = faces <= 4
+ax.vlines(faces, 0, p_die, color=[ACCENT if i else GREY for i in incl], lw=4)
+ax.scatter(faces, p_die, color=[ACCENT if i else GREY for i in incl], s=50, zorder=3)
+# highlight the disputed endpoint mass at x=4
+ax.vlines(4, 0, p_die[3], color=LINE, lw=4)
+ax.scatter([4], [p_die[3]], color=LINE, s=70, zorder=4)
+ax.text(4, p_die[3] + 0.01, f"$p(4)={p_die[3]:.2f}$\n(in $\\le$, out of $<$)",
+        ha="center", fontsize=9, color=LINE)
+ax.set_ylim(0, 0.36)
+ax.set_xlabel("face $x$"); ax.set_ylabel("$p(x)$")
+ax.set_title(f"$P(X\\le 4)={F4:.2f}$  vs  $P(X<4)={Flt4:.2f}$  (differ by $p(4)$)")
+plt.tight_layout()
+```
+
+The fix is mechanical but must be deliberate: decide whether the boundary value is *in* the
+event, and reach for the matching CDF expression — $P(X\le k)=F(k)$, $P(X<k)=F(k^-)=F(k-1)$ on
+the integers, $P(X\ge k)=1-F(k-1)$, $P(X>k)=1-F(k)$. Writing these out on integer support is
+worth doing once until it is reflex.
+
+## Mass on the wrong space, or that does not sum to one {#sec-invalid}
+
+A "pmf" that does not satisfy @thm-pmf-props is not a pmf, and two corruptions are common in
+practice. **Negative mass** sneaks in when someone computes "probabilities" by an unconstrained
+fit or a subtraction and forgets the $p\ge0$ axiom — the result is meaningless, since a negative
+probability has no interpretation under [PROB-0]. **Mass that does not total one** appears when
+a sum is truncated (the arrivals tail of @sec-geometric, dropped) or double-counts an outcome;
+the cure is **renormalization** — divide every mass by the actual total $Z=\sum_x \tilde p(x)$
+so that $p(x)=\tilde p(x)/Z$ sums to one. Renormalization is legitimate *only* when the
+unnormalized $\tilde p$ is already non-negative; you cannot rescale away a sign error.
+
+## When a pmf is the wrong object entirely {#sec-wrong-object}
+
+The honest boundary: the pmf describes a variable whose probability lives *at points*. It is the
+wrong tool — not just inconvenient, but undefined in the form $P(X=x)$ — when the variable is
+**continuous**. For a continuous variable, $P(X=x)=0$ for *every* single value (there are
+uncountably many values to share one unit of mass, so no individual point can hold a positive
+sliver), and a mass function would be identically zero, telling you nothing. That is precisely
+why [PROB-4] replaces the mass with a **density** $f(x)$ and the sum with an integral. The tell
+is in the CDF: if $F$ rises *smoothly* with no jumps, there is no mass to tabulate and you need a
+density; if $F$ is a staircase, the pmf is exactly right; if it has both jumps and smooth rises,
+the variable is a **mixture** and needs both. Trying to force a pmf onto a continuous variable —
+or a density onto a discrete one — is the deepest version of using the wrong object.
+
+::: {.callout-warning title="Pitfall"}
+**A probability mass is a probability; a probability density is not.** A mass $p(x)$ is capped
+at $1$ and is read off directly as $P(X=x)$. A density $f(x)$ ([PROB-4]) can exceed $1$ and is
+*not* a probability — only its integral over a region is. The symptoms look similar (both are
+non-negative, both "integrate/sum to one"), so the trap is to carry pmf intuition into the
+continuous world. The discriminator is always the same: discrete mass lives at points and you
+*sum*; continuous density spreads over intervals and you *integrate*. Decide which world you are
+in *before* you compute, by looking at whether the CDF jumps or is smooth.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When should you model something with a discrete distribution, and when not?"* The honest
+summary:
+
+- **Use a pmf** when the variable is intrinsically a **count or a category coded as numbers** —
+  successes in $n$ trials, events in a window, the face of a die, the number of defects, a
+  net payout taking finitely many values. The values are listable and probability sits on them.
+- **Do not use a pmf** for a genuinely continuous quantity — a time, a length, a temperature,
+  a measured concentration — where every exact value has probability zero; reach for a *density*
+  ([PROB-4]). Beware the common *near*-discrete case: data recorded to two decimals *looks*
+  discrete but is a rounded continuous quantity, and is usually better modeled continuously.
+- **Watch for mixtures** — a quantity that is exactly zero with positive probability and
+  otherwise continuous (rainfall, insurance claims, time-to-event with a spike at zero). Neither
+  a pure pmf nor a pure density fits; the CDF of [PROB-2] is the object that handles all three,
+  and you model the discrete spike and continuous part separately.
+
+The deepest version of the question is just "does probability sit at points or spread over a
+continuum?" — and the CDF's jumps-vs-smoothness answers it.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-2 *Random Variables*]**, which made $X$ a function on the sample space
+and named the universal descriptor $F(x)=P(X\le x)$. This article specialized to the
+**countable-valued** case and built its natural descriptor, the **probability mass function**
+$p(x)=P(X=x)$ — proving its two axioms from [PROB-0]'s countable additivity, showing every event
+probability is a sum of mass (@eq-event-sum), and tying the pmf to the CDF as jumps-and-running-
+sums (@lem-jump). From here the trunk continues:
+
+- **[PROB-4 *Continuous Random Variables*]** — the companion fork: when the values fill a
+  continuum, $P(X=x)=0$ and the mass becomes a **density** $f(x)$, the sum an **integral**. The
+  jumps-vs-smoothness of the CDF is the seam between the two articles.
+- **[PROB-5 *Expectation*]** — the long-run average $E[X]=\sum_x x\,p(x)$ is the values weighted
+  by *this very mass*; the casino payout of @sec-payout is waiting for exactly this number to
+  decide whether the game is worth playing. Variance ([PROB-6]) is the next weighted sum.
+- **[PROB-11 *Bernoulli, Binomial & Negative-Binomial*]** and **[PROB-12 *The Poisson
+  Distribution*]** — the named discrete distributions are nothing but particular mass functions;
+  every one of them must pass the @thm-pmf-props check we built here (the geometric series of
+  @sec-geometric is the engine that proves several of them sum to one). The counting machinery
+  their masses need is **[PROB-10]**.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The historical thread.** The mass-function view of discrete chance traces to the earliest
+  probability — Cardano's dice tallies (16th c.), Pascal and Fermat's 1654 correspondence on the
+  problem of points, and Jacob Bernoulli's *Ars Conjectandi* (1713), where counting the favorable
+  arrangements *is* assigning mass. The modern footing — mass as a special case of a measure on a
+  countable set, justified by countable additivity — is Kolmogorov's 1933 *Grundbegriffe*, the
+  same source as [PROB-0]'s axioms.
+- **The unifying view this article deliberately deferred.** The pmf (sum) and the pdf (integral,
+  [PROB-4]) are two faces of one object: a *probability measure*, integrated against a *counting
+  measure* in the discrete case and against *Lebesgue measure* in the continuous case. That
+  unification is measure-theoretic and lives above this track's floor; we flag it here so you know
+  the $\sum$/$\int$ duality is not a coincidence but a single integral in disguise.
+- **Open threads.** *What single number summarizes where the mass sits?* — the mean, [PROB-5].
+  *How spread out is it?* — the variance, [PROB-6]. *What if two discrete variables vary together?*
+  — the joint pmf, [PROB-7]. *Where do real count distributions come from?* — the catalog,
+  [PROB-11]–[PROB-12], with the negative-binomial as the honest fix when a Poisson count is
+  over-dispersed.

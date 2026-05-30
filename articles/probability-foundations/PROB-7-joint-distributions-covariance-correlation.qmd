@@ -1,0 +1,1141 @@
+---
+title: "Joint Distributions, Covariance, and Correlation"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data points
+LINE   = "#c1121f"     # fitted line / key curve
+ACCENT = "#0a7d4d"     # highlights / means
+GREY   = "#6c757d"
+PURPLE = "#6a4c93"
+```
+
+> **Where this sits in the track.** This is the seventh stop in **Probability
+> Foundations**, the root track of the series. It assumes you have read
+> [PROB-5 *Expectation: The Long-Run Average*] — where $E[X]$, the **law of the
+> unconscious statistician** $E[g(X)]$, and the all-important **linearity of
+> expectation** were built — and [PROB-6 *Variance, Standard Deviation, and
+> Variance as a Sum of Squares*], where $\operatorname{Var}(X)=E[(X-\mu)^2]$ and
+> the computational identity $\operatorname{Var}(X)=E[X^2]-(E[X])^2$ were derived.
+> Until now every random variable has lived alone. Here we put **two** of them in
+> the same room and ask how they move together. It sets up [PROB-8 *Independence
+> and the i.i.d. Sample*] (where zero covariance and independence finally part
+> ways for good), [PROB-17 *Random Vectors, Mean Vectors, and Covariance
+> Matrices*] (the covariance of this article becomes a *matrix*), and
+> [PROB-18 *Linear Transforms of Random Vectors*]. Downstream it is consumed by
+> Regression (R2/R6), the Geometry of Data track (covariance as a Gram matrix),
+> and Unsupervised Learning (PCA).
+
+## Abstract {.unnumbered}
+
+A single random variable is described by one distribution; *two* of them require a
+**joint distribution** — one object over the plane that says how likely each pair of
+values is. From it we recover each variable alone (the **marginals**) by summing or
+integrating the other away, and we measure their co-movement with the **covariance**
+$\operatorname{Cov}(X,Y)=E[(X-\mu_X)(Y-\mu_Y)]$. This article derives the covariance, its
+shortcut $\operatorname{Cov}(X,Y)=E[XY]-E[X]E[Y]$, its **bilinearity**, and the identity
+that the rest of statistics runs on,
+$$\operatorname{Var}(X+Y)=\operatorname{Var}(X)+\operatorname{Var}(Y)+2\operatorname{Cov}(X,Y).$$
+Because covariance carries the units of $X$ times the units of $Y$, it cannot be compared
+across problems, so we standardize it into the **correlation** $\rho$, prove it lives in
+$[-1,1]$ using nothing heavier than "a variance is never negative," and show $\rho=\pm 1$
+means an exact line. The single claim the article defends is that **covariance measures
+*linear* co-movement and nothing else** — which is why its most famous trap,
+*zero covariance does not imply independence*, is not a paradox but a definition working
+exactly as designed.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+To describe two random variables together you need their **joint distribution**; from it,
+each one alone is a **marginal**. Their co-movement is the **covariance**
+$\operatorname{Cov}(X,Y)=E[(X-\mu_X)(Y-\mu_Y)]$ — the average product of their
+simultaneous deviations from their own means. Strip its units away by dividing by the two
+standard deviations and you get the **correlation** $\rho\in[-1,1]$, a pure number that is
+$\pm 1$ exactly when the points fall on a perfect line. But covariance sees **only the
+linear part** of a relationship: two variables can be tightly, deterministically linked
+and still have covariance zero.
+:::
+
+Everything below orbits that box. The covariance will at first look like an arbitrary
+"average product of deviations," but by the end you should feel why it is the only natural
+choice: it is the cross-term that pops out when you square a sum, the off-diagonal entry of
+a variance, and the exact generalization of @eq-var-sum-of-squares from one variable to
+two. Hold onto the last sentence of the Core — *covariance sees only the linear part* —
+because it is simultaneously the reason covariance is so useful and the reason it is so
+dangerous (@sec-zero-cov).
+
+# Why we are doing this: the problem that forced a joint object {#sec-why}
+
+Keep one question in view for the whole article: **how do we describe two uncertain
+quantities *together*, and how do we put a single number on whether they move with each
+other?** Every definition below answers some piece of that.
+
+## One distribution is not enough
+
+Up to now a random variable came with one distribution and we were done. But the questions
+that *matter* are almost never about one quantity in isolation. A pension fund does not
+care about one stock's return; it cares whether its stocks crash *together*. An
+epidemiologist does not care about height or weight alone; the interesting science is in
+their relationship. A regression — the workhorse of the entire applied series — is
+literally a statement about how an outcome $Y$ moves with a predictor $X$.
+
+The moment you have two quantities $X$ and $Y$, knowing each one's distribution separately
+is **not enough to answer questions about the pair**. Suppose $X$ is "did it rain today"
+and $Y$ is "did I bring an umbrella." You can know that it rains 30% of days and that I
+carry an umbrella 35% of days, and *still* have no idea whether I carry the umbrella
+*when* it rains. The two separate distributions are silent about the link. We need a single
+object that records the probability of each *combination* of values at once. That object is
+the **joint distribution**, and this article is the story of how to build it, how to pull
+the individual variables back out of it, and how to compress "do they move together" into
+one interpretable number.
+
+## What came before, and why it was inadequate
+
+The thread that produced covariance is the same astronomy-and-data thread that produced
+least squares. Francis Galton, studying heredity in the 1880s, plotted children's heights
+against their parents' and saw an unmistakable *tilt* in the cloud: tall parents tended to
+have tall children. He needed to **quantify the tilt** — to say not just "they are related"
+but *how strongly*, on a scale he could compare from one pair of traits to another. His
+collaborator Karl Pearson sharpened Galton's "co-relation" into the formula we still use:
+the **correlation coefficient**. The covariance is the un-normalized engine inside it.
+
+Why was the existing toolkit inadequate? [PROB-6] gave us variance, a number for how much
+*one* variable spreads. But variance is blind to a second variable. If you only ever
+square deviations of $X$ by themselves, you can never detect that $X$'s deviations tend to
+come paired with $Y$'s deviations. The fix is almost obvious in hindsight: instead of
+multiplying each deviation of $X$ by *itself*, multiply it by the *simultaneous* deviation
+of $Y$. That single change — from $(X-\mu_X)^2$ to $(X-\mu_X)(Y-\mu_Y)$ — is the entire
+conceptual leap of the article. Everything else is consequence.
+
+# Intuition before symbols {#sec-intuition}
+
+Before any integral, picture the data. Put $X$ on the horizontal axis and $Y$ on the
+vertical, draw the mean lines $x=\mu_X$ and $y=\mu_Y$, and you have carved the plane into
+four quadrants. Now look at where the points fall.
+
+If $X$ and $Y$ rise together, points cluster in the **upper-right** (both above their
+means) and **lower-left** (both below) quadrants. In the upper-right, $(X-\mu_X)>0$ and
+$(Y-\mu_Y)>0$, so their **product is positive**. In the lower-left, both deviations are
+negative, and a negative times a negative is again **positive**. So a cloud that tilts
+up-and-to-the-right piles up positive products. If instead $Y$ falls as $X$ rises, points
+land in the off-diagonal quadrants where one deviation is positive and the other negative,
+so the products are **negative**. And if there is no tilt — points scattered evenly across
+all four quadrants — the positive and negative products cancel and average out to roughly
+**zero**.
+
+That average signed product *is* the covariance. @fig-quadrants makes the picture concrete.
+
+```{python}
+#| label: fig-quadrants
+#| fig-cap: "The sign of covariance, by quadrant. The mean lines $x=\\mu_X$ (vertical) and $y=\\mu_Y$ (horizontal) split the plane into four quadrants. In the green quadrants the product $(x-\\mu_X)(y-\\mu_Y)$ is **positive** (both deviations share a sign); in the red quadrants it is **negative**. **Left:** an up-tilted cloud lands mostly in the positive quadrants, so the average product — the covariance — is positive. **Right:** a down-tilted cloud lands in the negative quadrants, giving negative covariance. Covariance is just the average of the signed shaded-quadrant contributions."
+rng = np.random.default_rng(3)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
+
+for ax, r, title in [(axL, 0.8, "Positive covariance"),
+                     (axR, -0.8, "Negative covariance")]:
+    mean = [0, 0]
+    cov = [[1, r], [r, 1]]
+    pts = rng.multivariate_normal(mean, cov, size=120)
+    mx, my = pts[:, 0].mean(), pts[:, 1].mean()
+    # shade quadrants
+    lim = 3.2
+    ax.axvspan(mx, lim, ymin=0.5, ymax=1, color=ACCENT, alpha=0.07)
+    ax.axvspan(-lim, mx, ymin=0, ymax=0.5, color=ACCENT, alpha=0.07)
+    ax.axvspan(mx, lim, ymin=0, ymax=0.5, color=LINE, alpha=0.07)
+    ax.axvspan(-lim, mx, ymin=0.5, ymax=1, color=LINE, alpha=0.07)
+    ax.axhline(my, color=GREY, lw=1.0)
+    ax.axvline(mx, color=GREY, lw=1.0)
+    ax.scatter(pts[:, 0], pts[:, 1], color=POINT, s=14, alpha=0.8)
+    ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)
+    ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+    ax.set_title(title)
+    ax.text(1.7, 1.7, "$+$", color=ACCENT, fontsize=16, ha="center")
+    ax.text(-1.7, -1.7, "$+$", color=ACCENT, fontsize=16, ha="center")
+    ax.text(1.7, -1.7, "$-$", color=LINE, fontsize=16, ha="center")
+    ax.text(-1.7, 1.7, "$-$", color=LINE, fontsize=16, ha="center")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what does covariance measure?"* The average, over the joint
+distribution, of how far $X$ and $Y$ stray from their respective means **at the same
+time, with matching sign**. Positive when they tend to be on the same side of their means
+together, negative when on opposite sides, zero when there is no such tendency. The whole
+formula is just that sentence written in symbols.
+:::
+
+# The joint distribution {#sec-joint}
+
+Before covariance we need the object it averages over: the joint distribution. We treat
+the discrete and continuous cases in parallel, exactly as [PROB-3] and [PROB-4] did for one
+variable, because covariance will be defined identically for both.
+
+## The discrete case: the joint pmf {#sec-joint-pmf}
+
+::: {#def-joint-pmf}
+**Definition (joint probability mass function).** For discrete random variables $X$ and
+$Y$, the **joint pmf** is the function
+$$
+p_{X,Y}(x,y) = P(X=x \ \text{and}\ Y=y),
+$$ {#eq-joint-pmf}
+the probability that $X$ takes the value $x$ *and* $Y$ takes the value $y$ on the same
+draw.
+:::
+
+Two properties follow directly from the probability axioms (built in [PROB-0]). First, each
+value is a probability, so $p_{X,Y}(x,y)\ge 0$. Second, summing over **every** pair of
+values must account for all the probability, because on any draw *some* pair $(x,y)$
+occurs:
+$$
+\sum_{x}\sum_{y} p_{X,Y}(x,y) = 1.
+$$ {#eq-joint-pmf-norm}
+This is the two-dimensional version of [PROB-3]'s $\sum_x p(x)=1$; the only change is a
+second summation index for the second variable.
+
+A joint pmf over finitely many values is most honestly displayed as a **table**, one row
+per value of $X$, one column per value of $Y$, with the probabilities in the cells. We will
+build exactly such a table in @sec-example-rain.
+
+## Recovering one variable: the marginal {#sec-marginals}
+
+Here is the first real payoff of having the joint object. Suppose we have $p_{X,Y}$ but want
+the distribution of $X$ *alone* — ignoring $Y$. The event "$X=x$" happens whenever $X=x$
+paired with **any** value of $Y$. Those pairs are mutually exclusive (you cannot have
+$Y=y_1$ and $Y=y_2$ on the same draw), so by countable additivity their probabilities add:
+
+$$
+p_X(x) = P(X=x) = P\!\left(\bigcup_{y}\{X=x,\,Y=y\}\right)
+= \sum_{y} P(X=x,\,Y=y) = \sum_{y} p_{X,Y}(x,y).
+$$ {#eq-marginal-pmf}
+
+::: {#def-marginal-pmf}
+**Definition (marginal pmf).** The **marginal pmf** of $X$ is obtained by summing the joint
+pmf over all values of the other variable:
+$$
+p_X(x) = \sum_{y} p_{X,Y}(x,y), \qquad p_Y(y) = \sum_{x} p_{X,Y}(x,y).
+$$
+:::
+
+The word *marginal* is wonderfully literal: write the joint pmf as a table and the
+row-sums and column-sums land in the **margins** of the page. The marginal of $X$ is the
+column of row-totals; the marginal of $Y$ is the row of column-totals. We are simply
+collapsing one dimension by adding it up.
+
+::: {.callout-tip title="You might be asked"}
+*"Can you reconstruct the joint distribution from the two marginals?"* **No — and this is
+the crux of why the joint object exists.** The marginals are sums of the joint table; many
+different tables can produce the same row-sums and column-sums. Reconstructing the joint
+from the marginals would be like recovering a matrix from only its row and column totals —
+hopeless without more information. The one exception is **independence**, where
+$p_{X,Y}(x,y)=p_X(x)\,p_Y(y)$ exactly; that special factoring is the subject of [PROB-8].
+The general inadequacy of marginals is precisely the gap covariance was invented to start
+filling.
+:::
+
+## The continuous case: the joint pdf {#sec-joint-pdf}
+
+When $X$ and $Y$ are continuous, probability is spread over the plane as a *density*, the
+direct analogue of the single-variable pdf from [PROB-4].
+
+::: {#def-joint-pdf}
+**Definition (joint probability density function).** A function $f_{X,Y}(x,y)\ge 0$ is the
+**joint pdf** of $(X,Y)$ if, for every region $A$ of the plane,
+$$
+P\big((X,Y)\in A\big) = \iint_{A} f_{X,Y}(x,y)\,dx\,dy,
+$$ {#eq-joint-pdf}
+and over the whole plane it integrates to $1$:
+$$
+\int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dx\,dy = 1.
+$$ {#eq-joint-pdf-norm}
+:::
+
+::: {.callout-note title="The one above-floor ingredient, flagged"}
+@eq-joint-pdf uses a **double integral** — integrating over a two-dimensional region.
+Double integrals sit just above our Calculus-I floor, so we say plainly what we are using
+and nothing more: a double integral $\iint_A f\,dx\,dy$ is computed as an **iterated
+integral**, integrating first over one variable (treating the other as a constant, exactly
+the Calc-1 single-variable integral) and then over the second. Concretely,
+$\iint_A f\,dx\,dy = \int\big(\int f\,dy\big)dx$. Every double integral in this article is
+evaluated by this "integrate one variable at a time" rule and nothing fancier; the full
+machinery of multivariable calculus (changes of variables with Jacobians, Fubini's theorem)
+is built where it is owned, in [PROB-18] and the Geometry-of-Data track. Where we need
+*why* the order of integration may be swapped, we will only ever do it for non-negative
+densities, where it is safe.
+:::
+
+As with one variable, the density is **not** a probability — $P(X=x,\,Y=y)=0$ for any
+single point, since a point has zero area. Density becomes probability only after
+integrating over a region of positive area. The marginal works the same way as the
+discrete case, with integration replacing summation: to forget $Y$, integrate it out.
+
+::: {#def-marginal-pdf}
+**Definition (marginal pdf).** The **marginal pdf** of $X$ is
+$$
+f_X(x) = \int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dy,
+\qquad
+f_Y(y) = \int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dx.
+$$ {#eq-marginal-pdf}
+:::
+
+To see why integrating out $Y$ gives the density of $X$, fix a small interval
+$[x, x+dx]$. The probability that $X$ lands in it, regardless of $Y$, is the integral of
+the joint density over the infinite vertical strip above that interval:
+$P(x\le X\le x+dx)=\int_{-\infty}^{\infty}\big(\int_x^{x+dx} f_{X,Y}\,dx'\big)dy \approx
+\big(\int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dy\big)\,dx$. Matching this against the
+single-variable defining relation $P(x\le X\le x+dx)\approx f_X(x)\,dx$ from [PROB-4]
+identifies $f_X(x)=\int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dy$, which is @eq-marginal-pdf.
+
+## The joint CDF: the one object that works for both {#sec-joint-cdf}
+
+Just as the single-variable CDF $F(x)=P(X\le x)$ described discrete, continuous, and mixed
+variables uniformly in [PROB-2], a **joint CDF** does the same for pairs.
+
+::: {#def-joint-cdf}
+**Definition (joint CDF).** The **joint cumulative distribution function** of $(X,Y)$ is
+$$
+F_{X,Y}(x,y) = P(X\le x \ \text{and}\ Y\le y),
+$$ {#eq-joint-cdf}
+the probability that *both* coordinates fall at or below the given thresholds — the total
+probability mass in the lower-left quadrant anchored at $(x,y)$.
+:::
+
+In the continuous case the joint CDF is the running double integral of the density,
+$F_{X,Y}(x,y)=\int_{-\infty}^{x}\int_{-\infty}^{y} f_{X,Y}(s,t)\,dt\,ds$, and conversely the
+density is recovered by differentiating once in each variable,
+$f_{X,Y}=\partial^2 F_{X,Y}/\partial x\,\partial y$ — the two-dimensional shadow of [PROB-4]'s
+"the pdf is the derivative of the CDF." We will not lean on the joint CDF much in this
+article (covariance is computed from the pmf/pdf via expectation), but it is the object
+that makes "joint distribution" precise for *any* pair of random variables, and it is what
+the empirical version in [PROB-22] estimates.
+
+# Expectation of a function of two variables {#sec-expectation-2d}
+
+Covariance is an expectation, so we first need the expectation of a function $g(X,Y)$ of
+*both* variables. This is the two-variable **law of the unconscious statistician**, and it
+extends [PROB-5]'s one-variable rule in the only way it could.
+
+::: {#thm-lotus2}
+**Theorem (LOTUS, two variables).** For a function $g$ of two random variables,
+$$
+E[g(X,Y)] = \sum_{x}\sum_{y} g(x,y)\,p_{X,Y}(x,y) \quad\text{(discrete)},
+\qquad
+E[g(X,Y)] = \iint g(x,y)\,f_{X,Y}(x,y)\,dx\,dy \quad\text{(continuous)}.
+$$
+:::
+
+The principle is identical to one variable: to average $g(X,Y)$, weight each possible value
+$g(x,y)$ by how probable the input pair $(x,y)$ is, then add (or integrate). We do not need
+the distribution of the *output* $g(X,Y)$ — hence "unconscious." Because this rule is the
+sole computational engine of the rest of the article — every covariance below is an instance
+of it — we prove the discrete case in full rather than wave at it.
+
+::: {.proof}
+Write $W=g(X,Y)$ for the output random variable, and let $w$ range over the distinct values
+$W$ can take. By the [PROB-5] definition of expectation applied to $W$ directly,
+$$
+E[W] = \sum_{w} w\,P(W=w).
+$$
+This is the "conscious" computation: it needs the distribution of the output $W$, which is
+exactly what we want to avoid finding. To eliminate it, expand the event $\{W=w\}$ into the
+input pairs that produce it. The pairs $(x,y)$ with $g(x,y)=w$ are mutually exclusive (a
+single draw lands on one pair), so by the countable additivity of [PROB-0],
+$$
+P(W=w) = \sum_{(x,y)\,:\,g(x,y)=w} p_{X,Y}(x,y).
+$$
+Substitute this into the sum and, inside the inner sum, replace the constant $w$ by $g(x,y)$
+— legal precisely *because* every pair in that inner sum satisfies $g(x,y)=w$:
+$$
+E[W] = \sum_{w} w\!\!\sum_{(x,y)\,:\,g(x,y)=w}\!\! p_{X,Y}(x,y)
+     = \sum_{w}\ \sum_{(x,y)\,:\,g(x,y)=w}\!\! g(x,y)\,p_{X,Y}(x,y).
+$$
+The outer sum over $w$ together with the inner sum over the pairs mapping to that $w$
+visits **every** pair $(x,y)$ in the support exactly once — the values of $g$ partition the
+pairs into groups, and we are summing over every group and then over every member. So the
+double sum collapses to a single unrestricted sum over all pairs:
+$$
+E[g(X,Y)] = \sum_{x}\sum_{y} g(x,y)\,p_{X,Y}(x,y),
+$$
+which is the theorem. The continuous statement is the identical argument with the partition
+into level sets handled by integration in place of the countable sum (the measure-theoretic
+bookkeeping that makes "partition by the value of $g$" rigorous for densities is owned by
+[PROB-4]'s machinery); the formula it yields is the displayed integral.
+$\qquad\blacksquare$
+:::
+
+The only change from the one-variable LOTUS of [PROB-5] is the second summation/integration
+index — the grouping-by-output argument is word-for-word the same.
+
+One immediate, load-bearing consequence: **linearity of expectation extends to several
+variables.** Taking $g(X,Y)=aX+bY$ for constants $a,b$,
+$$
+E[aX+bY] = \iint (ax+by)\,f_{X,Y}\,dx\,dy
+= a\iint x\,f_{X,Y}\,dx\,dy + b\iint y\,f_{X,Y}\,dx\,dy.
+$$
+In the first integral, integrate out $y$ first: $\int f_{X,Y}\,dy = f_X(x)$ by
+@eq-marginal-pdf, leaving $a\int x f_X(x)\,dx = aE[X]$. The second integral likewise gives
+$bE[Y]$. Therefore
+$$
+\boxed{\,E[aX+bY] = aE[X] + bE[Y].\,}
+$$ {#eq-linearity}
+This held in [PROB-5] for functions of *one* variable; we have just confirmed it survives
+intact for a linear combination of *two*, and crucially it required **no assumption that
+$X$ and $Y$ are independent**. We will lean on @eq-linearity constantly.
+
+# Covariance {#sec-covariance}
+
+We can now define and develop the central object.
+
+::: {#def-covariance}
+**Definition (covariance).** Let $X$ and $Y$ have means $\mu_X=E[X]$ and $\mu_Y=E[Y]$. The
+**covariance** of $X$ and $Y$ is
+$$
+\operatorname{Cov}(X,Y) = E\big[(X-\mu_X)(Y-\mu_Y)\big].
+$$ {#eq-cov-def}
+:::
+
+Hold @eq-cov-def against the definition of variance from [PROB-6],
+$\operatorname{Var}(X)=E[(X-\mu_X)^2]=E[(X-\mu_X)(X-\mu_X)]$. They are the **same formula**;
+covariance simply pairs $X$'s deviation with $Y$'s instead of with its own. This is the
+single most useful fact to carry: **variance is covariance of a variable with itself.**
+
+$$
+\operatorname{Cov}(X,X) = E\big[(X-\mu_X)(X-\mu_X)\big] = E\big[(X-\mu_X)^2\big]
+= \operatorname{Var}(X).
+$$ {#eq-cov-is-var}
+
+Everything we proved about variance in [PROB-6] is therefore a special case of what we are
+about to prove about covariance.
+
+## The computational identity {#sec-cov-shortcut}
+
+Computing covariance straight from @eq-cov-def means first finding both means, then
+forming deviations. There is a shortcut that mirrors [PROB-6]'s
+$\operatorname{Var}(X)=E[X^2]-(E[X])^2$, and we derive it with every step shown. Start by
+expanding the product inside the expectation with ordinary FOIL:
+$$
+(X-\mu_X)(Y-\mu_Y) = XY - X\mu_Y - \mu_X Y + \mu_X\mu_Y.
+$$
+Now take the expectation of both sides and use linearity (@eq-linearity, extended to four
+terms — which is just applying the two-term rule three times). Crucially, $\mu_X$ and
+$\mu_Y$ are **constants** (they are the fixed numbers $E[X]$ and $E[Y]$), so they pull
+straight out of any expectation, and $E[\text{constant}]$ is that constant:
+$$
+E[(X-\mu_X)(Y-\mu_Y)]
+= E[XY] - \mu_Y\,E[X] - \mu_X\,E[Y] + \mu_X\mu_Y.
+$$
+Substitute $E[X]=\mu_X$ and $E[Y]=\mu_Y$ into the middle two terms:
+$$
+= E[XY] - \mu_Y\mu_X - \mu_X\mu_Y + \mu_X\mu_Y = E[XY] - \mu_X\mu_Y.
+$$
+The last two of the three $\mu_X\mu_Y$ terms cancel against each other, leaving exactly one.
+Therefore
+
+$$
+\boxed{\,\operatorname{Cov}(X,Y) = E[XY] - E[X]\,E[Y].\,}
+$$ {#eq-cov-shortcut}
+
+Read it: covariance is the **average of the product minus the product of the averages**.
+Setting $Y=X$ recovers $\operatorname{Var}(X)=E[X^2]-(E[X])^2$ exactly, confirming the
+shortcut is the honest generalization of the [PROB-6] one. We will use @eq-cov-shortcut for
+every numerical example because it needs only three ordinary expectations: $E[XY]$, $E[X]$,
+$E[Y]$.
+
+## Bilinearity: covariance is linear in each slot {#sec-bilinearity}
+
+Covariance's most powerful algebraic property is that it behaves like multiplication: it is
+**linear in each argument separately**, a property called **bilinearity**. We state it,
+then prove every piece.
+
+::: {#thm-bilinearity}
+**Theorem (properties of covariance).** For random variables $X,Y,Z$ and constants $a,b,c$:
+
+1. **(Symmetry)** $\operatorname{Cov}(X,Y)=\operatorname{Cov}(Y,X)$.
+2. **(Constants drop out)** $\operatorname{Cov}(X,c)=0$.
+3. **(Scaling)** $\operatorname{Cov}(aX, bY)=ab\,\operatorname{Cov}(X,Y)$.
+4. **(Additivity)** $\operatorname{Cov}(X+Z,\,Y)=\operatorname{Cov}(X,Y)+\operatorname{Cov}(Z,Y)$.
+5. **(Shift invariance)** $\operatorname{Cov}(X+a,\,Y+b)=\operatorname{Cov}(X,Y)$.
+:::
+
+::: {.proof}
+We prove each from @eq-cov-shortcut and linearity of expectation; none needs independence.
+
+**(1) Symmetry.** Multiplication of numbers commutes, so $XY=YX$, hence
+$E[XY]=E[YX]$ and $E[X]E[Y]=E[Y]E[X]$. Therefore
+$\operatorname{Cov}(X,Y)=E[XY]-E[X]E[Y]=E[YX]-E[Y]E[X]=\operatorname{Cov}(Y,X)$.
+
+**(2) Constants drop out.** Let $c$ be a constant, viewed as a (degenerate) random
+variable that always equals $c$. Then $E[c]=c$ and $E[Xc]=E[cX]=cE[X]$ by linearity. So
+$\operatorname{Cov}(X,c)=E[Xc]-E[X]E[c]=cE[X]-E[X]\cdot c = 0$. A quantity that never
+varies cannot co-vary with anything.
+
+**(3) Scaling.** Using @eq-cov-shortcut and pulling the constants $a,b$ through every
+expectation by linearity,
+$$
+\operatorname{Cov}(aX,bY)=E[(aX)(bY)] - E[aX]\,E[bY]
+= ab\,E[XY] - (aE[X])(bE[Y])
+= ab\big(E[XY]-E[X]E[Y]\big) = ab\,\operatorname{Cov}(X,Y).
+$$
+
+**(4) Additivity.** Again by @eq-cov-shortcut and linearity, expanding the product
+$(X+Z)Y=XY+ZY$:
+$$
+\operatorname{Cov}(X+Z,\,Y) = E[(X+Z)Y] - E[X+Z]\,E[Y]
+= \big(E[XY]+E[ZY]\big) - \big(E[X]+E[Z]\big)E[Y].
+$$
+Distribute the $E[Y]$ and regroup the terms into two covariances:
+$$
+= \underbrace{\big(E[XY]-E[X]E[Y]\big)}_{\operatorname{Cov}(X,Y)}
++ \underbrace{\big(E[ZY]-E[Z]E[Y]\big)}_{\operatorname{Cov}(Z,Y)}.
+$$
+
+**(5) Shift invariance.** Adding a constant $a$ shifts $X$ but not its deviations from its
+mean: if $W=X+a$ then $\mu_W=E[X+a]=\mu_X+a$ by linearity, so
+$W-\mu_W = (X+a)-(\mu_X+a)=X-\mu_X$ — the $+a$ cancels. The same holds for $Y+b$. Since
+covariance @eq-cov-def depends only on the deviations, it is unchanged:
+$\operatorname{Cov}(X+a,Y+b)=E[(X-\mu_X)(Y-\mu_Y)]=\operatorname{Cov}(X,Y)$.
+$\qquad\blacksquare$
+:::
+
+Properties (3) and (4) together are what "bilinear" means, and combining them gives the
+fully general rule we will use again and again — covariance distributes over linear
+combinations exactly like a product distributes over sums:
+$$
+\operatorname{Cov}\!\Big(\sum_i a_i X_i,\ \sum_j b_j Y_j\Big)
+= \sum_i\sum_j a_i b_j\,\operatorname{Cov}(X_i, Y_j).
+$$ {#eq-cov-bilinear-general}
+
+::: {.callout-tip title="You might be asked"}
+*"Why does adding a constant change the mean but not the covariance?"* Because covariance
+lives entirely in the *deviations from the mean*, and shifting a variable shifts its mean
+by the same amount — so the deviations, the gaps to the mean, are untouched (property 5).
+The interviewer is checking that you understand covariance measures **co-movement**, which
+is about *changes*, not *levels*. This is also why you may center your data (subtract the
+means) before computing covariance without changing a thing — exactly the centering trick
+Regression uses.
+:::
+
+# The variance of a sum {#sec-var-sum}
+
+We can now derive the identity the Core promised — the one that powers portfolio risk,
+the variance of sample means, and the whole sums-of-squares story in regression. It falls
+straight out of bilinearity plus @eq-cov-is-var.
+
+::: {#thm-var-sum}
+**Theorem (variance of a sum).** For any two random variables $X$ and $Y$,
+$$
+\operatorname{Var}(X+Y) = \operatorname{Var}(X) + \operatorname{Var}(Y)
++ 2\operatorname{Cov}(X,Y).
+$$ {#eq-var-sum}
+:::
+
+::: {.proof}
+By @eq-cov-is-var, a variance is a self-covariance, so $\operatorname{Var}(X+Y)
+=\operatorname{Cov}(X+Y,\,X+Y)$. Now expand using bilinearity — additivity in the first
+slot (property 4), then again in the second slot:
+$$
+\operatorname{Cov}(X+Y,\,X+Y)
+= \operatorname{Cov}(X,X) + \operatorname{Cov}(X,Y) + \operatorname{Cov}(Y,X) + \operatorname{Cov}(Y,Y).
+$$
+The four terms are the entries of a $2\times2$ "multiplication table" of the sum with
+itself. By @eq-cov-is-var the corner terms are variances:
+$\operatorname{Cov}(X,X)=\operatorname{Var}(X)$ and
+$\operatorname{Cov}(Y,Y)=\operatorname{Var}(Y)$. By symmetry (property 1) the two cross
+terms are equal: $\operatorname{Cov}(X,Y)=\operatorname{Cov}(Y,X)$, so together they make
+$2\operatorname{Cov}(X,Y)$. Collecting,
+$$
+\operatorname{Var}(X+Y) = \operatorname{Var}(X) + \operatorname{Var}(Y) + 2\operatorname{Cov}(X,Y).
+\qquad\blacksquare
+$$
+:::
+
+The structure is exactly the algebraic identity $(a+b)^2=a^2+b^2+2ab$, with variances
+playing the role of squares and the covariance playing the role of the cross-term $2ab$.
+That is not a coincidence; it is the same bilinear expansion. Three consequences are worth
+stating outright.
+
+**The difference.** Replacing $Y$ by $-Y$ and using scaling (property 3,
+$\operatorname{Cov}(X,-Y)=-\operatorname{Cov}(X,Y)$ and
+$\operatorname{Var}(-Y)=(-1)^2\operatorname{Var}(Y)=\operatorname{Var}(Y)$):
+$$
+\operatorname{Var}(X-Y) = \operatorname{Var}(X) + \operatorname{Var}(Y) - 2\operatorname{Cov}(X,Y).
+$$ {#eq-var-diff}
+Note the variance of a *difference* still *adds* the two variances — it is the cross-term
+whose sign flips. A common error is to expect $\operatorname{Var}(X-Y)=\operatorname{Var}(X)-\operatorname{Var}(Y)$;
+the theorem shows that is wrong unless the covariance happens to equal $\operatorname{Var}(Y)$.
+
+**The uncorrelated case.** If $\operatorname{Cov}(X,Y)=0$, the cross-term vanishes and
+$$
+\operatorname{Var}(X+Y)=\operatorname{Var}(X)+\operatorname{Var}(Y),
+$$
+"variances add." This is the seed of why the sample mean's variance shrinks like $1/n$ — a
+result [PROB-8] develops in full for i.i.d. sums and that powers every confidence interval
+downstream.
+
+**The general sum of $n$ terms.** Applying @eq-cov-bilinear-general to
+$\operatorname{Var}(\sum_i X_i)=\operatorname{Cov}(\sum_i X_i,\sum_j X_j)$ gives
+$$
+\operatorname{Var}\!\Big(\sum_{i=1}^{n} X_i\Big)
+= \sum_{i=1}^{n}\operatorname{Var}(X_i) + 2\!\!\sum_{1\le i<j\le n}\!\!\operatorname{Cov}(X_i, X_j),
+$$ {#eq-var-sum-n}
+where the diagonal terms ($i=j$) are the variances and the off-diagonal terms pair up by
+symmetry into the factor of 2. This is the form [PROB-17] repackages as
+$\operatorname{Var}(\mathbf{a}^\top X)=\mathbf{a}^\top\Sigma\,\mathbf{a}$ once the
+covariances are collected into a matrix $\Sigma$.
+
+::: {.callout-tip title="You might be asked"}
+*"A portfolio puts weight $w$ in asset A and $1-w$ in asset B. Write its variance."* This
+is @eq-var-sum with scaling. The return is $R = wA + (1-w)B$, so
+$$
+\operatorname{Var}(R) = w^2\operatorname{Var}(A) + (1-w)^2\operatorname{Var}(B)
++ 2w(1-w)\operatorname{Cov}(A,B).
+$$
+The whole theory of diversification is in the last term: if $\operatorname{Cov}(A,B)$ is
+negative, the cross-term *subtracts*, and the portfolio is **less** risky than either asset
+alone. Combining two risky assets to get a less risky whole is the covariance term doing
+visible work — the single most cited application of @eq-var-sum. We compute a real instance
+in @sec-example-portfolio.
+:::
+
+# Correlation: covariance with the units removed {#sec-correlation}
+
+Covariance has a fatal practical flaw: **its size is uninterpretable.** If $X$ is measured
+in dollars and $Y$ in years, the covariance carries units of dollar-years, and its
+numerical value scales with whatever units you chose — switch dollars to cents and the
+covariance multiplies by 100 (property 3 with $a=100$), though nothing about the
+relationship changed. A covariance of "5,000,000" tells you nothing until you know the
+scales. We need to **strip the units off** to get a pure, comparable number.
+
+The natural denominator is suggested by property 3: dividing by a standard deviation of
+each variable cancels its scale exactly. Define:
+
+::: {#def-correlation}
+**Definition (Pearson correlation coefficient).** For random variables with
+$\operatorname{Var}(X)>0$ and $\operatorname{Var}(Y)>0$, the **correlation** is
+$$
+\rho_{X,Y} = \frac{\operatorname{Cov}(X,Y)}{\sigma_X\,\sigma_Y}
+= \frac{\operatorname{Cov}(X,Y)}{\sqrt{\operatorname{Var}(X)}\,\sqrt{\operatorname{Var}(Y)}},
+$$ {#eq-corr-def}
+where $\sigma_X=\sqrt{\operatorname{Var}(X)}$ and $\sigma_Y=\sqrt{\operatorname{Var}(Y)}$ are
+the standard deviations from [PROB-6].
+:::
+
+First, confirm the units cancel and the scale-dependence dies. Under any rescaling
+$X\mapsto aX$, $Y\mapsto bY$ (with $a,b>0$), the numerator scales by $ab$ (property 3) and
+the denominator scales by $\sigma_{aX}\sigma_{bY}=|a|\sigma_X\cdot|b|\sigma_Y=ab\,\sigma_X\sigma_Y$.
+The $ab$ cancels top and bottom:
+$$
+\rho_{aX,bY} = \frac{ab\,\operatorname{Cov}(X,Y)}{ab\,\sigma_X\sigma_Y} = \rho_{X,Y}.
+$$
+Correlation is **dimensionless and scale-free** — exactly the comparable number Galton and
+Pearson needed.
+
+## Correlation lives in $[-1,1]$ {#sec-corr-bound}
+
+The defining property of correlation is its bound, and it has a clean proof that uses
+nothing heavier than "a variance is never negative" (from [PROB-6], since variance is an
+average of squares).
+
+::: {#thm-corr-bound}
+**Theorem (correlation bound).** For any $X,Y$ with positive variances,
+$$
+-1 \le \rho_{X,Y} \le 1.
+$$
+Moreover $\rho_{X,Y}=\pm 1$ if and only if $Y$ is an exact linear function of $X$, i.e.
+$Y = a + bX$ for constants $b\ne 0$ (with $a$ arbitrary), and the sign of $\rho$ matches
+the sign of $b$.
+:::
+
+::: {.proof}
+**Step 1 — standardize.** Let $X^* = (X-\mu_X)/\sigma_X$ and $Y^*=(Y-\mu_Y)/\sigma_Y$ be the
+standardized variables (the z-scores from [PROB-6]). Each has mean $0$ and variance $1$: by
+shift- and scale-rules, $E[X^*]=0$ and
+$\operatorname{Var}(X^*)=\operatorname{Var}(X)/\sigma_X^2=1$, likewise for $Y^*$. Their
+covariance is the correlation itself, because by bilinearity (properties 3 and 5),
+$$
+\operatorname{Cov}(X^*,Y^*) = \operatorname{Cov}\!\Big(\tfrac{X-\mu_X}{\sigma_X},\tfrac{Y-\mu_Y}{\sigma_Y}\Big)
+= \frac{1}{\sigma_X\sigma_Y}\operatorname{Cov}(X,Y) = \rho_{X,Y}.
+$$
+And since $X^*,Y^*$ have unit variance, $E[(X^*)^2]=\operatorname{Var}(X^*)=1$ and
+$E[(Y^*)^2]=1$ (their means are zero, so $E[\cdot^2]=\operatorname{Var}$).
+
+**Step 2 — the non-negativity squeeze.** Consider the variable $X^* + Y^*$. A variance is
+the expectation of a square, hence $\ge 0$:
+$$
+0 \le \operatorname{Var}(X^*+Y^*) = \operatorname{Var}(X^*) + \operatorname{Var}(Y^*) + 2\operatorname{Cov}(X^*,Y^*)
+= 1 + 1 + 2\rho = 2 + 2\rho,
+$$
+using @eq-var-sum in the middle. From $0\le 2+2\rho$ we get $\rho \ge -1$.
+
+Now do the same with the *difference* $X^*-Y^*$, using @eq-var-diff:
+$$
+0 \le \operatorname{Var}(X^*-Y^*) = 1 + 1 - 2\rho = 2 - 2\rho,
+$$
+which gives $\rho \le 1$. Together: $-1\le\rho\le 1$.
+
+**Step 3 — the equality cases.** Equality $\rho=1$ forces $\operatorname{Var}(X^*-Y^*)=0$.
+A random variable with zero variance is **constant** with probability one (its deviations
+from its mean are zero on average *and* squared, so they are zero), so $X^*-Y^*=c$ for some
+constant $c$; taking expectations, $c=E[X^*]-E[Y^*]=0$, hence $X^*=Y^*$. Writing this back
+in original units, $(X-\mu_X)/\sigma_X=(Y-\mu_Y)/\sigma_Y$, which rearranges to
+$Y = \mu_Y + \frac{\sigma_Y}{\sigma_X}(X-\mu_X)$ — an exact line with **positive** slope
+$\sigma_Y/\sigma_X>0$. Symmetrically, $\rho=-1$ forces $\operatorname{Var}(X^*+Y^*)=0$,
+giving $X^*=-Y^*$ and an exact line with **negative** slope $-\sigma_Y/\sigma_X$. The
+converse — that an exact line $Y=a+bX$ gives $\rho=\operatorname{sign}(b)$ — follows by
+plugging $Y=a+bX$ into @eq-corr-def: $\operatorname{Cov}(X,a+bX)=b\operatorname{Var}(X)$,
+$\sigma_{a+bX}=|b|\sigma_X$, so $\rho = b\operatorname{Var}(X)/(\sigma_X\cdot|b|\sigma_X)
+= b/|b| = \operatorname{sign}(b)$.
+$\qquad\blacksquare$
+:::
+
+This proof is worth absorbing because it is the probabilistic shadow of the
+**Cauchy–Schwarz inequality** — the statement that
+$|\operatorname{Cov}(X,Y)|\le\sigma_X\sigma_Y$ — proved here using only that variances are
+non-negative. The geometric reading (covariance as an inner product, correlation as the
+cosine of an angle between centered variables) is exactly how the Geometry-of-Data track
+sees it; we have derived the inequality without needing that machinery.
+
+@fig-corr-grid shows what a range of correlations actually looks like as point clouds.
+
+```{python}
+#| label: fig-corr-grid
+#| fig-cap: "What correlation looks like. Each panel is a sample from a bivariate normal with the labeled correlation $\\rho$. At $\\rho=0$ the cloud is round (no linear tilt); as $|\\rho|\\to 1$ it collapses toward a line, positively sloped for $\\rho>0$ and negatively for $\\rho<0$. At $\\rho=\\pm 1$ (not shown) the points would lie exactly on a line. Correlation measures *only* this tilt-toward-a-line — a fact @fig-zero-cov will exploit."
+rng = np.random.default_rng(0)
+rhos = [-0.9, -0.5, 0.0, 0.4, 0.8, 0.99]
+fig, axes = plt.subplots(2, 3, figsize=(9.0, 6.0))
+for ax, r in zip(axes.ravel(), rhos):
+    cov = [[1, r], [r, 1]]
+    pts = rng.multivariate_normal([0, 0], cov, size=300)
+    ax.scatter(pts[:, 0], pts[:, 1], color=POINT, s=9, alpha=0.6)
+    ax.set_title(fr"$\rho = {r}$", fontsize=11)
+    ax.set_xlim(-3.5, 3.5); ax.set_ylim(-3.5, 3.5)
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What is the relationship between correlation and the slope of a regression line?"* If you
+regress $Y$ on $X$ by least squares (the subject of [REGR-1]), the slope is
+$\hat\beta_1 = \operatorname{Cov}(X,Y)/\operatorname{Var}(X)$. To connect it to
+$\rho=\operatorname{Cov}(X,Y)/(\sigma_X\sigma_Y)$, solve the latter for the covariance,
+$\operatorname{Cov}(X,Y)=\rho\,\sigma_X\sigma_Y$, and substitute into the slope, using
+$\operatorname{Var}(X)=\sigma_X^2$:
+$$
+\hat\beta_1 = \frac{\operatorname{Cov}(X,Y)}{\operatorname{Var}(X)}
+= \frac{\rho\,\sigma_X\sigma_Y}{\sigma_X^2}
+= \rho\,\frac{\sigma_Y}{\sigma_X}.
+$$
+So the slope is the correlation rescaled by the
+ratio of spreads; if you first standardize both variables to unit variance, *the slope
+equals the correlation*. Correlation is the **scale-free** cousin of the regression slope —
+the same co-movement, one with units, one without.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the machinery on honest data, including one example at the edge where covariance
+gives a confident, completely misleading answer of zero.
+
+## Example 1 — rain and umbrellas: a joint table by hand {#sec-example-rain}
+
+We return to the motivating pair. Over a year of records for one city, suppose the joint
+pmf of $X=\mathbf{1}\{\text{rain}\}$ and $Y=\mathbf{1}\{\text{umbrella carried}\}$ (each
+$0$ or $1$) is the following table — every cell a probability, all four summing to $1$.
+
+```{python}
+#| label: tbl-rain
+#| echo: false
+import numpy as np
+# Joint pmf p(x,y): rows X in {0,1} (no rain / rain), cols Y in {0,1} (no umb / umb)
+p = np.array([
+    [0.55, 0.15],   # X=0 (no rain):  P(no umb), P(umb)
+    [0.05, 0.25],   # X=1 (rain):     P(no umb), P(umb)
+])
+xv = np.array([0, 1]); yv = np.array([0, 1])
+pX = p.sum(axis=1)              # marginal of X (row sums)
+pY = p.sum(axis=0)              # marginal of Y (col sums)
+EX = (xv * pX).sum()
+EY = (yv * pY).sum()
+EXY = sum(xv[i]*yv[j]*p[i, j] for i in range(2) for j in range(2))
+covXY = EXY - EX*EY
+VarX = (xv**2 * pX).sum() - EX**2
+VarY = (yv**2 * pY).sum() - EY**2
+rho = covXY / np.sqrt(VarX*VarY)
+print("Joint pmf p(x,y):")
+print("                 Y=0(no umb)   Y=1(umbrella)   row sum p_X(x)")
+print(f"  X=0 (no rain):   {p[0,0]:.2f}          {p[0,1]:.2f}            {pX[0]:.2f}")
+print(f"  X=1 (rain):      {p[1,0]:.2f}          {p[1,1]:.2f}            {pX[1]:.2f}")
+print(f"  col sum p_Y(y):  {pY[0]:.2f}          {pY[1]:.2f}            {p.sum():.2f}")
+print()
+print(f"E[X]  = {EX:.3f}     E[Y]  = {EY:.3f}     E[XY] = {EXY:.3f}")
+print(f"Cov(X,Y) = E[XY]-E[X]E[Y] = {EXY:.3f} - ({EX:.3f})({EY:.3f}) = {covXY:.4f}")
+print(f"Var(X) = {VarX:.4f}   Var(Y) = {VarY:.4f}")
+print(f"rho = Cov/(sX sY) = {covXY:.4f} / sqrt({VarX:.4f}*{VarY:.4f}) = {rho:.4f}")
+```
+
+Walk the arithmetic the code printed, plugging straight into the boxed formulas.
+
+- **Marginals.** Summing each row gives $p_X(0)=`{python} f"{pX[0]:.2f}"`$ (no rain) and
+  $p_X(1)=`{python} f"{pX[1]:.2f}"`$ (rain): it rains 40% of days. Summing each column gives
+  $p_Y(1)=`{python} f"{pY[1]:.2f}"`$ — an umbrella is carried 40% of days. These are the
+  *margins* of the table, @sec-marginals made literal.
+- **Means.** For a $0/1$ (indicator) variable, $E[X]=0\cdot p_X(0)+1\cdot p_X(1)=p_X(1)=`{python} f"{EX:.2f}"`$,
+  and likewise $E[Y]=`{python} f"{EY:.2f}"`$. The mean of an indicator is just the
+  probability of the event — a fact [PROB-11] leans on heavily.
+- **The product term.** By LOTUS (@thm-lotus2), $E[XY]=\sum_{x,y}xy\,p(x,y)$. The product
+  $xy$ is $1$ only in the single cell $X=1,Y=1$ and $0$ everywhere else, so
+  $E[XY]=p(1,1)=`{python} f"{p[1,1]:.2f}"`$.
+- **Covariance.** By @eq-cov-shortcut,
+  $\operatorname{Cov}(X,Y)=E[XY]-E[X]E[Y]=`{python} f"{EXY:.2f}"`-(`{python} f"{EX:.2f}"`)(`{python} f"{EY:.2f}"`)=`{python} f"{covXY:.3f}"`$.
+  Positive, as it must be: umbrellas come out *when* it rains.
+- **Correlation.** Each variance is $p(1-p)$ for an indicator (the [PROB-6]/[PROB-11]
+  result), and dividing the covariance by $\sigma_X\sigma_Y$ gives
+  $\rho=`{python} f"{rho:.3f}"`$ — a strong but imperfect positive correlation, sensibly
+  short of 1 because the link is real but not deterministic.
+
+This is the entire pipeline of the article on a $2\times2$ table: joint pmf $\to$ marginals
+$\to$ means $\to$ covariance $\to$ correlation, with no step hidden.
+
+## Example 2 — a continuous joint density {#sec-example-continuous}
+
+Now the continuous machinery. Let $(X,Y)$ have joint density on the unit square
+$$
+f_{X,Y}(x,y) = x + y, \qquad 0\le x\le 1,\ 0\le y\le 1,
+$$
+and zero elsewhere. (Quick legitimacy check via @eq-joint-pdf-norm:
+$\int_0^1\!\int_0^1 (x+y)\,dx\,dy = \int_0^1(\tfrac12 + y)\,dy = \tfrac12+\tfrac12 = 1$, so
+it is a valid density.) We compute the covariance by hand, integrating one variable at a
+time as flagged in @sec-joint-pdf.
+
+**Marginal of $X$** (integrate out $y$, @eq-marginal-pdf), for $0\le x\le 1$:
+$$
+f_X(x) = \int_0^1 (x+y)\,dy = \Big[xy + \tfrac{y^2}{2}\Big]_{y=0}^{1} = x + \tfrac12.
+$$
+The density is unchanged when we swap the names $x$ and $y$ (since $x+y=y+x$), so the same
+integral with the roles reversed gives $f_Y(y)=\int_0^1(x+y)\,dx = y+\tfrac12$.
+
+**Mean of $X$** (a [PROB-5] integral against the marginal):
+$$
+E[X] = \int_0^1 x\big(x+\tfrac12\big)\,dx = \int_0^1\big(x^2 + \tfrac{x}{2}\big)\,dx
+= \tfrac13 + \tfrac14 = \tfrac{7}{12}.
+$$
+Because $f_Y$ has the identical form $y+\tfrac12$, the same integral gives
+$E[Y]=\int_0^1 y(y+\tfrac12)\,dy = \tfrac13+\tfrac14 = \tfrac{7}{12}$.
+
+**The product term** $E[XY]$ (LOTUS, @thm-lotus2, integrating $x$ first):
+$$
+E[XY] = \int_0^1\!\!\int_0^1 xy\,(x+y)\,dx\,dy
+= \int_0^1\!\!\int_0^1 \big(x^2 y + x y^2\big)\,dx\,dy.
+$$
+Integrate over $x$ (treating $y$ as constant):
+$$
+\int_0^1 \big(x^2 y + x y^2\big)\,dx = \Big[\tfrac{x^3}{3}y + \tfrac{x^2}{2}y^2\Big]_{0}^{1}
+= \tfrac{y}{3} + \tfrac{y^2}{2}.
+$$
+Then over $y$:
+$$
+E[XY] = \int_0^1\Big(\tfrac{y}{3} + \tfrac{y^2}{2}\Big)\,dy = \tfrac{1}{6} + \tfrac{1}{6} = \tfrac13.
+$$
+
+**Covariance** by @eq-cov-shortcut:
+$$
+\operatorname{Cov}(X,Y) = E[XY] - E[X]E[Y] = \tfrac13 - \Big(\tfrac{7}{12}\Big)^2
+= \tfrac13 - \tfrac{49}{144} = \tfrac{48}{144} - \tfrac{49}{144} = -\tfrac{1}{144}.
+$$
+
+The covariance is **negative** — a small but genuine tendency for large $X$ to come with
+small $Y$. The verification figure below confirms the by-hand value against a large
+Monte-Carlo sample, and shows the density surface.
+
+```{python}
+#| label: fig-continuous
+#| fig-cap: "The joint density $f(x,y)=x+y$ on the unit square. **Left:** the density as a heatmap — it tilts upward toward the $(1,1)$ corner where both variables are large. **Right:** a scatter of $40{,}000$ points drawn from it (via rejection sampling). The slight negative covariance is invisible to the eye at this scale, which is the honest point: $\\rho=-1/144 \\div (\\sigma_X\\sigma_Y)$ is tiny. The hand-computed $\\operatorname{Cov}=-1/144\\approx-0.00694$ matches the sample covariance printed below."
+# exact pieces
+EX_c = 7/12; EXY_c = 1/3
+cov_c = EXY_c - EX_c**2
+# Var(X) = E[X^2] - E[X]^2 ;  E[X^2] = int x^2 (x+1/2) dx = 1/4 + 1/6 = 5/12
+EX2_c = 1/4 + 1/6
+Var_c = EX2_c - EX_c**2
+rho_c = cov_c / Var_c   # sigma_X = sigma_Y by symmetry
+
+# rejection sampling from f(x,y)=x+y on [0,1]^2 (max density = 2)
+rng = np.random.default_rng(42)
+N = 200000
+xx = rng.uniform(0, 1, N); yy = rng.uniform(0, 1, N); uu = rng.uniform(0, 2, N)
+keep = uu < (xx + yy)
+xs, ys = xx[keep][:40000], yy[keep][:40000]
+samp_cov = np.cov(xs, ys)[0, 1]
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.0))
+gx = np.linspace(0, 1, 200); gy = np.linspace(0, 1, 200)
+GX, GY = np.meshgrid(gx, gy)
+im = axL.imshow(GX + GY, origin="lower", extent=[0, 1, 0, 1], cmap="viridis", aspect="auto")
+axL.set_title("density $f(x,y)=x+y$"); axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+fig.colorbar(im, ax=axL, fraction=0.046, pad=0.04)
+axL.grid(False)
+axR.scatter(xs, ys, s=2, color=POINT, alpha=0.15)
+axR.set_title("40,000 samples"); axR.set_xlabel("$x$"); axR.set_ylabel("$y$")
+axR.set_xlim(0, 1); axR.set_ylim(0, 1); axR.grid(False)
+plt.tight_layout()
+print(f"hand  Cov(X,Y) = -1/144 = {cov_c:.6f}")
+print(f"MC    Cov(X,Y)         = {samp_cov:.6f}")
+print(f"hand  Var(X)   = 11/144 = {Var_c:.6f}")
+print(f"hand  rho      = {rho_c:.6f}")
+```
+
+## Example 3 — covariance at work: portfolio variance {#sec-example-portfolio}
+
+A direct, realistic use of @eq-var-sum. Two assets have daily-return standard deviations
+$\sigma_A=1.2\%$ and $\sigma_B=0.9\%$. We sweep the correlation $\rho_{AB}$ from $-1$ to
+$+1$ and watch how the variance of a 50/50 portfolio responds — the textbook
+diversification curve, computed from the identity we derived.
+
+```{python}
+#| label: fig-portfolio
+#| fig-cap: "Portfolio standard deviation vs. the correlation between two assets, for a 50/50 mix ($\\sigma_A=1.2\\%$, $\\sigma_B=0.9\\%$). The curve is $\\sqrt{w^2\\sigma_A^2+(1-w)^2\\sigma_B^2+2w(1-w)\\rho\\,\\sigma_A\\sigma_B}$ with $w=0.5$ — a direct reading of @eq-var-sum. Dashed grey marks the *naive* level you would get by ignoring covariance (the $\\rho=0$ value). At negative correlation the portfolio is markedly *less* volatile than either asset; this risk reduction is the covariance cross-term, made visible."
+sA, sB, w = 0.012, 0.009, 0.5
+rhos = np.linspace(-1, 1, 200)
+port_sd = np.sqrt(w**2*sA**2 + (1-w)**2*sB**2 + 2*w*(1-w)*rhos*sA*sB)
+naive = np.sqrt(w**2*sA**2 + (1-w)**2*sB**2)  # rho = 0
+
+fig, ax = plt.subplots()
+ax.plot(rhos, port_sd*100, color=LINE, label="portfolio SD")
+ax.axhline(naive*100, color=GREY, ls="--", lw=1.4, label=r"naive ($\rho=0$)")
+ax.axhline(sA*100, color=PURPLE, ls=":", lw=1.2, label=r"asset A SD ($1.2\%$)")
+ax.axhline(sB*100, color=ACCENT, ls=":", lw=1.2, label=r"asset B SD ($0.9\%$)")
+ax.set_xlabel(r"correlation $\rho_{AB}$")
+ax.set_ylabel("portfolio std. dev. (%)")
+ax.set_title("Diversification is the covariance term at work")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"At rho = -1:  portfolio SD = {port_sd[0]*100:.3f}%  (well below either asset)")
+print(f"At rho =  0:  portfolio SD = {naive*100:.3f}%")
+print(f"At rho = +1:  portfolio SD = {port_sd[-1]*100:.3f}%  (just the weighted average)")
+```
+
+The lesson is entirely in the cross-term of @eq-var-sum: when returns move *opposite* each
+other ($\rho<0$), one asset's bad day is cushioned by the other's good day, and the
+combined variance drops below what either asset carries alone. This is why "do they move
+together" is not an academic question — it is the whole of risk management.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Covariance and correlation are sharp tools with sharp edges. The famous traps are not bugs;
+they are the definition behaving exactly as built. This section is what separates "can
+compute a correlation" from "knows what it does and does not mean."
+
+## The headline trap: zero covariance does not imply independence {#sec-zero-cov}
+
+This is the single most-asked interview question on the topic, and the most-misunderstood.
+Covariance measures **linear** co-movement. A relationship can be perfectly
+*deterministic* — $Y$ a fixed function of $X$ — and still have covariance zero, because the
+*linear* part of that relationship is zero.
+
+The cleanest counterexample. Let $X$ be uniform on $[-1,1]$ — density $f(x)=\tfrac12$ on
+$[-1,1]$ and zero elsewhere — and set $Y=X^2$. Then $Y$ is *completely determined* by $X$;
+knowing $X$ tells you $Y$ exactly. We need two moments of $X$, both computed directly from
+the [PROB-5] integral $E[X^k]=\int_{-1}^{1} x^k\cdot\tfrac12\,dx$ rather than asserted:
+$$
+E[X] = \int_{-1}^{1}\! x\cdot\tfrac12\,dx = \tfrac12\Big[\tfrac{x^2}{2}\Big]_{-1}^{1}
+= \tfrac12\Big(\tfrac12-\tfrac12\Big) = 0,
+\qquad
+E[X^3] = \int_{-1}^{1}\! x^3\cdot\tfrac12\,dx = \tfrac12\Big[\tfrac{x^4}{4}\Big]_{-1}^{1}
+= \tfrac12\Big(\tfrac14-\tfrac14\Big) = 0.
+$$
+Both vanish because the integrand is an *odd* function integrated over an interval
+symmetric about $0$, so the contribution from $[-1,0]$ exactly cancels the contribution
+from $[0,1]$ — and we have just seen that cancellation happen term-by-term in the
+antiderivative. Now apply the shortcut @eq-cov-shortcut with $XY = X\cdot X^2 = X^3$:
+$$
+\operatorname{Cov}(X,Y) = E[XY] - E[X]E[Y] = E[X^3] - E[X]\,E[Y]
+= 0 - 0\cdot E[Y] = 0.
+$$
+The covariance is exactly zero. The reason is geometric: as $X$ moves from negative to
+positive, $Y=X^2$ first *falls* then *rises*, so the up-and-down cancel and there is no net
+linear tilt — even though the dependence could not be tighter. @fig-zero-cov shows it.
+
+```{python}
+#| label: fig-zero-cov
+#| fig-cap: "Zero covariance, total dependence. With $X$ uniform on $[-1,1]$ and $Y=X^2$, every point lies *exactly* on a parabola — $Y$ is a deterministic function of $X$ — yet the covariance is $0$ and so is the correlation. Covariance and correlation see only the *linear* tilt, and a symmetric U-shape has none. 'Uncorrelated' is therefore far weaker than 'independent': this $X$ and $Y$ are uncorrelated but maximally dependent."
+rng = np.random.default_rng(1)
+X = rng.uniform(-1, 1, 400)
+Y = X**2
+cov = np.cov(X, Y)[0, 1]
+corr = np.corrcoef(X, Y)[0, 1]
+fig, ax = plt.subplots()
+ax.scatter(X, Y, color=POINT, s=14, alpha=0.7)
+xs = np.linspace(-1, 1, 100)
+ax.plot(xs, xs**2, color=LINE, lw=1.5, alpha=0.7, label="$Y=X^2$ (exact)")
+ax.set_xlabel("$X$"); ax.set_ylabel("$Y=X^2$")
+ax.set_title(fr"Sample cov $= {cov:.4f}$,  corr $= {corr:.4f}$  — yet $Y$ is determined by $X$")
+ax.legend(loc="upper center", framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**"Uncorrelated" is strictly weaker than "independent."** Independence means the joint
+factors, $f_{X,Y}=f_X f_Y$ (the subject of [PROB-8]), and it implies zero covariance — but
+**the converse is false.** Zero covariance only rules out a *linear* relationship; it is
+blind to curves, U-shapes, and any symmetric nonlinear dependence. A correlation of $0$ is
+not a certificate of "no relationship"; it is a certificate of "no *straight-line*
+relationship." There is one important family where the two notions *do* line up: the
+**(multivariate) normal** distribution, where zero correlation does force full
+independence. We do not prove that here — it is a property of a specific distribution we
+have not yet built, so we flag it as a forward dependency on **[PROB-13]** (the normal) and
+**[PROB-17]** (the multivariate normal), which derive it from the factoring of the Gaussian
+density. The takeaway for now: never report "uncorrelated, therefore independent" unless you
+have separately established joint normality.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Give me a pair of variables that are dependent but uncorrelated."* The $Y=X^2$ example
+above is the canonical answer, and you should be able to produce it and the one-line
+computation $\operatorname{Cov}=E[X^3]=0$ on demand. The follow-up is usually *"and when
+does uncorrelated imply independent?"* — answer: when the pair is jointly normal, and
+essentially only then among the standard models. Stating both halves is what an examiner is
+listening for.
+:::
+
+## Correlation is not causation, and not the whole relationship {#sec-not-causation}
+
+Two further honest boundaries, both flagged by Anscombe-style reasoning in [REGR-1] and
+worth stating in probability terms here.
+
+First, a nonzero correlation is a statement about the *joint distribution*, not about
+mechanism. $X$ and $Y$ can be strongly correlated because $X$ drives $Y$, because $Y$
+drives $X$, or because a third variable drives both (confounding). Probability theory
+gives you $\rho$; it does not tell you which causal story produced it. Disentangling that
+is the entire job of the Causal Inference track.
+
+Second, even *within* linear relationships, a single correlation number is a lossy
+summary. As @fig-anscombe-style shows, wildly different datasets can share the same
+correlation, and correlation is fragile to outliers — one extreme point can manufacture or
+destroy a correlation, because covariance, like variance, is built on *squared*-scale
+products that weight far points heavily.
+
+```{python}
+#| label: fig-anscombe-style
+#| fig-cap: "Correlation is a lossy, outlier-sensitive summary. **Left:** a genuine moderate linear relationship. **Middle:** pure noise with one extreme outlier that *manufactures* a spurious strong correlation out of nothing. **Right:** a clean strong relationship that one outlier *destroys*. All three carry information the single number $\\rho$ cannot. The lesson matches [REGR-1]'s Anscombe quartet: never trust a correlation without seeing the cloud."
+rng = np.random.default_rng(20)
+fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.6))
+
+# genuine moderate
+x1 = rng.normal(0, 1, 60); y1 = 0.6*x1 + rng.normal(0, 0.8, 60)
+# noise + one leverage outlier -> spurious correlation
+x2 = rng.normal(0, 1, 60); y2 = rng.normal(0, 1, 60)
+x2 = np.append(x2, 8.0); y2 = np.append(y2, 8.0)
+# strong relation destroyed by an outlier
+x3 = rng.normal(0, 1, 60); y3 = 0.95*x3 + rng.normal(0, 0.25, 60)
+x3 = np.append(x3, 4.0); y3 = np.append(y3, -4.0)
+
+for ax, (xx, yy, title) in zip(axes, [
+        (x1, y1, "genuine moderate"),
+        (x2, y2, "outlier manufactures $\\rho$"),
+        (x3, y3, "outlier destroys $\\rho$")]):
+    r = np.corrcoef(xx, yy)[0, 1]
+    ax.scatter(xx, yy, color=POINT, s=18, alpha=0.7)
+    ax.set_title(f"{title}\n$r = {r:.2f}$", fontsize=10)
+    ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+plt.tight_layout()
+```
+
+## When correlation is the wrong tool, and what to reach for {#sec-alternatives}
+
+::: {.callout-tip title="You might be asked"}
+*"When is Pearson correlation the right summary, and when is it not?"* The honest summary:
+
+- **Use Pearson $\rho$** when you specifically care about a **linear** relationship between
+  two quantitative variables, the cloud is roughly elliptical, and no single point dominates
+  (the regime where the covariance term in @eq-var-sum is also meaningful). It is then the
+  natural, scale-free measure, and the bridge to regression.
+- **Do not use it** when (a) the relationship is **nonlinear** — a U-shape or threshold can
+  give $\rho\approx 0$ while the variables are tightly linked (@sec-zero-cov); reach for a
+  **rank correlation** (Spearman's $\rho_S$ or Kendall's $\tau$), which capture any
+  *monotone* relationship, or mutual information for arbitrary dependence; (b) **outliers**
+  dominate — rank correlations are far more robust; (c) the variables are **categorical** —
+  use a contingency-table measure ($\chi^2$, Cramér's V) instead.
+- **And never** read causation off correlation, or treat a single $\rho$ as a substitute
+  for plotting the data.
+
+The deeper point an examiner is after: Pearson correlation is the *linear* measure, and you
+should know its scope is exactly that — no wider.
+:::
+
+The boundary case worth seeing once: covariance can also be **undefined**. The whole edifice
+rests on $E[XY]$, $E[X]$, $E[Y]$, and the variances *existing* (being finite). For
+heavy-tailed variables — the Cauchy preview from [PROB-5], where even the mean fails to
+exist — covariance and correlation are simply not defined, and any software that returns a
+number is reporting an artifact of the finite sample, not a population quantity. This is the
+same honesty [PROB-5] insisted on for the expectation itself: the summary exists only when
+the integrals converge.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-5 *Expectation*]** (which gave linearity and LOTUS) and
+**[PROB-6 *Variance*]** (which gave $\operatorname{Var}=E[X^2]-(E[X])^2$ and standard
+deviation). This article put two variables in one joint object, defined their covariance and
+correlation, and proved the variance-of-a-sum identity. From here the track continues:
+
+- **[PROB-8 *Independence and the i.i.d. Sample*]** — the converse half of @sec-zero-cov:
+  *independence* (joint factors into marginals) implies zero covariance, and we make
+  rigorous exactly when the implication does **not** reverse. The i.i.d. case turns
+  @eq-var-sum-n into the "$\operatorname{Var}$ of a sum $=$ sum of variances" that gives the
+  sample mean its $1/n$ shrink.
+- **[PROB-9 *Conditional Distributions and Conditional Expectation*]** — instead of
+  *summarizing* the link with one number, fully describe the distribution of $Y$ *given* a
+  value of $X$, and meet $E[Y\mid X]$, the best predictor.
+- **[PROB-17 *Random Vectors, Mean Vectors, and Covariance Matrices*]** — stack many
+  variables into a vector; the pairwise covariances of this article become the entries of a
+  **covariance matrix** $\Sigma$, with variances on the diagonal. @eq-var-sum-n becomes
+  $\operatorname{Var}(\mathbf{a}^\top X)=\mathbf{a}^\top\Sigma\,\mathbf{a}\ge 0$, which is
+  why $\Sigma$ is positive semidefinite.
+- **[PROB-18 *Linear Transforms of Random Vectors*]** — the bilinearity proved in
+  @thm-bilinearity becomes the matrix identity
+  $\operatorname{Cov}(AX+b)=A\Sigma A^\top$.
+
+**Cross-track payoff.** Regression reads the slope as
+$\operatorname{Cov}(X,Y)/\operatorname{Var}(X)$ ([REGR-1]) and the variance of its estimates
+through @eq-var-sum ([REGR-6]); the Geometry-of-Data track reinterprets the covariance as a
+**Gram matrix** / inner product; Unsupervised Learning diagonalizes the covariance matrix in
+**PCA**. The little inequality $|\operatorname{Cov}|\le\sigma_X\sigma_Y$ proved in
+@thm-corr-bound is the probabilistic Cauchy–Schwarz those tracks lean on.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Francis Galton, *Regression Towards Mediocrity in Hereditary
+  Stature* (1886), where the tilt in the parent–child height cloud first cried out for a
+  number; and Karl Pearson, *Mathematical Contributions to the Theory of Evolution. III.
+  Regression, Heredity, and Panmixia* (1896), which gave the correlation coefficient its
+  modern form. The covariance is the un-normalized core of Pearson's $r$.
+- **The geometric view.** That $\rho$ is a *cosine* and covariance an *inner product* — so
+  the bound $-1\le\rho\le1$ is just $|\cos\theta|\le 1$ — is the lens of the Geometry-of-Data
+  track. The proof in @thm-corr-bound is the same Cauchy–Schwarz inequality reached without
+  the vector-space vocabulary.
+- **Open threads this article deliberately deferred.** *When does uncorrelated finally mean
+  independent?* — under joint normality, [PROB-13]/[PROB-17]. *How do we describe the
+  relationship beyond one number?* — conditional distributions and $E[Y\mid X]$, [PROB-9].
+  *What if the linear measure misses the dependence?* — rank correlations and mutual
+  information, touched in @sec-alternatives and pursued in the inference and
+  information-theoretic literature. *How does covariance become a matrix we can rotate?* —
+  [PROB-17]/[PROB-18] and, spectrally, the Geometry-of-Data track's PCA.

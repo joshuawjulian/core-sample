@@ -1,0 +1,993 @@
+---
+title: "The Poisson Distribution"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from math import lgamma, exp, log
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+BAR    = "#2b3a67"     # Poisson bars
+BAR2   = "#c1121f"     # comparison / binomial
+ACCENT = "#0a7d4d"     # highlights / the mean
+GREY   = "#6c757d"
+
+def poisson_pmf(k, lam):
+    """Poisson pmf evaluated stably in log-space — the formula this article
+    derives, used here only to draw the pictures.
+    p(k) = e^{-lam} lam^k / k!  =  exp(-lam + k*log(lam) - log(k!))."""
+    k = np.asarray(k, dtype=float)
+    with np.errstate(divide="ignore"):
+        logp = -lam + k * np.log(lam) - np.array([lgamma(ki + 1) for ki in k])
+    return np.exp(logp)
+
+def binom_pmf(k, n, p):
+    """Binomial pmf, also in log-space for stability with large n."""
+    k = np.asarray(k, dtype=float)
+    logc = (np.array([lgamma(n + 1) for _ in k])
+            - np.array([lgamma(ki + 1) for ki in k])
+            - np.array([lgamma(n - ki + 1) for ki in k]))
+    logp = logc + k * np.log(p) + (n - k) * np.log1p(-p)
+    return np.exp(logp)
+```
+
+> **Where this sits in the track.** This is the third stop in the **distribution
+> catalog** of the Probability Foundations track. It assumes [PROB-11 *Bernoulli,
+> Binomial, and Negative-Binomial*] — we will *build* the Poisson out of the binomial,
+> so its pmf, its mean $np$, and its variance $np(1-p)$ must already be in hand — and it
+> leans on [PROB-5 *Expectation*] and [PROB-6 *Variance*] for what "mean" and "variance"
+> mean and how to compute them from a pmf. The only thing above the Calculus-I floor we
+> touch is one limit, $\bigl(1-\tfrac{\lambda}{n}\bigr)^n \to e^{-\lambda}$, which we
+> derive on the page rather than assume. It **sets up** [PROB-14 *Gamma, Exponential, and
+> Beta*]: in @sec-process we derive that the gaps *between* Poisson events are
+> exponentially distributed, the result PROB-14 then develops in full. It is also
+> consumed downstream by [INFR-B1] (the Poisson likelihood) and, as a cautionary tale,
+> by [REGR-19] (count regression and overdispersion).
+
+## Abstract {.unnumbered}
+
+How many emails land in your inbox in the next hour? How many cars pass a sensor in a
+minute? How many typos survive one proofreading pass of a book? Each is a **count of
+rare-ish events in a fixed window**, and each is described — astonishingly well, and with
+a *single* parameter — by the **Poisson distribution**. This article derives the Poisson
+pmf $p(k)=e^{-\lambda}\lambda^k/k!$ as the exact limit of a binomial in which we slice
+the window into ever-finer instants, each with a vanishing chance of an event. From that
+limit we read off the distribution's signature property: its mean and its variance are
+**both equal to $\lambda$** — equidispersion. The single claim this article defends is
+that **the Poisson is not a guess but a forced consequence of three modest assumptions
+about how rare events scatter in time or space**, and that the moment real counts violate
+those assumptions — clustering, contagion, heterogeneity — the mean and variance pull
+apart, and the Poisson is the wrong tool.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Take a window of time or space, chop it into a huge number $n$ of tiny slices, and assume
+that in each slice an event either happens (with a tiny probability) or does not,
+independently of every other slice, with the *expected* number of events over the whole
+window fixed at some rate $\lambda$. As the slices get infinitely fine, the count of
+events stops depending on $n$ and settles onto one distribution — the **Poisson($\lambda$)**:
+
+$$
+P(X=k) = e^{-\lambda}\,\frac{\lambda^k}{k!}, \qquad k = 0,1,2,\dots
+$$
+
+Its defining peculiarity is that the *same* number $\lambda$ is both its mean and its
+variance. One knob sets the center **and** the spread. That single fact is the Poisson's
+greatest convenience and its sharpest failure mode.
+:::
+
+Everything below orbits that box. The formula $e^{-\lambda}\lambda^k/k!$ will appear to
+fall out of a grinding limit, but by the end you should see it as inevitable: it is what
+the binomial *must* become when "many trials, each rare" is pushed to its logical
+extreme. And the equality $\text{mean}=\text{variance}=\lambda$ is not a coincidence to
+memorize — it is the fingerprint of the assumption that events arrive independently at a
+constant rate, and checking whether real data honor it is how you decide whether the
+Poisson belongs.
+
+# Why we are here: counting rare events {#sec-why}
+
+Keep one question in view for the whole article: **what distribution describes the number
+of independent rare events in a fixed window, and why does one parameter suffice?** Every
+step below answers a piece of that.
+
+## The problem the binomial could not gracefully solve
+
+By [PROB-11] we can already model counts: the **Binomial($n,p$)** counts how many of $n$
+independent yes/no trials succeed, each with probability $p$. Its pmf is
+
+$$
+P(X = k) = \binom{n}{k} p^k (1-p)^{n-k},
+\qquad \binom{n}{k} = \frac{n!}{k!\,(n-k)!},
+$$ {#eq-binom}
+
+with mean $np$ and variance $np(1-p)$, both derived in [PROB-11]. So why do we need
+anything else?
+
+Because for the situations we actually care about, **there are no natural $n$ and $p$.**
+Ask "how many cars pass this sensor in a minute?" There is no fixed number of trials: a
+car can arrive at *any* instant of the minute, not in one of, say, $60$ discrete slots.
+You could pretend the minute is $60$ seconds and ask "did a car arrive this second?" — but
+two cars can arrive in the same second, so that is not a yes/no trial. Refine to
+milliseconds, and you have $60{,}000$ trials, each with a tiny success probability — but
+the choice of millisecond was arbitrary; microseconds would do as well, with a million
+trials and a probability a thousand times smaller. The binomial *can* model this, but only
+through an awkward, arbitrary discretization, and the answer had better not depend on how
+finely you chopped the minute.
+
+The historical breakthrough was to **take the chopping to its limit and watch what
+survives.** Hold the *expected* number of events over the window fixed — call it $\lambda$
+— so that as you use more and finer slices ($n\to\infty$), each slice's success
+probability shrinks to keep $np=\lambda$ constant. If the resulting distribution settles
+down to something independent of $n$, *that* limit is the honest model of "count of rare
+events in a window," free of the arbitrary slicing. That limit is the Poisson, and the
+fact that it exists at all is the whole point.
+
+::: {.callout-tip title="You might be asked"}
+*"When would you reach for a Poisson instead of a binomial?"* When you are counting
+occurrences in a continuum (a span of time, a length of road, an area of fabric, a volume
+of blood) rather than tallying successes among a **fixed, finite number of identifiable
+trials**. If you can point to the $n$ trials — "$200$ patients, each either responds or
+not" — use the binomial. If there is no natural $n$, only a rate at which events happen and
+a window they happen in — "calls to a help line per hour" — reach for the Poisson. The
+two are not rivals; the Poisson is the binomial's limit (the entire content of @sec-limit),
+and their pmfs agree to within a vanishing error when $n$ is large and $p$ is small — we
+quantify exactly how small that error is in @sec-approx.
+:::
+
+## A little history — Poisson, Bortkiewicz, and the horses {#sec-history}
+
+Siméon Denis Poisson published the distribution in 1837, in a treatise on the probability
+of judgments in criminal and civil matters, as a limiting form of the binomial for rare
+events. For decades it was a mathematical curiosity. What made it famous was an 1898
+study by **Ladislaus von Bortkiewicz**, who tabulated the number of Prussian cavalry
+soldiers killed each year by horse kicks, across $14$ corps over $20$ years. Death by
+horse kick is *rare* (a tiny probability per soldier per year) and there were *many*
+soldiers (a large $n$) — exactly the regime where the binomial collapses to the Poisson.
+Bortkiewicz found the yearly counts followed a Poisson almost exactly, and coined the name
+**"law of small numbers"** for the phenomenon. We will reproduce his data in @sec-horse —
+it remains the cleanest real example of the Poisson on Earth, precisely because horse
+kicks really are independent and rare.
+
+The lesson the horse kicks teach, and the one we hold onto: the Poisson is the law of
+**many opportunities, each individually unlikely**. That phrase *is* the limit we are
+about to take.
+
+# Intuition before symbols {#sec-intuition}
+
+Picture a one-hour window as a long horizontal bar. Events — emails, cars, kicks — land on
+it at random instants, like raindrops hitting a windowsill. We expect about $\lambda$ of
+them per hour on average; that is the only thing we fix. We ask: what is the probability of
+seeing *exactly* $k$ drops?
+
+The trick is to **freeze the continuum into a grid and then let the grid dissolve.** Cut
+the hour into $n$ equal slices, so fine that no slice realistically holds two drops. Each
+slice is now a yes/no trial: a drop, or no drop. Because we expect $\lambda$ drops spread
+over $n$ slices, each slice carries probability $p = \lambda/n$ of a drop — tiny when $n$
+is huge. The number of drops is then a Binomial($n, \lambda/n$): we have *manufactured*
+the trials the binomial needs. @fig-grid shows the freeze, for three grid resolutions.
+
+```{python}
+#| label: fig-grid
+#| fig-cap: "Freezing a continuous window into binomial trials. The same five events (red ticks) fall on a one-unit window. We slice it into $n$ equal cells; each cell becomes a yes/no trial ('did an event land here?'). As $n$ grows from 10 to 40 to 160, the cells shrink, the chance any one cell is occupied falls like $\\lambda/n$, and the risk of two events sharing a cell vanishes. The Poisson is what the count of occupied cells converges to as $n\\to\\infty$."
+rng = np.random.default_rng(3)
+events = np.sort(rng.uniform(0, 1, size=5))
+fig, axes = plt.subplots(3, 1, figsize=(7.2, 3.6))
+for ax, n in zip(axes, (10, 40, 160)):
+    edges = np.linspace(0, 1, n + 1)
+    for e in edges:
+        ax.axvline(e, color=GREY, lw=0.4, alpha=0.6)
+    occupied = set(np.clip((events * n).astype(int), 0, n - 1))
+    for c in occupied:
+        ax.axvspan(edges[c], edges[c + 1], color=ACCENT, alpha=0.25)
+    ax.vlines(events, 0, 1, color=BAR2, lw=2.2)
+    ax.set_yticks([]); ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    ax.set_ylabel(f"$n={n}$", rotation=0, ha="right", va="center")
+axes[0].set_title("One window, finer and finer grids of binomial trials")
+axes[-1].set_xlabel("position in the window")
+plt.tight_layout()
+```
+
+Two things must hold for this picture to be honest, and they are exactly the **three
+assumptions** the Poisson rests on. First, the events must be **independent** — one drop
+landing does not make another more or less likely (no clustering, no contagion). Second,
+the rate must be **constant** across the window — the drops are equally likely to land
+anywhere, so each slice carries the same $p$. Third — and this is what makes the slices
+into clean trials — at most **one** event can occupy an infinitesimal slice; the chance of
+two in the same vanishing instant is negligible compared to the chance of one. Hold those
+three and the limit below is forced. Break any one of them and the Poisson is the wrong
+model — the honest boundary we reach in @sec-failure.
+
+# The formal development {#sec-formal}
+
+## The pmf as the limit of a binomial {#sec-limit}
+
+We now do, in symbols, exactly what @fig-grid did in pictures: write down the
+Binomial($n,\lambda/n$) probability of $k$ events and take $n\to\infty$ with $\lambda$
+held fixed. Every step is on the page.
+
+::: {#thm-poisson-limit}
+**Theorem (Poisson as the law of rare events).** Fix $\lambda > 0$ and a non-negative
+integer $k$. Let $X_n \sim \text{Binomial}\!\left(n, \tfrac{\lambda}{n}\right)$. Then
+
+$$
+\lim_{n\to\infty} P(X_n = k) = e^{-\lambda}\,\frac{\lambda^k}{k!}.
+$$
+:::
+
+::: {.proof}
+Start from the binomial pmf @eq-binom with $p = \lambda/n$, so that $1-p = 1 - \lambda/n$:
+
+$$
+P(X_n = k)
+= \binom{n}{k}\left(\frac{\lambda}{n}\right)^{k}\left(1-\frac{\lambda}{n}\right)^{n-k}.
+$$
+
+Expand the binomial coefficient using $\binom{n}{k} = \dfrac{n!}{k!\,(n-k)!}$, and write
+$n!/(n-k)!$ as the **falling product** of its top $k$ factors — this is the identity
+$n!/(n-k)! = n(n-1)(n-2)\cdots(n-k+1)$, which holds because every factor below $n-k+1$
+cancels between numerator and denominator. There are exactly $k$ factors in that product:
+
+$$
+\frac{n!}{(n-k)!} = \underbrace{n\,(n-1)\,(n-2)\cdots(n-k+1)}_{k \text{ factors}}.
+$$
+
+Substituting, and splitting $(\lambda/n)^k = \lambda^k / n^k$:
+
+$$
+P(X_n = k)
+= \frac{n(n-1)\cdots(n-k+1)}{k!}\cdot\frac{\lambda^k}{n^k}
+  \cdot\left(1-\frac{\lambda}{n}\right)^{n-k}.
+$$
+
+Now group the pieces deliberately, because each group has its own clean limit. Pull
+$\lambda^k/k!$ out (it carries no $n$), and pair the falling product with the $n^k$ in the
+denominator:
+
+$$
+P(X_n = k)
+= \frac{\lambda^k}{k!}
+  \cdot\underbrace{\frac{n(n-1)\cdots(n-k+1)}{n^k}}_{\text{(A)}}
+  \cdot\underbrace{\left(1-\frac{\lambda}{n}\right)^{n}}_{\text{(B)}}
+  \cdot\underbrace{\left(1-\frac{\lambda}{n}\right)^{-k}}_{\text{(C)}} .
+$$ {#eq-three-pieces}
+
+In the last step we split $\left(1-\tfrac{\lambda}{n}\right)^{n-k}$ into
+$\left(1-\tfrac{\lambda}{n}\right)^{n}\cdot\left(1-\tfrac{\lambda}{n}\right)^{-k}$ using
+the exponent law $a^{m-k}=a^m a^{-k}$ — this separates the part that builds $e^{-\lambda}$
+from the part that washes out. We take the three limits one at a time.
+
+**Piece (A).** Divide each of the $k$ factors in the numerator by one factor of $n$ from
+the denominator's $n^k$:
+
+$$
+\frac{n(n-1)\cdots(n-k+1)}{n^k}
+= \frac{n}{n}\cdot\frac{n-1}{n}\cdots\frac{n-k+1}{n}
+= 1\cdot\Bigl(1-\tfrac1n\Bigr)\cdots\Bigl(1-\tfrac{k-1}{n}\Bigr).
+$$
+
+This is a product of $k$ factors. As $n\to\infty$, each factor $\bigl(1-\tfrac{j}{n}\bigr)
+\to 1$ for every fixed $j \in \{0,1,\dots,k-1\}$, because $j/n \to 0$. A product of a
+*fixed* number $k$ of terms, each tending to $1$, tends to $1$. So **(A) $\to 1$.**
+
+**Piece (B).** This is the only step above the Calculus-I floor, so we derive it rather
+than quote it. We claim
+
+$$
+\lim_{n\to\infty}\left(1-\frac{\lambda}{n}\right)^{n} = e^{-\lambda}.
+$$ {#eq-elimit}
+
+Take the natural logarithm of $\bigl(1-\tfrac{\lambda}{n}\bigr)^{n}$, which is legal since
+the base is positive for large $n$, and use $\ln(a^b)=b\ln a$:
+
+$$
+\ln\!\left(1-\frac{\lambda}{n}\right)^{n} = n\,\ln\!\left(1-\frac{\lambda}{n}\right).
+$$
+
+Let $t = \lambda/n$, so $t\to 0$ as $n\to\infty$, and $n = \lambda/t$. Then the right-hand
+side is
+
+$$
+n\,\ln(1 - t) = \frac{\lambda}{t}\,\ln(1-t) = \lambda\cdot\frac{\ln(1-t)}{t}.
+$$
+
+We need the limit of $\dfrac{\ln(1-t)}{t}$ as $t\to 0$. Both numerator and denominator go
+to $0$, so this is a $0/0$ form; apply L'Hôpital's rule from Calc 1 — differentiate top and
+bottom with respect to $t$. The derivative of $\ln(1-t)$ is $\dfrac{-1}{1-t}$ (chain rule),
+and the derivative of $t$ is $1$:
+
+$$
+\lim_{t\to 0}\frac{\ln(1-t)}{t}
+= \lim_{t\to 0}\frac{-1/(1-t)}{1}
+= \frac{-1}{1-0} = -1.
+$$
+
+Therefore $n\ln\bigl(1-\tfrac{\lambda}{n}\bigr) \to \lambda\cdot(-1) = -\lambda$. Since the
+logarithm of our expression tends to $-\lambda$, and the exponential function is
+continuous, the expression itself tends to $e^{-\lambda}$:
+
+$$
+\left(1-\frac{\lambda}{n}\right)^{n}
+= \exp\!\left[n\ln\!\left(1-\frac{\lambda}{n}\right)\right]
+\longrightarrow \exp(-\lambda) = e^{-\lambda}.
+$$
+
+That establishes @eq-elimit. So **(B) $\to e^{-\lambda}$.** (This is the same machine that
+defines $e$ itself: $\bigl(1+\tfrac{x}{n}\bigr)^n \to e^x$, here with $x=-\lambda$.)
+
+**Piece (C).** As $n\to\infty$, the base $1-\tfrac{\lambda}{n}\to 1$, and the exponent
+$-k$ is a *fixed* integer. So $\bigl(1-\tfrac{\lambda}{n}\bigr)^{-k}\to 1^{-k} = 1$. Thus
+**(C) $\to 1$.**
+
+Now reassemble @eq-three-pieces. The limit of a product is the product of the limits
+whenever each limit exists (a standard Calc-1 limit law), and all three do:
+
+$$
+\lim_{n\to\infty} P(X_n = k)
+= \frac{\lambda^k}{k!}\cdot 1 \cdot e^{-\lambda}\cdot 1
+= e^{-\lambda}\,\frac{\lambda^k}{k!}. \qquad\blacksquare
+$$
+:::
+
+That limit *defines* the Poisson distribution.
+
+::: {#def-poisson}
+**Definition (Poisson distribution).** A random variable $X$ taking values in
+$\{0,1,2,\dots\}$ has the **Poisson distribution with rate $\lambda > 0$**, written
+$X\sim\text{Poisson}(\lambda)$, if its probability mass function is
+
+$$
+p(k) = P(X=k) = e^{-\lambda}\,\frac{\lambda^k}{k!}, \qquad k = 0,1,2,\dots
+$$ {#eq-poisson-pmf}
+:::
+
+Here $\lambda$ is the **rate** or **intensity** — the expected number of events in the
+window — and $k!$ (read "$k$ factorial") is $k\cdot(k-1)\cdots 2\cdot 1$, with the
+convention $0! = 1$. Note the support is *unbounded*: unlike the binomial, which can
+report at most $n$ successes, the Poisson assigns positive (if minuscule) probability to
+*any* count, however large. That is the trace of having let $n\to\infty$.
+
+## It is a genuine distribution: the masses sum to one {#sec-normalize}
+
+A pmf is only legitimate if its values are non-negative and sum to $1$ ([PROB-3]).
+Non-negativity is immediate: $e^{-\lambda}>0$, $\lambda^k>0$, and $k!>0$, so every $p(k)>0$.
+The sum is where the constant $e^{-\lambda}$ earns its keep. We need one fact from Calc 1 —
+the **Taylor (Maclaurin) series of the exponential function**, which is
+
+$$
+e^{x} = \sum_{k=0}^{\infty}\frac{x^k}{k!}
+= 1 + x + \frac{x^2}{2!} + \frac{x^3}{3!} + \cdots,
+$$ {#eq-exp-series}
+
+valid for every real $x$. (This is the defining power series of $e^x$; it is *at* the
+Calc-1/sequences-and-series floor, so we may use it, but we flag that it is the one
+analytic fact this normalization rests on.) Now sum @eq-poisson-pmf over all $k$, pulling
+the constant $e^{-\lambda}$ out of the sum since it does not depend on $k$:
+
+$$
+\sum_{k=0}^{\infty} p(k)
+= \sum_{k=0}^{\infty} e^{-\lambda}\frac{\lambda^k}{k!}
+= e^{-\lambda}\sum_{k=0}^{\infty}\frac{\lambda^k}{k!}.
+$$
+
+The remaining sum is exactly @eq-exp-series evaluated at $x = \lambda$, namely
+$\sum_{k\ge 0}\lambda^k/k! = e^{\lambda}$. Therefore
+
+$$
+\sum_{k=0}^{\infty} p(k) = e^{-\lambda}\cdot e^{\lambda} = e^{-\lambda+\lambda} = e^{0} = 1.
+$$
+
+The masses sum to one, so the Poisson is a bona fide distribution. The factor
+$e^{-\lambda}$ is precisely the normalizing constant that the series $\sum \lambda^k/k!$
+demands — it is not decoration. @fig-pmf-shapes shows the pmf for several rates.
+
+```{python}
+#| label: fig-pmf-shapes
+#| fig-cap: "The Poisson pmf $p(k)=e^{-\\lambda}\\lambda^k/k!$ for four rates. Small $\\lambda$ is sharply right-skewed and piled at 0 (rare events: most windows are empty). As $\\lambda$ grows the distribution shifts right, spreads out, and grows visibly more symmetric and bell-shaped — a foreshadowing of the normal approximation. The dashed green line marks the mean, which always equals $\\lambda$ (proved in @sec-mean)."
+fig, axes = plt.subplots(2, 2, figsize=(8.4, 5.4))
+for ax, lam in zip(axes.ravel(), (0.7, 2.5, 6.0, 15.0)):
+    kmax = int(lam + 4 * np.sqrt(lam) + 5)
+    ks = np.arange(0, kmax + 1)
+    ax.bar(ks, poisson_pmf(ks, lam), color=BAR, width=0.85)
+    ax.axvline(lam, color=ACCENT, ls="--", lw=1.8, label=fr"mean $=\lambda={lam}$")
+    ax.set_title(fr"$\lambda = {lam}$", fontsize=11)
+    ax.set_xlabel("$k$"); ax.set_ylabel("$P(X=k)$")
+    ax.legend(fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the pmf have an $e^{-\lambda}$ out front — where does it come from?"* It is the
+normalizer. The shape of the distribution lives in $\lambda^k/k!$; but $\sum_k
+\lambda^k/k! = e^{\lambda}$, not $1$, so to make the masses total $1$ we must divide by
+$e^{\lambda}$, i.e. multiply by $e^{-\lambda}$. Equivalently, it is what the limit in
+@thm-poisson-limit hands you: piece (B), $\bigl(1-\tfrac{\lambda}{n}\bigr)^n \to
+e^{-\lambda}$, is the surviving image of the binomial's $(1-p)^{n-k}$ "no-event-anywhere"
+factor. Both stories give the same constant, because they are the same distribution.
+:::
+
+## The mean is $\lambda$ {#sec-mean}
+
+By the definition of expectation for a discrete random variable ([PROB-5]), $E[X] =
+\sum_k k\,p(k)$. We compute it for the Poisson and find — as the Core promised — that it
+is exactly $\lambda$.
+
+$$
+E[X] = \sum_{k=0}^{\infty} k\,e^{-\lambda}\frac{\lambda^k}{k!}.
+$$
+
+The $k=0$ term is zero (it has a factor of $k=0$), so we may start the sum at $k=1$
+without changing it. For $k\ge 1$ we can cancel one factor of $k$ against the $k!$ in the
+denominator, using $k! = k\cdot(k-1)!$, so that $k/k! = 1/(k-1)!$:
+
+$$
+E[X] = \sum_{k=1}^{\infty} k\,e^{-\lambda}\frac{\lambda^k}{k!}
+= e^{-\lambda}\sum_{k=1}^{\infty}\frac{\lambda^k}{(k-1)!}.
+$$
+
+Now peel off one factor of $\lambda$ from $\lambda^k = \lambda\cdot\lambda^{k-1}$ and pull
+it outside the sum, then **re-index** with $j = k-1$ (so as $k$ runs $1,2,3,\dots$, $j$
+runs $0,1,2,\dots$):
+
+$$
+E[X] = e^{-\lambda}\,\lambda\sum_{k=1}^{\infty}\frac{\lambda^{k-1}}{(k-1)!}
+= e^{-\lambda}\,\lambda\sum_{j=0}^{\infty}\frac{\lambda^{j}}{j!}.
+$$
+
+The remaining sum is the exponential series @eq-exp-series at $x=\lambda$ again, equal to
+$e^{\lambda}$. So
+
+$$
+\boxed{\;E[X] = e^{-\lambda}\,\lambda\,e^{\lambda} = \lambda.\;}
+$$ {#eq-poisson-mean}
+
+This is the reassuring consistency check the construction demanded: we *built* the Poisson
+by holding $np = \lambda$ fixed, and $np$ is exactly the binomial's mean, so the limit had
+better have mean $\lambda$ — and it does.
+
+## The variance is also $\lambda$: equidispersion {#sec-variance}
+
+Now the signature result. We use the computational identity for variance from [PROB-6],
+
+$$
+\text{Var}(X) = E[X^2] - (E[X])^2,
+$$ {#eq-var-identity}
+
+so we need $E[X^2]$. Computing $E[X^2]=\sum k^2 p(k)$ directly is clumsy because the $k^2$
+does not cancel cleanly against $k!$. The standard maneuver — and one worth keeping in your
+toolkit — is to compute the **factorial moment** $E[X(X-1)]$ first, because $X(X-1)$
+cancels *two* factors against $k!$, and then recover $E[X^2]$ from it. Note that
+
+$$
+E[X(X-1)] = E[X^2 - X] = E[X^2] - E[X],
+$$ {#eq-factorial-link}
+
+using linearity of expectation ([PROB-5]); we will rearrange this for $E[X^2]$ in a moment.
+Compute the factorial moment:
+
+$$
+E[X(X-1)] = \sum_{k=0}^{\infty} k(k-1)\,e^{-\lambda}\frac{\lambda^k}{k!}.
+$$
+
+The $k=0$ and $k=1$ terms both vanish (each carries a factor $k(k-1)=0$), so start the sum
+at $k=2$. For $k\ge 2$, cancel the two leading factors against $k! = k(k-1)(k-2)!$, leaving
+$k(k-1)/k! = 1/(k-2)!$:
+
+$$
+E[X(X-1)] = e^{-\lambda}\sum_{k=2}^{\infty}\frac{\lambda^k}{(k-2)!}.
+$$
+
+Peel off $\lambda^2$ from $\lambda^k = \lambda^2\cdot\lambda^{k-2}$, pull it out, and
+re-index with $j = k-2$ ($j$ runs $0,1,2,\dots$):
+
+$$
+E[X(X-1)] = e^{-\lambda}\,\lambda^2\sum_{k=2}^{\infty}\frac{\lambda^{k-2}}{(k-2)!}
+= e^{-\lambda}\,\lambda^2\sum_{j=0}^{\infty}\frac{\lambda^{j}}{j!}
+= e^{-\lambda}\,\lambda^2\,e^{\lambda} = \lambda^2.
+$$
+
+So $E[X(X-1)] = \lambda^2$. Now rearrange @eq-factorial-link to solve for $E[X^2]$, and
+substitute $E[X]=\lambda$ from @eq-poisson-mean:
+
+$$
+E[X^2] = E[X(X-1)] + E[X] = \lambda^2 + \lambda.
+$$
+
+Finally, plug into the variance identity @eq-var-identity:
+
+$$
+\text{Var}(X) = E[X^2] - (E[X])^2 = (\lambda^2 + \lambda) - \lambda^2 = \lambda.
+$$
+
+$$
+\boxed{\;\text{Var}(X) = \lambda = E[X].\;}
+$$ {#eq-poisson-var}
+
+The mean and the variance are the same number. This is **equidispersion**, and it is the
+most distinctive — and most consequential — fact about the Poisson.
+
+::: {.callout-tip title="You might be asked"}
+*"Why are the mean and variance equal — is that a coincidence?"* No, it is inherited from
+the binomial in the limit. The binomial has mean $np$ and variance $np(1-p)$. Set
+$p=\lambda/n$: the mean is $np = \lambda$, and the variance is $np(1-p) =
+\lambda\bigl(1-\tfrac{\lambda}{n}\bigr)$. As $n\to\infty$, the factor
+$\bigl(1-\tfrac{\lambda}{n}\bigr)\to 1$, so the variance $\to\lambda$ as well. The binomial's
+variance is always *less* than its mean (because $1-p<1$); pushing $p\to 0$ erases the gap,
+and mean and variance fuse. So equidispersion is the limiting signature of "successes so
+rare that missing one barely constrains the rest." Whenever real data show variance well
+*above* the mean — overdispersion — that is the data telling you the events are *not*
+independent and rare in the Poisson sense, which is the failure mode in @sec-failure.
+:::
+
+A useful by-product: the standard deviation is $\sigma = \sqrt{\lambda}$. So as the rate
+grows, the spread grows only like its square root, which is why the *relative* spread
+$\sigma/\mu = \sqrt{\lambda}/\lambda = 1/\sqrt{\lambda}$ shrinks — a Poisson with
+$\lambda=10{,}000$ is, proportionally, far tighter around its mean than one with
+$\lambda=4$. @fig-equidispersion makes the mean-equals-variance fact concrete by simulation.
+
+```{python}
+#| label: fig-equidispersion
+#| fig-cap: "Equidispersion, checked by simulation. For each $\\lambda$ we draw $200{,}000$ Poisson counts and plot the empirical variance against the empirical mean; they hug the 45-degree line $\\text{Var}=\\text{mean}$ (dashed). The error bars (negligible at this sample size) confirm this is structural, not luck. Any real count data whose variance sits well *above* this line is overdispersed and not Poisson — see @sec-failure."
+rng = np.random.default_rng(11)
+lams = np.array([0.5, 1, 2, 4, 8, 16, 32, 64])
+means, varis = [], []
+for lam in lams:
+    s = rng.poisson(lam, size=200_000)
+    means.append(s.mean()); varis.append(s.var())
+fig, ax = plt.subplots()
+lo, hi = 0.3, 80
+ax.plot([lo, hi], [lo, hi], color=ACCENT, ls="--", lw=1.8, label=r"$\mathrm{Var}=\mathrm{mean}$ (equidispersion)")
+ax.scatter(means, varis, color=BAR, s=55, zorder=3, label="simulated Poisson")
+ax.set_xscale("log"); ax.set_yscale("log")
+ax.set_xlabel("empirical mean"); ax.set_ylabel("empirical variance")
+ax.set_title("Mean equals variance for the Poisson")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+```
+
+## A second derivation of the mean and variance, for confidence {#sec-second-derivation}
+
+The track ([PROB-12] scope) asks for the mean and variance "derived," and we have done so
+directly above. But there is a second route that is shorter and explains *why* the numbers
+are what they are, and it is worth seeing because it reuses [PROB-11] rather than the
+exponential series. It rests on just two ingredients, both already in hand: the limit
+construction of @thm-poisson-limit ($\text{Poisson}(\lambda) = \lim_n
+\text{Binomial}(n,\lambda/n)$), and the [PROB-11] decomposition of a binomial into a sum of
+independent Bernoulli indicators, whose mean and variance add by [PROB-8]. No new machinery
+is needed — in particular, this route does *not* use the additivity theorem of
+@sec-additivity; it simply follows the mean and variance through the same limit that built
+the pmf.
+
+Recall from the limit construction that $\text{Poisson}(\lambda)$ is
+$\lim_n \text{Binomial}(n,\lambda/n)$. For a Binomial($n,p$) written as a sum of $n$
+independent Bernoulli($p$) indicators $B_1,\dots,B_n$ (the [PROB-11] decomposition), each
+$B_i$ has mean $p$ and variance $p(1-p)$. By linearity of expectation (no independence
+needed) and additivity of variance under independence ([PROB-8]),
+
+$$
+E\Bigl[\textstyle\sum_i B_i\Bigr] = np, \qquad
+\text{Var}\Bigl(\textstyle\sum_i B_i\Bigr) = np(1-p).
+$$
+
+Substitute $p = \lambda/n$ and take $n\to\infty$, term by term. The mean needs no limit at
+all: $np = n\cdot\tfrac{\lambda}{n} = \lambda$ exactly, for every $n$. The variance does
+take a limit:
+
+$$
+np(1-p) = n\cdot\frac{\lambda}{n}\left(1-\frac{\lambda}{n}\right)
+= \lambda\left(1-\frac{\lambda}{n}\right) \xrightarrow[n\to\infty]{} \lambda\cdot 1 = \lambda,
+$$
+
+because the bracketed factor $\bigl(1-\tfrac{\lambda}{n}\bigr)\to 1$ as $n\to\infty$ ($\lambda$
+fixed). So $E[X]=\lambda$ and $\text{Var}(X)=\lambda$ once more — the same two boxed results,
+@eq-poisson-mean and @eq-poisson-var, now seen as the limiting mean and variance of a sum
+of independent rare indicators. Two independent derivations agreeing is exactly the kind of
+cross-check that should make you trust the result.
+
+## Additivity: a sum of independent Poissons is Poisson {#sec-additivity}
+
+The Poisson has a closure property as clean as its moments: add two independent Poisson
+counts and you get another Poisson, with the rates simply summed. This is the formal
+expression of an obvious idea — if calls to line A arrive at rate $\lambda_1$ and calls to
+line B at rate $\lambda_2$, then total calls arrive at rate $\lambda_1+\lambda_2$.
+
+::: {#thm-additivity}
+**Theorem (additivity of independent Poissons).** If $X\sim\text{Poisson}(\lambda_1)$ and
+$Y\sim\text{Poisson}(\lambda_2)$ are independent, then
+$X+Y\sim\text{Poisson}(\lambda_1+\lambda_2)$.
+:::
+
+::: {.proof}
+Let $S = X+Y$. We compute $P(S=n)$ for an arbitrary non-negative integer $n$ and show it
+matches the Poisson($\lambda_1+\lambda_2$) pmf. The event $\{S=n\}$ is the union, over all
+ways to split $n$ into $X=k$ and $Y=n-k$, of the events $\{X=k\}\cap\{Y=n-k\}$, for
+$k=0,1,\dots,n$. These splits are mutually exclusive (different values of $X$), so their
+probabilities add — this is the **discrete convolution**:
+
+$$
+P(S=n) = \sum_{k=0}^{n} P(X=k,\,Y=n-k).
+$$
+
+Because $X$ and $Y$ are independent, the joint probability factors into the product of
+marginals ([PROB-8]): $P(X=k,\,Y=n-k) = P(X=k)\,P(Y=n-k)$. Insert the two Poisson pmfs:
+
+$$
+P(S=n) = \sum_{k=0}^{n}
+\left(e^{-\lambda_1}\frac{\lambda_1^{\,k}}{k!}\right)
+\left(e^{-\lambda_2}\frac{\lambda_2^{\,n-k}}{(n-k)!}\right).
+$$
+
+The two exponentials combine: $e^{-\lambda_1}e^{-\lambda_2} = e^{-(\lambda_1+\lambda_2)}$,
+a constant that pulls out of the sum over $k$:
+
+$$
+P(S=n) = e^{-(\lambda_1+\lambda_2)}
+\sum_{k=0}^{n}\frac{\lambda_1^{\,k}\,\lambda_2^{\,n-k}}{k!\,(n-k)!}.
+$$
+
+The sum is *almost* a binomial expansion; it is missing only an $n!$ to complete the
+binomial coefficients. Multiply and divide by $n!$ — multiply the whole sum by $1 = n!/n!$,
+keeping the $1/n!$ outside and folding the $n!$ inside next to the factorials:
+
+$$
+P(S=n) = \frac{e^{-(\lambda_1+\lambda_2)}}{n!}
+\sum_{k=0}^{n}\frac{n!}{k!\,(n-k)!}\,\lambda_1^{\,k}\,\lambda_2^{\,n-k}
+= \frac{e^{-(\lambda_1+\lambda_2)}}{n!}
+\sum_{k=0}^{n}\binom{n}{k}\lambda_1^{\,k}\,\lambda_2^{\,n-k},
+$$
+
+recognizing $\dfrac{n!}{k!(n-k)!} = \dbinom{n}{k}$ ([PROB-10]). The remaining sum is exactly
+the **binomial theorem** $\sum_{k=0}^{n}\binom{n}{k}a^k b^{n-k} = (a+b)^n$ ([PROB-10],
+[PROB-11]) with $a=\lambda_1$ and $b=\lambda_2$, so it collapses to
+$(\lambda_1+\lambda_2)^n$. Therefore
+
+$$
+P(S=n) = e^{-(\lambda_1+\lambda_2)}\,\frac{(\lambda_1+\lambda_2)^{\,n}}{n!},
+$$
+
+which is precisely the Poisson($\lambda_1+\lambda_2$) pmf @eq-poisson-pmf evaluated at $n$.
+Since this holds for every $n\ge 0$, $S=X+Y\sim\text{Poisson}(\lambda_1+\lambda_2)$.
+$\qquad\blacksquare$
+:::
+
+By induction, the sum of any finite number of independent Poissons is Poisson with the
+summed rate. This is the formal license for two everyday moves: **aggregating** (combine
+counts from disjoint regions or periods and the total is still Poisson) and **splitting**
+(a Poisson($\lambda$) over an hour is the sum of $60$ independent Poisson($\lambda/60$)
+counts over the minutes), the latter being the discrete shadow of the freeze in @fig-grid.
+
+# Worked examples {#sec-examples}
+
+We now run the distribution on real, honest data — including, deliberately, a case where it
+*fails*, so the boundary is not hidden.
+
+## Example 1 — Bortkiewicz's horse kicks: the textbook fit {#sec-horse}
+
+The canonical Poisson dataset. Bortkiewicz recorded, for $14$ Prussian army corps over
+the $20$ years $1875$–$1894$, the number of cavalrymen killed by horse kicks in each
+corps-year. That gives $14\times 20 = 280$ corps-year observations; the table below records
+how many of those $280$ observations saw $0, 1, 2, 3, 4$ deaths. (We use the ten "stable"
+corps Bortkiewicz singled out for $200$ observations, the figure most often reproduced.)
+
+We estimate the single parameter $\lambda$ the only sensible way: as the **sample mean**
+number of deaths per corps-year (this is the method-of-moments and maximum-likelihood
+estimate, derived in [INFR-B1]; here we use that $E[X]=\lambda$ from @eq-poisson-mean, so
+the natural estimate of $\lambda$ is the observed average). Then we compare the Poisson's
+*predicted* counts to the *observed* counts.
+
+```{python}
+#| label: tbl-horse
+#| echo: false
+# Bortkiewicz's classic horse-kick tally: deaths k, and number of corps-years observed.
+deaths   = np.array([0, 1, 2, 3, 4])
+observed = np.array([109, 65, 22, 3, 1])     # the famous 200-observation table
+N = observed.sum()
+# Estimate lambda as the sample mean number of deaths per corps-year.
+lam_hat = np.sum(deaths * observed) / N
+expected = N * poisson_pmf(deaths, lam_hat)
+print(f"total corps-years N      = {N}")
+print(f"total deaths             = {np.sum(deaths*observed)}")
+print(f"lambda_hat = mean deaths = {lam_hat:.4f} per corps-year")
+print()
+print(f"{'k':>3} {'observed':>9} {'expected':>9}")
+for k, o, e in zip(deaths, observed, expected):
+    print(f"{k:>3} {o:>9d} {e:>9.2f}")
+# A crude dispersion check: sample variance vs sample mean.
+counts_expanded = np.repeat(deaths, observed)
+print()
+print(f"sample mean     = {counts_expanded.mean():.4f}")
+print(f"sample variance = {counts_expanded.var():.4f}   (≈ mean ⇒ Poisson-consistent)")
+```
+
+The estimated rate is about $\hat\lambda = `{python} f"{lam_hat:.3f}"`$ deaths per
+corps-year. Reading the printed table, the Poisson's expected counts track the observed
+counts strikingly well — $109$ observed empty years against $`{python}
+f"{expected[0]:.1f}"`$ predicted, $65$ against $`{python} f"{expected[1]:.1f}"`$, and so on
+down the tail. Crucially, the **sample variance** ($`{python}
+f"{counts_expanded.var():.3f}"`$) is almost exactly the **sample mean** ($`{python}
+f"{counts_expanded.mean():.3f}"`$) — the equidispersion signature of @sec-variance, holding
+in real data. @fig-horse overlays the two.
+
+```{python}
+#| label: fig-horse
+#| fig-cap: "Bortkiewicz's horse-kick deaths: observed corps-year counts (navy bars) against the Poisson($\\hat\\lambda$) prediction (red), with $\\hat\\lambda$ set to the sample mean. The fit is almost embarrassingly good — this is the cleanest real-world Poisson there is, precisely because horse-kick deaths are genuinely independent and rare. The sample mean and sample variance are nearly equal, as the equidispersion property of @sec-variance requires."
+fig, ax = plt.subplots()
+w = 0.4
+ax.bar(deaths - w/2, observed, width=w, color=BAR, label="observed")
+ax.bar(deaths + w/2, expected, width=w, color=BAR2, label=fr"Poisson($\hat\lambda={lam_hat:.3f}$)")
+ax.set_xlabel("deaths per corps-year, $k$"); ax.set_ylabel("number of corps-years")
+ax.set_title("Horse-kick deaths vs. the Poisson fit")
+ax.set_xticks(deaths)
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+```
+
+## Example 2 — the binomial-to-Poisson approximation in action {#sec-approx}
+
+The Poisson is not only a model in its own right; it is the practitioner's **fast
+approximation to a binomial** when $n$ is large and $p$ is small — exactly the regime of
+@thm-poisson-limit. A working rule of thumb is $n\ge 20$ and $p\le 0.05$ (some say $np\le
+10$); then Binomial($n,p$) $\approx$ Poisson($np$), and the Poisson is far easier to
+compute and reason about because it has one parameter instead of two.
+
+A concrete case: a factory ships $n = 1000$ widgets, each independently defective with
+probability $p = 0.003$. The number of defectives is exactly Binomial($1000, 0.003$), but
+we model it as Poisson($\lambda = np = 3$). @fig-approx shows the two pmfs on top of each
+other.
+
+```{python}
+#| label: fig-approx
+#| fig-cap: "The rare-event limit at finite $n$. The exact Binomial($1000, 0.003$) pmf (navy bars) is nearly indistinguishable from its Poisson($np=3$) approximation (red outline). With $n$ large and $p$ small, the limit of @thm-poisson-limit has already 'arrived' for all practical purposes — the maximum absolute discrepancy across all $k$ is tiny (printed below). This is why the Poisson is the default model for defect counts, typos, mutations, and rare disease cases."
+n_w, p_w = 1000, 0.003
+lam_w = n_w * p_w
+ks = np.arange(0, 13)
+pb = binom_pmf(ks, n_w, p_w)
+pp = poisson_pmf(ks, lam_w)
+fig, ax = plt.subplots()
+ax.bar(ks, pb, color=BAR, width=0.7, label=f"Binomial($n={n_w}$, $p={p_w}$)")
+ax.step(ks + 0.0, pp, where="mid", color=BAR2, lw=2.2, label=fr"Poisson($\lambda={lam_w:.0f}$)")
+ax.scatter(ks, pp, color=BAR2, s=22, zorder=4)
+ax.set_xlabel("number of defective widgets, $k$"); ax.set_ylabel("probability")
+ax.set_title("Binomial $\\to$ Poisson when $n$ is large and $p$ is small")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+print(f"lambda = n*p = {lam_w:.1f}")
+print(f"max |binom - poisson| over k = {np.max(np.abs(pb - pp)):.2e}")
+print(f"P(0 defective): binom = {binom_pmf([0],n_w,p_w)[0]:.5f}, poisson = {poisson_pmf([0],lam_w)[0]:.5f}")
+print(f"P(>=6 defective): binom = {1-binom_pmf(np.arange(6),n_w,p_w).sum():.5f}, "
+      f"poisson = {1-poisson_pmf(np.arange(6),lam_w).sum():.5f}")
+```
+
+The maximum discrepancy between the exact binomial and the Poisson approximation across all
+counts is on the order of $10^{-4}$ — invisible for any practical decision. So a quality
+engineer can carry the one number $\lambda=3$ and answer "what is the chance of six or more
+defects?" with $1 - \sum_{k=0}^{5}e^{-3}3^k/k!$, never touching a binomial coefficient.
+
+## Example 3 — the edge of applicability: overdispersed website visits {#sec-overdispersion-example}
+
+Now the honest counterexample. Counts in the wild *often* violate the Poisson, and the
+violation has a name and a signature. Consider the number of page-views a website receives
+per minute. If visits arrived independently at a steady rate, this would be Poisson. But
+real web traffic **clusters**: a link gets shared and a burst of correlated visits arrives;
+the rate itself drifts (busy hours, quiet hours); one visitor triggers others. The events
+are neither independent nor constant-rate — assumptions one and two of @sec-intuition both
+break.
+
+The fingerprint is unmistakable: the **variance vastly exceeds the mean**. We simulate
+traffic from a more realistic mechanism — a **negative binomial** (equivalently, a Poisson
+whose rate is itself random, a *Gamma–Poisson mixture*; the gamma piece is built in
+[PROB-14]) — and try to force a Poisson on it.
+
+```{python}
+#| label: fig-overdispersion
+#| fig-cap: "Where the Poisson breaks. Simulated per-minute page-views (navy) are *overdispersed*: their variance (printed below) is several times their mean, because real traffic clusters and the rate drifts. The best-fit Poisson (red, same mean) is far too narrow — it badly underpredicts both the quiet minutes near zero and the busy minutes in the long right tail. Equal mean and variance is an assumption, and here the data reject it."
+rng = np.random.default_rng(2024)
+# Gamma-Poisson (negative binomial) traffic: rate varies minute to minute.
+true_mean = 8.0
+dispersion = 0.35          # smaller => more overdispersion
+rates = rng.gamma(shape=dispersion, scale=true_mean / dispersion, size=5000)
+views = rng.poisson(rates)
+m, v = views.mean(), views.var()
+lam_fit = m                # best-fit Poisson matches the mean
+kmax = int(views.max())
+ks = np.arange(0, kmax + 1)
+obs_freq = np.array([(views == k).mean() for k in ks])
+fig, ax = plt.subplots()
+ax.bar(ks, obs_freq, color=BAR, width=0.9, label=f"observed traffic (var={v:.1f})")
+ax.plot(ks, poisson_pmf(ks, lam_fit), color=BAR2, lw=2.2, marker="o", ms=3,
+        label=fr"best-fit Poisson($\lambda={lam_fit:.1f}$), var$=\lambda$")
+ax.set_xlabel("page-views per minute, $k$"); ax.set_ylabel("relative frequency")
+ax.set_title("Overdispersed counts the Poisson cannot fit")
+ax.set_xlim(-0.5, min(kmax, 45) + 0.5)
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+print(f"sample mean     = {m:.3f}")
+print(f"sample variance = {v:.3f}")
+print(f"variance / mean = {v/m:.2f}   (=1 for Poisson; >>1 here ⇒ overdispersion)")
+```
+
+The variance-to-mean ratio is several times one, not one — the data are screaming that they
+are not Poisson. The fitted Poisson is far too tight: it cannot simultaneously explain the
+glut of near-empty minutes and the fat tail of busy minutes, because forcing
+$\text{Var}=\text{mean}$ leaves it no freedom to be wider than its center allows. **This is
+the Poisson's defining limitation:** equidispersion is rigid, and most real count data have
+more spread than their mean permits.
+
+::: {.callout-warning title="Pitfall"}
+**Equidispersion is an assumption you must check, not a law of nature.** The single most
+common Poisson mistake in applied work is fitting one to count data without verifying that
+the variance is close to the mean. When traffic clusters, when counts are contagious (one
+case raises the chance of the next, as in infections or earthquake aftershocks), or when
+the underlying rate varies across units (heterogeneity), the variance runs well above the
+mean and the Poisson dramatically understates the probability of extreme counts — exactly
+the events you usually care about. The quick diagnostic is the **dispersion ratio**
+$\widehat{\text{Var}}/\widehat{\text{mean}}$: near $1$, the Poisson is plausible; well above
+$1$, it is overdispersed; well below $1$ (rare), underdispersed.
+:::
+
+# When the Poisson applies — and when it does not {#sec-failure}
+
+The examples have shown both faces; here is the honest summary, the part that separates "can
+write the formula" from "knows when it is the right formula."
+
+::: {.callout-tip title="You might be asked"}
+*"When is the Poisson the right model, and what do you reach for when it isn't?"* The
+recitable answer:
+
+- **Use it** when you are counting events that (a) occur in a fixed window of time, space,
+  or volume; (b) are **independent** — one occurrence does not change the chance of
+  another; (c) happen at a **constant average rate** across the window; and (d) are
+  **non-simultaneous** — no two events at literally the same instant. Under those three-plus
+  conditions, the count is Poisson, the rate $\lambda$ is its mean *and* its variance, and a
+  single estimated $\hat\lambda$ (the sample mean) describes the whole distribution. Classic
+  fits: radioactive decays per second, mutations per genome, typos per page, rare-disease
+  cases per region, arrivals at a lightly loaded server.
+- **Do not use it — and what to reach for instead:**
+  - **Overdispersion** (variance $\gg$ mean), from clustering or a varying rate: use the
+    **negative binomial** (a Gamma–Poisson mixture, [PROB-14]), which adds a second
+    parameter to decouple variance from mean. In a regression setting this is
+    *negative-binomial regression* or *quasi-Poisson*, the subject of [REGR-19].
+  - **Contagion / self-excitement** (one event triggers others — infections, earthquake
+    aftershocks, viral shares): a *Hawkes (self-exciting) process*, not a Poisson process.
+  - **A rate that changes over the window** (rush hour vs. midnight): an *inhomogeneous
+    Poisson process* with a time-varying $\lambda(t)$, or just stratify into windows where
+    the rate is roughly constant and Poisson within each.
+  - **A natural fixed number of trials** with non-tiny $p$: stay with the **binomial** — the
+    Poisson approximation only kicks in for large $n$, small $p$.
+  - **An upper bound on the count or strong underdispersion** (variance $<$ mean): the
+    Poisson's unbounded right tail and equidispersion are both wrong; consider a binomial,
+    or a more flexible count model.
+:::
+
+The unifying message: the Poisson's one parameter is a blessing when the rare-event
+assumptions hold and a straitjacket when they do not. The very property that makes it so
+economical — $\text{mean}=\text{variance}=\lambda$ — is the first thing to break, so it is
+the first thing to check.
+
+# The Poisson process: where the gaps come from {#sec-process}
+
+We end by connecting the Poisson *distribution* (a count) to the Poisson *process* (events
+strung along a timeline), because that connection is what hands the baton to the next
+article. We sketch it; the full development of the waiting-time distribution is [PROB-14].
+
+Imagine events arriving on the half-line $[0,\infty)$ such that, for **every** window of
+length $t$, the number of events in it is Poisson($\lambda t$), and counts in
+non-overlapping windows are independent. This is the **Poisson process** of rate $\lambda$.
+It is the natural "process" version of everything above: the additivity theorem
+(@thm-additivity) is exactly the statement that the count over $[0, s+t]$ — being the sum
+of the independent counts over $[0,s]$ and $[s, s+t]$ — is Poisson($\lambda(s+t)$), as it
+must be.
+
+Here is the bridge to come. Ask not "how many events in a window?" but "how long until the
+**next** event?" Let $T$ be the waiting time to the first event. The event $\{T > t\}$ —
+no event yet by time $t$ — is exactly the event that the Poisson($\lambda t$) count over
+$[0,t]$ equals zero. Using the pmf @eq-poisson-pmf at $k=0$,
+
+$$
+P(T > t) = P\bigl(\text{count in }[0,t] = 0\bigr)
+= e^{-\lambda t}\frac{(\lambda t)^0}{0!} = e^{-\lambda t}.
+$$
+
+So the waiting time has $P(T>t) = e^{-\lambda t}$, i.e. cumulative distribution function
+$P(T\le t) = 1 - e^{-\lambda t}$ — the **exponential distribution** with rate $\lambda$.
+The very same $\lambda$ that is the mean *count* per unit time is the rate of the
+*exponential* gaps between events. @fig-process draws one realization of the process and
+its inter-arrival gaps.
+
+```{python}
+#| label: fig-process
+#| fig-cap: "A Poisson process of rate $\\lambda$ and its two faces. **Top:** event arrivals (red ticks) on a timeline; the count in any window is Poisson. **Bottom:** the gaps between consecutive arrivals, whose histogram (navy) matches the exponential density $\\lambda e^{-\\lambda t}$ (green) — the waiting-time law derived in the text and built fully in [PROB-14]. One parameter $\\lambda$ governs both the counts and the gaps."
+rng = np.random.default_rng(7)
+lam = 2.0
+T_end = 60.0
+# Generate a Poisson process by accumulating exponential inter-arrival times.
+gaps = []
+t = 0.0
+times = []
+while True:
+    g = rng.exponential(1 / lam)
+    t += g
+    if t > T_end:
+        break
+    times.append(t); gaps.append(g)
+times = np.array(times); gaps = np.array(gaps)
+
+fig, (axT, axB) = plt.subplots(2, 1, figsize=(7.4, 4.6))
+axT.vlines(times[times <= 12], 0, 1, color=BAR2, lw=1.8)
+axT.set_xlim(0, 12); axT.set_yticks([]); axT.set_xlabel("time (first 12 units shown)")
+axT.set_title(fr"Poisson process arrivals, rate $\lambda={lam}$")
+
+ts = np.linspace(0, gaps.max(), 200)
+axB.hist(gaps, bins=30, density=True, color=BAR, alpha=0.85, label="observed gaps")
+axB.plot(ts, lam * np.exp(-lam * ts), color=ACCENT, lw=2.2, label=fr"$\lambda e^{{-\lambda t}}$ (exponential)")
+axB.set_xlabel("gap between consecutive arrivals"); axB.set_ylabel("density")
+axB.set_title("Inter-arrival times are exponential")
+axB.legend(framealpha=0.9)
+plt.tight_layout()
+```
+
+That duality — **Poisson counts $\leftrightarrow$ exponential gaps**, both governed by the
+same $\lambda$ — is the doorway into [PROB-14], where the exponential is developed in full
+(including its memorylessness) and generalized to the gamma. It is also the precise sense in
+which "rate of rare events" is a coherent object rather than a discretization artifact: the
+process exists in continuous time, and the binomial freeze of @fig-grid was only ever
+scaffolding.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-11 *Bernoulli, Binomial, and Negative-Binomial*]**, which built
+the binomial as a sum of independent yes/no trials and gave us its mean $np$ and variance
+$np(1-p)$. This article took that binomial to the rare-event limit and discovered the
+Poisson waiting inside it. From here the catalog continues:
+
+- **[PROB-14 *Gamma, Exponential, and Beta*]** — the immediate sequel. The exponential gaps
+  we just sketched (@sec-process) are developed there, including memorylessness, and the
+  **gamma** distribution arises as the sum of exponential gaps — the waiting time to the
+  $r$-th Poisson event.
+- **[PROB-16 *The Exponential Family*]** — the Poisson is one member of a single algebraic
+  family; rewriting @eq-poisson-pmf in canonical form reveals its natural parameter
+  $\log\lambda$ and sufficient statistic $k$, the form that powers GLMs.
+
+And the Poisson is consumed downstream:
+
+- **[INFR-B1]** — estimating $\lambda$ from data by maximum likelihood (we previewed it in
+  @sec-horse: the estimate is just the sample mean), and the Poisson likelihood.
+- **[REGR-19]** — *Poisson and negative-binomial regression*, where overdispersion
+  (@sec-overdispersion-example) is the central practical problem and the negative binomial
+  is the standard fix.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** S. D. Poisson, *Recherches sur la probabilité des jugements en
+  matière criminelle et en matière civile* (1837), where the distribution first appears as
+  a binomial limit. L. von Bortkiewicz, *Das Gesetz der kleinen Zahlen* ("The Law of Small
+  Numbers," 1898) — the horse-kick study of @sec-horse and the origin of the rare-events
+  framing.
+- **The process view.** Any first course in stochastic processes develops the Poisson
+  *process* — the continuous-time object of @sec-process — with the count/gap duality as its
+  centerpiece; this is the natural next layer once [PROB-14] supplies the exponential.
+- **Open threads this article deliberately deferred.** *What if the rate itself is random or
+  drifts?* — that is the Gamma–Poisson (negative binomial) mixture and the inhomogeneous
+  process, the honest fix for overdispersion ([PROB-14], [REGR-19]). *Is there a single form
+  uniting the Poisson with the normal, binomial, and gamma?* — yes, the exponential family
+  ([PROB-16]). *How close is the Poisson to a normal for large $\lambda$?* — visibly close
+  in @fig-pmf-shapes; the precise statement is a central-limit phenomenon, owned by the
+  Statistical Inference track.

@@ -1,0 +1,907 @@
+---
+title: "The Exponential Family: One Form Behind Many Distributions"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats, special
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE  = "#2b3a67"     # the density curve / data
+CURVE2 = "#c1121f"     # comparison curve / second member
+ACCENT = "#0a7d4d"     # highlights / the mean
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the **final stop in the distribution
+> catalog** of the Probability Foundations track, and it is a *unification*: it does not
+> introduce a new distribution but a new *lens* on the ones already built. It assumes the
+> catalog members it re-reads — [PROB-11 *Bernoulli, Binomial, and Negative-Binomial*],
+> [PROB-12 *The Poisson Distribution*], [PROB-13 *The Normal (Gaussian) Distribution*],
+> and [PROB-14 *Gamma, Exponential, and Beta*] — for the densities and mass functions we
+> rewrite, and [PROB-5 *Expectation*] and [PROB-6 *Variance*] for what a mean and a
+> variance *are*. The one tool above the Calculus-I floor is **differentiating under the
+> integral sign** (moving a derivative past an integral); we state precisely the condition
+> that licenses it and use it openly rather than smuggling it in. It **sets up**, across
+> tracks, the **generalized linear model** of [REGR-18] — whose entire link-function
+> machinery is the property $A'(\eta)=\mathbb{E}[T]$ proved here — and the
+> **sufficiency** and exponential-family maximum-likelihood theory of the Statistical
+> Inference track.
+
+## Abstract {.unnumbered}
+
+The Bernoulli, the Poisson, the normal, the gamma, the exponential, the beta — distributions
+that look unrelated on the page — are all instances of **one algebraic template**,
+$$
+f(x\mid\theta)=h(x)\,\exp\!\bigl(\eta(\theta)\,T(x)-A(\theta)\bigr).
+$$
+This article does three things and defends one claim. It **derives the template** by
+asking what these distributions have structurally in common; it **re-expresses five
+catalog members in the form**, reading off each one's natural parameter $\eta$, sufficient
+statistic $T(x)$, and log-partition $A(\theta)$ by hand; and it **proves the headline
+identities** $A'(\eta)=\mathbb{E}[T(X)]$ and $A''(\eta)=\operatorname{Var}(T(X))$ — that
+differentiating a *single* normalizing function hands you the mean and variance of the
+sufficient statistic, no integral required. The single claim it defends is that **this
+form is not a curiosity but the structural reason a dozen scattered distributions share
+one inference engine** — the engine that GLMs and exponential-family estimation run on —
+and that knowing which distributions *fail* to fit the form (Student's $t$, the uniform
+with unknown support) is exactly knowing where that engine stops.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A huge fraction of the distributions you will ever use can be written in one shape:
+$$
+f(x\mid\theta)=h(x)\,\exp\!\bigl(\eta(\theta)\,T(x)-A(\theta)\bigr).
+$$
+The data $x$ touch the parameter $\theta$ **only through the product**
+$\eta(\theta)\,T(x)$ — a *natural parameter* $\eta$ times a *sufficient statistic* $T(x)$,
+both scalars here — sitting inside an exponential, scaled by a fixed shape $h(x)$ and
+normalized by a single function $A(\theta)$ called the **log-partition**. Two consequences
+follow and justify the whole construction: the sample interacts with the parameter through
+$T$ and nothing else (so $T$ **summarizes the data** for that parameter), and the mean and
+variance of $T$ are just the **first and second derivatives of $A$** — moments without
+integration.
+:::
+
+Everything below orbits that box. The form will look at first like a definition pulled
+from nowhere; by the end you should see it as the natural answer to a concrete question —
+*what do the Bernoulli, Poisson, and normal actually have in common?* — and you should see
+why the answer is worth a name. The two derivative identities, $A'=\mathbb{E}[T]$ and
+$A''=\operatorname{Var}(T)$, are the payoff the entire generalized-linear-model framework
+([REGR-18]) is built on, and we derive them in full in @sec-moments.
+
+# Why we are here: a dozen distributions, one engine {#sec-why}
+
+Keep one question in view for the whole article: **why would anyone want a single form
+that swallows the Bernoulli, the Poisson, the normal, and the gamma — and what does the
+unification actually buy?** Every step below answers a piece of that.
+
+## The problem the form solves
+
+By the time you reach this article you have met the catalog one distribution at a time.
+Each arrived with its own normalizing constant, its own mean, its own variance, each
+computed by its own integral or sum. The Poisson's mean came from one summation
+([PROB-12]); the gamma's mean from an integral against the gamma function ([PROB-14]); the
+normal's variance from the Gaussian integral ([PROB-13]). Every result was earned
+*separately*, and every proof looked like a fresh problem.
+
+That is wasteful, and it hides something. Around the 1930s, statisticians — chiefly
+**Ronald Fisher**, then **Georges Darmois**, **Bernard Koopman**, and **Edwin Pitman**
+working independently around 1935–1936 — noticed that the distributions that behaved
+*nicely* under estimation were exactly the ones that could be written in a common shape.
+Fisher had introduced the idea of a **sufficient statistic**: a function of the data that
+captures everything the data say about a parameter, so that once you know it you can throw
+the raw data away. The Darmois–Koopman–Pitman theorem made the connection sharp: under mild
+regularity, a family of distributions (with parameter-free support) admits a
+*fixed-dimension* sufficient statistic — one that does not grow as you collect more data —
+**if and only if** it is an exponential family. The form is not a notational nicety; it is
+the algebraic signature of the property that makes a distribution *learnable from a finite
+summary*.
+
+So the unification buys three concrete things, and the rest of the article delivers each
+one:
+
+1. **One sufficient statistic, found by inspection.** Write a distribution in the form and
+   $T(x)$ is simply *the thing multiplying the parameter in the exponent*. No theorem to
+   reprove per distribution.
+2. **Moments by differentiation, not integration.** Mean and variance of $T$ are
+   $A'$ and $A''$ — derivatives of one function — replacing the per-distribution integrals
+   (@sec-moments).
+3. **One inference engine downstream.** Maximum likelihood, conjugate Bayesian priors, and
+   the entire generalized-linear-model framework ([REGR-18]) are written *once*, for the
+   form, and then specialize to every member for free.
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what is the exponential family and why do we care?"* It is the set of
+distributions whose density factors as $h(x)\exp(\eta T(x)-A(\eta))$ — the data and the
+parameter meeting only through $\eta\,T(x)$ — and we care because that single structural
+fact is *equivalent* (Darmois–Koopman–Pitman) to having a fixed-size sufficient statistic,
+which is what makes estimation tractable, gives moments by differentiating $A$, and lets
+GLMs and conjugate-prior Bayes be written once for the whole family instead of once per
+distribution.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before the formalism, here is the picture. Forget parameters for a moment and look at the
+*shape* of a density as a function of $x$. Many densities you know are an exponential of
+something simple. The normal is $e^{-(x-\mu)^2/2\sigma^2}$ up to a constant — an exponential
+of a quadratic in $x$. The exponential distribution is $\lambda e^{-\lambda x}$ — an
+exponential of a *linear* function of $x$. Even the Poisson mass function
+$e^{-\lambda}\lambda^x/x!$ becomes, after writing $\lambda^x=e^{x\ln\lambda}$, an
+exponential of $x\ln\lambda$ times the fixed shape $1/x!$.
+
+The recurring motif is: **(a fixed shape in $x$) $\times$ exp(a parameter-dependent number
+$\times$ a statistic of $x$)**, all divided by whatever it takes to make the total
+probability one. The exponential family is just that motif written down precisely and asked
+to hold for *every* value of the parameter at once.
+
+@fig-motif makes the motif visible: three members of the family, each plotted as the log
+of its density (or mass), so that the exponential is undone and the *inner* function of $x$
+— the part that multiplies the parameter — is laid bare as something simple.
+
+```{python}
+#| label: fig-motif
+#| fig-cap: "The shared motif, seen by taking logs. **Left:** the exponential density's log is *linear* in $x$ — its sufficient statistic is $T(x)=x$. **Middle:** the normal density's log is *quadratic* in $x$ — its sufficient statistics are $x$ and $x^2$. **Right:** the Poisson log-mass, plotted at its integer support, is $x\\ln\\lambda - \\lambda - \\ln(x!)$; subtract the fixed $-\\ln(x!)$ shape and what is left is *linear* in $x$ with slope $\\ln\\lambda$. In every case the parameter rides into the picture only as a coefficient on a simple statistic of $x$."
+fig, axes = plt.subplots(1, 3, figsize=(9.2, 3.4))
+
+# Exponential: log density linear in x
+x = np.linspace(0.01, 4, 200)
+for lam, c in [(0.7, GREY), (1.5, CURVE)]:
+    axes[0].plot(x, np.log(lam) - lam * x, color=c, label=fr"$\lambda={lam}$")
+axes[0].set_title("Exponential: $\\log f = \\log\\lambda - \\lambda x$")
+axes[0].set_xlabel("$x$"); axes[0].set_ylabel("$\\log f(x)$")
+axes[0].legend(fontsize=9, framealpha=0.9)
+
+# Normal: log density quadratic in x
+x = np.linspace(-4, 4, 200)
+for (mu, sig), c in [((0.0, 1.0), GREY), ((0.5, 1.3), CURVE)]:
+    z = (x - mu) / sig
+    axes[1].plot(x, -0.5 * z * z - np.log(sig * np.sqrt(2 * np.pi)),
+                 color=c, label=fr"$\mu={mu},\sigma={sig}$")
+axes[1].set_title("Normal: $\\log f$ quadratic in $x$")
+axes[1].set_xlabel("$x$"); axes[1].set_ylabel("$\\log f(x)$")
+axes[1].legend(fontsize=9, framealpha=0.9)
+
+# Poisson: log pmf; the part beyond -ln(x!) is linear in x
+k = np.arange(0, 12)
+for lam, c in [(2.0, GREY), (5.0, CURVE)]:
+    logpmf = k * np.log(lam) - lam - special.gammaln(k + 1)
+    axes[2].plot(k, logpmf, "o-", color=c, ms=4, label=fr"$\lambda={lam}$")
+axes[2].set_title("Poisson: $k\\ln\\lambda-\\lambda-\\ln(k!)$")
+axes[2].set_xlabel("$k$"); axes[2].set_ylabel("$\\log p(k)$")
+axes[2].legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The job of @sec-formal is to turn this visual motif into a precise definition, name its
+three moving parts, and then prove that the definition forces the nice behavior we
+advertised.
+
+# The formal development {#sec-formal}
+
+## The one-parameter form {#sec-form}
+
+We build the simplest version first — one scalar parameter, one scalar statistic — because
+every catalog member in @sec-examples lives here, and the multi-parameter generalization
+(@sec-vector) is a clean copy with vectors in place of scalars.
+
+::: {#def-expfam}
+**Definition (one-parameter exponential family).** A family of distributions for a random
+variable $X$, indexed by a scalar parameter $\theta$, is a **one-parameter exponential
+family** if its density (continuous case) or mass function (discrete case) can be written
+$$
+f(x\mid\theta)=h(x)\,\exp\!\bigl(\eta(\theta)\,T(x)-A(\theta)\bigr),
+\qquad x\in\mathcal{X},
+$$ {#eq-form}
+where the support $\mathcal{X}=\{x:h(x)>0\}$ **does not depend on $\theta$**, and
+
+- $h(x)\ge 0$ is the **base measure** (or carrying density): the part of the shape that
+  does not involve the parameter;
+- $T(x)$ is the **sufficient statistic**: the only function of the data the parameter ever
+  multiplies;
+- $\eta(\theta)$ is the **natural parameter** (or canonical parameter): the function of
+  $\theta$ that actually appears in the exponent;
+- $A(\theta)$ is the **log-partition function** (or cumulant function): the term that makes
+  the density integrate (or sum) to one.
+:::
+
+Every symbol earns its place, so we read @eq-form slowly. The factor $h(x)$ is fixed once
+and for all — slide the parameter around and $h$ never moves. Inside the exponential, the
+*entire* dependence on $\theta$ lives in $\eta(\theta)$, and the *entire* dependence on the
+data lives in $T(x)$, and they meet only as the product $\eta(\theta)\,T(x)$. The trailing
+$-A(\theta)$ has no $x$ in it; it is a pure function of the parameter, subtracted in the
+exponent — equivalently a *divisor* $e^{A(\theta)}$ outside, which is exactly the
+normalizing constant.
+
+The clause "support does not depend on $\theta$" is not decoration; it is load-bearing, and
+@sec-failure shows the distribution (the uniform on $[0,\theta]$) that violates it and is
+expelled from the family precisely for that reason.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is it called the natural or canonical parameter, and why does $A$ get a special
+name?"* Because if you reparametrize the family by $\eta$ itself — treat $\eta$, not
+$\theta$, as the knob — the form becomes maximally clean, $f(x\mid\eta)=h(x)\exp(\eta
+T(x)-A(\eta))$, and (as we prove in @sec-moments) $A$ literally *generates* the cumulants
+of $T$ by differentiation, just as a moment generating function does. "Log-partition"
+borrows the physicists' word: $e^{A}$ is the *partition function* $Z$ that normalizes a
+Boltzmann distribution $e^{\eta T}/Z$, and $A=\ln Z$. The names announce that $\eta$ is the
+coordinate in which the algebra is simplest and $A$ is the bookkeeper of its moments.
+:::
+
+## The natural parametrization and where $A$ comes from {#sec-natural}
+
+The cleanest way to work is to stop writing $\eta(\theta)$ and just *use $\eta$ as the
+parameter*. So adopt the **canonical form**
+$$
+f(x\mid\eta)=h(x)\,\exp\!\bigl(\eta\,T(x)-A(\eta)\bigr).
+$$ {#eq-canonical}
+
+Now $A(\eta)$ is not free — it is *forced* by the requirement that probabilities sum to
+one. Integrate (or sum) @eq-canonical over the support and demand the total be $1$:
+$$
+\int_{\mathcal{X}} h(x)\,\exp\!\bigl(\eta\,T(x)-A(\eta)\bigr)\,dx = 1.
+$$
+The factor $e^{-A(\eta)}$ has no $x$ in it, so it pulls straight out of the integral:
+$$
+e^{-A(\eta)}\int_{\mathcal{X}} h(x)\,e^{\eta\,T(x)}\,dx = 1.
+$$
+Solve for $e^{A(\eta)}$ by multiplying both sides by $e^{A(\eta)}$ and dividing by the
+integral, then take the natural log of both sides (legal because the integral is a positive
+number — it is an integral of a strictly positive integrand):
+$$
+A(\eta)=\ln\!\int_{\mathcal{X}} h(x)\,e^{\eta\,T(x)}\,dx.
+$$ {#eq-A-def}
+
+(The discrete case is identical with $\int dx$ replaced by $\sum_x$.) Equation @eq-A-def is
+the engine room of the whole article: it says $A$ is the **log of the normalizing
+integral**, and the set of $\eta$ for which that integral is *finite* is called the
+**natural parameter space** $\mathcal{N}=\{\eta:\int h(x)e^{\eta T(x)}dx<\infty\}$. We will
+need that the integral is finite — that $\eta$ lies in $\mathcal{N}$ — to differentiate it,
+which is exactly what @sec-moments does next.
+
+::: {.callout-note title="One imported fact, stated and flagged"}
+The moment derivations in @sec-moments **differentiate under the integral sign** — they
+move a $d/d\eta$ inside an integral over $x$. This is legal whenever $\eta$ sits in the
+*interior* of the natural parameter space $\mathcal{N}$, because there the integrand and its
+$\eta$-derivative are dominated by an integrable function on a neighborhood of $\eta$ (the
+Leibniz/dominated-convergence condition). We will not reprove that analysis theorem here —
+it belongs to the Calculus sequence above our floor — but we flag exactly where we use it
+and note that *every* member in @sec-examples satisfies it on the interior of its parameter
+range. This is the article's single above-floor import.
+:::
+
+## The headline identities: moments are derivatives of $A$ {#sec-moments}
+
+Here is the result that makes the form worth its name. We prove that the first two
+derivatives of the single function $A(\eta)$ are the mean and variance of $T(X)$. After
+this, *no distribution in the family needs its own moment integral again* — you
+differentiate $A$.
+
+::: {#thm-moments}
+**Theorem (cumulant identities).** For a canonical one-parameter exponential family
+@eq-canonical, at every $\eta$ in the interior of the natural parameter space,
+$$
+A'(\eta)=\mathbb{E}_\eta\bigl[T(X)\bigr],
+\qquad
+A''(\eta)=\operatorname{Var}_\eta\bigl[T(X)\bigr].
+$$
+:::
+
+::: {.proof}
+Start from the normalization established in @sec-natural. Exponentiating @eq-A-def,
+$$
+e^{A(\eta)}=\int_{\mathcal{X}} h(x)\,e^{\eta\,T(x)}\,dx,
+$$ {#eq-Z}
+where the right side is the normalizing integral; call it $Z(\eta)=e^{A(\eta)}$, so
+$A(\eta)=\ln Z(\eta)$.
+
+**Step 1 — differentiate $Z$ once.** Differentiate @eq-Z with respect to $\eta$. On the
+right we move $d/d\eta$ inside the integral (licensed by the dominated-convergence condition
+flagged above, since $\eta$ is interior to $\mathcal{N}$):
+$$
+\frac{d}{d\eta}Z(\eta)
+=\int_{\mathcal{X}} h(x)\,\frac{d}{d\eta}e^{\eta\,T(x)}\,dx
+=\int_{\mathcal{X}} h(x)\,T(x)\,e^{\eta\,T(x)}\,dx,
+$$
+using the chain rule $\tfrac{d}{d\eta}e^{\eta T(x)}=T(x)\,e^{\eta T(x)}$ (here $T(x)$ is a
+constant with respect to $\eta$). So
+$$
+Z'(\eta)=\int_{\mathcal{X}} T(x)\,h(x)\,e^{\eta T(x)}\,dx.
+$$ {#eq-Zprime}
+
+**Step 2 — turn $A'$ into an expectation.** Differentiate $A=\ln Z$ with the chain rule,
+$A'(\eta)=Z'(\eta)/Z(\eta)$. Substitute @eq-Zprime for $Z'$ and @eq-Z for $Z$:
+$$
+A'(\eta)=\frac{Z'(\eta)}{Z(\eta)}
+=\frac{\displaystyle\int T(x)\,h(x)\,e^{\eta T(x)}\,dx}{\displaystyle\int h(x)\,e^{\eta T(x)}\,dx}.
+$$
+Now divide numerator and denominator by the *same* number $Z(\eta)=e^{A(\eta)}$, i.e.
+multiply the integrand top and bottom by $e^{-A(\eta)}$ — legal since $e^{-A(\eta)}$ is a
+constant in $x$ and pulls inside each integral:
+$$
+A'(\eta)
+=\int T(x)\,\underbrace{h(x)\,e^{\eta T(x)-A(\eta)}}_{=\,f(x\mid\eta)}\,dx
+=\int T(x)\,f(x\mid\eta)\,dx.
+$$
+The bracket is exactly the density @eq-canonical, and $\int T(x)f(x\mid\eta)\,dx$ is the
+definition of $\mathbb{E}_\eta[T(X)]$ (the law of the unconscious statistician from
+[PROB-5]). Hence
+$$
+A'(\eta)=\mathbb{E}_\eta[T(X)].
+$$ {#eq-Aprime}
+
+**Step 3 — differentiate once more for the variance.** Differentiate
+$A'(\eta)=Z'(\eta)/Z(\eta)$ with the quotient rule
+$\bigl(\tfrac{Z'}{Z}\bigr)'=\tfrac{Z''Z-(Z')^2}{Z^2}=\tfrac{Z''}{Z}-\bigl(\tfrac{Z'}{Z}\bigr)^2$:
+$$
+A''(\eta)=\frac{Z''(\eta)}{Z(\eta)}-\Bigl(\frac{Z'(\eta)}{Z(\eta)}\Bigr)^2.
+$$ {#eq-Asecond}
+Differentiating @eq-Zprime once more (again moving $d/d\eta$ inside, same chain rule)
+brings down a second factor of $T(x)$:
+$$
+Z''(\eta)=\int T(x)^2\,h(x)\,e^{\eta T(x)}\,dx,
+\qquad\text{so}\qquad
+\frac{Z''(\eta)}{Z(\eta)}=\int T(x)^2 f(x\mid\eta)\,dx=\mathbb{E}_\eta[T(X)^2],
+$$
+by the same divide-by-$Z$ step as before. And $Z'/Z=A'=\mathbb{E}_\eta[T(X)]$ from Step 2,
+so $(Z'/Z)^2=\mathbb{E}_\eta[T(X)]^2$. Substituting both into @eq-Asecond,
+$$
+A''(\eta)=\mathbb{E}_\eta[T(X)^2]-\bigl(\mathbb{E}_\eta[T(X)]\bigr)^2
+=\operatorname{Var}_\eta[T(X)],
+$$
+where the last equality is the computational identity
+$\operatorname{Var}(Y)=\mathbb{E}[Y^2]-(\mathbb{E}[Y])^2$ proved in [PROB-6], applied to
+$Y=T(X)$. $\qquad\blacksquare$
+:::
+
+Two facts fall out for free, and both matter downstream. First, since
+$A''=\operatorname{Var}(T)\ge 0$ everywhere, **$A$ is convex** — a fact GLM optimization
+([REGR-18]) leans on, because it makes the log-likelihood concave and the maximum unique.
+Second, the chain $A'=\mathbb{E}[T]$, $A''=\operatorname{Var}[T]$ does not stop at the second
+derivative — and the *mechanism* is the one we just used, not a new trick. Each time we
+differentiate $A=\ln Z$ and clear the $1/Z$ factors, the algebra produces the next *central*
+moment of $T$: differentiating $A''$ once more, by the same quotient-and-divide-by-$Z$ steps
+as in the proof, yields $A'''(\eta)=\mathbb{E}_\eta\bigl[(T-\mathbb{E}[T])^3\bigr]$, the third
+central moment (the numerator of skewness). These successive derivatives of $A$ have a
+standard name — the **cumulants** of $T$ — which is exactly why $A$ is also called the
+**cumulant function**. We will not chase the full cumulant ladder here; that the $n$-th
+derivative of $\ln\mathbb{E}[e^{\eta T}]$ is the $n$-th cumulant for *every* $n$ is the
+log-MGF identity owned by [PROB-20], and seeing $A=\ln Z=\ln\mathbb{E}_{h}[e^{\eta T}]$ is
+literally a log-moment-generating function (against the base measure $h$) is what makes that
+machinery look familiar when you meet it. For this article we need only the first two rungs,
+$A'=\mathbb{E}[T]$ and $A''=\operatorname{Var}(T)$, both proved in full above.
+
+::: {.callout-tip title="You might be asked"}
+*"Show me that $A'(\eta)=\mathbb{E}[T]$ in one line of intuition, not three steps of
+algebra."* Differentiate the identity $\int h(x)e^{\eta T(x)-A(\eta)}dx=1$ with respect to
+$\eta$; the left side's derivative is
+$\int (T(x)-A'(\eta))\,f(x\mid\eta)\,dx=\mathbb{E}[T]-A'(\eta)$ and the right side's
+derivative is $0$, so $A'(\eta)=\mathbb{E}[T]$. (That is the same proof compressed; the
+expanded version above is the one to write when "every step" is demanded.) Differentiating a
+second time and using the product rule on $(T-A')f$ recovers
+$A''=\operatorname{Var}(T)$.
+:::
+
+# Worked examples: re-reading the catalog {#sec-examples}
+
+We now take five distributions you already know and rewrite each in the form @eq-form,
+reading off $h(x)$, $T(x)$, $\eta(\theta)$, and $A(\theta)$ by hand — then *verify*
+@thm-moments by differentiating $A$ and checking the answer against the mean and variance
+you derived the hard way in PROB-11–PROB-14. Watch the same three algebraic moves recur:
+**(1)** rewrite any base $b^{g(x)}$ as $e^{g(x)\ln b}$ to get everything into one exponential;
+**(2)** identify the coefficient of the data-statistic as $\eta$; **(3)** collect the
+leftover parameter-only terms as $-A$ and the leftover $x$-only factor as $h$.
+
+## Example 1 — Bernoulli: the workhorse of GLMs {#sec-bernoulli}
+
+The Bernoulli$(p)$ has mass function $p(x)=p^x(1-p)^{1-x}$ for $x\in\{0,1\}$ ([PROB-11]).
+It looks like a product of powers, not an exponential — so apply move (1), writing each
+power as an exponential of a log via $b^{c}=e^{c\ln b}$:
+$$
+p(x)=p^x(1-p)^{1-x}
+=\exp\!\bigl(x\ln p+(1-x)\ln(1-p)\bigr).
+$$
+Expand the exponent and group the terms that multiply $x$ against the terms that do not:
+$$
+x\ln p+(1-x)\ln(1-p)
+= x\ln p+\ln(1-p)-x\ln(1-p)
+= x\underbrace{\bigl(\ln p-\ln(1-p)\bigr)}_{\text{coefficient of }x}+\ln(1-p).
+$$
+The coefficient of $x$ is the natural parameter; using $\ln a-\ln b=\ln(a/b)$,
+$$
+\eta=\ln\frac{p}{1-p}\quad(\text{the \emph{log-odds}, or logit}),
+\qquad T(x)=x.
+$$
+So the data enter only through $T(x)=x$, and the base factor is $h(x)=1$ (there is no
+leftover $x$-only term — the mass function was entirely captured by the exponential). The
+remaining parameter-only piece is $\ln(1-p)$, which must equal $-A$. To express $A$ in the
+*canonical* coordinate $\eta$ we invert $\eta=\ln\frac{p}{1-p}$: exponentiate to
+$e^\eta=\frac{p}{1-p}$, solve $p=\frac{e^\eta}{1+e^\eta}$ (the logistic function), so
+$1-p=\frac{1}{1+e^\eta}$ and $\ln(1-p)=-\ln(1+e^\eta)$. Therefore
+$$
+A(\eta)=\ln(1+e^\eta),\qquad h(x)=1,\qquad T(x)=x.
+$$
+Now the @thm-moments check. Differentiate $A(\eta)=\ln(1+e^\eta)$:
+$$
+A'(\eta)=\frac{e^\eta}{1+e^\eta}=p,
+$$
+which is exactly $\mathbb{E}[X]=p$ — the Bernoulli mean from [PROB-11], recovered by one
+derivative. Differentiate again with the quotient rule:
+$$
+A''(\eta)=\frac{e^\eta(1+e^\eta)-e^\eta\cdot e^\eta}{(1+e^\eta)^2}
+=\frac{e^\eta}{(1+e^\eta)^2}
+=\frac{e^\eta}{1+e^\eta}\cdot\frac{1}{1+e^\eta}=p(1-p),
+$$
+exactly $\operatorname{Var}(X)=p(1-p)$. The Bernoulli's mean and variance, both off one
+function $A(\eta)=\ln(1+e^\eta)$. And note what the natural parameter *is*: the **log-odds**.
+That is not a coincidence — it is the reason logistic regression ([REGR-17], [REGR-18])
+models the log-odds linearly: the log-odds is the *natural* coordinate of the Bernoulli.
+
+## Example 2 — Poisson: one parameter, mean equals variance {#sec-poisson}
+
+The Poisson$(\lambda)$ has mass $p(x)=\dfrac{e^{-\lambda}\lambda^x}{x!}$ for
+$x\in\{0,1,2,\dots\}$ ([PROB-12]). Apply move (1) to the only non-exponential piece,
+$\lambda^x=e^{x\ln\lambda}$, and keep $e^{-\lambda}$ and $1/x!$ as they are:
+$$
+p(x)=\frac{1}{x!}\,e^{x\ln\lambda}\,e^{-\lambda}
+=\frac{1}{x!}\,\exp\!\bigl(x\ln\lambda-\lambda\bigr).
+$$
+Match against @eq-form. The factor with only $x$ in it is $h(x)=1/x!$. The coefficient of
+$x$ in the exponent is $\eta=\ln\lambda$, so $T(x)=x$, and inverting gives
+$\lambda=e^\eta$. The parameter-only term is $-\lambda=-e^\eta$, so
+$$
+\eta=\ln\lambda,\quad T(x)=x,\quad h(x)=\frac{1}{x!},\quad A(\eta)=e^\eta.
+$$
+The @thm-moments check is the cleanest in the catalog: $A(\eta)=e^\eta$ is its own
+derivative,
+$$
+A'(\eta)=e^\eta=\lambda=\mathbb{E}[X],
+\qquad
+A''(\eta)=e^\eta=\lambda=\operatorname{Var}(X).
+$$
+The **equidispersion** of the Poisson — mean equals variance, the headline property of
+[PROB-12] — is now visible as a one-line fact: $A'=A''$ because $A=e^\eta$ is its own
+derivative. The structural reason the Poisson has only one knob is that its $A$ is the
+exponential function, the unique (up to scaling) function equal to its own derivative.
+
+## Example 3 — Normal with known variance: a one-parameter member {#sec-normal-known}
+
+The normal needs care because it has *two* parameters. Take $\sigma^2$ as **known and
+fixed** first, so only $\mu$ varies; then it is a genuine one-parameter family and Examples
+1–2's machinery applies verbatim. (The full two-parameter normal is Example 5 of the vector
+form, @sec-vector.) The density ([PROB-13]) is
+$$
+f(x)=\frac{1}{\sqrt{2\pi\sigma^2}}\,\exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr).
+$$
+Expand the square in the exponent, $(x-\mu)^2=x^2-2\mu x+\mu^2$, and split the exponential
+of a sum into a product (move 1 again, in reverse):
+$$
+f(x)=\frac{1}{\sqrt{2\pi\sigma^2}}\,
+\exp\!\Bigl(-\frac{x^2}{2\sigma^2}\Bigr)\,
+\exp\!\Bigl(\frac{\mu}{\sigma^2}\,x-\frac{\mu^2}{2\sigma^2}\Bigr).
+$$
+Now read off the parts. Everything with *only* $x$ (no $\mu$) is the base measure:
+$$
+h(x)=\frac{1}{\sqrt{2\pi\sigma^2}}\,\exp\!\Bigl(-\frac{x^2}{2\sigma^2}\Bigr).
+$$
+(The Gaussian shape $e^{-x^2/2\sigma^2}$ and the normalizing $1/\sqrt{2\pi\sigma^2}$ both go
+into $h$ because $\sigma^2$ is a *fixed constant* now, not the parameter.) The coefficient of
+$x$ in the remaining exponent is the natural parameter, $\eta=\mu/\sigma^2$, with $T(x)=x$;
+inverting, $\mu=\sigma^2\eta$. The parameter-only leftover is $-\mu^2/2\sigma^2$, so
+$-A=-\mu^2/2\sigma^2$ and substituting $\mu=\sigma^2\eta$,
+$$
+A(\eta)=\frac{\mu^2}{2\sigma^2}=\frac{(\sigma^2\eta)^2}{2\sigma^2}=\frac{\sigma^2\eta^2}{2}.
+$$
+The @thm-moments check, with $T(x)=x$:
+$$
+A'(\eta)=\sigma^2\eta=\sigma^2\cdot\frac{\mu}{\sigma^2}=\mu=\mathbb{E}[X],
+\qquad
+A''(\eta)=\sigma^2=\operatorname{Var}(X).
+$$
+Mean $\mu$ and variance $\sigma^2$, off $A(\eta)=\sigma^2\eta^2/2$. The natural parameter
+$\eta=\mu/\sigma^2$ is the **precision-weighted mean** — a quantity that will reappear the
+moment you do Bayesian updating of a normal mean, because adding exponential-family
+log-densities adds their natural parameters.
+
+## Example 4 — Exponential and gamma: waiting times in the family {#sec-gamma}
+
+The exponential$(\lambda)$ has density $f(x)=\lambda e^{-\lambda x}$ on $x>0$ ([PROB-14]).
+It is *already* an exponential of a linear function — barely any work. Write
+$\lambda=e^{\ln\lambda}$ to pull the prefactor into the exponent:
+$$
+f(x)=\exp\!\bigl(-\lambda x+\ln\lambda\bigr),\qquad x>0.
+$$
+The coefficient of $x$ is $\eta=-\lambda$ (note the **sign**: the natural parameter is
+*negative* $\lambda$), with $T(x)=x$ and $h(x)=1$ on $x>0$. Inverting, $\lambda=-\eta$
+(so the natural parameter space is $\eta<0$, which is where $\int_0^\infty e^{\eta x}dx$
+converges — a concrete instance of the natural parameter space of @sec-natural). The
+parameter-only term is $+\ln\lambda$, so $-A=\ln\lambda=\ln(-\eta)$, giving
+$$
+A(\eta)=-\ln(-\eta),\qquad \eta=-\lambda<0,\quad T(x)=x,\quad h(x)=1.
+$$
+Check by differentiating, recalling $\tfrac{d}{d\eta}\ln(-\eta)=\tfrac{1}{-\eta}\cdot(-1)
+=\tfrac{1}{\eta}$:
+$$
+A'(\eta)=-\frac{1}{\eta}=\frac{1}{\lambda}=\mathbb{E}[X],
+\qquad
+A''(\eta)=\frac{1}{\eta^2}=\frac{1}{\lambda^2}=\operatorname{Var}(X),
+$$
+matching the exponential's mean $1/\lambda$ and variance $1/\lambda^2$ from [PROB-14]. The
+gamma$(\alpha,\beta)$ generalizes this: with **shape $\alpha$ known**, the rate $\beta$ alone
+gives a one-parameter family with $T(x)=x$ and $h(x)\propto x^{\alpha-1}$; with **both**
+$\alpha,\beta$ free it is a *two*-parameter family with $T(x)=(x,\ln x)$, handled by the
+vector form next.
+
+## Example 5 — the vector form, the two-parameter normal, and the beta {#sec-vector}
+
+When a distribution needs more than one parameter, the form generalizes by letting $\eta$
+and $T$ be **vectors** and replacing the product $\eta T(x)$ with an inner product (a sum of
+products). Nothing conceptual changes.
+
+::: {#def-expfam-vec}
+**Definition (k-parameter exponential family).** A family is a **$k$-parameter exponential
+family** if
+$$
+f(x\mid\boldsymbol\theta)=h(x)\,
+\exp\!\Bigl(\sum_{j=1}^{k}\eta_j(\boldsymbol\theta)\,T_j(x)-A(\boldsymbol\theta)\Bigr),
+$$ {#eq-form-vec}
+with parameter-free support, natural parameters $\eta_1,\dots,\eta_k$, and sufficient
+statistics $T_1,\dots,T_k$. The cumulant identities become *partial* derivatives:
+$\partial A/\partial\eta_j=\mathbb{E}[T_j]$ and
+$\partial^2 A/\partial\eta_j\partial\eta_\ell=\operatorname{Cov}(T_j,T_\ell)$, proved by the
+identical differentiate-under-the-integral argument of @thm-moments applied one coordinate
+at a time.
+:::
+
+**The full normal $\mathcal{N}(\mu,\sigma^2)$, both parameters free.** Return to the
+expansion of @sec-normal-known but now do *not* freeze $\sigma^2$:
+$$
+f(x)=\frac{1}{\sqrt{2\pi\sigma^2}}
+\exp\!\Bigl(-\frac{x^2}{2\sigma^2}+\frac{\mu}{\sigma^2}x-\frac{\mu^2}{2\sigma^2}\Bigr).
+$$
+Two pieces now carry the parameter and multiply data-statistics: the coefficient of $x$ and
+the coefficient of $x^2$. So there are **two** sufficient statistics and **two** natural
+parameters,
+$$
+T_1(x)=x,\quad \eta_1=\frac{\mu}{\sigma^2};
+\qquad
+T_2(x)=x^2,\quad \eta_2=-\frac{1}{2\sigma^2}.
+$$
+The base measure is now just the constant-shape factor $h(x)=1/\sqrt{2\pi}$ — the
+$\sigma$-dependent part of the prefactor has migrated into $A$ because $\sigma$ is now a
+parameter. To see that migration explicitly, collect *everything* in the density that has no
+$x$ in it; by @eq-form-vec that collection is exactly $-A$. There are two such pieces: the
+log of the prefactor and the trailing $-\mu^2/2\sigma^2$. Pull the constant $1/\sqrt{2\pi}$
+out into $h(x)$ and keep only the $\sigma$-dependent remainder of the prefactor:
+$$
+\ln\frac{1}{\sqrt{2\pi\sigma^2}}
+=-\tfrac12\ln(2\pi)-\tfrac12\ln\sigma^2
+=\underbrace{-\tfrac12\ln(2\pi)}_{\to\,\ln h(x)}\;\underbrace{-\tfrac12\ln\sigma^2}_{\text{parameter only}}.
+$$
+So the parameter-only material in the exponent is $-\tfrac12\ln\sigma^2-\dfrac{\mu^2}{2\sigma^2}$,
+and matching it to $-A$ gives, in the $\theta=(\mu,\sigma^2)$ coordinates,
+$$
+A(\mu,\sigma^2)=\frac{\mu^2}{2\sigma^2}+\frac12\ln\sigma^2.
+$$ {#eq-A-normal-theta}
+Now re-express this in the *natural* coordinates $(\eta_1,\eta_2)$ by inverting the two
+relations $\eta_1=\mu/\sigma^2$ and $\eta_2=-1/(2\sigma^2)$. The second gives
+$\sigma^2=-1/(2\eta_2)$ directly; substituting that into the first gives
+$\mu=\eta_1\sigma^2=-\eta_1/(2\eta_2)$. Put both into @eq-A-normal-theta one term at a time.
+The first term:
+$$
+\frac{\mu^2}{2\sigma^2}
+=\frac{\bigl(-\eta_1/2\eta_2\bigr)^2}{2\cdot\bigl(-1/2\eta_2\bigr)}
+=\frac{\eta_1^2/(4\eta_2^2)}{-1/\eta_2}
+=-\frac{\eta_1^2}{4\eta_2}.
+$$
+The second term, using $\ln\sigma^2=\ln\bigl(-1/(2\eta_2)\bigr)=-\ln(-2\eta_2)$:
+$$
+\frac12\ln\sigma^2=-\frac12\ln(-2\eta_2).
+$$
+Adding them gives the two-parameter log-partition
+$$
+A(\eta_1,\eta_2)=-\frac{\eta_1^2}{4\eta_2}-\frac12\ln(-2\eta_2),
+\qquad \eta_2<0.
+$$ {#eq-A-normal}
+A quick @thm-moments sanity check confirms the bookkeeping: $\partial A/\partial\eta_1
+=-\eta_1/(2\eta_2)=\mu=\mathbb{E}[T_1]=\mathbb{E}[X]$, and a short computation gives
+$\partial A/\partial\eta_2=\eta_1^2/(4\eta_2^2)-1/(2\eta_2)=\mu^2+\sigma^2=\mathbb{E}[X^2]
+=\mathbb{E}[T_2]$, exactly the second moment a sufficient statistic $T_2(x)=x^2$ should have.
+For our purposes the key read is that **the normal is a two-parameter exponential family whose
+sufficient statistics are $x$ and $x^2$**. That is precisely why the sample mean and the
+sample sum-of-squares together summarize a normal sample completely: they are the sufficient
+statistics handed to you by the form, the foundation under the chi-square/$t$ machinery of
+[PROB-15].
+
+**The beta $\mathrm{Beta}(\alpha,\beta)$.** Its density on $(0,1)$ ([PROB-14]) is
+$f(x)=\frac{1}{B(\alpha,\beta)}x^{\alpha-1}(1-x)^{\beta-1}$, where $B$ is the beta function.
+Apply move (1) to both powers, $x^{\alpha-1}=e^{(\alpha-1)\ln x}$ and
+$(1-x)^{\beta-1}=e^{(\beta-1)\ln(1-x)}$:
+$$
+f(x)=\frac{1}{B(\alpha,\beta)}\,
+\exp\!\bigl((\alpha-1)\ln x+(\beta-1)\ln(1-x)\bigr).
+$$
+The data enter through $\ln x$ and $\ln(1-x)$, so the sufficient statistics and natural
+parameters are
+$$
+T_1(x)=\ln x,\ \eta_1=\alpha-1;\qquad
+T_2(x)=\ln(1-x),\ \eta_2=\beta-1;\qquad h(x)=1,
+$$
+with $A(\alpha,\beta)=\ln B(\alpha,\beta)$ collecting the only parameter-only factor. So the
+beta is a two-parameter exponential family — and the appearance of $\ln x$ and $\ln(1-x)$ as
+its sufficient statistics is the precise reason the beta is the **conjugate prior** for a
+Bernoulli/binomial probability: multiplying a beta prior by a Bernoulli likelihood adds
+their natural-parameter contributions, keeping you inside the beta family (the conjugacy
+[Inference E4] builds on).
+
+@fig-natural-space ties Examples 1–4 together visually: for each one-parameter member it
+plots the log-partition $A(\eta)$ and overlays its derivative $A'(\eta)$, letting you *see*
+the mean of $T$ as the slope of $A$ — the geometric content of @thm-moments.
+
+```{python}
+#| label: fig-natural-space
+#| fig-cap: "@thm-moments made visual for the four one-parameter members. In each panel the solid curve is the log-partition $A(\\eta)$ and the dashed curve is its derivative $A'(\\eta)=\\mathbb{E}[T]$. Because $A''=\\operatorname{Var}(T)\\ge 0$, every $A$ is *convex* (curves upward) — the structural fact that makes exponential-family log-likelihoods concave and GLM fitting well-posed. The mean of the sufficient statistic is literally the slope of $A$ at the chosen $\\eta$."
+fig, axes = plt.subplots(2, 2, figsize=(8.6, 6.4))
+
+# Bernoulli: A = ln(1+e^eta), A' = sigmoid
+eta = np.linspace(-4, 4, 200)
+A = np.log1p(np.exp(eta)); Ap = 1 / (1 + np.exp(-eta))
+axes[0,0].plot(eta, A, color=CURVE, label="$A(\\eta)=\\ln(1+e^{\\eta})$")
+axes[0,0].plot(eta, Ap, color=CURVE2, ls="--", label="$A'(\\eta)=E[T]=p$")
+axes[0,0].set_title("Bernoulli"); axes[0,0].legend(fontsize=8, framealpha=0.9)
+
+# Poisson: A = e^eta
+eta = np.linspace(-1.5, 2.0, 200)
+A = np.exp(eta); Ap = np.exp(eta)
+axes[0,1].plot(eta, A, color=CURVE, label="$A(\\eta)=e^{\\eta}$")
+axes[0,1].plot(eta, Ap, color=CURVE2, ls="--", label="$A'(\\eta)=\\lambda$")
+axes[0,1].set_title("Poisson"); axes[0,1].legend(fontsize=8, framealpha=0.9)
+
+# Normal (known sigma^2=1): A = eta^2/2
+eta = np.linspace(-3, 3, 200)
+A = 0.5 * eta**2; Ap = eta
+axes[1,0].plot(eta, A, color=CURVE, label="$A(\\eta)=\\sigma^2\\eta^2/2$")
+axes[1,0].plot(eta, Ap, color=CURVE2, ls="--", label="$A'(\\eta)=\\mu$")
+axes[1,0].set_title("Normal (known $\\sigma^2=1$)"); axes[1,0].legend(fontsize=8, framealpha=0.9)
+
+# Exponential: A = -ln(-eta), eta<0
+eta = np.linspace(-4, -0.2, 200)
+A = -np.log(-eta); Ap = -1/eta
+axes[1,1].plot(eta, A, color=CURVE, label="$A(\\eta)=-\\ln(-\\eta)$")
+axes[1,1].plot(eta, Ap, color=CURVE2, ls="--", label="$A'(\\eta)=1/\\lambda$")
+axes[1,1].set_title("Exponential ($\\eta<0$)"); axes[1,1].legend(fontsize=8, framealpha=0.9)
+
+for ax in axes.ravel():
+    ax.set_xlabel("$\\eta$"); ax.axhline(0, color=GREY, lw=0.8)
+plt.tight_layout()
+```
+
+To make the abstraction concrete with real numbers, the next block does the *practical*
+thing an analyst does: takes a real-looking dataset, fits a Poisson by maximum likelihood,
+and confirms that the MLE is exactly the value that **matches the sufficient statistic's
+sample mean to its model mean $A'(\eta)$** — the moment-matching that every exponential-family
+MLE reduces to.
+
+```{python}
+#| label: fig-mle
+#| fig-cap: "Exponential-family MLE *is* moment matching. Simulated counts of customer arrivals per 5-minute window at a help desk (a textbook Poisson use, $n=300$, true $\\lambda=4.2$). The log-likelihood (left) is concave — guaranteed by the convexity of $A$ — with a single peak. Its maximizer $\\hat\\lambda$ (red) coincides exactly with the sample mean $\\bar x$ (green dashed), because setting the score to zero gives $\\bar T = A'(\\hat\\eta)$, i.e. $\\bar x=\\hat\\lambda$. Right: the fitted Poisson pmf over the observed histogram."
+rng = np.random.default_rng(2025)
+true_lam = 4.2
+counts = rng.poisson(true_lam, size=300)
+xbar = counts.mean()
+
+# log-likelihood of Poisson over a grid of lambda
+lam_grid = np.linspace(2.5, 6.5, 400)
+# ll(lambda) = sum_i [x_i ln lambda - lambda - ln(x_i!)]; drop the constant -ln(x_i!)
+n = len(counts); sx = counts.sum()
+ll = sx * np.log(lam_grid) - n * lam_grid
+lam_hat = lam_grid[np.argmax(ll)]
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.plot(lam_grid, ll, color=CURVE)
+axL.axvline(lam_hat, color=CURVE2, label=fr"$\hat\lambda={lam_hat:.3f}$")
+axL.axvline(xbar, color=ACCENT, ls="--", label=fr"$\bar x={xbar:.3f}$")
+axL.set_xlabel("$\\lambda$"); axL.set_ylabel("log-likelihood (up to const.)")
+axL.set_title("Concave log-likelihood, MLE = sample mean")
+axL.legend(fontsize=9, framealpha=0.9)
+
+kmax = counts.max() + 1
+bins = np.arange(0, kmax + 1) - 0.5
+axR.hist(counts, bins=bins, density=True, color=GREY, alpha=0.55, label="observed")
+kk = np.arange(0, kmax)
+axR.plot(kk, stats.poisson.pmf(kk, lam_hat), "o-", color=CURVE2, ms=5,
+         label=fr"Poisson($\hat\lambda$)")
+axR.set_xlabel("count per window"); axR.set_ylabel("probability")
+axR.set_title("Fitted Poisson over the data"); axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"sample mean  xbar     = {xbar:.4f}")
+print(f"MLE          lam_hat  = {lam_hat:.4f}   (matches xbar: A'(eta_hat) = bar T)")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the maximum-likelihood estimate in an exponential family always reduce to
+setting the sample mean of $T$ equal to its model mean?"* Write the log-likelihood for an
+i.i.d. sample in canonical form:
+$\ell(\eta)=\sum_i[\eta T(x_i)-A(\eta)]+\text{const}=\eta\sum_i T(x_i)-nA(\eta)+\text{const}$.
+Differentiate and set to zero: $\sum_i T(x_i)-nA'(\eta)=0$, i.e.
+$A'(\hat\eta)=\frac{1}{n}\sum_i T(x_i)=\bar T$. By @thm-moments the left side is the *model*
+mean $\mathbb{E}_{\hat\eta}[T]$, so **the MLE matches the model's expected sufficient
+statistic to the observed average sufficient statistic** — moment matching, every time. And
+because $A$ is convex ($A''\ge 0$), $\ell$ is concave, so that stationary point is the
+unique global maximum. This single derivation is the entire fitting story for logistic,
+Poisson, and gamma GLMs ([REGR-18]).
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The form is powerful precisely *because* it is restrictive, and an honest treatment shows
+what it excludes and why those exclusions are exactly where its conveniences evaporate.
+
+## The support cannot depend on the parameter: the uniform is out {#sec-uniform}
+
+The most important non-member is the simplest distribution imaginable: the **uniform on
+$[0,\theta]$**, with density $f(x\mid\theta)=\tfrac{1}{\theta}$ for $0\le x\le\theta$ and
+$0$ otherwise. Try to force it into @eq-form. The non-zero region $\{0\le x\le\theta\}$
+*moves with $\theta$* — increase $\theta$ and the support gets wider. But @def-expfam
+requires $\mathcal{X}=\{h(x)>0\}$ to be a *fixed* set: $h(x)$ does not see $\theta$, so it
+cannot turn the density off at $x=\theta$. You can write
+$f=\theta^{-1}\mathbf{1}\{0\le x\le\theta\}$, and that indicator is an irreducibly
+$\theta$-dependent factor with an $x$ in it that no amount of algebra moves into a clean
+$h(x)\exp(\eta T(x)-A)$ shape. **The uniform with unknown support is not an exponential
+family.**
+
+Why this matters, concretely: its sufficient statistic is the **maximum** $X_{(n)}=\max_i
+X_i$, whose distribution and behavior are *completely different* from a sum-type statistic —
+the MLE $\hat\theta=X_{(n)}$ is biased, converges at rate $1/n$ rather than $1/\sqrt{n}$, and
+has a non-normal (exponential-type) limit. None of the moment-matching, concavity, or
+asymptotic-normality conveniences of @sec-examples apply. The parameter-free-support clause
+is the precise boundary between "the nice asymptotics hold" and "you are in
+order-statistics territory" ([PROB-23]).
+
+::: {.callout-warning title="Pitfall"}
+**A parameter that controls *where* the distribution lives, rather than its *shape* at fixed
+support, almost always breaks exponential-family membership.** The uniform's upper endpoint,
+a shifted-exponential's threshold $f(x)=e^{-(x-\theta)}\mathbf{1}\{x\ge\theta\}$, a
+Pareto's minimum — all have parameter-dependent support and all fall outside the family. The
+quick diagnostic: *if changing the parameter turns some $x$-values from possible to
+impossible, the support moves, and you are out.* Mean-and-variance-by-differentiating-$A$
+does not apply; reach for order-statistic methods instead.
+:::
+
+## Heavy tails are out: Student's $t$ is not in the family {#sec-t}
+
+The second instructive non-member has *fixed* support but still fails: **Student's $t$**
+with $\nu$ degrees of freedom ([PROB-15]), density
+$$
+f(x\mid\nu)\propto\Bigl(1+\frac{x^2}{\nu}\Bigr)^{-(\nu+1)/2},\qquad x\in\mathbb{R}.
+$$
+Take logs: $\ln f=-\tfrac{\nu+1}{2}\ln\!\bigl(1+x^2/\nu\bigr)+\text{const}$. For membership
+we would need $\ln f$ to be (a fixed function of $x$) plus (a parameter times a fixed
+statistic of $x$). But $\ln(1+x^2/\nu)$ is a *transcendental* function of $x$ that
+**cannot** be split as $\eta(\nu)\,T(x)+(\text{$x$-only})$: the parameter $\nu$ is tangled
+*inside* the logarithm's argument, not sitting as a clean coefficient out front. There is no
+finite list of sufficient statistics $T_1(x),\dots,T_k(x)$ whose linear combination
+reproduces it. **Student's $t$ (with $\nu$ unknown) is not an exponential family.**
+
+The deep reason connects to @thm-moments: exponential families have all the moments their
+parameter space allows and light (sub-exponential) tails, because the density decays like
+$e^{-|\eta T(x)|}$. The $t$ has **polynomial tails** and only finitely many moments (none
+beyond order $\nu-1$) — a behavior no exponential of a polynomial-or-log statistic can
+produce. This is why the $t$ is the tool you reach for *when the exponential-family
+assumptions fail*: it is robust to outliers precisely because it lies outside the family
+whose members all have thin tails.
+
+@fig-tails draws the contrast that the algebra predicts.
+
+```{python}
+#| label: fig-tails
+#| fig-cap: "Why Student's $t$ escapes the family. **Left:** the normal (an exponential-family member, $\\sigma=1$) versus a $t$ with $\\nu=2$ degrees of freedom, on a log-density scale. The normal's log-density is an exact downward parabola (quadratic — the signature of a polynomial sufficient statistic); the $t$'s log-density bends *above* it in the tails, decaying only logarithmically-corrected-polynomially, a shape no $\\eta T(x)$ can match. **Right:** the same on the natural scale — the $t$'s heavy tails (extra mass far from center) are the visible price of, and reason for, its non-membership."
+x = np.linspace(-6, 6, 400)
+norm_pdf = stats.norm.pdf(x)
+t_pdf = stats.t.pdf(x, df=2)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.plot(x, np.log(norm_pdf), color=CURVE, label="Normal (in family)")
+axL.plot(x, np.log(t_pdf), color=CURVE2, label="$t_{\\nu=2}$ (not in family)")
+axL.set_xlabel("$x$"); axL.set_ylabel("$\\log f(x)$")
+axL.set_title("Log-density: parabola vs. heavy tail")
+axL.legend(fontsize=9, framealpha=0.9)
+
+axR.plot(x, norm_pdf, color=CURVE, label="Normal")
+axR.plot(x, t_pdf, color=CURVE2, label="$t_{\\nu=2}$")
+axR.set_xlabel("$x$"); axR.set_ylabel("$f(x)$")
+axR.set_title("Heavy tails on the natural scale")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Mixtures are (usually) out {#sec-mixtures}
+
+One more honest boundary. A **mixture** of two normals,
+$f(x)=\tfrac12\phi(x\mid\mu_1,1)+\tfrac12\phi(x\mid\mu_2,1)$, is a *sum* of exponential-family
+densities — and a sum of exponentials is not, in general, an exponential of anything
+clean. Mixtures generically leave the family; this is exactly why fitting them needs the
+**EM algorithm** ([UNSP-5]) rather than the one-line moment-matching MLE of @sec-examples.
+The family is closed under *products* (multiplying independent members, or a likelihood by a
+conjugate prior — which is why conjugacy works) but **not** under *mixing*. Knowing this
+sorts a great many "can I just match moments?" questions instantly.
+
+::: {.callout-tip title="You might be asked"}
+*"Name distributions that are in the exponential family and ones that are not, and say
+what separates them."* In: Bernoulli, binomial (fixed $n$), Poisson, normal, exponential,
+gamma (fixed or free shape), beta, chi-square, geometric, negative-binomial (fixed $r$),
+Dirichlet, multinomial (fixed trials). Out: uniform with unknown bounds (support moves),
+shifted/threshold distributions (support moves), Student's $t$ with unknown $\nu$ (parameter
+tangled inside a log, heavy tails), Cauchy (a $t_1$, no mean at all), mixtures (sums, not
+products), and the binomial/negative-binomial when the *count parameter* ($n$ or $r$) is the
+unknown. The two discriminators to recite: **(1)** does the support depend on the parameter?
+and **(2)** can $\ln f$ be written as $h_0(x)+\sum_j\eta_j(\theta)T_j(x)$ with the parameter
+appearing only as clean coefficients? Fail either and it is out.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived through the **distribution catalog**: [PROB-11] (Bernoulli/binomial), [PROB-12]
+(Poisson), [PROB-13] (normal), [PROB-14] (gamma/exponential/beta), and [PROB-15]
+(chi-square/$t$/F). This article was the catalog's *capstone* — the single form that
+contains most of them and the one counterexample ($t$) that does not fit. With it the
+catalog movement of the track is complete; the spine now turns to vectors and limits in
+[PROB-17]. What this article hands forward:
+
+- **[REGR-18 *Generalized Linear Models*]** is the direct heir. A GLM models the natural
+  parameter $\eta$ as a linear function of predictors, $\eta=\mathbf{x}^\top\boldsymbol\beta$;
+  the **canonical link** is the function mapping the mean back to $\eta$ (the logit for
+  Bernoulli, the log for Poisson — both read straight off Examples 1–2), and the entire
+  fitting algorithm is the moment-matching MLE of @sec-examples. Everything in REGR-18 is
+  this article specialized.
+- **Statistical Inference (sufficiency, exponential-family MLE).** The
+  Darmois–Koopman–Pitman characterization sketched in @sec-why, the factorization theorem
+  for sufficiency, and the asymptotic normality of the MLE all live there and consume
+  @thm-moments and the convexity of $A$ as their engine.
+- **[Inference E4] (conjugate Bayes).** The conjugacy of the beta to the Bernoulli/binomial
+  (@sec-vector) is the prototype: within an exponential family, the conjugate prior is itself
+  exponential-family, and updating *adds natural parameters*.
+- **[PROB-20 *Moment Generating Functions*]** re-meets $A$ as a cumulant generator — the
+  reason its derivatives are moments is the same reason the MGF's log-derivatives are.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** R. A. Fisher, "On the Mathematical Foundations of Theoretical
+  Statistics" (*Phil. Trans. R. Soc.* A, 1922), where sufficiency is introduced; and the
+  independent characterizations of **Darmois** (1935), **Koopman** (1936), and **Pitman**
+  (1936) that pinned the family to fixed-dimension sufficiency.
+- **Modern treatments.** Lehmann & Casella, *Theory of Point Estimation*, and Brown,
+  *Fundamentals of Statistical Exponential Families* (the definitive monograph), for the
+  natural-parameter-space analysis we only flagged. Bickel & Doksum and Wasserman's *All of
+  Statistics* give readable chapter-length accounts.
+- **The GLM lineage.** Nelder & Wedderburn's 1972 paper introducing generalized linear
+  models — the applied payoff of this entire article — and McCullagh & Nelder's *Generalized
+  Linear Models* book.
+- **Open threads this article deferred.** *Are there families with the moment-matching
+  conveniences that are not exponential?* — the **quasi-likelihood** and
+  **exponential-dispersion** extensions widen the GLM net (REGR-18). *What exactly is the
+  conjugate prior for a general exponential family, and why is it always one?* — built in
+  [Inference E4]. *How does the multivariate version power graphical models and the maximum-
+  entropy principle?* — the maximum-entropy derivation (the exponential family is the
+  maximum-entropy distribution under fixed expectations of $T$) is a beautiful alternative
+  route to @eq-form, left for the Optimization/Information track.

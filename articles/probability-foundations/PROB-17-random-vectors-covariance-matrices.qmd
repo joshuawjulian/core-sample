@@ -1,0 +1,1108 @@
+---
+title: "Random Vectors, Mean Vectors, and Covariance Matrices"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / sample points
+LINE   = "#c1121f"     # principal directions / fits
+ACCENT = "#0a7d4d"     # means / highlights
+GREY   = "#6c757d"
+SKY    = "#1f77b4"
+```
+
+> **Where this sits in the track.** This is the seventeenth stop in **Probability
+> Foundations**, opening *Movement 4 — going to vectors, then to the limit*. It assumes
+> you have the scalar summaries already: [PROB-5 *Expectation*] (the long-run average and
+> its linearity), [PROB-6 *Variance*] (spread as a sum of squares), and especially
+> [PROB-7 *Joint Distributions, Covariance & Correlation*], where covariance was defined
+> for a *pair* of random variables and shown to be bilinear. It also uses the bell curve
+> from [PROB-13 *The Normal Distribution*]. Here we make the leap from *scalars* to
+> *vectors*: we pack $d$ random variables into one object $\mathbf X$, replace the mean
+> by a **mean vector** and the variance by a **covariance matrix**, and discover that
+> this matrix is forced to be symmetric and positive semidefinite. It sets up
+> [PROB-18 *Linear Transforms of Random Vectors*] (what $\mathbf A\mathbf X+\mathbf b$
+> does to $\boldsymbol\mu$ and $\Sigma$) and is consumed across the series: Regression
+> needs it for the covariance of $\hat{\boldsymbol\beta}$ ([REGR-6]), the Geometry of
+> Data track takes the spectral analysis of $\Sigma$, and Unsupervised Learning runs PCA
+> on it.
+
+## Abstract {.unnumbered}
+
+A single random variable is summarized by two numbers — its mean and its variance. When
+several random variables travel together, we want a single object that summarizes all of
+them *and* records how each pair moves together. This article builds that object. We stack
+$d$ random variables into a **random vector** $\mathbf X=(X_1,\dots,X_d)$, define its
+**mean vector** $\boldsymbol\mu=E[\mathbf X]$ as the vector of component means, and define
+its **covariance matrix** $\Sigma$ by placing the variance of each $X_i$ on the diagonal
+and the covariance of each pair $(X_i,X_j)$ off it. The single claim this article defends
+is that $\Sigma$ is not a bookkeeping convenience but a *forced* structure: it is
+**symmetric** because covariance is symmetric, and it is **positive semidefinite** because
+$\mathbf a^\top\Sigma\,\mathbf a$ is literally the variance of the scalar $\mathbf
+a^\top\mathbf X$, and a variance can never be negative. That one identity —
+$\operatorname{Var}(\mathbf a^\top\mathbf X)=\mathbf a^\top\Sigma\,\mathbf a$ — is the
+hinge of the whole article, and it is what lets the **multivariate normal** be described
+by nothing more than its mean vector and covariance matrix.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Stack $d$ random variables into one vector $\mathbf X$. Its **mean vector**
+$\boldsymbol\mu$ is just the means stacked the same way. Its **covariance matrix** $\Sigma$
+holds every variance on the diagonal and every pairwise covariance off it. The one fact
+that organizes everything: for any fixed direction $\mathbf a$, the spread of the data
+*along that direction* is
+
+$$
+\operatorname{Var}\!\bigl(\mathbf a^\top \mathbf X\bigr) = \mathbf a^\top \Sigma\, \mathbf a .
+$$
+
+Because a variance is never negative, $\mathbf a^\top\Sigma\,\mathbf a\ge 0$ for every
+$\mathbf a$ — that is exactly what it means for $\Sigma$ to be **positive semidefinite**.
+The covariance matrix is therefore a *complete directional spread chart* of the cloud: feed
+it a direction, it returns how variable the data are that way.
+:::
+
+Everything below orbits that box. We will build $\boldsymbol\mu$ and $\Sigma$ from their
+scalar parts, prove the boxed identity from first principles, read off symmetry and
+positive semidefiniteness as immediate consequences, and finally watch the bivariate normal
+draw its elliptical contours — where the axes of the ellipse turn out to be a picture of
+$\Sigma$ itself.
+
+# Why we are doing this: data does not come one column at a time {#sec-why}
+
+Keep one question in view for the whole article: **when many random quantities arrive
+together, what is the right object to summarize them, and why does that object have the
+shape it does?** Every step below answers some piece of that.
+
+## The problem the scalar tools cannot reach
+
+Up to now the Probability track has handled random quantities essentially one at a time.
+[PROB-5] gave us $E[X]$, a single number for "where $X$ lands on average." [PROB-6] gave us
+$\operatorname{Var}(X)$, a single number for "how far $X$ scatters." [PROB-7] took the
+first step toward *togetherness* with $\operatorname{Cov}(X,Y)$, a single number for "do
+$X$ and $Y$ move together." But real data almost never arrives as one or two columns. A
+single patient record carries height, weight, blood pressure, cholesterol, age. A single
+day in a market carries the returns of hundreds of assets. A single image is millions of
+pixel intensities. Each of these is a *vector* of random numbers measured on the same unit,
+and the interesting structure lives in how the components co-vary: tall people tend to be
+heavier; when one tech stock drops, the others tend to drop with it; neighboring pixels
+tend to share color.
+
+If we tried to summarize a $d$-component record with the scalar tools alone we would write
+down $d$ separate means and $d$ separate variances — and we would have thrown away every
+relationship *between* components, which is usually the most valuable thing in the data. We
+need an object that keeps the means, keeps the variances, **and** keeps all
+$\binom{d}{2}$ pairwise covariances, organized so we can compute with them.
+
+## Why a matrix, and why it had to be invented
+
+The historical pressure came from exactly the multi-measurement settings above. Francis
+Galton, studying the joint inheritance of traits like the heights of parents and children
+in the 1880s, was already drawing the elliptical clouds that a covariance matrix encodes.
+Karl Pearson formalized correlation in the 1890s. But the decisive move — packaging the
+means into a vector and the covariances into a matrix so that the entire machinery of
+linear algebra could be brought to bear — crystallized in the early twentieth century, and
+its full power was unlocked when Ronald Fisher, Harold Hotelling, and others realized that
+the *eigen-structure* of that matrix (which Geometry of Data and Unsupervised Learning will
+own) tells you the natural axes of the cloud. The reason the object is a **matrix** and not
+just a longer list is that the relationships are inherently *pairwise* — indexed by two
+subscripts $(i,j)$ — and a doubly indexed array of numbers *is* a matrix. Once it is a
+matrix, the apparatus of matrix multiplication lets us answer questions about *every linear
+combination of the components at once*, which is precisely the boxed identity in
+@sec-core.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just report the full joint distribution? Isn't the covariance matrix a lossy
+summary?"* It is lossy, and you should say so plainly. The mean vector and covariance
+matrix capture only the **first two moments** — centers and pairwise linear co-movement.
+They are blind to skewness, to heavy tails, and to any *nonlinear* dependence (two
+variables can have zero covariance yet be perfectly dependent, the counterexample from
+[PROB-7]). We summarize with $(\boldsymbol\mu,\Sigma)$ anyway for two honest reasons:
+first, the second moments are often the dominant, most stable, and most interpretable
+features of a cloud; second — and this is the deep reason — there is exactly one
+distribution for which $(\boldsymbol\mu,\Sigma)$ is the *complete* story, the
+**multivariate normal** of @sec-mvn. When the normal is a reasonable model,
+$(\boldsymbol\mu,\Sigma)$ loses nothing at all.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formal definition, hold the geometric picture. A random vector
+$\mathbf X=(X_1,X_2)$ in two dimensions produces, when sampled repeatedly, a *cloud* of
+points in the plane. The cloud has a **center** — that is the mean vector. It has a
+**width and a height** — those are the two variances. And crucially it may be **tilted** —
+that tilt is the covariance. @fig-cloud shows three clouds with the same center and the
+same individual spreads but different covariances: zero (a round-ish blob with no tilt),
+positive (tilted up to the right, the components rise together), and negative (tilted down,
+one rises as the other falls).
+
+```{python}
+#| label: fig-cloud
+#| fig-cap: "Three random-vector clouds in the plane, each with the same center $\\boldsymbol\\mu=(0,0)$ and the same per-axis spreads, differing only in covariance. **Left:** zero covariance — no tilt, the components carry no linear information about each other. **Middle:** positive covariance — the cloud tilts up to the right; large $X_1$ tends to come with large $X_2$. **Right:** negative covariance — the cloud tilts down. The covariance matrix is exactly the object that records this tilt along with the spreads."
+rng = np.random.default_rng(1)
+n = 600
+covs = [0.0, 0.75, -0.75]
+titles = [r"$\mathrm{Cov}=0$ (round)", r"$\mathrm{Cov}>0$ (tilt up)", r"$\mathrm{Cov}<0$ (tilt down)"]
+fig, axes = plt.subplots(1, 3, figsize=(9.2, 3.2))
+for ax, c, t in zip(axes, covs, titles):
+    Sigma = np.array([[1.0, c], [c, 1.0]])
+    L = np.linalg.cholesky(Sigma)
+    pts = (L @ rng.standard_normal((2, n))).T
+    ax.scatter(pts[:, 0], pts[:, 1], s=8, color=POINT, alpha=0.45)
+    ax.scatter([0], [0], color=ACCENT, s=70, zorder=5, edgecolor="white")
+    ax.set_xlim(-3.5, 3.5); ax.set_ylim(-3.5, 3.5)
+    ax.set_aspect("equal")
+    ax.set_title(t, fontsize=10)
+    ax.set_xlabel("$X_1$"); ax.set_ylabel("$X_2$")
+plt.tight_layout()
+```
+
+The second piece of intuition is the one in the Core box, and it is worth installing before
+the algebra justifies it. Suppose someone hands you a *direction* — say, "look at the cloud
+along the 45-degree line." Projecting every point of the cloud onto that line gives you a
+one-dimensional spread: how stretched the cloud is *in that direction*. For the positively
+tilted cloud, the 45-degree direction is its *long* axis, so the projected spread is large;
+the perpendicular direction is its *short* axis, so that projected spread is small. The
+claim of @sec-core is that the covariance matrix answers this for *every* direction at once
+through a single product $\mathbf a^\top\Sigma\,\mathbf a$. The matrix is a machine: insert
+a direction, out comes the variance along it. That is why it deserves to be one object
+rather than a pile of separate numbers.
+
+# Formal development {#sec-formal}
+
+We build the objects from the bottom up, defining every symbol on first appearance and
+leaning only on the scalar mean, variance, and covariance from [PROB-5]–[PROB-7].
+
+## A note on the linear-algebra we use {#sec-la-floor}
+
+This article is where the Probability track first uses vectors and matrices in earnest.
+Everything we need is *operational* — the notation and three mechanical rules — and we
+state them here so nothing above the floor is assumed silently. The deeper *theory* (vector
+spaces, rank, eigenvalues, what positive semidefiniteness buys you geometrically) is owned
+by the **Geometry of Data** track; we build only the slice probability needs.
+
+- A **column vector** $\mathbf a=(a_1,\dots,a_d)$ is a stack of $d$ numbers. Its
+  **transpose** $\mathbf a^\top$ is the same numbers written as a row. We write vectors in
+  boldface lowercase.
+- The **inner product** (dot product) of two $d$-vectors is the single number
+  $\mathbf a^\top\mathbf b=\sum_{i=1}^d a_i b_i$. In particular $\mathbf a^\top\mathbf X
+  =\sum_{i=1}^d a_i X_i$ is a *scalar* random variable — a weighted sum of the components,
+  the workhorse of this article.
+- A **matrix** $\mathbf M$ with entry $M_{ij}$ in row $i$, column $j$ acts on a vector by
+  $(\mathbf M\mathbf a)_i=\sum_j M_{ij}a_j$. The **quadratic form**
+  $\mathbf a^\top\mathbf M\,\mathbf a=\sum_{i}\sum_{j} a_i M_{ij} a_j$ is a single number;
+  we will meet it constantly. A matrix is **symmetric** if $M_{ij}=M_{ji}$, i.e.
+  $\mathbf M=\mathbf M^\top$.
+
+That is the entire toolkit. Each rule is used below the moment it is needed, and we will
+re-derive the only nontrivial expansion (the quadratic form of a covariance matrix) line by
+line rather than quote it.
+
+## The random vector and its mean vector {#sec-meanvec}
+
+::: {#def-random-vector}
+**Definition (random vector).** A **random vector** of dimension $d$ is an ordered list
+
+$$
+\mathbf X = \begin{pmatrix} X_1 \\ X_2 \\ \vdots \\ X_d \end{pmatrix}
+$$
+
+whose components $X_1,\dots,X_d$ are random variables defined on the *same* underlying
+experiment (the same sample space, in the sense of [PROB-0]). A single draw of the
+experiment produces one number for each component simultaneously, i.e. one point in
+$d$-dimensional space.
+:::
+
+The phrase "the same experiment" is the whole content of the definition, so dwell on it.
+The components are *not* independent measurements gathered separately; they are read off the
+*same* outcome. When you measure a patient, height and weight come from that one patient at
+once, which is exactly why they can be correlated. A random vector is the formal home for
+"several numbers from one draw."
+
+Now the first summary. The mean of each component is an ordinary scalar expectation from
+[PROB-5], $E[X_i]=\mu_i$. We collect them.
+
+::: {#def-mean-vector}
+**Definition (mean vector).** The **mean vector** of a random vector $\mathbf X$ is the
+$d$-vector of component means,
+
+$$
+\boldsymbol\mu \;=\; E[\mathbf X] \;=\;
+\begin{pmatrix} E[X_1] \\ E[X_2] \\ \vdots \\ E[X_d] \end{pmatrix}
+\;=\;
+\begin{pmatrix} \mu_1 \\ \mu_2 \\ \vdots \\ \mu_d \end{pmatrix},
+\qquad \mu_i = E[X_i].
+$$
+
+"Expectation of a vector" is *defined* to mean "apply expectation to each component." It is
+not a new kind of integral; it is $d$ ordinary expectations stacked.
+:::
+
+The mean vector is the center of the cloud — literally the point you would balance the cloud
+on, coordinate by coordinate. Because expectation is linear component-wise, the mean vector
+inherits linearity in the obvious way: $E[\mathbf X+\mathbf Y]=E[\mathbf X]+E[\mathbf Y]$,
+since that equation is just $E[X_i+Y_i]=E[X_i]+E[Y_i]$ holding in every slot. We will use
+this freely; it is [PROB-5]'s linearity, read one component at a time.
+
+## The covariance matrix {#sec-covmat}
+
+Now the spread. For a single variable, [PROB-6] defined
+$\operatorname{Var}(X)=E[(X-\mu)^2]$, and [PROB-7] defined, for a pair,
+$\operatorname{Cov}(X_i,X_j)=E[(X_i-\mu_i)(X_j-\mu_j)]$. Notice the variance is the special
+case $\operatorname{Cov}(X_i,X_i)=E[(X_i-\mu_i)^2]=\operatorname{Var}(X_i)$ — a variable's
+covariance with *itself* is its variance. That single observation is what lets one object
+hold both: we build a $d\times d$ table whose $(i,j)$ entry is the covariance of component
+$i$ with component $j$, and the diagonal $(i,i)$ entries automatically become the variances.
+
+::: {#def-cov-matrix}
+**Definition (covariance matrix).** The **covariance matrix** of a random vector
+$\mathbf X$ with mean vector $\boldsymbol\mu$ is the $d\times d$ matrix $\Sigma$ whose
+entries are the pairwise covariances,
+
+$$
+\Sigma_{ij} \;=\; \operatorname{Cov}(X_i, X_j) \;=\; E\bigl[(X_i-\mu_i)(X_j-\mu_j)\bigr],
+\qquad i,j = 1,\dots,d .
+$$ {#eq-sigma-entries}
+
+Written out, with variances on the diagonal ($\sigma_i^2=\operatorname{Var}(X_i)$) and
+covariances off it,
+
+$$
+\Sigma =
+\begin{pmatrix}
+\sigma_1^2 & \operatorname{Cov}(X_1,X_2) & \cdots & \operatorname{Cov}(X_1,X_d) \\
+\operatorname{Cov}(X_2,X_1) & \sigma_2^2 & \cdots & \operatorname{Cov}(X_2,X_d) \\
+\vdots & \vdots & \ddots & \vdots \\
+\operatorname{Cov}(X_d,X_1) & \operatorname{Cov}(X_d,X_2) & \cdots & \sigma_d^2
+\end{pmatrix}.
+$$ {#eq-sigma-matrix}
+:::
+
+There is a compact way to write the same thing that will make the algebra below painless.
+Form the **centered random vector** $\mathbf X-\boldsymbol\mu$, whose $i$-th component is
+$X_i-\mu_i$. The *outer product* $(\mathbf X-\boldsymbol\mu)(\mathbf X-\boldsymbol\mu)^\top$
+is the $d\times d$ matrix whose $(i,j)$ entry is the product $(X_i-\mu_i)(X_j-\mu_j)$ — a
+column times a row gives a matrix of all pairwise products. Taking expectation entry by
+entry reproduces exactly @eq-sigma-entries:
+
+$$
+\Sigma \;=\; E\!\left[(\mathbf X-\boldsymbol\mu)(\mathbf X-\boldsymbol\mu)^\top\right].
+$$ {#eq-sigma-outer}
+
+This is not a new definition; it is @def-cov-matrix written in one symbol, because the
+$(i,j)$ entry of the matrix inside the expectation is $(X_i-\mu_i)(X_j-\mu_j)$ and
+expectation acts entrywise. We will use @eq-sigma-outer and @eq-sigma-entries
+interchangeably, picking whichever makes a derivation cleaner.
+
+::: {.callout-tip title="You might be asked"}
+*"Is there a computational shortcut for $\Sigma$, the way $\operatorname{Var}(X)=E[X^2]-
+\mu^2$ shortcut works for scalars?"* Yes, and it is the exact vector analogue. Expand the
+outer product in @eq-sigma-outer:
+$(\mathbf X-\boldsymbol\mu)(\mathbf X-\boldsymbol\mu)^\top
+=\mathbf X\mathbf X^\top-\mathbf X\boldsymbol\mu^\top-\boldsymbol\mu\mathbf X^\top
++\boldsymbol\mu\boldsymbol\mu^\top$. Take expectation, using $E[\mathbf X]=\boldsymbol\mu$
+and that $\boldsymbol\mu$ is constant, so $E[\mathbf X\boldsymbol\mu^\top]
+=\boldsymbol\mu\boldsymbol\mu^\top$ and likewise for the third term. The two middle terms
+each become $\boldsymbol\mu\boldsymbol\mu^\top$ and combine with the last to leave
+
+$$
+\Sigma = E[\mathbf X\mathbf X^\top] - \boldsymbol\mu\boldsymbol\mu^\top .
+$$
+
+Entry $(i,j)$ reads $E[X_iX_j]-\mu_i\mu_j$, which is precisely [PROB-7]'s scalar shortcut
+$\operatorname{Cov}(X_i,X_j)=E[X_iX_j]-E[X_i]E[X_j]$ in every slot. Same identity, stacked.
+:::
+
+## The hinge identity: variance along a direction {#sec-hinge}
+
+We now prove the single fact the Core box promised — the one that makes $\Sigma$ a
+directional spread machine, and from which symmetry and positive semidefiniteness will fall
+out for free. Fix a *constant* (non-random) direction vector $\mathbf a=(a_1,\dots,a_d)$.
+The weighted sum
+
+$$
+\mathbf a^\top \mathbf X = \sum_{i=1}^d a_i X_i
+$$
+
+is a single scalar random variable — the cloud projected onto the direction $\mathbf a$ (up
+to the length of $\mathbf a$). We want its variance.
+
+::: {#thm-quadratic-form}
+**Theorem (variance of a linear combination is a quadratic form).** For any constant vector
+$\mathbf a\in\mathbb R^d$ and random vector $\mathbf X$ with covariance matrix $\Sigma$,
+
+$$
+\operatorname{Var}\!\bigl(\mathbf a^\top \mathbf X\bigr)
+\;=\; \mathbf a^\top \Sigma\, \mathbf a
+\;=\; \sum_{i=1}^d \sum_{j=1}^d a_i a_j \,\operatorname{Cov}(X_i,X_j).
+$$ {#eq-quad}
+:::
+
+::: {.proof}
+Start from the scalar definition of variance applied to the single random variable
+$\mathbf a^\top\mathbf X=\sum_i a_i X_i$. Its mean is, by component-wise linearity of
+expectation (@sec-meanvec),
+
+$$
+E\!\left[\sum_{i=1}^d a_i X_i\right] = \sum_{i=1}^d a_i E[X_i] = \sum_{i=1}^d a_i \mu_i .
+$$
+
+So the deviation of $\mathbf a^\top\mathbf X$ from its mean is
+
+$$
+\sum_{i=1}^d a_i X_i - \sum_{i=1}^d a_i \mu_i = \sum_{i=1}^d a_i (X_i-\mu_i),
+$$
+
+where we just grouped the two sums termwise. By the definition of variance from [PROB-6],
+$\operatorname{Var}(\mathbf a^\top\mathbf X)$ is the expected square of this deviation:
+
+$$
+\operatorname{Var}\!\bigl(\mathbf a^\top\mathbf X\bigr)
+= E\!\left[\left(\sum_{i=1}^d a_i (X_i-\mu_i)\right)^{\!2}\,\right].
+$$
+
+Now expand the square of a sum. The square of $\sum_i c_i$ is the double sum
+$\sum_i\sum_j c_i c_j$ over *all ordered pairs* $(i,j)$ — this is just multiplying the sum
+by itself and collecting every cross term, with no algebra hidden. With
+$c_i=a_i(X_i-\mu_i)$,
+
+$$
+\left(\sum_{i=1}^d a_i (X_i-\mu_i)\right)^{\!2}
+= \sum_{i=1}^d \sum_{j=1}^d a_i (X_i-\mu_i)\, a_j (X_j-\mu_j)
+= \sum_{i=1}^d \sum_{j=1}^d a_i a_j (X_i-\mu_i)(X_j-\mu_j).
+$$
+
+Take expectation. Expectation is linear ([PROB-5]), so it passes through the finite double
+sum, and the constants $a_i a_j$ pull out:
+
+$$
+\operatorname{Var}\!\bigl(\mathbf a^\top\mathbf X\bigr)
+= \sum_{i=1}^d \sum_{j=1}^d a_i a_j \, E\bigl[(X_i-\mu_i)(X_j-\mu_j)\bigr].
+$$
+
+The expectation in the summand is, by @eq-sigma-entries, exactly $\Sigma_{ij}
+=\operatorname{Cov}(X_i,X_j)$. Therefore
+
+$$
+\operatorname{Var}\!\bigl(\mathbf a^\top\mathbf X\bigr)
+= \sum_{i=1}^d \sum_{j=1}^d a_i \Sigma_{ij}\, a_j ,
+$$
+
+which is the right-hand side of @eq-quad. Finally we recognize this double sum as the
+quadratic form $\mathbf a^\top\Sigma\,\mathbf a$: by the matrix rules of @sec-la-floor, the
+$(i)$-th entry of $\Sigma\,\mathbf a$ is $\sum_j \Sigma_{ij}a_j$, and dotting that with
+$\mathbf a$ gives $\sum_i a_i\sum_j\Sigma_{ij}a_j=\sum_i\sum_j a_i\Sigma_{ij}a_j$, the same
+double sum. Hence $\operatorname{Var}(\mathbf a^\top\mathbf X)=\mathbf a^\top\Sigma\,
+\mathbf a$. $\qquad\blacksquare$
+:::
+
+This is the most important computation in the article. Read what it says: the matrix
+$\Sigma$, sandwiched by a direction $\mathbf a$ on both sides, returns the *spread of the
+data along $\mathbf a$*. The diagonal entries are the special cases $\mathbf a=\mathbf e_i$
+(the $i$-th standard basis vector, a $1$ in slot $i$ and $0$ elsewhere): then
+$\mathbf a^\top\Sigma\,\mathbf a=\Sigma_{ii}=\operatorname{Var}(X_i)$, recovering the
+per-axis variance. The off-diagonal information is exposed by mixed directions like
+$\mathbf a=(1,1,0,\dots)$, which probes how $X_1$ and $X_2$ combine.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the covariance between two different linear combinations,
+$\mathbf a^\top\mathbf X$ and $\mathbf b^\top\mathbf X$?"* The same proof with two
+different weight vectors instead of one gives the bilinear generalization
+
+$$
+\operatorname{Cov}\!\bigl(\mathbf a^\top\mathbf X,\;\mathbf b^\top\mathbf X\bigr)
+= \mathbf a^\top \Sigma\, \mathbf b
+= \sum_{i,j} a_i b_j \,\operatorname{Cov}(X_i,X_j).
+$$
+
+Take $\mathbf b=\mathbf a$ and it collapses to @eq-quad, since
+$\operatorname{Cov}(Z,Z)=\operatorname{Var}(Z)$. This is just [PROB-7]'s bilinearity of
+covariance, now read off the matrix in one stroke — and it is the seed of the full
+$\operatorname{Cov}(\mathbf A\mathbf X)=\mathbf A\Sigma\mathbf A^\top$ identity that
+[PROB-18] derives next.
+:::
+
+## Two structural facts, derived from the hinge {#sec-structure}
+
+The covariance matrix is not an arbitrary array of numbers. It is forced into two
+properties, and both follow immediately from what we have built.
+
+### Symmetry {#sec-symmetry}
+
+::: {#thm-symmetry}
+**Theorem.** $\Sigma$ is symmetric: $\Sigma_{ij}=\Sigma_{ji}$ for all $i,j$, equivalently
+$\Sigma=\Sigma^\top$.
+:::
+
+::: {.proof}
+By @eq-sigma-entries, $\Sigma_{ij}=E[(X_i-\mu_i)(X_j-\mu_j)]$ and
+$\Sigma_{ji}=E[(X_j-\mu_j)(X_i-\mu_i)]$. The two products inside the expectations are equal
+because multiplication of *numbers* is commutative — for any single outcome,
+$(X_i-\mu_i)(X_j-\mu_j)$ and $(X_j-\mu_j)(X_i-\mu_i)$ are the same real number. Equal
+random quantities have equal expectations, so $\Sigma_{ij}=\Sigma_{ji}$. $\qquad\blacksquare$
+:::
+
+Symmetry is the matrix shadow of the symmetry of covariance,
+$\operatorname{Cov}(X_i,X_j)=\operatorname{Cov}(X_j,X_i)$, established in [PROB-7]. It means
+$\Sigma$ has at most $\binom{d}{2}+d=\binom{d+1}{2}$ distinct entries, not $d^2$ — the upper
+triangle determines the lower. Practically, it also guarantees (a fact the Geometry of Data
+track proves and uses) that $\Sigma$ has *real* eigenvalues and orthogonal eigenvectors,
+which is what makes principal-component analysis well posed.
+
+### Positive semidefiniteness {#sec-psd}
+
+::: {#def-psd}
+**Definition (positive semidefinite).** A symmetric $d\times d$ matrix $\mathbf M$ is
+**positive semidefinite** (PSD), written $\mathbf M\succeq 0$, if
+$\mathbf a^\top\mathbf M\,\mathbf a\ge 0$ for *every* vector $\mathbf a\in\mathbb R^d$. If
+the inequality is strict ($>0$) for every nonzero $\mathbf a$, the matrix is **positive
+definite** (PD).
+:::
+
+::: {#thm-psd}
+**Theorem.** Every covariance matrix $\Sigma$ is positive semidefinite.
+:::
+
+::: {.proof}
+Let $\mathbf a\in\mathbb R^d$ be arbitrary. By @thm-quadratic-form,
+
+$$
+\mathbf a^\top\Sigma\,\mathbf a = \operatorname{Var}\!\bigl(\mathbf a^\top\mathbf X\bigr).
+$$
+
+The right-hand side is the variance of a real-valued random variable, namely
+$\mathbf a^\top\mathbf X$. A variance is the expected value of a squared quantity,
+$E[(\,\cdot-\text{mean})^2]$, and a square is never negative, so its expectation is never
+negative ([PROB-6]): $\operatorname{Var}(\cdot)\ge 0$ always. Therefore
+$\mathbf a^\top\Sigma\,\mathbf a\ge 0$ for every $\mathbf a$, which is exactly the
+definition of positive semidefinite. $\qquad\blacksquare$
+:::
+
+This is the deepest structural statement in the article, and it is worth pausing on its
+*meaning* rather than just its proof. Positive semidefiniteness says: **there is no
+direction along which the data have negative spread.** That is obvious once stated — spread
+is a squared quantity, it cannot be negative — but the matrix encodes it as a single,
+checkable algebraic property. It is the reason not every symmetric matrix is a legal
+covariance matrix: a symmetric matrix with a negative eigenvalue would assign negative
+variance to some direction, which is impossible for real data.
+
+::: {.callout-tip title="You might be asked"}
+*"When is $\Sigma$ positive **definite** rather than only semidefinite, and why does the
+distinction matter?"* The boundary case $\mathbf a^\top\Sigma\,\mathbf a=0$ for some nonzero
+$\mathbf a$ means $\operatorname{Var}(\mathbf a^\top\mathbf X)=0$ — the linear combination
+$\mathbf a^\top\mathbf X$ is *constant* (a random variable with zero variance never moves
+off its mean, by [PROB-6]). That happens precisely when the components satisfy an exact
+linear relationship, e.g. $X_3=2X_1-X_2$. Then the cloud is squashed flat into a
+lower-dimensional subspace, $\Sigma$ is **singular** (its determinant is zero, it has no
+inverse), and we say the distribution is *degenerate*. When no such exact linear
+dependence exists, every direction has strictly positive spread, $\Sigma$ is positive
+*definite*, and $\Sigma^{-1}$ exists — which matters enormously downstream, because the
+multivariate normal density (@sec-mvn) and the GLS/whitening machinery ([PROB-18], [REGR-11])
+all require $\Sigma^{-1}$. The interviewer is checking whether you connect "singular
+covariance" to "exact collinearity in the data," which is the one-vector shadow of
+multicollinearity in regression.
+:::
+
+@fig-psd makes the PSD fact visible: it sweeps the direction $\mathbf a$ around the unit
+circle and plots $\mathbf a^\top\Sigma\,\mathbf a$, the variance along that direction. The
+curve never dips below zero — that is positive semidefiniteness — and its maximum and
+minimum mark the long and short axes of the cloud.
+
+```{python}
+#| label: fig-psd
+#| fig-cap: "Positive semidefiniteness, made visible. For a fixed $2\\times2$ covariance matrix $\\Sigma$, we sweep a unit direction $\\mathbf a=(\\cos\\theta,\\sin\\theta)$ all the way around and plot the directional variance $\\mathbf a^\\top\\Sigma\\,\\mathbf a=\\operatorname{Var}(\\mathbf a^\\top\\mathbf X)$. **Left:** the curve stays at or above zero for every angle — the geometric content of $\\Sigma\\succeq 0$. The dashed line marks zero. **Right:** the same information as the data cloud, with the maximum-variance (long-axis) and minimum-variance (short-axis) directions drawn. The peak and trough of the left curve are the spreads along those two axes."
+Sigma = np.array([[2.0, 1.1], [1.1, 1.0]])
+thetas = np.linspace(0, 2*np.pi, 400)
+dirvar = np.array([np.array([np.cos(t), np.sin(t)]) @ Sigma @ np.array([np.cos(t), np.sin(t)])
+                   for t in thetas])
+
+# eigen-axes for the right panel
+evals, evecs = np.linalg.eigh(Sigma)
+order = np.argsort(evals)[::-1]
+evals, evecs = evals[order], evecs[:, order]
+
+rng = np.random.default_rng(3)
+L = np.linalg.cholesky(Sigma)
+pts = (L @ rng.standard_normal((2, 500))).T
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.7))
+axL.plot(thetas, dirvar, color=SKY)
+axL.axhline(0, color=LINE, ls="--", lw=1.3)
+axL.set_xlabel(r"direction angle $\theta$"); axL.set_ylabel(r"$\mathbf a^\top\Sigma\,\mathbf a$")
+axL.set_title("Directional variance is never negative")
+axL.set_xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi])
+axL.set_xticklabels(["0", r"$\pi/2$", r"$\pi$", r"$3\pi/2$", r"$2\pi$"])
+
+axR.scatter(pts[:, 0], pts[:, 1], s=8, color=POINT, alpha=0.4)
+for k, col, lab in zip(range(2), (LINE, ACCENT), ("long axis", "short axis")):
+    v = evecs[:, k] * np.sqrt(evals[k]) * 2.2
+    axR.plot([-v[0], v[0]], [-v[1], v[1]], color=col, lw=2.4, label=lab)
+axR.set_aspect("equal"); axR.set_xlim(-5, 5); axR.set_ylim(-5, 5)
+axR.set_xlabel("$X_1$"); axR.set_ylabel("$X_2$")
+axR.set_title("Same matrix, as a cloud"); axR.legend(loc="upper left", fontsize=9)
+plt.tight_layout()
+```
+
+## The correlation matrix: $\Sigma$ on a common scale {#sec-corrmat}
+
+Covariances carry the *units* of their two variables — a covariance between height (cm) and
+weight (kg) is in cm·kg, which is meaningless to compare against a covariance between two
+prices in dollars-squared. [PROB-7] fixed this for a pair by dividing out the standard
+deviations to get correlation. The vector version divides $\Sigma$ down to a
+**correlation matrix** $\mathbf R$ with entries
+
+$$
+R_{ij} = \frac{\Sigma_{ij}}{\sqrt{\Sigma_{ii}}\sqrt{\Sigma_{jj}}}
+       = \frac{\operatorname{Cov}(X_i,X_j)}{\sigma_i\,\sigma_j},
+$$ {#eq-corr}
+
+so every diagonal entry is $R_{ii}=\Sigma_{ii}/(\sigma_i\sigma_i)=1$ and every off-diagonal
+entry lies in $[-1,1]$ by the Cauchy–Schwarz bound on correlation proved in [PROB-7]. In
+matrix form, writing $\mathbf D=\operatorname{diag}(\sigma_1,\dots,\sigma_d)$ for the
+diagonal matrix of standard deviations, $\mathbf R=\mathbf D^{-1}\Sigma\,\mathbf D^{-1}$.
+Because this is $\Sigma$ pre- and post-multiplied by the same diagonal matrix, $\mathbf R$
+is *also* symmetric and positive semidefinite — feeding $\mathbf D^{-1}\mathbf a$ into the
+PSD definition for $\Sigma$ shows $\mathbf a^\top\mathbf R\,\mathbf a=
+(\mathbf D^{-1}\mathbf a)^\top\Sigma(\mathbf D^{-1}\mathbf a)\ge 0$. The correlation matrix
+is the right object to *eyeball* — it strips units and puts every relationship on the
+universal $[-1,1]$ scale. We will read one in @sec-stocks.
+
+# The multivariate normal: when $(\boldsymbol\mu,\Sigma)$ is the whole story {#sec-mvn}
+
+We promised in @sec-why that there is exactly one distribution for which the mean vector and
+covariance matrix are not a lossy summary but a *complete* description. That is the
+**multivariate normal** (or multivariate Gaussian). This article introduces it through its
+mean and covariance — the depth on its density and on linear transforms is shared with
+[PROB-18] and the Geometry of Data track — but we go far enough to see *why* $\Sigma$ is its
+beating heart.
+
+Recall the scalar normal density from [PROB-13], with mean $\mu$ and variance $\sigma^2$:
+
+$$
+f(x) = \frac{1}{\sqrt{2\pi\sigma^2}}\exp\!\left(-\frac{(x-\mu)^2}{2\sigma^2}\right)
+     = \frac{1}{\sqrt{2\pi}\,\sigma}\exp\!\left(-\frac{1}{2}\,(x-\mu)\,(\sigma^2)^{-1}\,(x-\mu)\right).
+$$
+
+We deliberately wrote the exponent in the second, clunkier form — $(x-\mu)(\sigma^2)^{-1}
+(x-\mu)$ — because it is the scalar shadow of what generalizes. The multivariate normal
+replaces the scalar deviation $(x-\mu)$ by the deviation vector
+$(\mathbf x-\boldsymbol\mu)$, and the reciprocal variance $(\sigma^2)^{-1}$ by the inverse
+covariance matrix $\Sigma^{-1}$.
+
+::: {#def-mvn}
+**Definition (multivariate normal).** A random vector $\mathbf X\in\mathbb R^d$ has a
+**multivariate normal distribution** with mean vector $\boldsymbol\mu$ and (positive
+definite) covariance matrix $\Sigma$, written $\mathbf X\sim\mathcal N_d(\boldsymbol\mu,
+\Sigma)$, if its joint density is
+
+$$
+f(\mathbf x) = \frac{1}{(2\pi)^{d/2}\,\lvert\Sigma\rvert^{1/2}}
+\exp\!\left(-\tfrac12 (\mathbf x-\boldsymbol\mu)^\top \Sigma^{-1} (\mathbf x-\boldsymbol\mu)\right),
+\qquad \mathbf x\in\mathbb R^d ,
+$$ {#eq-mvn-density}
+
+where $\lvert\Sigma\rvert$ denotes the determinant of $\Sigma$.
+:::
+
+Match it term by term against the scalar form and nothing is mysterious. The squared,
+standardized deviation $(x-\mu)^2/\sigma^2$ becomes the **quadratic form**
+$(\mathbf x-\boldsymbol\mu)^\top\Sigma^{-1}(\mathbf x-\boldsymbol\mu)$ — exactly the
+quadratic-form machine of @sec-hinge, now built from $\Sigma^{-1}$ instead of $\Sigma$. The
+single normalizing $\sigma=\sqrt{\sigma^2}$ in the scalar denominator becomes
+$\lvert\Sigma\rvert^{1/2}$, the multidimensional measure of how "wide" the distribution is.
+And the $\sqrt{2\pi}$ becomes $(2\pi)^{d/2}$, one factor per dimension. The mean vector and
+covariance matrix are the *only* parameters — there is nothing else to specify — which is
+the precise sense in which, for the normal, $(\boldsymbol\mu,\Sigma)$ is the complete story.
+
+We do not derive the normalizing constant or prove that @eq-mvn-density integrates to one
+here; that requires the change-of-variables / whitening machinery that [PROB-18] builds and
+the Gaussian-integral result from [PROB-13]. What we *can* see immediately — and what
+matters for this article — is the geometry of the exponent.
+
+## The contours are ellipses, and $\Sigma$ draws them {#sec-contours}
+
+The density @eq-mvn-density is largest where the exponent is least negative, i.e. where the
+quadratic form $(\mathbf x-\boldsymbol\mu)^\top\Sigma^{-1}(\mathbf x-\boldsymbol\mu)$ is
+*smallest*. A **contour** of constant density is therefore a set where that quadratic form
+equals some constant $c$:
+
+$$
+(\mathbf x-\boldsymbol\mu)^\top \Sigma^{-1} (\mathbf x-\boldsymbol\mu) = c .
+$$ {#eq-contour}
+
+Let us see directly, with no machinery above this article's floor, that in two dimensions
+this is the equation of an **ellipse** centered at $\boldsymbol\mu$. Write
+$\mathbf u=\mathbf x-\boldsymbol\mu=(u_1,u_2)$ for the shifted coordinates and write the
+matrix $\mathbf M=\Sigma^{-1}$ entrywise as
+
+$$
+\mathbf M = \begin{pmatrix} A & B \\ B & C \end{pmatrix},
+$$
+
+with $B$ in both off-diagonal slots because $\mathbf M$ is symmetric (we verify below that
+$\Sigma^{-1}$ inherits symmetry and positive definiteness from $\Sigma$). Expanding the
+quadratic form by the rule of @sec-la-floor — multiply out $\mathbf u^\top\mathbf M\mathbf u
+=\sum_i\sum_j u_i M_{ij} u_j$ term by term — gives
+
+$$
+\mathbf u^\top\mathbf M\,\mathbf u
+= A\,u_1^2 + B\,u_1 u_2 + B\,u_2 u_1 + C\,u_2^2
+= A\,u_1^2 + 2B\,u_1 u_2 + C\,u_2^2 ,
+$$
+
+so the contour @eq-contour is the curve
+
+$$
+A\,u_1^2 + 2B\,u_1 u_2 + C\,u_2^2 = c .
+$$ {#eq-conic}
+
+This is exactly the general second-degree equation in two variables — a **conic section**
+from precalculus. Which conic it is, is decided by the sign of the *discriminant*
+$B^2-AC$: the curve is an ellipse when $B^2-AC<0$, a parabola when $B^2-AC=0$, and a
+hyperbola when $B^2-AC>0$. (This is the standard conic classification; the discriminant is
+unchanged by rotating the axes, which is why the cross-term $2B\,u_1u_2$ does not alter the
+*type* of curve, only its tilt.) So we need precisely $B^2-AC<0$, i.e. $AC-B^2>0$.
+
+That is where positive definiteness pays off. We argued in the "You might be asked" box of
+@sec-psd that for a genuine (non-degenerate) covariance matrix $\Sigma$ is positive
+*definite*, and its inverse $\mathbf M=\Sigma^{-1}$ is then symmetric positive definite too:
+**symmetric** because $(\Sigma^{-1})^\top=(\Sigma^\top)^{-1}=\Sigma^{-1}$ (transpose and
+inverse commute, and $\Sigma=\Sigma^\top$ by @thm-symmetry), and **positive definite**
+because for any nonzero $\mathbf a$, setting $\mathbf b=\Sigma^{-1}\mathbf a$ (also nonzero,
+as $\Sigma^{-1}$ is invertible) gives $\mathbf a^\top\Sigma^{-1}\mathbf a
+=\mathbf b^\top\Sigma\,\mathbf b>0$ by the positive-definiteness of $\Sigma$. Positive
+definiteness of $\mathbf M$ forces both
+$A>0$ (take $\mathbf u=(1,0)$: $\mathbf u^\top\mathbf M\mathbf u=A>0$) and $AC-B^2>0$. The
+second of these is the cleanest to see by completing the square in @eq-conic:
+
+$$
+A\,u_1^2 + 2B\,u_1u_2 + C\,u_2^2
+= A\Bigl(u_1 + \tfrac{B}{A}u_2\Bigr)^{\!2} + \Bigl(C - \tfrac{B^2}{A}\Bigr)u_2^2 ,
+$$
+
+which one checks by expanding the right side back out. For this to be strictly positive for
+*every* nonzero $\mathbf u$ — in particular for $u_2\neq 0$, $u_1=-\tfrac{B}{A}u_2$, which
+kills the first term — the second coefficient must be positive: $C-\tfrac{B^2}{A}>0$, i.e.
+(multiplying by $A>0$) $AC-B^2>0$. So a positive-definite $\mathbf M$ *guarantees*
+$AC-B^2>0$, hence $B^2-AC<0$, hence @eq-conic is an **ellipse**. The constant-density
+contour of a non-degenerate bivariate normal is therefore an ellipse, and shrinking or
+growing $c$ scales it in and out, giving the **concentric ellipses** we will plot.
+
+Where the axes of that ellipse point, and how long they are, is the one piece we genuinely
+import: the ellipse's axes lie along the **eigenvectors** of $\mathbf M$ and the axis
+half-lengths scale with the reciprocal square roots of its eigenvalues — the spectral fact
+owned by the Geometry of Data track and not re-proved here. We do not need it to know the
+contour *is* an ellipse (we just derived that); we need it only to label the axes, which
+@fig-psd already drew. The upshot we need: **the contours of a bivariate normal are
+concentric ellipses whose orientation and elongation are dictated by $\Sigma$.** Round
+$\Sigma$ (equal variances, zero covariance) gives circles; unequal variances give
+axis-aligned ellipses; nonzero covariance *tilts* the ellipse. @fig-mvn-contours shows the
+three cases, the direct multivariate echo of the three clouds in @fig-cloud.
+
+```{python}
+#| label: fig-mvn-contours
+#| fig-cap: "Density contours of three bivariate normals, all centered at $\\boldsymbol\\mu=(0,0)$. **Left:** $\\Sigma=I$ (unit variances, zero covariance) — perfectly circular contours, $X_1$ and $X_2$ unrelated. **Middle:** unequal variances, zero covariance — an axis-aligned ellipse, wider along the higher-variance axis. **Right:** nonzero covariance — the ellipse *tilts*, and correlation reads off as the angle of the tilt. The shape of each ellipse is a direct picture of the covariance matrix that generated it."
+def mvn_density(X1, X2, Sigma):
+    Sinv = np.linalg.inv(Sigma)
+    det = np.linalg.det(Sigma)
+    pos = np.stack([X1, X2], axis=-1)
+    q = np.einsum("...i,ij,...j->...", pos, Sinv, pos)
+    return np.exp(-0.5 * q) / (2*np.pi*np.sqrt(det))
+
+g = np.linspace(-4, 4, 250)
+X1, X2 = np.meshgrid(g, g)
+Sigmas = [np.array([[1, 0], [0, 1.0]]),
+          np.array([[2.2, 0], [0, 0.6]]),
+          np.array([[1.6, 1.1], [1.1, 1.0]])]
+titles = [r"$\Sigma=I$: circles", r"unequal var: ellipse", r"covariance: tilted ellipse"]
+fig, axes = plt.subplots(1, 3, figsize=(9.4, 3.3))
+for ax, S, t in zip(axes, Sigmas, titles):
+    Z = mvn_density(X1, X2, S)
+    ax.contour(X1, X2, Z, levels=6, cmap="viridis")
+    ax.set_aspect("equal"); ax.set_xlim(-4, 4); ax.set_ylim(-4, 4)
+    ax.set_title(t, fontsize=10); ax.set_xlabel("$X_1$"); ax.set_ylabel("$X_2$")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"For the multivariate normal — and only for it — what does zero covariance imply?"* This is
+the one place the classic trap from [PROB-7] reverses. In general, zero covariance does
+**not** imply independence (that article gave a worked counterexample). But if
+$\mathbf X$ is *jointly multivariate normal* and $\operatorname{Cov}(X_i,X_j)=0$, then
+$X_i$ and $X_j$ **are** independent. You can see why by pushing @eq-mvn-density all the way
+through for a diagonal $\Sigma=\operatorname{diag}(\sigma_1^2,\dots,\sigma_d^2)$. Two facts
+about a diagonal matrix, both elementary: its determinant is the product of the diagonal
+entries, $\lvert\Sigma\rvert=\prod_i\sigma_i^2$, and its inverse is got by reciprocating
+each diagonal entry, $\Sigma^{-1}=\operatorname{diag}(1/\sigma_1^2,\dots,1/\sigma_d^2)$.
+Then the quadratic form in the exponent is a quadratic form against a diagonal matrix, which
+by the @sec-la-floor expansion has no cross terms and collapses to a single sum,
+$(\mathbf x-\boldsymbol\mu)^\top\Sigma^{-1}(\mathbf x-\boldsymbol\mu)
+=\sum_i (x_i-\mu_i)^2/\sigma_i^2$. The normalizing constant splits the same way, since
+$(2\pi)^{d/2}\lvert\Sigma\rvert^{1/2}=\prod_i\sqrt{2\pi}\,\sigma_i$. Substituting both and
+using $\exp(\sum_i t_i)=\prod_i\exp(t_i)$ to turn the exponential-of-a-sum into a product,
+
+$$
+f(\mathbf x)=\frac{1}{\prod_i\sqrt{2\pi}\,\sigma_i}\,
+\exp\!\Bigl(-\tfrac12\sum_i\tfrac{(x_i-\mu_i)^2}{\sigma_i^2}\Bigr)
+=\prod_{i=1}^d \frac{1}{\sqrt{2\pi}\,\sigma_i}
+\exp\!\Bigl(-\tfrac{(x_i-\mu_i)^2}{2\sigma_i^2}\Bigr)
+=\prod_{i=1}^d f_i(x_i),
+$$
+
+a product of the one-dimensional normal densities $f_i$ from [PROB-13]. A joint density that
+factors into the product of its marginals *is* exactly the definition of independence
+([PROB-8]), so the components are independent. The interviewer wants you
+to state the implication *and* its sharp caveat: it holds for the joint normal, and the
+emphasis on "jointly" matters — two variables can each be normal and uncorrelated yet
+dependent if they are not jointly normal.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the machinery on real, multi-column data — never a toy rigged to flatter it. The
+first we carry through *by hand, number by number*, so the matrix definitions breathe.
+
+## Example 1 — body measurements, three components by hand {#sec-body}
+
+A genuinely multivariate dataset: anthropometric measurements where height, weight, and
+forearm length are recorded on the *same* people, so they co-vary. We take a small,
+representative slice of $n=8$ adults — height in cm, weight in kg, forearm in cm — so every
+entry of $\boldsymbol\mu$ and $\Sigma$ can be computed in the open.
+
+```{python}
+#| label: tbl-body
+#| echo: false
+# n = 8 adults: height (cm), weight (kg), forearm (cm). Realistic, correlated.
+height  = np.array([158, 162, 167, 171, 175, 178, 183, 188.0])
+weight  = np.array([ 52,  58,  61,  68,  74,  77,  85,  92.0])
+forearm = np.array([ 24,  24,  25,  26,  27,  27,  28,  29.0])
+M = np.vstack([height, weight, forearm])     # 3 x n, rows = variables
+mu = M.mean(axis=1)
+n = M.shape[1]
+# population-style covariance (divide by n) for a clean hand-check
+Xc = M - mu[:, None]
+Sigma = (Xc @ Xc.T) / n
+np.set_printoptions(precision=2, suppress=True)
+print("mean vector  mu = [height, weight, forearm] =")
+print("  ", mu)
+print()
+print("covariance matrix  Sigma (divide by n) =")
+print(Sigma)
+print()
+D = np.sqrt(np.diag(Sigma))
+R = Sigma / np.outer(D, D)
+print("correlation matrix  R =")
+print(R)
+```
+
+Walk the arithmetic the code printed, plugging straight into the definitions:
+
+- The **mean vector** is $\boldsymbol\mu=(`{python} f"{mu[0]:.1f}"`,\,
+  `{python} f"{mu[1]:.1f}"`,\,`{python} f"{mu[2]:.1f}"`)$ — the average height, weight, and
+  forearm length, each computed exactly as the scalar mean of its column (@def-mean-vector).
+- The **diagonal of $\Sigma$** holds the three variances. For instance the height variance
+  is $\Sigma_{11}=\frac1n\sum_i(\text{height}_i-\bar{\text{height}})^2=
+  `{python} f"{Sigma[0,0]:.2f}"`$, identical to [PROB-6]'s formula applied to the height
+  column alone.
+- The **off-diagonal** $\Sigma_{12}=\operatorname{Cov}(\text{height},\text{weight})=
+  \frac1n\sum_i(\text{height}_i-\bar h)(\text{weight}_i-\bar w)=`{python} f"{Sigma[0,1]:.2f}"`$
+  is positive and large: tall people are heavier. By @thm-symmetry, $\Sigma_{21}$ is the
+  same number — the matrix is symmetric, which you can read straight off the print-out.
+- The **correlation matrix** $\mathbf R$ strips the units. Height–weight correlation is
+  $R_{12}=`{python} f"{R[0,1]:.3f}"`$ — very strong; height–forearm is
+  $R_{13}=`{python} f"{R[0,2]:.3f}"`$, also strong. Each diagonal entry is exactly $1$,
+  as @eq-corr forces.
+
+Now the hinge identity in action. Suppose a clinician forms a crude "body size" score by
+adding standardized-ish weights — say the direction $\mathbf a=(1,1,1)$, summing the three
+raw measurements. The variance of that score is, by @thm-quadratic-form, $\mathbf a^\top
+\Sigma\,\mathbf a$, which we can both compute as a quadratic form and verify directly as the
+variance of the summed column:
+
+```{python}
+#| label: check-quad
+#| echo: true
+a = np.array([1.0, 1.0, 1.0])
+quad = a @ Sigma @ a                       # a^T Sigma a
+score = a @ M                              # the scalar score for each person
+direct = score.var()                       # population variance of that score
+print(f"a^T Sigma a              = {quad:.3f}")
+print(f"Var(a^T X) directly      = {direct:.3f}")
+print(f"match: {np.isclose(quad, direct)}")
+```
+
+The two numbers agree to machine precision: $\mathbf a^\top\Sigma\,\mathbf a$ really *is*
+the variance of the projected score, exactly as @thm-quadratic-form proved. This is the
+identity that downstream tracks lean on without re-deriving — it is how Regression gets the
+variance of a fitted coefficient and how PCA finds the highest-variance direction.
+
+## Example 2 — a stock portfolio, where the matrix earns its keep {#sec-stocks}
+
+The setting where covariance matrices are not optional but central: a portfolio of risky
+assets. Each asset's daily return is a random variable; the vector of returns is a random
+vector; and the *risk* of any portfolio — any weighted combination of the assets — is a
+quadratic form in their covariance matrix. This is Harry Markowitz's 1952 portfolio theory
+in one identity, and it is the cleanest real-world payoff of @thm-quadratic-form.
+
+```{python}
+#| label: fig-portfolio
+#| fig-cap: "Five assets' daily returns ($n=750$ trading days, realistic correlated structure). **Left:** the $5\\times5$ correlation matrix as a heatmap — two clusters (the first three assets move together strongly, the last two form a second block) with weak cross-cluster correlation. **Right:** the risk (standard deviation) of an equal-weight portfolio compared against the average of the individual asset risks. Because the assets are not perfectly correlated, the portfolio risk is *strictly below* the naive average — the mathematical content of diversification, and it falls straight out of $\\mathbf w^\\top\\Sigma\\,\\mathbf w$ being smaller than $\\mathbf w^\\top(\\text{diag }\\Sigma)\\mathbf w$ when off-diagonals are below the diagonal."
+rng = np.random.default_rng(2024)
+names = ["TechA", "TechB", "TechC", "Util1", "Util2"]
+# Construct a realistic correlation structure: two blocks.
+true_corr = np.array([
+    [1.00, 0.80, 0.75, 0.15, 0.10],
+    [0.80, 1.00, 0.78, 0.12, 0.08],
+    [0.75, 0.78, 1.00, 0.10, 0.05],
+    [0.15, 0.12, 0.10, 1.00, 0.70],
+    [0.10, 0.08, 0.05, 0.70, 1.00],
+])
+vols = np.array([0.020, 0.022, 0.019, 0.011, 0.012])   # daily volatilities
+true_cov = true_corr * np.outer(vols, vols)
+L = np.linalg.cholesky(true_cov)
+returns = (L @ rng.standard_normal((5, 750))).T        # 750 x 5
+Sigma = np.cov(returns.T, bias=True)
+D = np.sqrt(np.diag(Sigma))
+R = Sigma / np.outer(D, D)
+
+w = np.full(5, 0.2)                                     # equal-weight portfolio
+port_var = w @ Sigma @ w
+port_sd = np.sqrt(port_var)
+naive_sd = w @ D                                        # weighted avg of individual SDs
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 3.8))
+im = axL.imshow(R, cmap="RdBu_r", vmin=-1, vmax=1)
+axL.set_xticks(range(5)); axL.set_yticks(range(5))
+axL.set_xticklabels(names, rotation=45, ha="right", fontsize=8)
+axL.set_yticklabels(names, fontsize=8)
+for i in range(5):
+    for j in range(5):
+        axL.text(j, i, f"{R[i,j]:.2f}", ha="center", va="center", fontsize=7,
+                 color="white" if abs(R[i,j]) > 0.5 else "black")
+axL.set_title("Correlation matrix (two blocks)", fontsize=10)
+axL.grid(False)
+fig.colorbar(im, ax=axL, fraction=0.046, pad=0.04)
+
+bars = axR.bar(["naive avg\nof risks", "actual\nportfolio risk"],
+               [naive_sd, port_sd], color=[GREY, ACCENT], width=0.6)
+axR.set_ylabel("daily risk (std. dev.)")
+axR.set_title("Diversification = $\\mathbf w^\\top\\Sigma\\,\\mathbf w$ shrinks risk", fontsize=10)
+for b, v in zip(bars, [naive_sd, port_sd]):
+    axR.text(b.get_x()+b.get_width()/2, v, f"{v*100:.2f}%", ha="center", va="bottom", fontsize=9)
+plt.tight_layout()
+print(f"equal-weight portfolio variance  w^T Sigma w = {port_var:.3e}")
+print(f"portfolio risk (std dev)                     = {port_sd*100:.3f}% per day")
+print(f"naive weighted-average risk                  = {naive_sd*100:.3f}% per day")
+print(f"risk reduction from diversification          = {(1-port_sd/naive_sd)*100:.1f}%")
+```
+
+The portfolio's variance is precisely $\mathbf w^\top\Sigma\,\mathbf w$, the hinge identity
+of @thm-quadratic-form with the *direction* now interpreted as the *portfolio weights*
+$\mathbf w$. Expanding it,
+
+$$
+\operatorname{Var}\!\left(\sum_i w_i R_i\right)
+= \mathbf w^\top\Sigma\,\mathbf w
+= \underbrace{\sum_i w_i^2 \sigma_i^2}_{\text{own variances}}
+\;+\; \underbrace{\sum_{i\ne j} w_i w_j \operatorname{Cov}(R_i,R_j)}_{\text{cross terms}} ,
+$$
+
+and the cross terms are what make portfolio risk *less* than the naive average of
+individual risks: as long as assets are not perfectly correlated, mixing them cancels some
+variance. The figure shows the actual portfolio risk sitting well below the weighted average
+of the individual risks — that gap *is* diversification, and it is invisible to anyone who
+tracks only the diagonal of $\Sigma$. This is exactly why the off-diagonal entries matter
+and why the object has to be a matrix: the risk of a *combination* cannot be read off the
+variances alone.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The covariance matrix is the right object for *linear, second-moment* structure. An honest
+treatment shows where that is enough and where it quietly fails.
+
+## The edge case: covariance is blind to nonlinear dependence {#sec-nonlinear}
+
+This is the most important caveat, and it inherits directly from [PROB-7]'s scalar
+counterexample. The covariance matrix sees only *linear* co-movement. Two components can be
+deterministically, perfectly related and still have **zero** covariance, so that $\Sigma$
+reports them as "uncorrelated" and a normal model would call them independent — when in
+truth one is a function of the other. @fig-nonlinear shows the canonical case: a point
+$X_2=X_1^2$ riding on a symmetric $X_1$. The cloud is a parabola, $X_2$ is *completely*
+determined by $X_1$, yet the covariance is essentially zero and $\Sigma$ is nearly diagonal.
+
+```{python}
+#| label: fig-nonlinear
+#| fig-cap: "The edge of applicability. **Left:** $X_1$ is symmetric about zero and $X_2=X_1^2$ exactly — total dependence. **Right:** the estimated covariance matrix is nearly diagonal; the off-diagonal covariance is ~0, so $\\Sigma$ declares the two components 'uncorrelated' and any Gaussian model would call them independent. They are not — $X_2$ is a deterministic function of $X_1$. Covariance captures *linear* structure only; this dependence is purely nonlinear and slips through entirely."
+rng = np.random.default_rng(7)
+x1 = rng.uniform(-2, 2, 800)
+x2 = x1**2 + rng.normal(0, 0.05, x1.size)
+M = np.vstack([x1, x2])
+Sig = np.cov(M, bias=True)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+axL.scatter(x1, x2, s=8, color=POINT, alpha=0.5)
+axL.set_xlabel("$X_1$"); axL.set_ylabel("$X_2 = X_1^2$")
+axL.set_title("Total dependence, $X_2=X_1^2$")
+im = axR.imshow(Sig, cmap="RdBu_r", vmin=-Sig.max(), vmax=Sig.max())
+axR.set_xticks([0, 1]); axR.set_yticks([0, 1])
+axR.set_xticklabels(["$X_1$", "$X_2$"]); axR.set_yticklabels(["$X_1$", "$X_2$"])
+for i in range(2):
+    for j in range(2):
+        axR.text(j, i, f"{Sig[i,j]:.3f}", ha="center", va="center", fontsize=11)
+axR.set_title(r"$\Sigma$ is nearly diagonal: $\mathrm{Cov}\approx 0$")
+axR.grid(False)
+plt.tight_layout()
+print(f"estimated Cov(X1, X2) = {Sig[0,1]:.4f}   (≈ 0, yet X2 = X1^2 exactly)")
+```
+
+**When you reach for something else:** if you suspect nonlinear or tail dependence, the
+covariance matrix is the wrong summary. Reach for *rank* correlations (Spearman, Kendall)
+for monotone-but-nonlinear structure, **copulas** for full dependence modeling, or **mutual
+information** for arbitrary dependence — each captures something $\Sigma$ cannot. The
+covariance matrix is a linear lens; nonlinear structure is invisible through it.
+
+## The degenerate boundary: singular $\Sigma$ {#sec-degenerate}
+
+The boundary baked into the PSD theorem. If the components satisfy an exact linear relation
+— say one variable is a sum of two others, or a measurement is recorded in two unit systems
+("height in cm" and "height in inches" as separate columns) — then some direction
+$\mathbf a$ has $\mathbf a^\top\Sigma\,\mathbf a=\operatorname{Var}(\mathbf a^\top\mathbf X)
+=0$. The matrix is **singular**: $\lvert\Sigma\rvert=0$, $\Sigma^{-1}$ does not exist, and
+the multivariate normal density @eq-mvn-density is undefined (you would divide by zero and
+invert a non-invertible matrix). The cloud has collapsed into a lower-dimensional flat. This
+is not a numerical accident; it is the honest statement that *the data have no genuine
+$d$-dimensional spread*. Near-degeneracy — tiny but nonzero spread along some direction,
+i.e. near-collinear columns — is just as dangerous: $\Sigma^{-1}$ becomes enormous and
+unstable, the multivariate echo of the multicollinearity that [REGR-7] treats in full.
+
+```{python}
+#| label: fig-degenerate
+#| fig-cap: "A degenerate random vector. $X_2 = 1.5\\,X_1$ exactly (plus negligible noise), so the cloud lies on a line and has zero spread perpendicular to it. The covariance matrix is singular — its determinant is ~0 and it has no inverse — so the multivariate-normal density does not exist. This is the boundary case of positive *semi*definiteness: one direction carries exactly zero variance."
+rng = np.random.default_rng(2)
+x1 = rng.normal(0, 1, 400)
+x2 = 1.5 * x1 + rng.normal(0, 0.01, x1.size)
+M = np.vstack([x1, x2])
+Sig = np.cov(M, bias=True)
+det = np.linalg.det(Sig)
+fig, ax = plt.subplots(figsize=(5.0, 4.2))
+ax.scatter(x1, x2, s=10, color=POINT, alpha=0.5)
+ax.set_xlabel("$X_1$"); ax.set_ylabel("$X_2 = 1.5\\,X_1$")
+ax.set_aspect("equal")
+ax.set_title(f"Singular $\\Sigma$:  $|\\Sigma| = {det:.2e} \\approx 0$")
+plt.tight_layout()
+print(f"det(Sigma)         = {det:.3e}   (≈ 0  =>  singular, no inverse)")
+print(f"eigenvalues        = {np.linalg.eigvalsh(Sig)}")
+print("smallest eigenvalue ~ 0: that direction carries zero variance")
+```
+
+::: {.callout-warning title="Pitfall"}
+**A symmetric matrix of "covariances" estimated from data can fail to be positive
+semidefinite — and that breaks everything downstream.** In theory $\Sigma\succeq 0$ always
+(@thm-psd). But in practice people build covariance/correlation matrices from *pairwise*
+computations on data with missing values, or shrink and edit entries by hand, and the
+result can have a tiny *negative* eigenvalue. The moment that happens, some direction has
+negative "variance," the matrix is not a legal covariance matrix, $\lvert\Sigma\rvert$ can
+go negative, and any method that needs $\Sigma^{-1}$ or a Cholesky factor (portfolio
+optimization, the normal density, GLS, Gaussian sampling) will crash or return nonsense.
+The fix is to *project back* onto the PSD cone (zero out negative eigenvalues, or use a
+nearest-PSD repair). Always estimate $\Sigma$ jointly from complete data when you can, and
+check the eigenvalues before trusting it.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When is the mean vector and covariance matrix the right summary of multivariate data, and
+when is it not?"* The honest summary you should be able to recite:
+
+- **Use $(\boldsymbol\mu,\Sigma)$** when (a) the dependence between components is primarily
+  *linear*, (b) the marginals are not wildly heavy-tailed or skewed (so second moments
+  exist and are stable), and (c) you genuinely care about variances and pairwise
+  co-movement — risk, regression coefficients, principal directions. In that regime it is
+  the canonical, sufficient summary, and if the data are multivariate normal it is the
+  *complete* description.
+- **Do not rely on it** when dependence is nonlinear or shows up only in the tails (use rank
+  correlation, copulas, or mutual information), when the marginals are heavy-tailed enough
+  that variance is infinite or unstable (e.g. Cauchy-like returns — $\Sigma$ may not even
+  exist), or when the components are exactly/near collinear (singular $\Sigma$). And
+  remember $\Sigma$ measures *association*, not causation — a strong off-diagonal entry
+  says two things move together, nothing about why.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You would never form the sums
+by hand. With your data as an $n\times d$ array `X` (rows = observations, columns =
+variables), `numpy.cov(X, rowvar=False)` returns the sample covariance matrix (dividing by
+$n-1$ by default; pass `bias=True` for the divide-by-$n$ version we used in the hand
+example), and `numpy.corrcoef(X, rowvar=False)` returns the correlation matrix. `pandas`'
+`DataFrame.cov()` and `.corr()` do the same with labeled columns. Internally these compute
+the centered cross-product $\frac{1}{n-1}(X-\bar X)^\top(X-\bar X)$ — exactly @eq-sigma-outer
+estimated from the sample. To check positive (semi)definiteness, attempt a Cholesky
+factorization (`numpy.linalg.cholesky`, which succeeds iff the matrix is PD) or inspect the
+eigenvalues via `numpy.linalg.eigvalsh` (it is PSD iff all are $\ge 0$). The *answer* these
+return is exactly the $\Sigma$ of @def-cov-matrix; you now know what every entry means and
+why the matrix is shaped the way it is.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the distribution catalog and the scalar summaries: [PROB-5 *Expectation*],
+[PROB-6 *Variance*], and [PROB-7 *Joint Distributions, Covariance & Correlation*], with the
+bell curve from [PROB-13 *The Normal Distribution*]. This article stacked those scalars into
+a **random vector**, summarized it with a **mean vector** and a **covariance matrix**,
+proved the hinge identity $\operatorname{Var}(\mathbf a^\top\mathbf X)=\mathbf a^\top
+\Sigma\,\mathbf a$, and read off symmetry and positive semidefiniteness. From here:
+
+- **[PROB-18 *Linear Transforms of Random Vectors*]** — the immediate next step: what
+  happens to $\boldsymbol\mu$ and $\Sigma$ under $\mathbf Y=\mathbf A\mathbf X+\mathbf b$.
+  The answer, $E[\mathbf Y]=\mathbf A\boldsymbol\mu+\mathbf b$ and
+  $\operatorname{Cov}(\mathbf Y)=\mathbf A\Sigma\mathbf A^\top$, contains our hinge identity
+  as the scalar case $\mathbf A=\mathbf a^\top$, and powers the whitening transform that
+  decorrelates a random vector.
+- **The Geometry of Data track** takes the *spectral* analysis of $\Sigma$ — eigenvalues
+  and eigenvectors, the principal axes glimpsed in @fig-psd and @fig-mvn-contours — and the
+  general theory of positive (semi)definite matrices that we used only operationally here.
+- **[REGR-6]** consumes $\operatorname{Cov}(\mathbf A\mathbf X)=\mathbf A\Sigma\mathbf A^\top$
+  to derive the covariance matrix of the OLS estimator,
+  $\operatorname{Cov}(\hat{\boldsymbol\beta})=\sigma^2(\mathbf X^\top\mathbf X)^{-1}$.
+- **Unsupervised Learning** runs **PCA** directly on $\Sigma$: the long-axis directions of
+  @fig-psd, found by diagonalizing the covariance matrix, are the principal components.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Francis Galton's *Natural Inheritance* (1889) and Karl Pearson's
+  1896 paper on regression and heredity drew the first elliptical correlation clouds — the
+  bivariate normal contours of @fig-mvn-contours, a century before we could plot them by
+  computer. Harry Markowitz, "Portfolio Selection," *Journal of Finance* 7 (1952), turned
+  the quadratic form $\mathbf w^\top\Sigma\,\mathbf w$ of @sec-stocks into modern finance.
+- **The geometry to chase next.** The fact that $\mathbf u^\top\Sigma^{-1}\mathbf u=c$ is an
+  ellipse, and that its axes are the eigenvectors of $\Sigma$, is the **spectral theorem**
+  for symmetric matrices — the gateway to PCA, whitening, and the Mahalanobis distance. It
+  is owned by the Geometry of Data track.
+- **Open threads this article deliberately deferred.** *Why does the multivariate-normal
+  density integrate to one, and where does $\lvert\Sigma\rvert^{1/2}$ come from?* — the
+  change-of-variables and Gaussian-integral machinery, in [PROB-18] and [PROB-13]. *What is
+  the distribution of the sample covariance matrix itself?* — the Wishart distribution, the
+  matrix analogue of chi-square ([PROB-15]), a topic for inference about $\Sigma$. *How do
+  you estimate $\Sigma$ well when $d$ is large relative to $n$?* — shrinkage estimators
+  (Ledoit–Wolf) and sparse/graphical models, where the naive sample covariance is unstable
+  and the off-diagonal structure must be regularized.

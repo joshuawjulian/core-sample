@@ -1,0 +1,1036 @@
+---
+title: "Modes of Convergence: In Probability and In Distribution"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20210)
+
+SEQ    = "#2b3a67"     # the sequence X_n
+LIMIT  = "#c1121f"     # the limit X (or its law)
+ACCENT = "#0a7d4d"     # highlights / exact values
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the article that closes Movement 4 of the
+> Probability Foundations track — the place where the two pieces of tail-and-limit
+> machinery finally have something to converge *to*. It assumes [PROB-5 *Expectation*]
+> (the expectation operator), [PROB-6 *Variance*] (the second moment), and [PROB-8
+> *Independence and the i.i.d. Sample*] (so that "the sample mean of $n$ i.i.d. draws" is
+> a defined object). Its two direct parents are the siblings that feed it:
+> [PROB-19 *Chebyshev's Inequality and the Concentration Idea*], whose
+> $P(|X-\mu|\ge k\sigma)\le 1/k^2$ is the engine that *produces* convergence in
+> probability, and [PROB-20 *Moment Generating and Characteristic Functions*], whose
+> characteristic function $\varphi_X(t)=E[e^{itX}]$ is the tool that *detects* convergence
+> in distribution. We assume nothing above the Calc-1 floor: every $\varepsilon$–$N$ limit
+> argument is written out, and where we need a fact about characteristic functions it is
+> imported by name from [PROB-20], never silently. It **sets up** the entire asymptotic
+> half of [INFR-A2] (the law of large numbers and the central limit theorem are *stated*
+> in the modes defined here), [INFR-B4] (asymptotic normality of the maximum-likelihood
+> estimator), and the **delta method**. The clean ownership seam the track is built around:
+> *we own the convergence vocabulary and its hierarchy; Inference owns the theorems that
+> deliver the limits.*
+
+## Abstract {.unnumbered}
+
+A single random variable is a number-with-uncertainty. But the deep results of statistics
+are about *sequences* — $\bar X_n$ as the sample size $n$ grows, an estimator $\hat\theta_n$
+as data accumulates — and a sequence of random variables can "approach" a limit in more
+than one sense, because there are at least two different things one might want to hold
+steady: the *values* the variables take, or the *distribution* those values are drawn from.
+This article defines the modes we actually use — **convergence in probability** (the values
+cluster near a target with overwhelming probability) and **convergence in distribution**
+(the entire law settles onto a limiting law), with **almost-sure** and **$L^2$**
+convergence built alongside for contrast. It then proves the **hierarchy** that organizes
+them — almost sure $\Rightarrow$ in probability $\Rightarrow$ in distribution — derives each
+implication step by step, and shows by explicit counterexample that none of the arrows
+reverses. Finally it builds the two combination rules every applied asymptotic argument
+runs on: the **continuous mapping theorem** and **Slutsky's theorem**. The single claim
+this article defends is that **these are not four interchangeable notions of "the sequence
+settles down" but a strictly ordered ladder**, and that knowing exactly which rung a result
+lives on is what lets you combine limits without proving something false.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A sequence of random variables $X_1, X_2, \dots$ can approach a limit in several
+inequivalent senses, ordered from strongest to weakest:
+
+- **Almost surely** ($X_n \xrightarrow{a.s.} X$): the *realized path* $X_n(\omega)$
+  converges to $X(\omega)$ as an ordinary sequence of numbers, for every outcome $\omega$
+  except a set of probability zero.
+- **In probability** ($X_n \xrightarrow{P} X$): for every tolerance $\varepsilon>0$, the
+  probability that $X_n$ is more than $\varepsilon$ away from $X$ shrinks to zero,
+  $P(|X_n - X| > \varepsilon)\to 0$.
+- **In distribution** ($X_n \xrightarrow{d} X$): the *cumulative distribution functions*
+  converge, $F_{X_n}(x)\to F_X(x)$ at every $x$ where $F_X$ is continuous — the law settles,
+  even if the variables themselves never get close to any single number.
+
+These satisfy a one-way hierarchy
+$$
+\text{a.s.} \;\Longrightarrow\; \text{in probability} \;\Longrightarrow\; \text{in distribution},
+$$
+and **no arrow reverses** in general. The law of large numbers delivers the middle rung
+(the sample mean converges *in probability* to the true mean); the central limit theorem
+delivers the bottom rung (the standardized sample mean converges *in distribution* to a
+normal). Two glue results — the **continuous mapping theorem** ($X_n\to X$ survives a
+continuous function $g$) and **Slutsky's theorem** (a convergent-in-distribution sequence
+combines cleanly with a convergent-in-probability one) — let us assemble these limits into
+real statistical statements.
+:::
+
+Everything below orbits that box. The reason there is *more than one* mode is the single
+most important idea here, and it is easy to miss if you have only ever taken limits of
+ordinary numbers. With numbers, "the sequence approaches $L$" means one thing. With random
+variables there are two layers — the outcome $\omega$ that nature draws, and the number
+$X_n(\omega)$ that the draw produces — and "settling down" can mean *the numbers settle for
+each path* or merely *the histogram of numbers settles*. Those are genuinely different, and
+the entire article is about pinning down how different and why it matters.
+
+# Why we are here: a limit problem with no single answer {#sec-why}
+
+Keep one question in view for the whole article: **when we say a sequence of random
+variables "converges," which of several possible things do we mean — and which one does a
+given theorem actually give us?** Every definition and every counterexample below is in
+service of answering that precisely.
+
+## The problem the modes were invented to solve {#sec-why-problem}
+
+Almost everything statistics promises is a statement about $n\to\infty$. "Collect more data
+and your estimate gets better." "The sample mean is approximately normal for large samples."
+"The bootstrap distribution approaches the sampling distribution." Each is a claim that some
+sequence of random quantities — $\bar X_n$, $\hat\theta_n$, an empirical CDF $\hat F_n$ —
+*converges*. But a random variable is not a number; it is a function on the sample space.
+So "$X_n$ converges to $X$" is not yet a defined phrase. We have to *say what we mean*, and
+the historical discovery — the thing that took probabilists from Jacob Bernoulli in 1713 to
+the modern definitions — is that there is **no single right meaning**. Different theorems
+naturally produce different strengths of convergence, and conflating them produces false
+proofs.
+
+Here is the tension in its sharpest form. Consider two true facts about the sample mean
+$\bar X_n = \frac1n\sum_{i=1}^n X_i$ of i.i.d. draws with mean $\mu$ and variance $\sigma^2$:
+
+1. **The law of large numbers.** $\bar X_n$ gets close to $\mu$ and stays close — the
+   *value* of the average homes in on the constant $\mu$.
+2. **The central limit theorem.** The *rescaled* average $\sqrt n\,(\bar X_n - \mu)$ does
+   **not** settle to any number; it keeps fluctuating forever, but its *distribution*
+   settles onto a fixed normal $\mathcal N(0,\sigma^2)$.
+
+Both are convergence statements about sequences built from the same data, yet they are
+incompatible if "converges" means only one thing — the first says the sequence pins to a
+point, the second says a closely related sequence never pins to a point but its *shape*
+freezes. The resolution is that they are statements in **different modes**: the LLN is
+convergence *in probability* (and, in its strong form, almost surely), and the CLT is
+convergence *in distribution*. The modes exist precisely so that both of these true
+statements can be stated without contradiction. That is the *why*, and we will hold onto it:
+each mode earns its place by being exactly the kind of convergence some real theorem
+produces.
+
+## A picture of the two kinds of "settling down" {#sec-why-picture}
+
+Before any $\varepsilon$, look at what the two phenomena look like. @fig-two-modes shows the
+two stories side by side for i.i.d. draws from a distribution with mean $\mu=0$.
+
+```{python}
+#| label: fig-two-modes
+#| fig-cap: "Two senses of convergence for the same i.i.d. data (Exponential(1) centered to mean 0). Left: the running sample mean $\\bar X_n$ collapses onto the constant $\\mu=0$ — its *value* settles (convergence in probability / a.s.). Right: the standardized average $\\sqrt n\\,\\bar X_n$ never settles to a number — each panel's histogram is a fresh batch of its fluctuations — but its *distribution* freezes onto a normal (convergence in distribution). Same data, two genuinely different limits."
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.0))
+
+# LEFT: many trajectories of the running mean collapsing to 0.
+mu = 1.0  # Exponential(1) has mean 1; we center by subtracting mu.
+n_max = 400
+for _ in range(40):
+    draws = rng.exponential(scale=1.0, size=n_max) - mu
+    running_mean = np.cumsum(draws) / np.arange(1, n_max + 1)
+    axL.plot(np.arange(1, n_max + 1), running_mean, color=SEQ, alpha=0.18)
+axL.axhline(0.0, color=LIMIT, lw=2.2, label=r"$\mu = 0$ (the limit)")
+axL.set_xlabel(r"sample size $n$")
+axL.set_ylabel(r"$\bar X_n$")
+axL.set_title("Convergence in probability:\nthe value collapses")
+axL.set_ylim(-1.2, 1.2)
+axL.legend(loc="upper right", frameon=False)
+
+# RIGHT: distribution of sqrt(n) * mean for growing n freezes onto a normal.
+sigma = 1.0  # Exponential(1) has variance 1.
+xs = np.linspace(-4, 4, 300)
+normal_pdf = np.exp(-xs**2 / (2 * sigma**2)) / np.sqrt(2 * np.pi * sigma**2)
+for n, shade in [(2, 0.25), (8, 0.5), (50, 0.85)]:
+    samples = rng.exponential(scale=1.0, size=(8000, n)) - mu
+    stat = np.sqrt(n) * samples.mean(axis=1)
+    axR.hist(stat, bins=60, density=True, histtype="step",
+             color=SEQ, alpha=shade, label=fr"$n={n}$")
+axR.plot(xs, normal_pdf, color=LIMIT, lw=2.2, label=r"$\mathcal N(0,1)$ limit")
+axR.set_xlabel(r"$\sqrt n\,(\bar X_n - \mu)$")
+axR.set_ylabel("density")
+axR.set_title("Convergence in distribution:\nthe shape freezes")
+axR.set_xlim(-4, 4)
+axR.legend(loc="upper right", frameon=False, fontsize=9)
+
+fig.tight_layout()
+plt.show()
+```
+
+The left panel is convergence **of values**: trace any one path and it visibly funnels onto
+the line $\mu=0$. The right panel is convergence **of shape**: no single path settles —
+$\sqrt n\,\bar X_n$ has standard deviation $\sigma$ for *every* $n$, so it never stops
+moving — yet the *histogram* of where it lands stabilizes into the bell curve. Hold both
+pictures in mind; the definitions below are just these two pictures made precise, plus two
+stronger notions that refine the left panel.
+
+# The formal development {#sec-formal}
+
+We now make each mode precise. Throughout, $X_1, X_2, \dots$ is a sequence of random
+variables and $X$ is a "target" random variable (often a constant), all defined on the same
+probability space — meaning they are functions $X_n:\Omega\to\mathbb R$ of the same
+underlying outcome $\omega$, the object built in [PROB-2]. We define the modes from
+strongest to weakest, then prove the chain that connects them.
+
+## Mode 1 — Convergence in probability {#sec-in-prob}
+
+This is the mode the law of large numbers lives in, and the one Chebyshev hands us directly.
+
+::: {#def-in-prob}
+**Convergence in probability.** The sequence $X_n$ **converges in probability** to $X$,
+written $X_n \xrightarrow{P} X$, if for every $\varepsilon>0$,
+$$
+\lim_{n\to\infty} P\bigl(|X_n - X| > \varepsilon\bigr) = 0 .
+$$ {#eq-def-in-prob}
+Equivalently, $P(|X_n - X| \le \varepsilon)\to 1$. In words: fix any tolerance band of
+half-width $\varepsilon$ around $X$; the probability that $X_n$ falls *outside* the band can
+be driven below any threshold by taking $n$ large enough.
+:::
+
+Two things deserve to be unpacked, because the definition is doing something subtler than it
+looks. First, $\varepsilon$ is the *width of the band* and is fixed before $n$ grows; the
+quantifier order is "for each $\varepsilon$, the probability $\to 0$," not "the probability
+$\to 0$ uniformly in $\varepsilon$." Second — and this is the crucial point that
+distinguishes this mode from the stronger ones below — the event $\{|X_n - X|>\varepsilon\}$
+is allowed to be a *different* set of outcomes for each $n$. Convergence in probability says
+the *size* of the bad set shrinks; it says nothing about whether the *same* outcome
+$\omega$ keeps being bad. An $\omega$ can be inside the band at step $n$, outside at step
+$n+1$, inside again at $n+2$, forever — as long as the total probability of being-outside
+decays. This is precisely the loophole that almost-sure convergence (below) closes, and the
+gap between them is the most important conceptual fork in the article.
+
+### Chebyshev gives convergence in probability for free {#sec-chebyshev-gives}
+
+Here is the payoff of the sibling article, made explicit so nothing is deferred. Suppose the
+$X_n$ have means $E[X_n]=\mu$ and variances $\operatorname{Var}(X_n)=v_n$ with $v_n\to 0$.
+Then $X_n \xrightarrow{P}\mu$. The proof is one line of Chebyshev's inequality, which we
+restate from [PROB-19] as the imported ingredient: for any random variable $Y$ with mean
+$E[Y]$ and finite variance, and any $a>0$,
+$$
+P\bigl(|Y - E[Y]| \ge a\bigr) \;\le\; \frac{\operatorname{Var}(Y)}{a^2} .
+$$ {#eq-chebyshev}
+This is *the one fact we borrow*; its derivation (Markov's inequality applied to $(Y-E[Y])^2$)
+is owned by [PROB-19] and not repeated here. Apply it with $Y = X_n$ and $a=\varepsilon$:
+$$
+P\bigl(|X_n - \mu| \ge \varepsilon\bigr) \;\le\; \frac{v_n}{\varepsilon^2} .
+$$
+Now hold $\varepsilon$ fixed. The right-hand side is $v_n/\varepsilon^2$, a constant
+$1/\varepsilon^2$ times $v_n$, and $v_n\to 0$ by hypothesis, so the right-hand side tends to
+$0$. A probability is squeezed between $0$ and that vanishing bound, so by the squeeze
+$P(|X_n-\mu|\ge\varepsilon)\to 0$. Since $\varepsilon>0$ was arbitrary, @eq-def-in-prob holds
+with $X=\mu$. That is the whole argument, every step shown.
+
+The headline instance is the **weak law of large numbers**, which [PROB-19] built to the
+"sketch" level and [INFR-A2] owns in full. For i.i.d. $X_i$ with mean $\mu$ and finite
+variance $\sigma^2$, the sample mean $\bar X_n=\frac1n\sum_{i=1}^n X_i$ has — by linearity
+of expectation ([PROB-5]) and the variance-of-an-independent-sum rule ([PROB-8]) —
+$$
+E[\bar X_n]=\mu, \qquad
+\operatorname{Var}(\bar X_n)=\frac{1}{n^2}\sum_{i=1}^n \operatorname{Var}(X_i)
+=\frac{n\sigma^2}{n^2}=\frac{\sigma^2}{n}\xrightarrow[n\to\infty]{}0 .
+$$ {#eq-mean-var}
+The variance vanishes, so the result just proved gives $\bar X_n\xrightarrow{P}\mu$
+immediately. The reason the modes were invented (@sec-why-problem) is now concrete: the LLN
+*is* a convergence-in-probability statement, and Chebyshev is exactly the tool that produces
+it.
+
+::: {.callout-tip title="You might be asked"}
+**"What's the difference between $X_n\to\mu$ in probability and saying the variance goes to
+zero?"** They are closely related but not identical, and the precise relationship is worth
+having ready. Vanishing variance *with a fixed mean $\mu$* is **sufficient** for convergence
+in probability to $\mu$ — that is exactly the Chebyshev argument above. But it is **not
+necessary**: a sequence can converge in probability while having infinite or undefined
+variance (Chebyshev is one route to the conclusion, not the only one). And vanishing
+variance alone, without controlling the mean, says nothing — if $E[X_n]=n$ then $X_n$ marches
+off to infinity no matter how tight its spread. The clean statement: **bias plus spread**.
+Write $X_n-\mu = (X_n-E[X_n]) + (E[X_n]-\mu)$; if both the standard deviation
+$\sqrt{\operatorname{Var}(X_n)}$ and the bias $E[X_n]-\mu$ go to zero, then $X_n\xrightarrow{P}\mu$.
+This is the "consistency" condition an interviewer is really probing — convergence in
+probability to the truth is what *consistency of an estimator* means.
+:::
+
+## Mode 2 — Almost-sure convergence {#sec-as}
+
+This is the strongest mode in the article, and it closes the loophole flagged above.
+
+::: {#def-as}
+**Almost-sure convergence.** The sequence $X_n$ **converges almost surely** to $X$, written
+$X_n \xrightarrow{a.s.} X$, if
+$$
+P\Bigl(\bigl\{\omega : \lim_{n\to\infty} X_n(\omega) = X(\omega)\bigr\}\Bigr) = 1 .
+$$ {#eq-def-as}
+In words: collect all the outcomes $\omega$ for which the ordinary numerical sequence
+$X_1(\omega), X_2(\omega), \dots$ converges to $X(\omega)$ in the Calc-1 sense; that set has
+probability $1$. The exceptional outcomes where the path fails to converge form a set of
+probability $0$.
+:::
+
+The contrast with @def-in-prob is the whole point. Almost-sure convergence is a statement
+about the **realized path**: pick the outcome $\omega$ first, then look at the entire
+trajectory $n\mapsto X_n(\omega)$, and demand that *this one numerical sequence* converges in
+the elementary sense — for every $\varepsilon$ there is an $N$ (which may depend on $\omega$)
+beyond which the whole tail of the path stays within $\varepsilon$ of the target. Convergence
+in probability never makes a statement about a whole path; it only controls the probability
+of the bad set *at each fixed $n$*. The "in probability" loophole — an outcome can be bad
+infinitely often as long as the total probability of bad-ness decays — is exactly what
+"almost surely" forbids: under a.s. convergence, for almost every $\omega$ the path is bad
+only *finitely* often. The **strong law of large numbers** (owned by [INFR-A2]) is the
+statement that $\bar X_n\xrightarrow{a.s.}\mu$; it upgrades the weak law's "in probability"
+to "almost surely."
+
+We also record, for the hierarchy, one more mode that sits *above* convergence in
+probability but is not comparable to almost-sure convergence — it is the mode the variance
+argument most naturally produces.
+
+::: {#def-l2}
+**Convergence in $L^2$ (mean square).** The sequence $X_n$ **converges in $L^2$** (or *in
+mean square*) to $X$, written $X_n \xrightarrow{L^2} X$, if each $X_n$ and $X$ have finite
+second moment and
+$$
+\lim_{n\to\infty} E\bigl[(X_n - X)^2\bigr] = 0 .
+$$ {#eq-def-l2}
+The quantity $E[(X_n-X)^2]$ is the **mean squared error** between $X_n$ and $X$; $L^2$
+convergence says that error vanishes. ($L^2$ is named for the square; the general $L^p$
+replaces the exponent $2$ by $p$, but $p=2$ is the one statistics lives in.)
+:::
+
+These four modes — a.s., $L^2$, in probability, in distribution — are all the "settling down"
+notions we will use. Almost-sure and $L^2$ both sit strictly above in-probability; neither
+implies the other (a fact we will not belabor with a counterexample, since the two arrows we
+*do* need for the track are the ones in the Core box). The next two subsections prove the
+spine: a.s. $\Rightarrow$ in probability $\Rightarrow$ in distribution.
+
+## Mode 3 — Convergence in distribution {#sec-in-dist}
+
+This is the weakest mode, and the one the central limit theorem lives in.
+
+::: {#def-in-dist}
+**Convergence in distribution.** The sequence $X_n$ **converges in distribution** (or *in
+law*, or *weakly*) to $X$, written $X_n \xrightarrow{d} X$, if
+$$
+\lim_{n\to\infty} F_{X_n}(x) = F_X(x)
+\qquad\text{for every } x \text{ at which } F_X \text{ is continuous},
+$$ {#eq-def-in-dist}
+where $F_{X_n}(x)=P(X_n\le x)$ and $F_X(x)=P(X\le x)$ are the cumulative distribution
+functions from [PROB-2]. In words: the CDFs converge pointwise, except possibly at the jump
+points of the limit CDF.
+:::
+
+Two features of this definition are non-negotiable and an interviewer will test both. First,
+it is a statement about **distributions, not variables**: the $X_n$ need not be close to $X$
+as functions of $\omega$ — indeed they need not live on the same probability space at all,
+and $X$ can be a brand-new variable with no relation to the $X_n$ beyond having the limiting
+law. (Contrast @def-in-prob and @def-as, which both require $|X_n-X|$ to be a meaningful,
+same-space quantity.) Second, the **"continuity points" caveat is essential, not pedantic**.
+Here is the canonical reason it is there, derived rather than asserted.
+
+::: {#thm-continuity-caveat}
+**Why convergence in distribution must exempt the jump points.** Let $X_n$ be the constant
+$1/n$ (a degenerate random variable putting all its mass at $1/n$), and let $X$ be the
+constant $0$. Then $X_n\xrightarrow{d} X$ — yet $F_{X_n}(0)\not\to F_X(0)$.
+:::
+
+::: {.proof}
+The CDF of the constant $c$ is the step $F(x)=\mathbf 1\{x\ge c\}$ — it is $0$ for $x<c$ and
+$1$ for $x\ge c$, because $P(c\le x)$ is $1$ exactly when $x$ has reached $c$. So
+$$
+F_{X_n}(x)=\mathbf 1\{x\ge 1/n\}, \qquad F_X(x)=\mathbf 1\{x\ge 0\}.
+$$
+Take any fixed $x$ and let $n\to\infty$.
+
+- If $x<0$: then $x<1/n$ for all $n$, so $F_{X_n}(x)=0$ for all $n$, and $F_X(x)=0$. They
+  agree.
+- If $x>0$: then for all $n$ large enough that $1/n<x$ (i.e. $n>1/x$), we have $x\ge 1/n$, so
+  $F_{X_n}(x)=1$ from that point on; and $F_X(x)=1$. They agree in the limit.
+- If $x=0$: here $F_X(0)=\mathbf 1\{0\ge 0\}=1$. But $0\ge 1/n$ is **false** for every
+  finite $n$ (since $1/n>0$), so $F_{X_n}(0)=0$ for all $n$, and the limit is $0\ne 1=F_X(0)$.
+
+So the CDFs converge at every $x\ne 0$ and *fail* to converge only at $x=0$, which is exactly
+the single discontinuity (jump point) of $F_X$. Morally, $1/n$ certainly "converges to $0$,"
+so any sensible definition must call this convergence in distribution; the only way to
+rescue that is to **excuse the limit's jump points** — which is precisely what @def-in-dist
+does. The caveat is forced on us by examples like this one, not bolted on for safety.
+:::
+
+@fig-cdf-converge shows this pointwise-CDF picture for a non-degenerate case — the CLT
+example from @sec-why-picture — so you can see @eq-def-in-dist literally happening.
+
+```{python}
+#| label: fig-cdf-converge
+#| fig-cap: "Convergence in distribution as pointwise convergence of CDFs. The empirical CDF of $\\sqrt n\\,(\\bar X_n-\\mu)$ (built from many simulated samples, Exponential(1) summands) is plotted for growing $n$; it climbs toward the standard-normal CDF (red). Convergence in distribution is exactly this curve-onto-curve approach — no claim that any individual value settles."
+
+xs = np.linspace(-4, 4, 400)
+# Standard normal CDF via the error function relation, computed by numeric integration
+# of the pdf (Calc-1 trapezoid) to avoid importing scipy.
+grid = np.linspace(-12, 4, 4000)
+pdf = np.exp(-grid**2 / 2) / np.sqrt(2 * np.pi)
+cdf_vals = np.array([np.trapz(pdf[grid <= x], grid[grid <= x]) if np.any(grid <= x) else 0.0
+                     for x in xs])
+
+fig, ax = plt.subplots()
+for n, shade in [(1, 0.30), (3, 0.55), (30, 0.9)]:
+    samples = rng.exponential(scale=1.0, size=(20000, n)) - 1.0
+    stat = np.sqrt(n) * samples.mean(axis=1)
+    stat_sorted = np.sort(stat)
+    ecdf = np.arange(1, len(stat_sorted) + 1) / len(stat_sorted)
+    ax.plot(stat_sorted, ecdf, color=SEQ, alpha=shade, label=fr"$F_{{X_n}}$, $n={n}$")
+ax.plot(xs, cdf_vals, color=LIMIT, lw=2.4, label=r"$\Phi$ (standard normal CDF)")
+ax.set_xlabel(r"$x$")
+ax.set_ylabel(r"$F_{X_n}(x) = P(X_n \le x)$")
+ax.set_xlim(-4, 4)
+ax.set_ylim(-0.02, 1.02)
+ax.set_title("CDFs converging pointwise to the limit CDF")
+ax.legend(loc="upper left", frameon=False, fontsize=9)
+fig.tight_layout()
+plt.show()
+```
+
+### The characteristic-function handle {#sec-cf-handle}
+
+Checking @eq-def-in-dist directly — chasing CDFs to a limit — is usually hopeless, just as
+the convolution integral was hopeless in [PROB-20]. The tool that rescues it is the one that
+article built. We import it as a named ingredient (its proof, Lévy's continuity theorem, is
+owned by [PROB-20] and used in the CLT by [INFR-A2]):
+
+::: {#thm-levy}
+**Lévy's continuity theorem (imported from [PROB-20]).** Let $\varphi_{X_n}(t)=E[e^{itX_n}]$
+be the characteristic function of $X_n$, and $\varphi_X(t)=E[e^{itX}]$ that of $X$. Then
+$$
+X_n \xrightarrow{d} X
+\quad\Longleftrightarrow\quad
+\varphi_{X_n}(t)\to\varphi_X(t)\ \text{ for every } t\in\mathbb R .
+$$
+:::
+
+This is *the* reason convergence in distribution is tractable: it turns "CDFs converge" into
+"a single function of $t$ converges," and characteristic functions of sums multiply
+([PROB-20]). It is exactly the machine that made the $\sqrt n\,\bar X_n \to \mathcal N(0,1)$
+limit a one-line calculation in [PROB-20]'s CLT sketch, and it is the bottom rung's analogue
+of Chebyshev for the middle rung. We will lean on it again for the continuous mapping theorem.
+
+## The hierarchy {#sec-hierarchy}
+
+Now the spine of the article: the two implications in the Core box, each proved, and a
+counterexample showing each is one-directional.
+
+### Almost sure $\Rightarrow$ in probability {#sec-as-implies-p}
+
+::: {#thm-as-to-p}
+If $X_n \xrightarrow{a.s.} X$ then $X_n \xrightarrow{P} X$.
+:::
+
+::: {.proof}
+Fix $\varepsilon>0$; we must show $P(|X_n-X|>\varepsilon)\to 0$. Define, for each $n$, the
+"tail bad set"
+$$
+B_n = \{\omega : |X_m(\omega)-X(\omega)|>\varepsilon \text{ for some } m\ge n\}
+    = \bigcup_{m\ge n}\{|X_m - X|>\varepsilon\}.
+$$
+The sets $B_n$ are **nested and shrinking**: $B_{n+1}\subseteq B_n$, because the union
+defining $B_{n+1}$ is over a smaller index set ($m\ge n+1$ instead of $m\ge n$). So they
+decrease toward their intersection $B_\infty=\bigcap_n B_n$, and by continuity of probability
+from above — the elementary axiom-consequence proved in [PROB-0], that for a decreasing
+sequence of events $P(B_n)\to P(B_\infty)$ — we have
+$$
+\lim_{n\to\infty} P(B_n) = P(B_\infty).
+$$
+Now identify $B_\infty$. An outcome $\omega$ lies in $B_\infty$ iff it lies in *every* $B_n$,
+i.e. iff for *every* $n$ there is some $m\ge n$ with $|X_m(\omega)-X(\omega)|>\varepsilon$ —
+in other words, iff $|X_m(\omega)-X(\omega)|>\varepsilon$ happens for **infinitely many** $m$.
+But if the path $X_m(\omega)$ converges to $X(\omega)$ as ordinary numbers, then by the
+Calc-1 definition of a limit, for *this* $\varepsilon$ there is an $N$ beyond which
+$|X_m(\omega)-X(\omega)|\le\varepsilon$ for *all* $m\ge N$ — so the deviation exceeds
+$\varepsilon$ only finitely often, and $\omega\notin B_\infty$. Contrapositively, every
+$\omega\in B_\infty$ is an outcome where the path **fails** to converge to $X$. By the
+hypothesis $X_n\xrightarrow{a.s.}X$ (@eq-def-as), the set of non-convergent outcomes has
+probability $0$, and $B_\infty$ is contained in it, so $P(B_\infty)=0$. Therefore
+$P(B_n)\to 0$.
+
+Finally, the event we actually care about is contained in the tail bad set:
+$\{|X_n-X|>\varepsilon\}\subseteq B_n$ (take $m=n$ in the union). Monotonicity of probability
+gives $P(|X_n-X|>\varepsilon)\le P(B_n)\to 0$. Since $\varepsilon$ was arbitrary,
+$X_n\xrightarrow{P}X$.
+:::
+
+### In probability $\Rightarrow$ in distribution {#sec-p-implies-d}
+
+::: {#thm-p-to-d}
+If $X_n \xrightarrow{P} X$ then $X_n \xrightarrow{d} X$.
+:::
+
+::: {.proof}
+Fix a point $x$ at which $F_X$ is continuous; we must show $F_{X_n}(x)\to F_X(x)$, i.e.
+$P(X_n\le x)\to P(X\le x)$. The idea is a **sandwich**: relate the event $\{X_n\le x\}$ to
+the events $\{X\le x-\varepsilon\}$ and $\{X\le x+\varepsilon\}$, using that $X_n$ is close to
+$X$ with high probability.
+
+*Upper relation.* Whenever $X_n\le x$, either $X\le x+\varepsilon$ holds, or it fails — and
+if it fails then $X>x+\varepsilon$ while $X_n\le x$, which forces
+$|X_n-X|=X-X_n>(x+\varepsilon)-x=\varepsilon$. Writing this as an inclusion of events,
+$$
+\{X_n\le x\}\ \subseteq\ \{X\le x+\varepsilon\}\ \cup\ \{|X_n - X|>\varepsilon\}.
+$$
+Taking probabilities (subadditivity, the union bound from [PROB-0]),
+$$
+F_{X_n}(x) \;\le\; F_X(x+\varepsilon) + P(|X_n-X|>\varepsilon).
+$$
+
+*Lower relation.* Symmetrically, whenever $X\le x-\varepsilon$, either $X_n\le x$ holds, or
+it fails — and if it fails then $X_n>x$ while $X\le x-\varepsilon$, forcing
+$|X_n-X|=X_n-X>x-(x-\varepsilon)=\varepsilon$. So
+$$
+\{X\le x-\varepsilon\}\ \subseteq\ \{X_n\le x\}\ \cup\ \{|X_n-X|>\varepsilon\},
+$$
+and taking probabilities,
+$$
+F_X(x-\varepsilon)\ \le\ F_{X_n}(x) + P(|X_n-X|>\varepsilon),
+\quad\text{i.e.}\quad
+F_X(x-\varepsilon) - P(|X_n-X|>\varepsilon)\ \le\ F_{X_n}(x).
+$$
+
+Put the two relations together as a sandwich on $F_{X_n}(x)$:
+$$
+F_X(x-\varepsilon) - P(|X_n-X|>\varepsilon)
+\ \le\ F_{X_n}(x)\ \le\
+F_X(x+\varepsilon) + P(|X_n-X|>\varepsilon).
+$$
+Now let $n\to\infty$. By hypothesis $P(|X_n-X|>\varepsilon)\to 0$, so the two correction
+terms vanish, leaving
+$$
+F_X(x-\varepsilon)\ \le\ \liminf_n F_{X_n}(x)\ \le\ \limsup_n F_{X_n}(x)\ \le\ F_X(x+\varepsilon).
+$$
+This holds for *every* $\varepsilon>0$. Now let $\varepsilon\downarrow 0$: because $F_X$ is
+**continuous at $x$** (our standing assumption on $x$), both $F_X(x-\varepsilon)$ and
+$F_X(x+\varepsilon)$ converge to $F_X(x)$. The outer bounds squeeze together, forcing
+$\liminf_n F_{X_n}(x)=\limsup_n F_{X_n}(x)=F_X(x)$, i.e. $F_{X_n}(x)\to F_X(x)$. Since $x$ was
+an arbitrary continuity point of $F_X$, this is @eq-def-in-dist.
+
+Notice *where the continuity of $F_X$ was used* — only at the very last step, to collapse the
+$\varepsilon$-sandwich. That is the same continuity-point subtlety @thm-continuity-caveat
+forced into the definition, now earning its keep inside a proof.
+:::
+
+### The arrows do not reverse {#sec-no-reverse}
+
+The hierarchy is strict. We give the two standard counterexamples, each fully worked.
+
+**In distribution $\not\Rightarrow$ in probability.** Convergence in distribution can hold
+between variables that never get close. Let $X\sim\mathcal N(0,1)$ and set $X_n=-X$ for every
+$n$. Because the standard normal is symmetric, $-X$ has the same distribution as $X$, so
+$F_{X_n}=F_X$ exactly for all $n$; since the CDFs are *equal* (not merely close), the
+limit @eq-def-in-dist holds, giving $X_n\xrightarrow{d}X$. But
+$|X_n-X|=|-X-X|=2|X|$, and $P(2|X|>\varepsilon)=P(|X|>\varepsilon/2)$, which is a fixed
+positive number not depending on $n$ and certainly not tending to $0$ (e.g. for
+$\varepsilon=1$ it is about $0.62$). So $X_n$ does **not** converge in probability to $X$.
+The lesson: convergence in distribution is about the *law*, and two variables with the same
+law can be as far apart in value as you like.
+
+**In probability $\not\Rightarrow$ almost surely.** This is the loophole of @sec-in-prob made
+into an explicit example — the "typewriter" or "moving-bump" sequence. Take the sample space
+$\Omega=[0,1]$ with the uniform probability (length = probability). For each $n$, write
+$n=2^k+j$ with $0\le j<2^k$ (every $n\ge 1$ has a unique such form: $k=\lfloor\log_2 n\rfloor$),
+and define $X_n$ to be the indicator of a moving subinterval,
+$$
+X_n(\omega)=\mathbf 1\Bigl\{\omega\in\bigl[\tfrac{j}{2^k},\tfrac{j+1}{2^k}\bigr)\Bigr\}.
+$$
+As $n$ runs through $2^k,\dots,2^{k+1}-1$, the interval of width $2^{-k}$ slides across
+$[0,1)$, then halves its width and sweeps again. We check the two modes directly.
+
+*It converges to $0$ in probability.* The bad event $\{X_n>\varepsilon\}$ (for any
+$0<\varepsilon<1$) is exactly the interval where $X_n=1$, of length $2^{-k}$. As $n\to\infty$,
+$k=\lfloor\log_2 n\rfloor\to\infty$, so $P(X_n>\varepsilon)=2^{-k}\to 0$. Hence
+$X_n\xrightarrow{P}0$.
+
+*It converges almost surely to nothing.* Fix any outcome $\omega\in[0,1)$. For each level $k$
+there is exactly one $j$ with $\omega\in[\tfrac{j}{2^k},\tfrac{j+1}{2^k})$, so among the
+indices $n=2^k,\dots,2^{k+1}-1$ there is **one** $n$ with $X_n(\omega)=1$ and the rest give
+$0$. Since this happens at *every* level $k$, the path $X_n(\omega)$ equals $1$ for
+infinitely many $n$ and $0$ for infinitely many $n$ — it oscillates forever and has no limit.
+This holds for every $\omega$, so the set where the path converges is **empty**, of
+probability $0$. Thus $X_n$ does **not** converge to $0$ (or anything) almost surely, even
+though it converges to $0$ in probability.
+
+@fig-bump shows the moving bump for a few consecutive $n$, making visible how the bad set
+shrinks (good for "in probability") while sweeping over every point repeatedly (fatal for
+"almost surely").
+
+```{python}
+#| label: fig-bump
+#| fig-cap: "The moving-bump sequence: $X_n$ is the indicator of a shrinking interval that sweeps across $[0,1)$ over and over. The bump's *width* shrinks ($2^{-k}\\to 0$), so $P(X_n=1)\\to 0$ and $X_n\\xrightarrow{P}0$. But every point $\\omega$ is covered by the bump infinitely often, so no single path settles — $X_n$ does not converge almost surely. This is the gap between the middle and top rungs of the hierarchy."
+
+fig, axes = plt.subplots(2, 4, figsize=(9.6, 4.2), sharex=True, sharey=True)
+for ax, n in zip(axes.ravel(), [1, 2, 3, 4, 5, 6, 7, 8]):
+    k = int(np.floor(np.log2(n)))
+    j = n - 2**k
+    left, right = j / 2**k, (j + 1) / 2**k
+    grid = np.linspace(0, 1, 1000)
+    vals = ((grid >= left) & (grid < right)).astype(float)
+    ax.fill_between(grid, 0, vals, color=SEQ, alpha=0.7, step="mid")
+    ax.set_title(fr"$X_{{{n}}}$ (width $2^{{-{k}}}$)", fontsize=10)
+    ax.set_ylim(-0.1, 1.2)
+    ax.set_yticks([0, 1])
+    ax.set_xticks([0, 0.5, 1])
+fig.supxlabel(r"outcome $\omega \in [0,1)$")
+fig.suptitle("Shrinking bad set (in probability) that visits every point forever (not a.s.)",
+             fontsize=12)
+fig.tight_layout()
+plt.show()
+```
+
+::: {.callout-tip title="You might be asked"}
+**"Give me a sequence that converges in probability but not almost surely."** The moving-bump
+sequence above is the canonical answer, and the structure to remember is: make the event
+$\{X_n\neq 0\}$ a set whose *probability shrinks* but whose *location moves* so that it
+revisits every outcome infinitely often. Probability sees only the shrinking size (so: in
+probability); the path sees the endless revisiting (so: not a.s.). If asked for the reverse —
+"does almost-sure convergence imply convergence in probability?" — the answer is yes, and you
+prove it with the nested-tail-set argument of @thm-as-to-p (continuity of probability from
+above collapses the tail event onto the probability-zero non-convergence set). Being able to
+produce *both* the implication and the one-directional counterexample is what separates
+"I've heard of these" from "I can use these."
+:::
+
+## The two glue results: continuous mapping and Slutsky {#sec-glue}
+
+The modes are only useful if we can *combine* limits — push them through functions and add
+or multiply convergent sequences. Two theorems do this, and they are the backbone of every
+asymptotic argument in [INFR-A2] and [INFR-B4].
+
+### The continuous mapping theorem {#sec-cmt}
+
+::: {#thm-cmt}
+**Continuous mapping theorem.** Let $g:\mathbb R\to\mathbb R$ be continuous (more generally,
+continuous except on a set the limit $X$ lands in with probability $0$). Then:
+
+1. $X_n\xrightarrow{a.s.}X \;\Rightarrow\; g(X_n)\xrightarrow{a.s.}g(X)$;
+2. $X_n\xrightarrow{P}X \;\Rightarrow\; g(X_n)\xrightarrow{P}g(X)$;
+3. $X_n\xrightarrow{d}X \;\Rightarrow\; g(X_n)\xrightarrow{d}g(X)$.
+
+In one sentence: **convergence in any of the three modes survives a continuous
+transformation.**
+:::
+
+::: {.proof}
+We prove (1) and (3) in full and obtain (2) along the way; the three share one idea —
+continuity turns closeness of inputs into closeness of outputs — applied at the level each
+mode lives on.
+
+*(1) Almost-sure.* By @eq-def-as, the set $A=\{\omega:X_n(\omega)\to X(\omega)\}$ has
+probability $1$. Fix any $\omega\in A$. Then $X_n(\omega)\to X(\omega)$ is an ordinary
+numerical limit, and $g$ is continuous at the number $X(\omega)$, so by the Calc-1 definition
+of continuity ($g$ continuous at $a$ means $x_m\to a \Rightarrow g(x_m)\to g(a)$) we get
+$g(X_n(\omega))\to g(X(\omega))$. Thus *every* $\omega\in A$ is a convergence outcome for the
+sequence $g(X_n)$, so the convergence set for $g(X_n)$ contains $A$ and therefore has
+probability $1$: $g(X_n)\xrightarrow{a.s.}g(X)$. Combined with @thm-as-to-p this already
+yields the in-probability case (2) whenever the convergence is a.s.; the general
+in-probability case follows from the subsequence principle — every subsequence of
+$g(X_n)$ has a further subsequence converging a.s. to $g(X)$, which is equivalent to
+in-probability convergence — but we will not need that refinement here and flag it as the
+one place a measure-theoretic tool ([INFR-A2]) tightens the statement.
+
+*(3) In distribution, via the characteristic-function handle.* This is the case statistics
+uses most, so we give it cleanly. We want $g(X_n)\xrightarrow{d}g(X)$, i.e., by @thm-levy,
+$E[e^{it\,g(X_n)}]\to E[e^{it\,g(X)}]$ for each $t$. Fix $t$ and define $h(x)=e^{it\,g(x)}$.
+Because $g$ is continuous and $u\mapsto e^{itu}$ is continuous, the composition $h$ is a
+**continuous, bounded** function (bounded since $|e^{it\,g(x)}|=1$). The defining property of
+convergence in distribution that we will use is the *portmanteau* fact, itself equivalent to
+@eq-def-in-dist: $X_n\xrightarrow{d}X$ holds **iff** $E[h(X_n)]\to E[h(X)]$ for every bounded
+continuous $h$. (This equivalence is the standard restatement of convergence in distribution;
+[PROB-20]'s characteristic-function criterion is the special case $h(x)=e^{itx}$, and we are
+applying it to the composed bounded continuous function $h=e^{it g}$.) Applying it to our
+$h$, the hypothesis $X_n\xrightarrow{d}X$ gives $E[e^{it g(X_n)}]\to E[e^{it g(X)}]$ for every
+$t$, which by @thm-levy is exactly $g(X_n)\xrightarrow{d}g(X)$.
+:::
+
+The continuous mapping theorem is what lets you say things like "if $\hat\sigma_n^2
+\xrightarrow{P}\sigma^2$ then $\hat\sigma_n=\sqrt{\hat\sigma_n^2}\xrightarrow{P}\sigma$"
+(apply $g(x)=\sqrt x$, continuous on $(0,\infty)$) — pushing a consistency result through a
+transformation without any new work.
+
+### Slutsky's theorem {#sec-slutsky}
+
+::: {#thm-slutsky}
+**Slutsky's theorem.** Suppose $X_n\xrightarrow{d}X$ and $Y_n\xrightarrow{P}c$ for a
+**constant** $c$. Then:
+
+1. $X_n + Y_n \xrightarrow{d} X + c$;
+2. $Y_n X_n \xrightarrow{d} cX$;
+3. $X_n / Y_n \xrightarrow{d} X / c$, provided $c\neq 0$.
+
+The crucial hypothesis is that the second sequence converges to a **constant**, not to a
+random limit.
+:::
+
+::: {.proof}
+We prove (1); (2) and (3) follow the same template (and are recovered jointly by applying the
+continuous map $(x,y)\mapsto x+y$, $xy$, $x/y$ to the pair, once the joint statement below is
+in hand). The engine is: a sequence converging in probability to a *constant* can be glued to
+a convergent-in-distribution sequence because the constant adds no randomness of its own.
+
+*Step 1 — reduce to the joint pair.* The key lemma is that under these hypotheses the pair
+converges jointly: $(X_n, Y_n)\xrightarrow{d}(X, c)$. To see why convergence of $Y_n$ to a
+*constant* is what makes this work, fix $\varepsilon>0$ and split on whether $Y_n$ is near
+$c$. For any bounded continuous function $f(x,y)$,
+$$
+E[f(X_n,Y_n)] - E[f(X_n,c)]
+= E\bigl[f(X_n,Y_n) - f(X_n,c)\bigr].
+$$
+Split this expectation over the event $\{|Y_n-c|\le\delta\}$ and its complement. On the
+complement, $P(|Y_n-c|>\delta)\to 0$ (that is $Y_n\xrightarrow{P}c$), and $f$ is bounded by
+some $M$, so that piece is at most $2M\,P(|Y_n-c|>\delta)\to 0$. On the event
+$\{|Y_n-c|\le\delta\}$, uniform continuity of $f$ on the relevant bounded region makes
+$|f(X_n,Y_n)-f(X_n,c)|$ as small as we like by taking $\delta$ small. So
+$E[f(X_n,Y_n)] - E[f(X_n,c)]\to 0$. Meanwhile $E[f(X_n,c)]\to E[f(X,c)]$ because $x\mapsto
+f(x,c)$ is bounded continuous and $X_n\xrightarrow{d}X$ (the portmanteau fact from
+@thm-cmt). Adding, $E[f(X_n,Y_n)]\to E[f(X,c)]$ for every bounded continuous $f$, which is
+exactly $(X_n,Y_n)\xrightarrow{d}(X,c)$. **This is the step that needs $c$ to be a constant**:
+if $Y_n$ converged to a *random* $Y$, then knowing the marginal laws of $X_n$ and $Y_n$ would
+not pin down the joint law of $(X,Y)$, and the argument collapses (see the pitfall below).
+
+*Step 2 — apply the continuous map.* Addition $(x,y)\mapsto x+y$ is continuous, so the
+continuous mapping theorem (@thm-cmt, case 3) applied to the jointly convergent pair gives
+$X_n+Y_n\xrightarrow{d}X+c$. That is (1). Cases (2) and (3) are the same two steps with the
+continuous maps $(x,y)\mapsto xy$ and (for $c\neq 0$, where division is continuous near $c$)
+$(x,y)\mapsto x/y$.
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Slutsky needs the second limit to be a constant — and you cannot add two
+convergent-in-distribution sequences.** The seductive error is to write
+"$X_n\xrightarrow{d}X$ and $Y_n\xrightarrow{d}Y$, therefore $X_n+Y_n\xrightarrow{d}X+Y$."
+This is **false in general**. Convergence in distribution controls each sequence's *marginal*
+law but says nothing about how $X_n$ and $Y_n$ are *coupled* — and the law of a sum depends on
+the joint distribution. Concretely: let $X_n=Z\sim\mathcal N(0,1)$ and $Y_n=-Z$ for all $n$.
+Then $X_n\xrightarrow{d}\mathcal N(0,1)$ and $Y_n\xrightarrow{d}\mathcal N(0,1)$ individually,
+but $X_n+Y_n=0$ for every $n$, which converges in distribution to the **constant $0$**, not
+to $\mathcal N(0,1)+\mathcal N(0,1)=\mathcal N(0,2)$. Slutsky escapes this trap precisely
+because one of the two limits is a *degenerate* (constant) law: a constant has no randomness
+to couple with the other sequence, so its joint behavior is determined by the marginal of
+$X_n$ alone — that is exactly what Step 1 of the proof exploited. Whenever you see Slutsky invoked, check
+that the "plug-in" sequence ($\hat\sigma_n$, $\hat\theta_n$, a sample variance) is converging
+to a *number*, not to another random variable.
+:::
+
+# Worked examples {#sec-examples}
+
+We now carry the machinery through real statistical scenarios, building to one at the edge of
+applicability.
+
+## Example 1 — Consistency of a sample proportion {#sec-ex-proportion}
+
+A streaming service A/B-tests a new layout. Each of $n$ users either converts ($X_i=1$) or
+not ($X_i=0$), modeled as i.i.d. $\text{Bernoulli}(p)$ ([PROB-11]). The estimate of the true
+conversion rate $p$ is the sample proportion $\hat p_n=\bar X_n=\frac1n\sum X_i$. Is the
+estimator *consistent* — does it converge in probability to the truth $p$?
+
+Each $X_i$ has mean $E[X_i]=p$ and variance $\operatorname{Var}(X_i)=p(1-p)$ ([PROB-11]). By
+@eq-mean-var, $E[\hat p_n]=p$ and $\operatorname{Var}(\hat p_n)=p(1-p)/n\to 0$. The
+vanishing-variance argument of @sec-chebyshev-gives applies verbatim:
+$$
+P(|\hat p_n - p|\ge\varepsilon)\le \frac{p(1-p)}{n\,\varepsilon^2}\xrightarrow[n\to\infty]{}0,
+$$
+so $\hat p_n\xrightarrow{P}p$. The estimator is consistent — collecting more users *does*
+drive the estimate to the truth, and Chebyshev even hands a usable sample-size bound: to make
+$P(|\hat p_n-p|\ge 0.01)\le 0.05$ it suffices that $p(1-p)/(n\cdot 0.0001)\le 0.05$, i.e.
+$n\ge p(1-p)/(0.05\cdot 0.0001)$. With the worst-case $p(1-p)\le 1/4$, that is $n\ge 50{,}000$.
+(This is loose — Chebyshev always is, per [PROB-19] — but it is *assumption-free*, which is
+exactly when you reach for it.) This is convergence in probability doing the everyday job it
+was built for: certifying that an estimator homes in on its target.
+
+## Example 2 — The CLT making a confidence interval (Slutsky in action) {#sec-ex-ci}
+
+Now the bottom rung and the glue together — this is the single most common use of the whole
+article in practice. The same A/B test wants a confidence interval for $p$. The CLT
+([INFR-A2], stated in our @def-in-dist) says
+$$
+\sqrt n\,(\hat p_n - p)\ \xrightarrow{d}\ \mathcal N\bigl(0,\ p(1-p)\bigr).
+$$
+To turn this into an interval we must standardize by the *standard deviation*
+$\sqrt{p(1-p)}$ — but $p$ is unknown, so we plug in the estimate
+$\hat\sigma_n=\sqrt{\hat p_n(1-\hat p_n)}$. Is that legitimate? This is exactly the question
+Slutsky answers. First, $\hat p_n\xrightarrow{P}p$ (Example 1), and $g(x)=\sqrt{x(1-x)}$ is
+continuous at $p\in(0,1)$, so by the continuous mapping theorem (@thm-cmt) $\hat\sigma_n
+\xrightarrow{P}\sqrt{p(1-p)}=\sigma$, a *constant*. Now write the studentized statistic as a
+ratio:
+$$
+T_n=\frac{\sqrt n\,(\hat p_n - p)}{\hat\sigma_n}
+=\underbrace{\frac{\sqrt n\,(\hat p_n - p)}{\sigma}}_{\xrightarrow{d}\ \mathcal N(0,1)}
+\ \cdot\ \underbrace{\frac{\sigma}{\hat\sigma_n}}_{\xrightarrow{P}\ 1}.
+$$
+The first factor converges in distribution to $\mathcal N(0,1)$ (divide the CLT limit by the
+constant $\sigma$); the second converges in probability to the constant $1$ (continuous
+mapping again, $g(x)=\sigma/x$). Slutsky's theorem (@thm-slutsky, case 2) multiplies them:
+$T_n\xrightarrow{d}\mathcal N(0,1)$. *Therefore* the interval
+$\hat p_n\pm 1.96\,\hat\sigma_n/\sqrt n$ has asymptotic coverage $95\%$. Every step of that
+ubiquitous formula — replacing the unknown $\sigma$ by $\hat\sigma_n$ "for free" — is a
+Slutsky move, and without the modes-and-glue of this article it would be an unjustified leap.
+
+@fig-slutsky shows the studentized statistic's distribution settling onto $\mathcal N(0,1)$
+as $n$ grows, confirming the Slutsky conclusion numerically.
+
+```{python}
+#| label: fig-slutsky
+#| fig-cap: "Slutsky in action. The studentized proportion $T_n=\\sqrt n(\\hat p_n-p)/\\hat\\sigma_n$, with the unknown SD replaced by its plug-in estimate, converges in distribution to $\\mathcal N(0,1)$ (red). Plugging $\\hat\\sigma_n$ in for $\\sigma$ is licensed precisely because $\\hat\\sigma_n\\xrightarrow{P}\\sigma$, a constant. True $p=0.3$."
+
+p_true = 0.3
+xs = np.linspace(-4, 4, 300)
+normal_pdf = np.exp(-xs**2 / 2) / np.sqrt(2 * np.pi)
+
+fig, ax = plt.subplots()
+for n, shade in [(10, 0.3), (40, 0.55), (200, 0.9)]:
+    draws = (rng.random((12000, n)) < p_true).astype(float)
+    phat = draws.mean(axis=1)
+    # Guard the degenerate phat in {0,1} (sigma_hat = 0) by masking those rare samples.
+    sig_hat = np.sqrt(phat * (1 - phat))
+    ok = sig_hat > 0
+    T = np.sqrt(n) * (phat[ok] - p_true) / sig_hat[ok]
+    ax.hist(T, bins=60, density=True, histtype="step", color=SEQ, alpha=shade,
+            label=fr"$T_n$, $n={n}$")
+ax.plot(xs, normal_pdf, color=LIMIT, lw=2.4, label=r"$\mathcal N(0,1)$")
+ax.set_xlabel(r"$T_n$")
+ax.set_ylabel("density")
+ax.set_xlim(-4, 4)
+ax.set_title("Studentized statistic converging in distribution to N(0,1)")
+ax.legend(loc="upper right", frameon=False, fontsize=9)
+fig.tight_layout()
+plt.show()
+```
+
+## Example 3 — The edge of applicability: the Cauchy sample mean {#sec-ex-cauchy}
+
+Here is the honest boundary, the case where the comfortable intuition "averages converge"
+**fails completely**. Suppose the $X_i$ are i.i.d. **standard Cauchy** — the distribution
+with density $f(x)=\frac{1}{\pi(1+x^2)}$. This is the heavy-tailed villain flagged back in
+[PROB-5]: its tails decay so slowly that $E[|X|]=\int|x|f(x)\,dx$ diverges, so the **mean
+does not exist**. The law of large numbers has no $\mu$ to converge to, and indeed something
+striking happens.
+
+The characteristic function of the standard Cauchy is $\varphi_X(t)=e^{-|t|}$ ([PROB-20], a
+catalog entry). The sample mean $\bar X_n=\frac1n\sum X_i$ has, by the
+characteristic-function-of-a-sum rule ([PROB-20], independence factors the expectation) and
+the scaling rule $\varphi_{aX}(t)=\varphi_X(at)$,
+$$
+\varphi_{\bar X_n}(t)
+=\prod_{i=1}^n \varphi_{X_i/n}(t)
+=\prod_{i=1}^n \varphi_{X}\!\bigl(t/n\bigr)
+=\bigl(e^{-|t/n|}\bigr)^n
+=e^{-n\,|t|/n}
+=e^{-|t|}
+=\varphi_X(t).
+$$
+Read that off: $\bar X_n$ has the **same characteristic function as a single $X_i$** for
+*every* $n$, so by uniqueness (@thm-levy / [PROB-20]) the sample mean of $n$ Cauchy draws is
+*itself standard Cauchy*, no matter how large $n$ is. Averaging a million Cauchy variables is
+distributionally identical to taking one. So $\bar X_n\xrightarrow{d}\text{Cauchy}$ — it
+converges in distribution, but to a spread-out non-degenerate law, **not** to a constant; and
+it does **not** converge in probability to anything, because a sequence whose law never
+concentrates cannot pin to a point. @fig-cauchy makes the failure visible against the
+well-behaved exponential case from @fig-two-modes.
+
+```{python}
+#| label: fig-cauchy
+#| fig-cap: "When 'averages converge' breaks. Running sample means of i.i.d. standard Cauchy draws (each path a different color-shade) do NOT settle — they jump erratically forever, because a single heavy-tailed draw can dominate the whole average no matter how large $n$ is. The mean does not exist, the LLN does not apply, and $\\bar X_n$ stays Cauchy for every $n$. Contrast with the funneling paths of @fig-two-modes."
+
+n_max = 1000
+fig, ax = plt.subplots()
+for i in range(12):
+    # Standard Cauchy = ratio of two independent standard normals.
+    draws = rng.standard_cauchy(size=n_max)
+    running_mean = np.cumsum(draws) / np.arange(1, n_max + 1)
+    ax.plot(np.arange(1, n_max + 1), running_mean, color=SEQ, alpha=0.5)
+ax.axhline(0.0, color=GREY, lw=1.2, ls="--", label="median = 0 (no mean to target)")
+ax.set_xlabel(r"sample size $n$")
+ax.set_ylabel(r"$\bar X_n$ (Cauchy summands)")
+ax.set_ylim(-12, 12)
+ax.set_title("No law of large numbers: the Cauchy sample mean never settles")
+ax.legend(loc="upper right", frameon=False)
+fig.tight_layout()
+plt.show()
+```
+
+The lesson is the one §1.2 of the constitution demands an article state outright: the modes
+are honest about *which* convergence holds. With finite variance, $\bar X_n\xrightarrow{P}\mu$
+(Example 1) and the standardized version $\xrightarrow{d}$ normal (Example 2). Strip away the
+finite mean — go to the Cauchy — and convergence in probability **evaporates**, while
+convergence in distribution survives but lands on a non-degenerate law. The right tool when
+the mean fails is not the sample mean at all but the **median** (which *does* converge in
+probability here, since the Cauchy has a well-defined median at $0$ and a finite density
+there) — a robust-statistics escape hatch the order-statistics article [PROB-23] sets up.
+
+# When to use which mode — and when not {#sec-when}
+
+A practitioner's verdict, the kind an interview is really testing.
+
+**Use convergence in probability when** you are establishing **consistency** — that an
+estimator $\hat\theta_n$ homes in on the true $\theta$. It is the natural language of "more
+data $\Rightarrow$ better estimate." Chebyshev (@sec-chebyshev-gives) or the weak LLN
+delivers it. It is what you want for point estimates, plug-in quantities, and anything you
+will later feed into Slutsky as the "constant-limit" sequence.
+
+**Use almost-sure convergence when** you need a guarantee about the *whole trajectory* of a
+procedure — e.g. that a stochastic optimization or an online estimator *eventually stays*
+close, not merely is-close-with-high-probability at each step. It is strictly stronger and
+correspondingly harder to establish (the strong LLN, martingale arguments). For most
+inferential statements, in-probability is enough and a.s. is overkill.
+
+**Use convergence in distribution when** you need the *shape* of a statistic's randomness —
+to build confidence intervals, p-values, or hypothesis tests. The CLT lives here. This is the
+mode whose limit you read quantiles off of ($1.96$ for a $95\%$ interval). Crucially, it does
+**not** say the statistic settles to a number — it says its *distribution* does.
+
+**Do not** reach for these asymptotic modes when:
+
+- **The sample is small and you need exactness.** Convergence is an $n\to\infty$ promise;
+  for $n=12$ a CLT-based interval can be badly miscalibrated, especially for skewed data. Use
+  an exact small-sample distribution (e.g. the $t$ from [PROB-15], or a permutation/bootstrap
+  approach owned by Inference) instead.
+- **The moments that the mode's machinery needs do not exist.** The Cauchy example is the
+  cautionary tale: no mean means no convergence-in-probability of the average and no CLT —
+  reach for a robust statistic ([PROB-23]) instead of forcing the sample mean.
+- **The data are dependent or non-stationary.** Every result here was stated for i.i.d. (or
+  at least vanishing-variance) sequences; the variance-of-the-sum step in @eq-mean-var used
+  independence ([PROB-8]). Strong dependence can break consistency outright or change the
+  limiting variance, and you need the dependent-data limit theory (mixing conditions,
+  time-series CLTs) that lives well downstream.
+- **You are tempted to add two convergent-in-distribution sequences.** As the
+  @sec-slutsky pitfall shows, this is simply invalid without a joint statement; do not let
+  the convenient notation seduce you.
+
+::: {.callout-tip title="You might be asked"}
+**"The LLN and the CLT are both about the sample mean — why don't they contradict each
+other?"** This is the question the whole article was built to answer (@sec-why-problem), and
+the crisp reply is: *they live in different modes, and they describe differently scaled
+quantities.* The LLN is about $\bar X_n$ itself and is a **convergence-in-probability** (or
+a.s.) statement — the *value* collapses to $\mu$. The CLT is about $\sqrt n(\bar X_n-\mu)$ and
+is a **convergence-in-distribution** statement — that rescaled quantity never collapses (its
+variance is $\sigma^2$ for every $n$), but its *shape* freezes to a normal. The $\sqrt n$
+blow-up is exactly tuned to counteract the $1/\sqrt n$ shrinkage of $\bar X_n$'s standard
+deviation, leaving a non-degenerate limit. No contradiction: one statement is about where the
+average lands (a point), the other about the persistent fluctuations around that point (a
+distribution). Naming the mode is what dissolves the apparent paradox.
+:::
+
+# Why the definitions look the way they do — a short history {#sec-history}
+
+The *why* threaded through the formalism has a historical spine worth seeing. The earliest
+limit law — Jacob Bernoulli's *Ars Conjectandi* (1713) — proved that the observed frequency
+of an event in $n$ independent trials gets close to its true probability, with the chance of a
+large discrepancy made arbitrarily small by taking $n$ large. Read that phrasing again: *the
+chance of a large discrepancy is small.* Bernoulli, without the vocabulary, was stating
+**convergence in probability** — the definition (@def-in-prob) is just his sentence made
+precise, with $\varepsilon$ for "discrepancy" and the probability driven to $0$. The mode is
+named after the phenomenon Bernoulli actually proved.
+
+For two centuries "the law of large numbers" meant this weak, in-probability form. It was
+**Émile Borel** (1909) and then **Francesco Cantelli** and **Andrei Kolmogorov** (1920s–30s)
+who isolated the *stronger* path-wise statement — that the realized sequence of frequencies
+converges as an ordinary numerical limit for almost every outcome — and recognized it as a
+genuinely different, harder result. That is why we have a *separate* mode, almost-sure
+(@def-as): it took mathematicians two hundred years to notice that "the probability of being
+far is small" and "the path actually converges" are not the same statement, which is exactly
+the gap the moving-bump counterexample (@sec-no-reverse) dramatizes. The hierarchy is not a
+bookkeeping nicety; it is the residue of a real historical discovery.
+
+Convergence in distribution has a different parent. The central limit theorem — de
+Moivre's $1733$ normal approximation to the binomial, generalized by Laplace, and put on
+rigorous footing by **Lyapunov** ($1901$) and **Lindeberg** ($1922$) — is fundamentally a
+statement about *shapes*, not values: the binomial histogram, suitably rescaled, *looks like*
+a bell curve. There was no number it converged to, so a notion of "the distribution
+converges" had to be invented for it. **Paul Lévy** ($1925$) supplied the decisive tool — the
+characteristic function and the continuity theorem (@thm-levy) that turns convergence in
+distribution into convergence of a single transform — which is precisely why [PROB-20] sits
+immediately before this article in the track. **Evgeny Slutsky** ($1925$) and the continuous
+mapping circle then provided the glue (@sec-glue) needed to combine these limits into the
+statistical statements practitioners actually write. Every definition in this article is the
+formal shadow of a theorem someone needed to state without contradiction — which is the *why*
+we have held in view from @sec-why-problem onward.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the two transform/concentration articles that feed this one, and you now
+hold the vocabulary the entire asymptotic half of the series is written in.
+
+- **[PROB-19 *Chebyshev's Inequality*]** — supplied the engine for the middle rung. The
+  $\operatorname{Var}/a^2$ bound (@eq-chebyshev) is *the* one-line route from "variance
+  vanishes" to "converges in probability"; the weak LLN is its headline output.
+- **[PROB-20 *MGF and Characteristic Functions*]** — supplied the engine for the bottom
+  rung. Lévy's continuity theorem (@thm-levy) is what makes convergence in distribution
+  checkable, and it is the same machine [PROB-20] used to sketch the CLT. The two siblings
+  are the *producers*; this article is the *vocabulary* their outputs are phrased in.
+- **[INFR-A2]** (Statistical Inference) — *owns* the **law of large numbers** and the
+  **central limit theorem**. It consumes the modes defined here verbatim: the LLN is
+  "$\bar X_n\xrightarrow{P}\mu$" in our @def-in-prob, the CLT is
+  "$\sqrt n(\bar X_n-\mu)\xrightarrow{d}\mathcal N(0,\sigma^2)$" in our @def-in-dist, and its
+  studentization step is the Slutsky argument of @sec-ex-ci. This is the clean ownership
+  seam the track was designed around — we own the convergence notions, Inference owns the
+  limit theorems.
+- **[INFR-B4]** (asymptotic normality of the MLE) and the **delta method** — both are built
+  almost entirely from this article's glue: the delta method is the continuous mapping
+  theorem (@thm-cmt) plus a first-order Taylor expansion applied to a CLT limit, and MLE
+  asymptotics chain Slutsky (@thm-slutsky) across several estimated quantities.
+- **[PROB-22 *The Empirical CDF*]** — its Glivenko–Cantelli statement ("the empirical CDF
+  converges uniformly") is a convergence statement in the sense built here, and it is the
+  next article in the track.
+- **[PROB-23 *Order Statistics*]** — the robust escape hatch flagged in the Cauchy example
+  (@sec-ex-cauchy): when the sample mean has no limit, the sample median often does.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary thread.** Jacob Bernoulli's *Ars Conjectandi* (1713) for the original weak law;
+  Émile Borel's *Les probabilités dénombrables et leurs applications arithmétiques* (1909)
+  and Kolmogorov's *Grundbegriffe der Wahrscheinlichkeitsrechnung* (1933) for the strong law
+  and the measure-theoretic frame that makes "almost surely" precise; Paul Lévy's *Calcul des
+  probabilités* (1925) for the characteristic-function route to convergence in distribution.
+- **The portmanteau theorem.** We used one of its faces (bounded-continuous test functions)
+  inside @thm-cmt and @thm-slutsky. Its full statement gives *several* equivalent
+  characterizations of $X_n\xrightarrow{d}X$ at once — convergence of CDFs at continuity
+  points, of expectations of bounded continuous functions, of probabilities of "continuity
+  sets," and lim-inf/lim-sup inequalities for open/closed sets. Collecting all faces and
+  seeing why they are equivalent is the standard next step into weak-convergence theory.
+- **Borel–Cantelli.** The nested-tail-set argument of @thm-as-to-p is one step short of the
+  **first Borel–Cantelli lemma**, which gives a clean *sufficient condition* for almost-sure
+  convergence: if $\sum_n P(|X_n-X|>\varepsilon)<\infty$ for every $\varepsilon$, then
+  $X_n\xrightarrow{a.s.}X$. It is the most-used tool for *upgrading* an in-probability result
+  to almost-sure, and the moving-bump counterexample is exactly the case where the sum
+  *diverges* ($\sum 2^{-\lfloor\log_2 n\rfloor}=\infty$), so the lemma does not fire — which
+  is why a.s. fails there.
+- **Open threads deferred.** *How fast does convergence in distribution happen?* (the
+  Berry–Esseen theorem bounds the CLT's rate — downstream in Inference). *Convergence of
+  random vectors and processes* (the same modes for $\mathbb R^d$- and function-valued
+  sequences — the empirical-process theory that [PROB-22]'s Glivenko–Cantelli is the gateway
+  to). *What replaces the CLT under heavy tails?* (stable laws and their non-normal limits —
+  the world the Cauchy example of @sec-ex-cauchy lives in).

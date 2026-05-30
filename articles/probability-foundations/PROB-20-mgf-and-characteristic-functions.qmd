@@ -1,0 +1,1165 @@
+---
+title: "Moment Generating and Characteristic Functions"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+DENS   = "#2b3a67"     # densities / data
+TRANSF = "#c1121f"     # the transform M(t) or phi(t)
+ACCENT = "#0a7d4d"     # highlights / exact values
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the second of the two articles that close
+> Movement 4 of the Probability Foundations track — the **tail-and-limit** machinery that
+> the downstream tracks consume. Its sibling, [PROB-19 *Chebyshev's Inequality and the
+> Concentration Idea*], bounded how much probability can sit far from the mean using only
+> the first two moments; this article builds the object that packages **all** the moments
+> at once and turns sums of independent variables into products. It assumes [PROB-5
+> *Expectation*] (the expectation operator and the law of the unconscious statistician),
+> [PROB-6 *Variance*] and [PROB-7 *Covariance*] (the second moment), and [PROB-8
+> *Independence and the i.i.d. Sample*] (the factoring of expectations of products that
+> makes the convolution property work). To compute the transforms of named distributions
+> we lean on the catalog: [PROB-11 *Bernoulli, Binomial, Negative-Binomial*], [PROB-12
+> *The Poisson Distribution*], [PROB-13 *The Normal Distribution*], and [PROB-14 *Gamma,
+> Exponential, Beta*]. Complex exponentials, needed for the characteristic function, are
+> introduced from scratch here — nothing above the Calc-1 floor is assumed. It **sets
+> up** [PROB-21 *Modes of Convergence*], where the characteristic function becomes the
+> tool that defines and detects convergence *in distribution*, and it hands the
+> **central-limit machinery** to [INFR-A2], which owns the CLT proof itself and only
+> borrows the transform built here.
+
+## Abstract {.unnumbered}
+
+A distribution is a complicated object — a whole function, the density or mass. This
+article builds a single auxiliary function that stands in for it: the **moment generating
+function** $M_X(t) = E[e^{tX}]$. Two facts make it indispensable. First, differentiating
+$M_X$ at $t=0$ pours out the moments one at a time — $M_X'(0)=E[X]$, $M_X''(0)=E[X^2]$,
+and so on — so one function encodes the entire moment sequence. Second, the MGF of a sum
+of *independent* variables is the *product* of their MGFs, which converts the painful
+convolution integral for the distribution of a sum into ordinary multiplication. Together
+with a uniqueness theorem — equal MGFs mean equal distributions — these turn questions
+like "what is the distribution of a sum of independent normals?" into one-line algebra.
+The single claim this article defends is that **the MGF is the right bookkeeping device
+for moments and sums, exactly when it exists** — and that when heavy tails make it blow
+up, replacing $e^{tX}$ with $e^{itX}$ gives the **characteristic function**, which always
+exists and inherits every good property at the cost of carrying an imaginary unit.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Attach to a random variable $X$ the function $M_X(t) = E\!\left[e^{tX}\right]$. Because
+$e^{tX}$ expands as $1 + tX + \tfrac{t^2}{2}X^2 + \cdots$, the function $M_X$ carries
+**every moment of $X$** in its derivatives at $t=0$: the $k$-th derivative
+$M_X^{(k)}(0)$ equals $E[X^k]$. And because the expectation of a product of independent
+quantities factors, the MGF of a **sum of independent variables is the product of their
+MGFs**. Moments-by-differentiation and sums-by-multiplication are the two reasons this
+transform exists. When the tails are too heavy for $E[e^{tX}]$ to be finite, swap the
+real exponential for the complex one: the **characteristic function**
+$\varphi_X(t) = E\!\left[e^{itX}\right]$ always exists, because $|e^{itX}| = 1$, and keeps
+all the same powers.
+:::
+
+Everything below orbits that box. The transform $M_X(t)=E[e^{tX}]$ will look, at first,
+like an unmotivated thing to compute — why would anyone average an exponential of a
+random variable? But by the end you should see it as inevitable. We are looking for a
+device that (a) repackages the infinite list of moments into one manageable object and
+(b) behaves well under the one operation we constantly perform on random variables —
+adding independent ones together. The exponential is the *unique* elementary function
+that does both at once, because its Taylor series lays out the powers $X^k$ for property
+(a) and its functional equation $e^{a+b}=e^a e^b$ delivers property (b). Hold those two
+demands in mind and the rest is consequence.
+
+# Why we are here: two problems that needed one tool {#sec-why}
+
+Keep one question in view for the whole article: **is there a single function that
+encodes all of a distribution's moments and turns sums of independents into products?**
+Every derivation below answers a piece of that question.
+
+## The problem of the sum {#sec-why-sum}
+
+The single most common thing we do to random variables is **add independent ones up**.
+The total of $n$ daily returns, the sum of waiting times across a queue, the count of
+successes across many trials, the aggregate of many small measurement errors — all are
+sums $S_n = X_1 + \cdots + X_n$. So the recurring question is: *given the distributions of
+the pieces, what is the distribution of the sum?*
+
+For two independent continuous variables $X$ and $Y$ with densities $f_X$ and $f_Y$, the
+density of $S = X+Y$ is the **convolution**
+
+$$
+f_S(s) = \int_{-\infty}^{\infty} f_X(x)\, f_Y(s-x)\, dx .
+$$ {#eq-convolution}
+
+This is built carefully in the joint-distribution work of [PROB-7]; here we only need to
+register how *unpleasant* it is. To add three variables you convolve twice; to add $n$ you
+convolve $n-1$ times, each a fresh integral over the whole line. The integrand changes
+every time and rarely simplifies. By hand, the convolution route to "what is the
+distribution of a sum of ten gammas?" is hopeless.
+
+Yet the answers are often astonishingly clean — a sum of independent normals is normal, a
+sum of independent Poissons is Poisson, a sum of independent gammas with a common rate is
+gamma. The convolution integral *buries* that simplicity under calculus. The historical
+demand was for a device that exposes it. That device exists precisely because there is a
+transform under which **convolution becomes multiplication.**
+
+## The problem of the moments {#sec-why-moments}
+
+The second recurring need is for the **moments** of a distribution: the mean
+$E[X]$, the variance built from $E[X^2]$, the skewness from $E[X^3]$, the kurtosis from
+$E[X^4]$. Each is an expectation $E[X^k] = \int x^k f(x)\,dx$ (or the analogous sum in the
+discrete case), and each requires its own integral. For a distribution with a complicated
+density, computing the fourth moment is a separate, often grueling, integration from the
+second.
+
+It would be a great economy to compute *one* object from which **every** moment can be
+read off by differentiation — turning a sequence of integrals into a sequence of
+derivatives, which are mechanical. That object is the moment generating function, and the
+name is a literal description of what it does.
+
+## One tool, two jobs — and the historical thread {#sec-why-history}
+
+These two needs are met by the same function because of one algebraic coincidence: the
+exponential's Taylor series solves the moment problem (its powers are exactly $X^k$) and
+its product rule solves the sum problem ($e^{tX}e^{tY}=e^{t(X+Y)}$). Pierre-Simon Laplace,
+around the turn of the nineteenth century, was already using what we would now call
+generating functions and the closely related Laplace transform to attack sums of random
+quantities and the first central-limit phenomena. The fully general **characteristic
+function** — the version with the imaginary unit, which sidesteps the existence problems
+that plague the MGF — was placed at the center of probability by Paul Lévy in the 1920s
+and 1930s, who showed that convergence of characteristic functions is *exactly*
+convergence in distribution. That last fact is what makes these transforms the engine of
+the central limit theorem, the destination [INFR-A2] builds toward and the reason this
+article is a prerequisite for it.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just work with the density directly? What does the transform buy you?"* Two
+things, and you should name both. **(1) Sums become tractable.** The distribution of a sum
+of independents is a convolution of densities — an integral that compounds with each added
+term. Under the MGF (or characteristic function) it is a *product*, which compounds
+trivially: the MGF of a sum of $n$ i.i.d. pieces is just the single MGF raised to the
+$n$-th power. **(2) Moments become derivatives.** Instead of a separate integral for each
+$E[X^k]$, you differentiate one function repeatedly at zero. The transform trades a hard
+integral (convolution) and many hard integrals (the moments) for easy multiplication and
+easy differentiation. That is the entire value proposition.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formal definition, see what $M_X(t) = E[e^{tX}]$ *is*. Fix the random variable
+$X$. For each fixed number $t$, the quantity $e^{tX}$ is a new random variable — $X$ run
+through the function $u\mapsto e^{tu}$ — and we average it. Sweep $t$ across the real line
+and you trace out a function of $t$. That function is $M_X$.
+
+The factor $e^{tX}$ is a **tilt**. When $t>0$, $e^{tX}$ is large where $X$ is large, so
+the average $E[e^{tX}]$ weights the right tail heavily; when $t<0$ it leans on the left
+tail. Because $e^{tu}$ grows faster than any power of $u$, the average can be infinite if
+the distribution puts too much mass far out — which is exactly the existence problem we
+will meet in @sec-existence, and exactly why heavy-tailed distributions break the MGF. The
+derivative of this tilt at $t=0$ measures how sharply the average responds to a tiny tilt,
+and that sensitivity is the mean; the second derivative is the next-order sensitivity, and
+that is $E[X^2]$. @fig-tilt makes the tilt visible.
+
+```{python}
+#| label: fig-tilt
+#| fig-cap: "The MGF as a tilted average. The grey curve is a standard normal density $f(x)$. Multiplying by $e^{tx}$ (here $t=0.8$) tilts it: the dashed red curve is the *unnormalized* tilted weight $e^{tx} f(x)$, which leans toward the right tail. The MGF $M(t)=\\int e^{tx} f(x)\\,dx$ is the total area under that tilted curve — a single number for each $t$. As $t$ grows the tilt is more violent, and if the original density did not decay fast enough the area would be infinite."
+x = np.linspace(-4, 4, 400)
+f = np.exp(-x**2 / 2) / np.sqrt(2 * np.pi)
+t = 0.8
+tilt = np.exp(t * x) * f
+
+fig, ax = plt.subplots()
+ax.plot(x, f, color=GREY, label=r"density $f(x)$ (standard normal)")
+ax.plot(x, tilt, color=TRANSF, ls="--",
+        label=fr"tilted weight $e^{{{t}x}}\,f(x)$")
+ax.fill_between(x, tilt, color=TRANSF, alpha=0.12)
+ax.set_xlabel("$x$"); ax.set_ylabel("density / weight")
+ax.set_title(r"$M(t)$ is the total area under the tilted curve")
+ax.legend(loc="upper left", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+Here is the second mental image, the one behind "moments by differentiation." The
+exponential has the Taylor series $e^{z} = 1 + z + \tfrac{z^2}{2!} + \tfrac{z^3}{3!} +
+\cdots$. Put $z = tX$:
+
+$$
+e^{tX} = 1 + tX + \frac{t^2}{2!}X^2 + \frac{t^3}{3!}X^3 + \cdots ,
+$$
+
+a power series in $t$ whose coefficients are exactly the powers of $X$. Averaging term by
+term, $M_X(t) = E[e^{tX}]$ becomes a power series in $t$ whose coefficients are the
+**moments** $E[X^k]$. A power series is a barcode: each moment sits on its own power of
+$t$. Differentiating at $t=0$ is just the standard way of reading a single coefficient off
+a power series. That is the whole mechanism, and we make it rigorous next.
+
+# The moment generating function {#sec-mgf}
+
+## Definition {#sec-mgf-def}
+
+::: {#def-mgf}
+**Definition (moment generating function).** For a random variable $X$, the **moment
+generating function** is the function of a real variable $t$ defined by
+
+$$
+M_X(t) \;=\; E\!\left[e^{tX}\right]
+\;=\;
+\begin{cases}
+\displaystyle \sum_{x} e^{tx}\, p_X(x), & X \text{ discrete with pmf } p_X,\\[2ex]
+\displaystyle \int_{-\infty}^{\infty} e^{tx}\, f_X(x)\, dx, & X \text{ continuous with pdf } f_X,
+\end{cases}
+$$ {#eq-mgf-def}
+
+for those $t$ at which the sum or integral is finite. We say the MGF **exists** if it is
+finite for all $t$ in some open interval $(-h, h)$ containing $0$ (with $h>0$).
+:::
+
+Three symbols to fix. $t$ is an ordinary real number — the **transform variable**, a
+dial we turn; it is not random and has no probabilistic meaning of its own. $e^{tX}$ is
+the random variable obtained by applying the deterministic function $u \mapsto e^{tu}$ to
+$X$; computing its expectation is exactly the **law of the unconscious statistician** from
+[PROB-5], which says $E[g(X)] = \sum_x g(x) p_X(x)$ or $\int g(x) f_X(x)\,dx$ — here with
+$g(u)=e^{tu}$. That is why @eq-mgf-def has the form it does: it is LOTUS applied to the
+exponential. Finally, note $M_X(0) = E[e^{0}] = E[1] = 1$ always — every MGF passes
+through the point $(0,1)$, a free sanity check on any computation.
+
+The clause about an *open interval around $0$* is not pedantry. The entire payoff —
+generating moments by differentiation — needs the function to be defined and
+differentiable in a neighborhood of $0$. Distributions whose MGF is finite only at the
+single point $t=0$ (where it is trivially $1$) generate no moments and are treated as
+**not having an MGF**. That distinction drives the whole back half of the article.
+
+## Moments by differentiation {#sec-moments-deriv}
+
+We now prove the headline property: the derivatives of $M_X$ at $0$ are the moments of
+$X$. We give the clean power-series argument, the way it actually lands in practice.
+
+::: {#thm-moments}
+**Theorem (the MGF generates moments).** Suppose $M_X(t)$ is finite on an open interval
+$(-h,h)$ around $0$. Then all moments $E[X^k]$ exist (are finite), $M_X$ has derivatives
+of every order at $0$, and
+
+$$
+M_X^{(k)}(0) \;=\; E\!\left[X^k\right], \qquad k = 1, 2, 3, \dots
+$$ {#eq-moments}
+
+Equivalently, $M_X$ has the Taylor expansion about $0$
+
+$$
+M_X(t) \;=\; \sum_{k=0}^{\infty} \frac{E[X^k]}{k!}\, t^k
+\;=\; 1 + E[X]\,t + \frac{E[X^2]}{2!}\,t^2 + \frac{E[X^3]}{3!}\,t^3 + \cdots .
+$$ {#eq-mgf-series}
+:::
+
+::: {.proof}
+Start from the Taylor series of the exponential, valid for every real number $z$:
+
+$$
+e^{z} = \sum_{k=0}^{\infty} \frac{z^k}{k!}
+= 1 + z + \frac{z^2}{2!} + \frac{z^3}{3!} + \cdots .
+$$
+
+Substitute $z = tX$. Since $(tX)^k = t^k X^k$ and $t^k$ is a constant (not random), we may
+pull each $t^k/k!$ outside as a coefficient:
+
+$$
+e^{tX} = \sum_{k=0}^{\infty} \frac{(tX)^k}{k!}
+= \sum_{k=0}^{\infty} \frac{t^k}{k!}\, X^k
+= 1 + tX + \frac{t^2}{2!}X^2 + \frac{t^3}{3!}X^3 + \cdots .
+$$
+
+Now take expectations of both sides. Expectation is **linear** — the expected value of a
+sum is the sum of the expected values, and constants come out front (this is the linearity
+proved in [PROB-5], and for the infinite sum it is licensed by the finiteness of $M_X$ on
+$(-h,h)$, which is exactly the analyst's condition for swapping $E$ and $\sum$; we flag
+this interchange as the one step resting on a convergence theorem above the Calc-1 floor).
+Applying $E[\cdot]$ term by term, and pulling out the constants $t^k/k!$:
+
+$$
+M_X(t) = E\!\left[\sum_{k=0}^{\infty} \frac{t^k}{k!} X^k\right]
+= \sum_{k=0}^{\infty} \frac{t^k}{k!}\, E[X^k] .
+$$
+
+This is precisely @eq-mgf-series: a power series in $t$ whose coefficient on $t^k$ is
+$E[X^k]/k!$. The fact that the series converges on $(-h,h)$ tells us each $E[X^k]$ is
+finite — an infinite coefficient would make the series diverge.
+
+Finally, recall the bridge between a power series and derivatives. If a function has the
+convergent expansion $g(t) = \sum_{k=0}^\infty c_k t^k$ near $0$, then differentiating $k$
+times and evaluating at $0$ isolates the $k$-th coefficient as $g^{(k)}(0) = k!\,c_k$ —
+because each differentiation drops the power by one and brings down a factor, and at $t=0$
+every term except the constant one vanishes. (Concretely: $g'(t) = c_1 + 2c_2 t + 3 c_3
+t^2 + \cdots$, so $g'(0)=c_1$; $g''(t) = 2c_2 + 6 c_3 t + \cdots$, so $g''(0)=2c_2$; in
+general $g^{(k)}(0) = k!\,c_k$.) Here $c_k = E[X^k]/k!$, so
+
+$$
+M_X^{(k)}(0) = k!\, c_k = k!\cdot \frac{E[X^k]}{k!} = E[X^k],
+$$
+
+which is @eq-moments. $\qquad\blacksquare$
+:::
+
+So the recipe is mechanical: write down $M_X(t)$, differentiate, set $t=0$. The first
+derivative gives the mean, the second gives $E[X^2]$ (and then $\operatorname{Var}(X) =
+E[X^2] - (E[X])^2$ by the computational identity of [PROB-6]), the third gives $E[X^3]$,
+and so on — a sequence of integrals replaced by a sequence of derivatives.
+
+::: {.callout-tip title="You might be asked"}
+*"Why differentiate at $t=0$ specifically, and not somewhere else?"* Because the moments
+are the Taylor coefficients of $M_X$ **about $0$**, and the Taylor coefficients about a
+point are read off by differentiating *at that point*. Evaluating $M_X'$ at any other $t$
+gives $E[X e^{tX}]$ — a *tilted* moment, weighted toward one tail — not the plain moment
+$E[X]$. Only at $t=0$ does the tilt $e^{tX}$ become $e^0=1$ and drop away, leaving the
+clean moment. The point $t=0$ is where the transform touches the original distribution
+without distortion.
+:::
+
+# The MGFs of the catalog {#sec-catalog}
+
+Theory is cheap; let us compute. We work out the MGF of four workhorse distributions from
+the catalog, deriving each moment-by-differentiation result so nothing is asserted. These
+also become the raw material for the convolution results in @sec-convolution.
+
+## Bernoulli and binomial {#sec-mgf-bernoulli}
+
+Let $X \sim \text{Bernoulli}(p)$: it takes the value $1$ with probability $p$ and $0$ with
+probability $1-p$ (the single yes/no trial of [PROB-11]). By @eq-mgf-def, summing over the
+two possible values $x\in\{0,1\}$,
+
+$$
+M_X(t) = \sum_{x\in\{0,1\}} e^{tx} p_X(x)
+= e^{t\cdot 0}(1-p) + e^{t\cdot 1} p
+= (1-p) + p\,e^{t},
+$$ {#eq-mgf-bernoulli}
+
+which is finite for every real $t$ (it is a finite sum), so the MGF exists on all of
+$\mathbb R$. Check the moments. Differentiating, $M_X'(t) = p\,e^t$, so $M_X'(0) = p\cdot
+1 = p = E[X]$ — correct, a Bernoulli's mean is $p$. Again, $M_X''(t) = p\,e^t$, so
+$M_X''(0) = p = E[X^2]$. Then $\operatorname{Var}(X) = E[X^2] - (E[X])^2 = p - p^2 =
+p(1-p)$, matching [PROB-11] exactly. Every moment of a Bernoulli equals $p$ because
+$X^k = X$ for $X\in\{0,1\}$, and indeed every derivative of @eq-mgf-bernoulli is $p\,e^t$.
+
+Now $Y \sim \text{Binomial}(n,p)$, the number of successes in $n$ independent Bernoulli
+trials. Rather than sum $e^{ty}\binom{n}{y}p^y(1-p)^{n-y}$ directly (doable, but it asks
+for the binomial theorem), we will get its MGF in one line from the convolution property
+in @sec-binomial-mgf — the cleaner route. For now, record the Bernoulli result.
+
+## Poisson {#sec-mgf-poisson}
+
+Let $X \sim \text{Poisson}(\lambda)$, the count of rare events with pmf $p_X(k) =
+e^{-\lambda}\lambda^k/k!$ for $k=0,1,2,\dots$ (from [PROB-12]). Then
+
+$$
+M_X(t) = \sum_{k=0}^{\infty} e^{tk}\, \frac{e^{-\lambda}\lambda^k}{k!}
+= e^{-\lambda} \sum_{k=0}^{\infty} \frac{(e^{t}\lambda)^k}{k!} .
+$$
+
+The sum is the Taylor series of the exponential evaluated at $e^t\lambda$: recall
+$\sum_{k=0}^\infty a^k/k! = e^{a}$, here with $a = e^t\lambda$. So the sum equals
+$e^{\lambda e^{t}}$, and
+
+$$
+M_X(t) = e^{-\lambda}\, e^{\lambda e^{t}} = \exp\!\bigl(\lambda(e^{t} - 1)\bigr),
+$$ {#eq-mgf-poisson}
+
+finite for all real $t$ (the series converges for every $a$). Check the mean. Using the
+chain rule, $\frac{d}{dt}\exp(\lambda(e^t-1)) = \exp(\lambda(e^t-1))\cdot \lambda e^t$, so
+
+$$
+M_X'(t) = \lambda e^{t}\exp\!\bigl(\lambda(e^t-1)\bigr),
+\qquad
+M_X'(0) = \lambda\cdot 1\cdot \exp(0) = \lambda = E[X].
+$$
+
+A Poisson's mean is $\lambda$ — correct. For the variance, differentiate again with the
+product rule on $\lambda e^t \cdot M_X(t)$:
+
+$$
+M_X''(t) = \lambda e^t M_X(t) + \lambda e^t\, M_X'(t)
+= \lambda e^t M_X(t)\bigl(1 + \lambda e^t\bigr).
+$$
+
+At $t=0$: $M_X''(0) = \lambda\cdot 1 \cdot 1\cdot(1+\lambda) = \lambda + \lambda^2 =
+E[X^2]$. Then $\operatorname{Var}(X) = E[X^2] - (E[X])^2 = (\lambda+\lambda^2) - \lambda^2
+= \lambda$ — the famous equidispersion (mean equals variance) of [PROB-12], dropping out
+of the transform in two derivatives.
+
+## Normal {#sec-mgf-normal}
+
+Let $X \sim \mathcal N(\mu, \sigma^2)$, with density $f_X(x) = \frac{1}{\sqrt{2\pi\sigma^2}}
+\exp\!\bigl(-\frac{(x-\mu)^2}{2\sigma^2}\bigr)$ from [PROB-13]. We compute
+
+$$
+M_X(t) = \int_{-\infty}^{\infty} e^{tx}\, \frac{1}{\sqrt{2\pi\sigma^2}}
+\exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr)\, dx .
+$$
+
+Combine the two exponentials and work the exponent. Write the exponent as
+
+$$
+tx - \frac{(x-\mu)^2}{2\sigma^2}
+= -\frac{1}{2\sigma^2}\Bigl[(x-\mu)^2 - 2\sigma^2 t x\Bigr].
+$$
+
+We **complete the square** in $x$ inside the brackets. Expand $(x-\mu)^2 = x^2 - 2\mu x +
+\mu^2$, so the bracket is $x^2 - 2\mu x + \mu^2 - 2\sigma^2 t x = x^2 - 2(\mu + \sigma^2
+t)x + \mu^2$. To complete the square we add and subtract $(\mu+\sigma^2 t)^2$:
+
+$$
+x^2 - 2(\mu+\sigma^2 t)x + \mu^2
+= \bigl(x - (\mu+\sigma^2 t)\bigr)^2 - (\mu+\sigma^2 t)^2 + \mu^2 .
+$$
+
+Expand the two correction terms: $-(\mu+\sigma^2 t)^2 + \mu^2 = -\mu^2 - 2\mu\sigma^2 t -
+\sigma^4 t^2 + \mu^2 = -2\mu\sigma^2 t - \sigma^4 t^2$. Therefore the full exponent is
+
+$$
+-\frac{1}{2\sigma^2}\Bigl[\bigl(x-(\mu+\sigma^2 t)\bigr)^2 - 2\mu\sigma^2 t - \sigma^4 t^2\Bigr]
+= -\frac{\bigl(x-(\mu+\sigma^2 t)\bigr)^2}{2\sigma^2} + \mu t + \frac{\sigma^2 t^2}{2},
+$$
+
+where the last two terms came from $-\frac{1}{2\sigma^2}\cdot(-2\mu\sigma^2 t) = \mu t$
+and $-\frac{1}{2\sigma^2}\cdot(-\sigma^4 t^2) = \frac{\sigma^2 t^2}{2}$. Pull the two
+$x$-free terms out of the integral as constants:
+
+$$
+M_X(t) = \exp\!\Bigl(\mu t + \frac{\sigma^2 t^2}{2}\Bigr)
+\int_{-\infty}^{\infty}
+\frac{1}{\sqrt{2\pi\sigma^2}}\exp\!\Bigl(-\frac{\bigl(x-(\mu+\sigma^2 t)\bigr)^2}{2\sigma^2}\Bigr)\, dx .
+$$
+
+The remaining integrand is the density of a normal distribution with mean
+$\mu + \sigma^2 t$ and the same variance $\sigma^2$. A probability density integrates to
+$1$ over the whole line (the normalization established in [PROB-13] via the Gaussian
+integral), so the integral equals $1$ regardless of where its center sits. We are left
+with
+
+$$
+\boxed{\;M_X(t) = \exp\!\Bigl(\mu t + \frac{\sigma^2 t^2}{2}\Bigr),\;}
+$$ {#eq-mgf-normal}
+
+finite for every real $t$. The MGF of a normal is itself the exponential of a quadratic in
+$t$ — a fact we will exploit relentlessly in @sec-sum-normals. Verify the moments.
+Differentiating with the chain rule, $M_X'(t) = (\mu + \sigma^2 t)\exp(\mu t +
+\tfrac{\sigma^2 t^2}{2})$, so $M_X'(0) = \mu\cdot 1 = \mu = E[X]$. The product rule gives
+$M_X''(t) = \sigma^2 M_X(t) + (\mu+\sigma^2 t)^2 M_X(t)$, hence $M_X''(0) = \sigma^2 +
+\mu^2 = E[X^2]$, so $\operatorname{Var}(X) = (\sigma^2 + \mu^2) - \mu^2 = \sigma^2$.
+Mean $\mu$, variance $\sigma^2$ — exactly as named.
+
+A special case worth recording: the **standard** normal $Z\sim\mathcal N(0,1)$ has $\mu=0,
+\sigma^2=1$, so $M_Z(t) = e^{t^2/2}$.
+
+## Exponential (and a preview of gamma) {#sec-mgf-exponential}
+
+Let $X \sim \text{Exponential}(\lambda)$, the memoryless waiting time with density
+$f_X(x) = \lambda e^{-\lambda x}$ for $x\ge 0$ (rate parameterization, from [PROB-14]).
+Then
+
+$$
+M_X(t) = \int_0^{\infty} e^{tx}\, \lambda e^{-\lambda x}\, dx
+= \lambda \int_0^{\infty} e^{-(\lambda - t)x}\, dx .
+$$
+
+The integral $\int_0^\infty e^{-cx}\,dx$ converges only when $c>0$, and then equals
+$1/c$. (Compute it: $\int_0^\infty e^{-cx}\,dx = [-\tfrac{1}{c}e^{-cx}]_0^\infty = 0 -
+(-\tfrac1c) = \tfrac1c$, valid because $e^{-cx}\to 0$ as $x\to\infty$ exactly when $c>0$.)
+Here $c = \lambda - t$, so we need $\lambda - t > 0$, i.e. $t < \lambda$:
+
+$$
+\boxed{\;M_X(t) = \frac{\lambda}{\lambda - t}, \qquad t < \lambda.\;}
+$$ {#eq-mgf-exponential}
+
+This is the first MGF that does **not** exist for all $t$ — it is finite only on the
+interval $(-\infty, \lambda)$ and blows up as $t\uparrow\lambda$. But that interval
+contains an open neighborhood of $0$ (since $\lambda>0$), so the MGF still exists in the
+sense of @def-mgf and still generates moments. Check: $M_X'(t) =
+\frac{d}{dt}\lambda(\lambda-t)^{-1} = \lambda(\lambda-t)^{-2}$, so $M_X'(0) =
+\lambda/\lambda^2 = 1/\lambda = E[X]$ — the exponential's mean is $1/\lambda$, correct.
+And $M_X''(t) = 2\lambda(\lambda-t)^{-3}$, so $M_X''(0) = 2\lambda/\lambda^3 = 2/\lambda^2
+= E[X^2]$, giving $\operatorname{Var}(X) = 2/\lambda^2 - 1/\lambda^2 = 1/\lambda^2$ — also
+correct.
+
+The gamma generalizes this. A $\text{Gamma}(\alpha,\lambda)$ variable (shape $\alpha$,
+rate $\lambda$) is a sum of $\alpha$ independent exponentials when $\alpha$ is an integer;
+we will recover its MGF $\bigl(\frac{\lambda}{\lambda-t}\bigr)^\alpha$ for free from the
+convolution property in @sec-gamma-mgf, rather than grinding the gamma-function integral.
+
+Let us see these four transforms side by side, and confirm the existence boundary of the
+exponential's, with a figure.
+
+```{python}
+#| label: fig-catalog-mgfs
+#| fig-cap: "The MGFs of four catalog distributions, each plotted over the range of $t$ where it is finite. Bernoulli, Poisson, and normal MGFs are finite for every $t$. The exponential's MGF $\\lambda/(\\lambda-t)$ (here $\\lambda=1.5$) is finite only for $t<\\lambda$ and diverges to $+\\infty$ as $t\\to\\lambda$ (dashed vertical line) — the first sign that existence is not automatic. Every curve passes through $(0,1)$, the universal value $M_X(0)=1$ (grey dot)."
+fig, axes = plt.subplots(2, 2, figsize=(8.6, 6.0))
+
+# Bernoulli(0.4)
+t = np.linspace(-3, 3, 200); p = 0.4
+axes[0,0].plot(t, (1-p) + p*np.exp(t), color=TRANSF)
+axes[0,0].set_title(r"Bernoulli$(0.4)$:  $(1-p)+pe^{t}$", fontsize=10)
+
+# Poisson(2)
+t = np.linspace(-3, 1.2, 200); lam = 2.0
+axes[0,1].plot(t, np.exp(lam*(np.exp(t)-1)), color=TRANSF)
+axes[0,1].set_title(r"Poisson$(2)$:  $e^{\lambda(e^{t}-1)}$", fontsize=10)
+
+# Normal(0,1)
+t = np.linspace(-3, 3, 200)
+axes[1,0].plot(t, np.exp(t**2/2), color=TRANSF)
+axes[1,0].set_title(r"Normal$(0,1)$:  $e^{t^{2}/2}$", fontsize=10)
+
+# Exponential(1.5): finite only for t<1.5
+lam = 1.5
+t = np.linspace(-3, 1.45, 200)
+axes[1,1].plot(t, lam/(lam - t), color=TRANSF)
+axes[1,1].axvline(lam, color=GREY, ls="--", lw=1.4)
+axes[1,1].text(lam-0.05, 8, r"$t=\lambda$", ha="right", color=GREY, fontsize=9)
+axes[1,1].set_ylim(0, 11)
+axes[1,1].set_title(r"Exponential$(1.5)$:  $\lambda/(\lambda-t)$", fontsize=10)
+
+for ax in axes.ravel():
+    ax.scatter([0],[1], color=GREY, zorder=5, s=30)
+    ax.set_xlabel("$t$"); ax.set_ylabel("$M(t)$")
+plt.tight_layout()
+```
+
+# Uniqueness: the MGF is a fingerprint {#sec-uniqueness}
+
+Generating moments is only half the value. The other half is that the MGF, *when it exists
+in a neighborhood of zero*, determines the distribution completely — so if we recognize the
+MGF of a sum as the MGF of a known distribution, we have identified the distribution of
+that sum. This is the property that makes the convolution trick of @sec-convolution
+actually conclude something.
+
+::: {#thm-uniqueness}
+**Theorem (uniqueness).** Let $X$ and $Y$ be random variables whose MGFs both exist and
+satisfy $M_X(t) = M_Y(t)$ for all $t$ in some open interval $(-h, h)$ around $0$. Then $X$
+and $Y$ have the **same distribution** (the same CDF).
+:::
+
+We do not prove this theorem in full — a complete proof requires the inversion of the
+Laplace/Fourier transform, machinery that lives above our floor and is owned by the
+analysis underlying [PROB-21]. But we can explain *why it is true* and exactly what it
+rests on, so it is not a black box. The MGF on an interval determines, by @thm-moments,
+every moment $E[X^k]$. For distributions whose moments do not grow too fast — which is
+guaranteed precisely by the MGF being finite on an open interval — the moment sequence
+pins down the distribution uniquely (this is the resolution of the classical *moment
+problem*). Equivalently, the MGF is a Laplace transform of the distribution, and the
+Laplace transform is invertible: knowing $M_X$ on a neighborhood of $0$ lets one recover
+$f_X$ by an inversion formula. Either way, *equal MGFs near zero force equal
+distributions.* We flag the inversion theorem as the imported ingredient and use the
+conclusion.
+
+::: {.callout-warning title="Pitfall"}
+**Uniqueness needs the MGF to exist on an open interval around $0$ — not at a single
+point, and not the moments alone.** Two distinct distributions can share *every* finite
+moment yet differ, when neither has an MGF on an interval (the standard example is the
+log-normal versus certain tilted log-normals — same moments, different densities). The
+moment sequence alone is *not* always a fingerprint; the MGF being finite near $0$ is the
+extra condition that makes it one. This is the deep reason we kept insisting on "finite on
+$(-h,h)$" in @def-mgf. When you invoke uniqueness in an interview, state the open-interval
+hypothesis — leaving it out is the classic error.
+:::
+
+# Sums of independents: convolution becomes a product {#sec-convolution}
+
+Here is the property that earns the MGF its keep. It rests on one fact about independence,
+proved in [PROB-8] and restated here so the chain is complete.
+
+## The independence-to-product lemma {#sec-indep-lemma}
+
+::: {#lem-product}
+**Lemma (expectation of a product factors under independence).** If $U$ and $V$ are
+independent random variables, then for functions $g, h$ for which the expectations exist,
+
+$$
+E\bigl[g(U)\, h(V)\bigr] = E[g(U)]\, E[h(V)] .
+$$
+:::
+
+::: {.proof}
+This is the defining consequence of independence established in [PROB-8]; we re-derive it
+for the continuous case so nothing is assumed. Independence means the joint density
+factors as $f_{U,V}(u,v) = f_U(u) f_V(v)$. Then, by LOTUS for two variables,
+
+$$
+E[g(U) h(V)]
+= \iint g(u) h(v)\, f_{U,V}(u,v)\, du\, dv
+= \iint g(u) h(v)\, f_U(u) f_V(v)\, du\, dv .
+$$
+
+The double integral separates because the integrand is a product of a $u$-only factor and
+a $v$-only factor, and the region is the whole plane (a product region):
+
+$$
+= \Bigl(\int g(u) f_U(u)\, du\Bigr)\Bigl(\int h(v) f_V(v)\, dv\Bigr)
+= E[g(U)]\, E[h(V)] .
+$$
+
+The discrete case is identical with sums in place of integrals. $\qquad\blacksquare$
+:::
+
+## The convolution theorem for MGFs {#sec-conv-thm}
+
+::: {#thm-conv}
+**Theorem (MGF of a sum of independents).** If $X_1, \dots, X_n$ are **independent** random
+variables, each with an MGF on a common interval around $0$, and $S = X_1 + \cdots + X_n$,
+then
+
+$$
+M_S(t) = \prod_{i=1}^{n} M_{X_i}(t)
+= M_{X_1}(t)\, M_{X_2}(t)\cdots M_{X_n}(t) .
+$$ {#eq-conv}
+
+In particular, if the $X_i$ are **i.i.d.** with common MGF $M_X$, then $M_S(t) =
+\bigl[M_X(t)\bigr]^n$.
+:::
+
+::: {.proof}
+Take $n=2$ first; the general case is induction. By the definition of the MGF and the key
+algebraic fact $e^{t(X_1+X_2)} = e^{tX_1}\, e^{tX_2}$ (the exponential turns a sum in the
+exponent into a product — this is *the* property we built the whole transform around):
+
+$$
+M_S(t) = E\bigl[e^{t(X_1 + X_2)}\bigr] = E\bigl[e^{tX_1}\, e^{tX_2}\bigr].
+$$
+
+Now $e^{tX_1}$ is a function of $X_1$ alone and $e^{tX_2}$ a function of $X_2$ alone, and
+$X_1, X_2$ are independent, so @lem-product (with $g(u)=h(u)=e^{tu}$) applies:
+
+$$
+E\bigl[e^{tX_1}\, e^{tX_2}\bigr] = E\bigl[e^{tX_1}\bigr]\, E\bigl[e^{tX_2}\bigr]
+= M_{X_1}(t)\, M_{X_2}(t).
+$$
+
+For general $n$, write $S = (X_1 + \cdots + X_{n-1}) + X_n$. The sum $X_1+\cdots+X_{n-1}$
+is independent of $X_n$ (a function of the first $n-1$ independent variables is independent
+of the $n$-th — the grouping property of independence from [PROB-8]), so the two-variable
+result applies and, by the induction hypothesis, $M_{X_1+\cdots+X_{n-1}}(t) =
+\prod_{i=1}^{n-1} M_{X_i}(t)$. Multiplying by $M_{X_n}(t)$ gives @eq-conv. $\qquad\blacksquare$
+:::
+
+That is the whole mechanism: the messy convolution integral @eq-convolution for the
+density of a sum is replaced by *multiplying* MGFs. Then — and this is where uniqueness
+earns its keep — if the product happens to be the MGF of a recognizable distribution,
+@thm-uniqueness lets us conclude that the sum *has* that distribution. We now cash this in
+four times.
+
+## Sum of independent normals is normal {#sec-sum-normals}
+
+Let $X_1 \sim \mathcal N(\mu_1, \sigma_1^2)$ and $X_2 \sim \mathcal N(\mu_2, \sigma_2^2)$
+be independent, and $S = X_1 + X_2$. Multiply their MGFs from @eq-mgf-normal:
+
+$$
+M_S(t) = M_{X_1}(t)\, M_{X_2}(t)
+= \exp\!\Bigl(\mu_1 t + \tfrac{\sigma_1^2 t^2}{2}\Bigr)
+  \exp\!\Bigl(\mu_2 t + \tfrac{\sigma_2^2 t^2}{2}\Bigr).
+$$
+
+Add the exponents (a product of exponentials adds what is upstairs):
+
+$$
+M_S(t) = \exp\!\Bigl((\mu_1 + \mu_2)\, t + \tfrac{(\sigma_1^2 + \sigma_2^2)\, t^2}{2}\Bigr).
+$$
+
+Compare with @eq-mgf-normal: this is *exactly* the MGF of a normal with mean
+$\mu_1+\mu_2$ and variance $\sigma_1^2 + \sigma_2^2$. By uniqueness (@thm-uniqueness),
+
+$$
+X_1 + X_2 \sim \mathcal N\bigl(\mu_1 + \mu_2,\; \sigma_1^2 + \sigma_2^2\bigr).
+$$
+
+The closure-under-addition of the normal — which [PROB-13] could only assert or prove with
+a hard convolution — falls out in three lines of algebra. By induction, a sum of any number
+of independent normals is normal, with means and variances adding. (Note the means always
+add by linearity of expectation, and the variances add by independence — exactly the rules
+of [PROB-8]; the MGF additionally certifies that the *shape* stays normal.)
+
+## Sum of independent Poissons is Poisson {#sec-sum-poisson}
+
+Let $X_1\sim\text{Poisson}(\lambda_1)$ and $X_2\sim\text{Poisson}(\lambda_2)$ be
+independent. Multiply @eq-mgf-poisson:
+
+$$
+M_S(t) = \exp\!\bigl(\lambda_1(e^t-1)\bigr)\exp\!\bigl(\lambda_2(e^t-1)\bigr)
+= \exp\!\bigl((\lambda_1+\lambda_2)(e^t - 1)\bigr),
+$$
+
+which is the MGF of a $\text{Poisson}(\lambda_1+\lambda_2)$. By uniqueness, $X_1 + X_2 \sim
+\text{Poisson}(\lambda_1 + \lambda_2)$: independent Poisson counts add into a Poisson whose
+rate is the sum of the rates. This is the additivity flagged in [PROB-12], now proved in one
+line.
+
+## Sum of Bernoullis is binomial {#sec-binomial-mgf}
+
+Let $X_1,\dots,X_n$ be i.i.d. $\text{Bernoulli}(p)$, and $Y = \sum_i X_i$ their sum — which
+*is*, by definition, $\text{Binomial}(n,p)$. By @thm-conv with the common MGF
+@eq-mgf-bernoulli,
+
+$$
+M_Y(t) = \bigl[M_{X_1}(t)\bigr]^n = \bigl[(1-p) + p\,e^t\bigr]^n .
+$$ {#eq-mgf-binomial}
+
+So this is the MGF of the binomial, obtained without ever touching the binomial-theorem
+sum we sidestepped in @sec-mgf-bernoulli. Read its moments to confirm the binomial's mean
+and variance. Differentiating @eq-mgf-binomial with the chain rule (the outer power
+$(\cdot)^n$ brings down $n(\cdot)^{n-1}$, times the derivative $p e^t$ of the inside),
+
+$$
+M_Y'(t) = n\bigl[(1-p)+pe^t\bigr]^{n-1}\cdot p e^t = np\,e^t\bigl[(1-p)+pe^t\bigr]^{n-1}.
+$$
+
+At $t=0$ the bracket is $(1-p)+p=1$, so $M_Y'(0) = np\cdot 1\cdot 1^{n-1} = np = E[Y]$. For
+the second derivative, write $M_Y'(t) = np\cdot u(t)\, v(t)$ with $u(t)=e^t$ and
+$v(t)=\bigl[(1-p)+pe^t\bigr]^{n-1}$, and apply the **product rule** $(uv)' = u'v + uv'$.
+Here $u'(t)=e^t$, and $v'(t) = (n-1)\bigl[(1-p)+pe^t\bigr]^{n-2}\cdot p e^t$ by the chain
+rule again. Thus
+
+$$
+M_Y''(t) = np\Bigl[\,e^t\bigl[(1-p)+pe^t\bigr]^{n-1}
++ e^t\,(n-1)\bigl[(1-p)+pe^t\bigr]^{n-2} p e^t\,\Bigr].
+$$
+
+Evaluate at $t=0$, where $e^0=1$ and the bracket $(1-p)+p=1$, so every power of it is $1$:
+
+$$
+M_Y''(0) = np\bigl[\,1\cdot 1 + 1\cdot(n-1)\cdot 1\cdot p\cdot 1\,\bigr]
+= np\bigl[1 + (n-1)p\bigr] = np + n(n-1)p^2 = E[Y^2].
+$$
+
+Then, by the computational identity of [PROB-6],
+
+$$
+\operatorname{Var}(Y) = M_Y''(0) - \bigl(M_Y'(0)\bigr)^2
+= np + n(n-1)p^2 - (np)^2
+= np + n^2 p^2 - n p^2 - n^2 p^2
+= np - np^2 = np(1-p),
+$$
+
+the binomial mean $np$ and variance $np(1-p)$ of [PROB-11], confirmed.
+
+## Sum of exponentials is gamma {#sec-gamma-mgf}
+
+Let $X_1,\dots,X_n$ be i.i.d. $\text{Exponential}(\lambda)$, and $S = \sum_i X_i$. By
+@thm-conv with the common MGF @eq-mgf-exponential,
+
+$$
+M_S(t) = \Bigl[\frac{\lambda}{\lambda - t}\Bigr]^n
+= \Bigl(\frac{\lambda}{\lambda - t}\Bigr)^n, \qquad t < \lambda.
+$$ {#eq-mgf-gamma}
+
+This is the MGF of a $\text{Gamma}(n, \lambda)$ distribution (shape $n$, rate $\lambda$).
+By uniqueness, the sum of $n$ i.i.d. exponentials with rate $\lambda$ is exactly
+$\text{Gamma}(n,\lambda)$ — the "sum of waiting times" fact of [PROB-14], now certified by
+the transform without convolving $n-1$ times. (And $M_S'(0)$ gives the gamma mean
+$n/\lambda$; we leave that one-step differentiation as a check the reader can now do
+reflexively.)
+
+@fig-convolution shows the convolution-becomes-product story directly: the histogram of a
+simulated sum lands precisely on the density predicted by multiplying MGFs.
+
+```{python}
+#| label: fig-convolution
+#| fig-cap: "Convolution-by-multiplication, verified by simulation. We add $n=5$ i.i.d. Exponential($\\lambda=1$) variables. Multiplying their MGFs predicts the sum is Gamma$(5,1)$, by @eq-mgf-gamma and uniqueness. The blue histogram is $200{,}000$ simulated sums; the red curve is the Gamma$(5,1)$ density the MGF predicted. They coincide — the product of MGFs found the distribution of the sum without ever computing a convolution integral."
+from scipy import stats
+rng = np.random.default_rng(20)
+n_terms, n_sims, lam = 5, 200_000, 1.0
+sums = rng.exponential(scale=1/lam, size=(n_sims, n_terms)).sum(axis=1)
+
+xs = np.linspace(0, 16, 300)
+gamma_pdf = stats.gamma.pdf(xs, a=n_terms, scale=1/lam)
+
+fig, ax = plt.subplots()
+ax.hist(sums, bins=80, density=True, color=DENS, alpha=0.45,
+        label=f"histogram of {n_sims:,} simulated sums")
+ax.plot(xs, gamma_pdf, color=TRANSF,
+        label=r"Gamma$(5,1)$ density (predicted by $\prod M_{X_i}$)")
+ax.set_xlabel("$s = X_1 + \\cdots + X_5$"); ax.set_ylabel("density")
+ax.set_title("Sum of 5 i.i.d. Exponentials is Gamma$(5,1)$")
+ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"You showed sums of independent normals/Poissons/gammas stay in the same family. Does
+every distribution do that?"* No — this **closure under addition** is special. Bernoulli
+is the cleanest counterexample: the sum of two independent Bernoullis is *not* a Bernoulli
+(it can equal $2$), it is a binomial — the family changed. Uniform plus uniform is
+triangular, not uniform. The MGF tells you *which* families are closed: a family is closed
+under independent addition exactly when multiplying two of its MGFs lands you back at an
+MGF of the same form, as it did for normal ($e^{\text{quadratic}}$ times
+$e^{\text{quadratic}}$ is $e^{\text{quadratic}}$) and Poisson. The normal, Poisson, gamma
+(fixed rate), negative-binomial (fixed $p$), and Cauchy are the famous closed
+("infinitely divisible"-adjacent) families; most are not closed.
+:::
+
+# When the MGF fails to exist {#sec-existence}
+
+We have been careful to say "when the MGF exists." Now we confront the cases where it does
+not — because they are common, important, and the reason the characteristic function had
+to be invented.
+
+## The mechanism of failure: heavy tails {#sec-heavy-tails}
+
+The integral $\int e^{tx} f(x)\,dx$ asks $e^{tx}$ — which grows *exponentially* in $x$ —
+to be tamed by the tail of the density $f(x)$. If the density decays only
+*polynomially* (like $1/x^{p}$) rather than at least exponentially, then for any $t>0$ the
+product $e^{tx}\cdot x^{-p}$ still blows up as $x\to\infty$, the integral diverges, and
+$M_X(t) = +\infty$. Such distributions are called **heavy-tailed**, and for them the MGF is
+finite only at $t=0$ (where the integrand is just $f$, integrating to $1$) — which, by our
+@def-mgf, means it does not exist.
+
+The canonical example is the **Cauchy distribution**, with density $f(x) =
+\frac{1}{\pi(1+x^2)}$ on the whole real line. Its tails decay like $1/x^2$, so heavy that
+even its *mean* does not exist (the integral $\int x f(x)\,dx$ diverges, as shown in
+[PROB-5]). With no finite mean, there is certainly no MGF on an interval — there are no
+moments for it to generate. @fig-heavy-tail contrasts a thin tail (normal) with a heavy
+tail (Cauchy) and shows the tilted integrand diverging.
+
+```{python}
+#| label: fig-heavy-tail
+#| fig-cap: "Why heavy tails kill the MGF. **Left:** the normal tail (blue) decays like $e^{-x^2/2}$, fast enough that the tilted integrand $e^{tx}f(x)$ (red, $t=0.5$) still goes to zero — its area, the MGF, is finite. **Right:** the Cauchy tail decays only like $1/x^2$; the tilted integrand $e^{tx}f(x)$ (red) *grows without bound* as $x\\to\\infty$, so the area is infinite and the MGF does not exist. The exponential tilt always wins against a polynomial tail."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))
+t = 0.5
+
+x = np.linspace(0, 8, 400)
+fn = np.exp(-x**2/2)/np.sqrt(2*np.pi)
+axL.plot(x, fn, color=DENS, label=r"normal tail $f(x)$")
+axL.plot(x, np.exp(t*x)*fn, color=TRANSF, ls="--", label=r"$e^{tx}f(x)$")
+axL.set_title("Thin tail: tilted integrand decays"); axL.set_xlabel("$x$")
+axL.set_ylabel("density / weight"); axL.legend(fontsize=8, framealpha=0.9)
+axL.set_ylim(0, 0.6)
+
+x = np.linspace(0, 8, 400)
+fc = 1/(np.pi*(1+x**2))
+axR.plot(x, fc, color=DENS, label=r"Cauchy tail $f(x)$")
+axR.plot(x, np.exp(t*x)*fc, color=TRANSF, ls="--", label=r"$e^{tx}f(x)$ (diverges)")
+axR.set_title("Heavy tail: tilted integrand explodes"); axR.set_xlabel("$x$")
+axR.set_ylabel("density / weight"); axR.legend(fontsize=8, framealpha=0.9, loc="upper left")
+axR.set_ylim(0, 2.0)
+plt.tight_layout()
+```
+
+This is not an exotic corner. Heavy tails are the rule, not the exception, in finance
+(asset returns), insurance (large claims), network traffic, and any setting governed by
+power laws. A tool that silently requires light tails is a tool that fails exactly where
+the interesting risk lives. We need a transform that survives heavy tails — and there is
+one, with no cost in existence at all.
+
+# The characteristic function {#sec-cf}
+
+## Complex exponentials from scratch {#sec-complex}
+
+The fix replaces the real exponent $tX$ with the *imaginary* exponent $itX$, where $i$ is
+the imaginary unit with $i^2 = -1$. Because our floor is Calc 1, we build the one fact we
+need. **Euler's formula** states
+
+$$
+e^{i\theta} = \cos\theta + i\sin\theta ,
+$$ {#eq-euler}
+
+for any real number $\theta$. You can take this as the *definition* of raising $e$ to an
+imaginary power, and it is the natural one: substitute $z = i\theta$ into the Taylor series
+$e^z = \sum z^k/k!$, use the cycle $i^0=1, i^1=i, i^2=-1, i^3=-i, i^4=1,\dots$ to split the
+series into its real and imaginary parts, and the real part is exactly the Taylor series of
+$\cos\theta$ while the imaginary part is that of $\sin\theta$. The single fact that makes
+$e^{itX}$ tame is its **modulus** (its distance from the origin in the complex plane):
+
+$$
+\bigl|e^{i\theta}\bigr| = \sqrt{\cos^2\theta + \sin^2\theta} = \sqrt{1} = 1 ,
+$$ {#eq-unit-modulus}
+
+using the Pythagorean identity $\cos^2 + \sin^2 = 1$. So $e^{i\theta}$ always lies *on the
+unit circle*, no matter how large $\theta$ is. Where $e^{tX}$ could grow without bound and
+break the integral, $e^{itX}$ never exceeds magnitude $1$ — it just rotates. That single
+geometric fact is the entire reason the next definition always works.
+
+## Definition and unconditional existence {#sec-cf-def}
+
+::: {#def-cf}
+**Definition (characteristic function).** For a random variable $X$, the **characteristic
+function** is the complex-valued function of a real variable $t$,
+
+$$
+\varphi_X(t) \;=\; E\!\left[e^{itX}\right]
+\;=\; E[\cos(tX)] + i\, E[\sin(tX)] ,
+$$ {#eq-cf-def}
+
+where the second form uses Euler's formula @eq-euler to split it into a real part
+$E[\cos tX]$ and an imaginary part $E[\sin tX]$.
+:::
+
+::: {#thm-cf-exists}
+**Theorem (the characteristic function always exists).** For *every* random variable $X$
+and every real $t$, $\varphi_X(t)$ is finite, with $|\varphi_X(t)| \le 1$.
+:::
+
+::: {.proof}
+The expectation of a complex quantity is bounded in modulus by the expectation of its
+modulus — the triangle inequality, carried through the integral/sum:
+$\bigl|E[e^{itX}]\bigr| \le E\bigl[\,|e^{itX}|\,\bigr]$. By @eq-unit-modulus, $|e^{itX}| =
+1$ for every value of $X$ and every $t$. Therefore
+
+$$
+\bigl|\varphi_X(t)\bigr| \le E\bigl[\,|e^{itX}|\,\bigr] = E[1] = 1 .
+$$
+
+A quantity bounded by $1$ is certainly finite. No assumption on the tails of $X$ was used —
+not even that $X$ has a mean. $\qquad\blacksquare$
+:::
+
+This is the payoff. The characteristic function exists for the Cauchy, for any
+power-law-tailed distribution, for anything at all — because the cosine and sine are bounded
+between $-1$ and $1$, so their expectations always exist. We pay exactly one price: the
+output is now a complex number. Everything else carries over.
+
+## All the good properties survive {#sec-cf-props}
+
+The characteristic function inherits the MGF's three pillars, with the real exponential
+swapped for the complex one.
+
+**Moments by differentiation.** When $X$ has $k$ finite moments, differentiating
+@eq-cf-def $k$ times at $0$ gives
+
+$$
+\varphi_X^{(k)}(0) = i^k\, E[X^k],
+\qquad\text{e.g.}\quad
+\varphi_X'(0) = i\,E[X], \quad \varphi_X''(0) = i^2 E[X^2] = -E[X^2].
+$$ {#eq-cf-moments}
+
+The derivation is identical to @thm-moments with $z=itX$: the Taylor series gives
+$\varphi_X(t) = \sum_k \frac{(it)^k}{k!}E[X^k]$, and reading off the $k$-th coefficient
+brings down $i^k E[X^k]$. The only change from @eq-moments is the bookkeeping factor $i^k$,
+which you divide back out. (For the Cauchy, $\varphi$ exists but is not differentiable at
+$0$ — consistent with its having no mean.)
+
+**Convolution becomes a product.** The proof of @thm-conv used only the functional equation
+$e^{a+b}=e^a e^b$ and the factoring of @lem-product, both of which hold verbatim for
+$e^{it(\cdot)}$. So for independent $X_1,\dots,X_n$ with $S=\sum_i X_i$,
+
+$$
+\varphi_S(t) = \prod_{i=1}^n \varphi_{X_i}(t) .
+$$ {#eq-cf-conv}
+
+**Uniqueness.** This is now an *unconditional theorem* — no interval hypothesis is needed,
+because $\varphi_X$ is always defined on all of $\mathbb R$.
+
+::: {#thm-cf-uniqueness}
+**Theorem (uniqueness for characteristic functions).** Two random variables have the same
+distribution **if and only if** they have the same characteristic function for all real
+$t$.
+:::
+
+This is the cleaner sibling of @thm-uniqueness, and it holds with no fine print: the
+characteristic function is the Fourier transform of the distribution, and the Fourier
+transform is always invertible (Lévy's inversion formula recovers the CDF from $\varphi$).
+We flag the inversion theorem as the imported analysis result and use the conclusion. The
+absence of the open-interval caveat is exactly why the characteristic function, not the MGF,
+is the rigorous tool in advanced probability.
+
+## A worked characteristic function: the standard normal {#sec-cf-normal}
+
+For the standard normal $Z\sim\mathcal N(0,1)$, the MGF was $M_Z(t)=e^{t^2/2}$. The
+characteristic function is obtained by the same complete-the-square computation as
+@sec-mgf-normal with $t$ replaced by $it$, and the result is
+
+$$
+\varphi_Z(t) = e^{(it)^2/2} = e^{-t^2/2} .
+$$ {#eq-cf-normal}
+
+The substitution $t\to it$ is rigorous here because the normal's MGF is *entire* (finite
+for all complex arguments), so the formula extends from the real axis to the imaginary one
+without trouble — a convenience the normal enjoys precisely because it has no heavy tail.
+Note the sign flip: $(it)^2 = i^2 t^2 = -t^2$, so the characteristic function is
+$e^{-t^2/2}$, a real, bounded, bell-shaped function of $t$ (the Gaussian is, beautifully,
+its own Fourier transform up to scaling). General $\mathcal N(\mu,\sigma^2)$ likewise has
+$\varphi(t) = \exp(i\mu t - \tfrac{1}{2}\sigma^2 t^2)$.
+
+And the Cauchy, which had *no* MGF at all, has the perfectly well-defined characteristic
+function $\varphi(t) = e^{-|t|}$. @fig-cf shows both, real and bounded, existing where the
+MGF could not.
+
+```{python}
+#| label: fig-cf
+#| fig-cap: "Characteristic functions exist where MGFs do not. **Left:** the standard normal's characteristic function $\\varphi(t)=e^{-t^2/2}$ (red), bounded by $1$ and tending to $0$ — compare its MGF $e^{t^2/2}$ (grey), which blows up. **Right:** the Cauchy has *no* MGF (it would be infinite for every $t\\neq 0$), yet its characteristic function $\\varphi(t)=e^{-|t|}$ (red) is a clean, bounded function. The complex exponential's unit modulus guarantees the curve never leaves the band $[-1,1]$ (grey dashed)."
+t = np.linspace(-4, 4, 400)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))
+axL.plot(t, np.exp(-t**2/2), color=TRANSF, label=r"$\varphi(t)=e^{-t^2/2}$ (always finite)")
+axL.plot(t, np.minimum(np.exp(t**2/2), 8), color=GREY, ls="--",
+         label=r"MGF $e^{t^2/2}$ (blows up)")
+axL.axhline(1, color=GREY, lw=0.8, ls=":"); axL.axhline(-1, color=GREY, lw=0.8, ls=":")
+axL.set_ylim(-1.4, 8); axL.set_title("Standard normal"); axL.set_xlabel("$t$")
+axL.set_ylabel("value"); axL.legend(fontsize=8, framealpha=0.9, loc="upper center")
+
+axR.plot(t, np.exp(-np.abs(t)), color=TRANSF, label=r"$\varphi(t)=e^{-|t|}$")
+axR.axhline(1, color=GREY, lw=0.8, ls=":"); axR.axhline(-1, color=GREY, lw=0.8, ls=":")
+axR.set_ylim(-1.4, 1.4); axR.set_title("Cauchy (no MGF exists)"); axR.set_xlabel("$t$")
+axR.set_ylabel("value"); axR.legend(fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"If the characteristic function always exists and the MGF doesn't, why teach the MGF at
+all?"* Three honest reasons. **(1) No complex numbers.** The MGF is real-valued, so its
+algebra and its derivatives are the ordinary Calc-1 ones — for the light-tailed
+distributions you meet most often (normal, gamma, Poisson, binomial), it is simply easier
+to compute and read. **(2) Tail behavior.** The MGF's *existence* on an interval is itself
+information: it certifies that all moments are finite and the tails are at most
+exponential, and it powers the **Chernoff bound** $P(X\ge a)\le e^{-ta}M_X(t)$ — the
+exponential concentration inequality (a relative of Chebyshev from [PROB-19]) that the
+characteristic function cannot give. **(3) Pedagogy.** The MGF teaches the moment-generating
+and convolution ideas without the overhead of the complex plane; the characteristic
+function is then "the same idea, made bulletproof." The right one-liner: *use the MGF when
+it exists; reach for the characteristic function when it doesn't, or when you need an
+airtight uniqueness/convergence argument.*
+:::
+
+# The link to the central limit theorem {#sec-clt-link}
+
+We can now see, without proving it, *why* these transforms are the engine of the central
+limit theorem — the result the Statistical Inference track ([INFR-A2]) owns and proves, and
+the reason this article is its prerequisite.
+
+The CLT concerns the standardized sum of $n$ i.i.d. variables with mean $\mu$ and variance
+$\sigma^2$,
+
+$$
+Z_n = \frac{1}{\sigma\sqrt n}\sum_{i=1}^n (X_i - \mu),
+$$
+
+and claims its distribution approaches a standard normal as $n\to\infty$. The
+characteristic function turns this into a limit we can *see*. Because the summands are
+i.i.d., @eq-cf-conv says $\varphi_{Z_n}(t)$ is a *power* of one summand's characteristic
+function. Expanding that single characteristic function to second order via @eq-cf-moments
+— its value at $0$ is $1$, its first derivative vanishes after centering, and its second
+derivative is $-\sigma^2$ — gives, for the standardized centered variable,
+$\varphi(t/(\sigma\sqrt n)) \approx 1 - \frac{t^2}{2n} + (\text{smaller})$. Raising to the
+$n$-th power and using the calculus limit $\bigl(1 - \frac{a}{n}\bigr)^n \to e^{-a}$,
+
+$$
+\varphi_{Z_n}(t) = \Bigl[\varphi\bigl(\tfrac{t}{\sigma\sqrt n}\bigr)\Bigr]^n
+\;\xrightarrow[n\to\infty]{}\; e^{-t^2/2} ,
+$$
+
+which is exactly the standard normal's characteristic function @eq-cf-normal. By the
+*continuity theorem* — convergence of characteristic functions is convergence in
+distribution, the Lévy result mentioned in @sec-why-history — $Z_n$ converges in
+distribution to $\mathcal N(0,1)$. That continuity theorem is defined and used carefully in
+[PROB-21] and the full CLT is assembled in [INFR-A2]; here we only point out that **the
+characteristic function is the object that makes the limit a one-line calculation** — the
+$e^{-t^2/2}$ at the end is the transform's fingerprint of the normal, and uniqueness
+(@thm-cf-uniqueness) is what licenses reading the distribution off it. This single sketch
+is the whole reason the MGF/CF machinery sits exactly where it does in the track.
+
+# When to reach for these transforms — and when not {#sec-applicability}
+
+An honest applicability verdict, the kind an interviewer is really testing for.
+
+**Reach for the MGF / characteristic function when:**
+
+- You need the **distribution of a sum** of independent variables. Multiply transforms,
+  recognize the product, invoke uniqueness. This is the single most common use and the one
+  that pays the most.
+- You need **moments** of a distribution whose density is awkward to integrate against
+  $x^k$ repeatedly, but whose MGF is a clean closed form (gamma, normal, Poisson). Two
+  derivatives beat two integrals.
+- You are proving a **limit theorem** (CLT-type). The characteristic function plus the
+  continuity theorem is the standard machine, because convergence of $\varphi$ is exactly
+  convergence in distribution.
+- You want an **exponential tail bound** (Chernoff). The MGF, where it exists, gives
+  bounds far sharper than Chebyshev's $1/k^2$ — see [PROB-19] for the second-moment version
+  this strengthens.
+
+**Do not reach for them when:**
+
+- The variables you are summing are **dependent**. The product rule (@thm-conv) used
+  independence in @lem-product; for dependent sums the MGF of the sum is *not* the product,
+  and the whole convenience evaporates. You would need the joint MGF, which is rarely
+  tractable.
+- You only need the mean and variance and the density is already simple — computing $M_X$
+  is overkill; just integrate $x f(x)$ and $x^2 f(x)$ directly.
+- The distribution is **heavy-tailed** and you specifically want the MGF — it does not
+  exist. Use the characteristic function, or work with the distribution directly.
+- You need an **exact small-$n$ answer for a non-closed family** (e.g. the exact
+  distribution of a sum of a handful of uniforms): the transform exists but inverting it
+  back to a density is its own hard problem; direct convolution or simulation may be more
+  honest.
+
+::: {.callout-warning title="Pitfall"}
+**The product rule is an independence rule, not an addition rule.** The seductive error is
+to write $M_{X+Y}(t) = M_X(t)M_Y(t)$ for *any* $X+Y$. It holds **only when $X$ and $Y$ are
+independent** — that is the single hypothesis @lem-product needs. If $X$ and $Y$ are
+correlated, the MGF of the sum involves their joint distribution and does not factor. (By
+contrast, the *means* always add, $E[X+Y]=E[X]+E[Y]$, independent or not — that is
+linearity of expectation from [PROB-5], a strictly weaker and unconditional statement. Do
+not confuse "means always add" with "transforms always multiply.")
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the concentration side of Movement 4. **[PROB-19 *Chebyshev's
+Inequality*]** controlled the tails using only the mean and variance — the first two
+moments. This article built the object that holds *all* the moments at once and that turns
+sums into products. From here the track converges:
+
+- **[PROB-21 *Modes of Convergence*]** — the immediate sequel. The characteristic function
+  defined here is the tool that makes **convergence in distribution** precise (the
+  continuity theorem) and provides the cleanest uniqueness statement (@thm-cf-uniqueness).
+  Everything in @sec-clt-link is set up there in full.
+- **[INFR-A2]** (Statistical Inference) — *owns* the **central limit theorem** and the law
+  of large numbers. It consumes the MGF/CF machinery built here exactly as sketched in
+  @sec-clt-link; the raw transform is ours, the limit theorem is theirs. This is the clean
+  ownership seam the track was designed around.
+- **[PROB-16 *The Exponential Family*]** — a sibling unification: there, $A'(\theta) =
+  E[T(X)]$ generates moments by differentiating the *log-partition*; here $M_X^{(k)}(0) =
+  E[X^k]$ generates them by differentiating the MGF. The two devices are close cousins (the
+  MGF is essentially the exponential-family normalizer evaluated along $t$), and seeing both
+  is worth the trip.
+- **Backward links honored.** The catalog MGFs of @sec-catalog certify, in one line each,
+  the closure facts that [PROB-11], [PROB-12], [PROB-13], and [PROB-14] could only assert —
+  closing the loop on "a sum of independent normals is normal," and its siblings.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary thread.** Laplace's *Théorie analytique des probabilités* (1812) used
+  generating functions and the Laplace transform on sums of random quantities and the first
+  central-limit arguments — the historical root of @sec-why-history. Paul Lévy's *Calcul des
+  probabilités* (1925) put the characteristic function at the center and proved the
+  continuity theorem that links it to convergence in distribution.
+- **The moment problem.** The fact that an MGF finite on an interval pins down the
+  distribution, while the moment *sequence* alone need not (the pitfall in @sec-uniqueness),
+  is the classical Hamburger/Stieltjes moment problem. The standard counterexample — two
+  distinct distributions with identical moments — is the log-normal and its sine-tilted
+  cousins; chasing it down is a rewarding rabbit hole.
+- **Cumulants.** Taking $\log M_X(t)$ instead of $M_X(t)$ gives the **cumulant generating
+  function**, whose derivatives at $0$ are the *cumulants* — the first is the mean, the
+  second the variance, the third relates to skewness — and which *add* (rather than
+  multiply) under independent sums. For the normal, $\log M_X(t) = \mu t +
+  \tfrac{\sigma^2}{2}t^2$ has only two nonzero cumulants, a clean characterization of "the
+  normal is the distribution with no structure beyond mean and variance."
+- **Open threads deferred.** *Exactly when is a moment sequence a valid one?* (the moment
+  problem's positivity conditions). *How does the characteristic function detect the speed
+  of convergence in the CLT?* (the Berry–Esseen theorem, downstream in Inference). *What is
+  the multivariate version?* (the joint MGF $E[e^{\mathbf t^\top \mathbf X}]$ of a random
+  vector, which combines naturally with the covariance machinery of [PROB-17] and
+  [PROB-18]).

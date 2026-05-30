@@ -1,0 +1,1145 @@
+---
+title: "Conditional Distributions and Conditional Expectation"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the curve / theoretical value
+ACCENT = "#0a7d4d"     # highlights / the conditional mean
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas
+```
+
+> **Where this sits in the track.** This article is the second sequel to
+> [PROB-7 *Joint Distributions, Covariance & Correlation*]. Its sibling, [PROB-8
+> *Independence and the i.i.d. Sample*], asked what it means for two random variables to
+> carry *no* information about each other. This article asks the opposite and far more
+> common question: when they *do* carry information, exactly how does learning the value of
+> one reshape the distribution of the other? We take the event-level conditioning of
+> [PROB-1 *Conditional Probability, Independence & Bayes' Rule*] — $P(A\mid B) =
+> P(A\cap B)/P(B)$ — and lift it to the random-variable level, producing the **conditional
+> pmf/pdf** $f_{Y\mid X}(y\mid x) = f_{X,Y}(x,y)/f_X(x)$. From there we build the
+> **conditional expectation** $\mathbb{E}[Y\mid X=x]$, watch it become a *function of the
+> random* $X$ — and therefore a random variable, $\mathbb{E}[Y\mid X]$, the conceptual
+> hinge of the whole article — and derive the two laws that make it usable: the **law of
+> total expectation** $\mathbb{E}[Y]=\mathbb{E}\!\left[\mathbb{E}[Y\mid X]\right]$ and the
+> **law of total variance** $\operatorname{Var}(Y)=\mathbb{E}\!\left[\operatorname{Var}(Y\mid
+> X)\right]+\operatorname{Var}\!\left(\mathbb{E}[Y\mid X]\right)$. We finish by proving the
+> result the entire Regression track stands on: **$\mathbb{E}[Y\mid X]$ is the best
+> predictor of $Y$ from $X$ in mean-squared error.** It assumes [PROB-1] (conditioning of
+> events), [PROB-5] (expectation and its linearity), and [PROB-7] (joint and marginal
+> distributions, covariance). It sets up Regression's founding premise that to regress is
+> to estimate $\mathbb{E}[Y\mid X]$ ([REGR-0], [REGR-23]), the Bayes-optimal classifier in
+> Classification, and the conditioning that Causal Inference runs on.
+
+## Abstract {.unnumbered}
+
+Knowing that a random variable $X$ took the value $x$ is *information*, and information
+changes a probability distribution. This article makes that change precise. We divide the
+joint density by the marginal — $f_{Y\mid X}(y\mid x) = f_{X,Y}(x,y)/f_X(x)$ — and obtain a
+brand-new, fully legitimate distribution for $Y$, one for **each** value $x$ we might learn.
+Its mean, $\mathbb{E}[Y\mid X=x]$, is a single number that depends on which $x$ we saw; let
+the $x$ vary at random and that number becomes a *random variable*, $\mathbb{E}[Y\mid X]$ —
+the single most important and most misunderstood object in the article. From this one idea,
+two laws follow by direct calculation, with every step shown: averaging the conditional mean
+back over $X$ recovers the plain mean (**total expectation**), and the spread of $Y$ splits
+cleanly into the average within-group spread plus the spread *between* group means (**total
+variance**). The single claim the article defends is that $\mathbb{E}[Y\mid X]$ is not a
+formula but a *function* — the best possible guess of $Y$ once you have seen $X$ — and that
+this is precisely what regression, classification, and causal adjustment are all trying to
+estimate.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Learning that $X=x$ replaces the distribution of $Y$ with a **new** distribution — its
+*conditional* distribution given $X=x$ — obtained by slicing the joint distribution at $x$
+and renormalizing so it sums (or integrates) to $1$. The mean of that sliced distribution,
+$\mathbb{E}[Y\mid X=x] = m(x)$, is a number that depends on $x$. Feed it the random $X$
+instead of a fixed $x$ and you get a **random variable**, $\mathbb{E}[Y\mid X] = m(X)$,
+whose own average is just $\mathbb{E}[Y]$ again (the **law of total expectation**) and which
+is the **best predictor of $Y$ from $X$ in mean-squared error**.
+:::
+
+Everything below orbits that box. The conceptual leap — from "$\mathbb{E}[Y\mid X=x]$ is a
+number" to "$\mathbb{E}[Y\mid X]$ is a random variable" — is the move that trips up almost
+everyone the first time, so we will make it slowly, twice, and with a picture. Once it
+lands, the two laws of total expectation and total variance are short calculations, and the
+best-predictor theorem that founds regression falls out in a page.
+
+# Why we are doing this: the problem that forces conditioning {#sec-why}
+
+Keep one question in view for the whole article: **once we have observed something, what is
+the right distribution to use for what we have not yet observed?** Every formula below is an
+answer to a piece of that question. If a step ever feels arbitrary, come back here.
+
+## The marginal answer is the wrong answer once you have data
+
+[PROB-5] gave us $\mathbb{E}[Y]$, the long-run average of a random variable taken over its
+*entire* distribution — the best one-number summary when we know nothing else. But in almost
+every real problem we *do* know something else. A doctor predicting a patient's blood
+pressure does not use the population average; she uses the average *for patients of that age,
+weight, and history*. A lender estimating default risk does not use the overall default rate;
+it uses the rate *for applicants with that credit score and income*. A weather model does
+not report the climatological average temperature; it reports the expected temperature
+*given* today's pressure, humidity, and wind.
+
+In every one of these, a second variable $X$ has been observed, and the question is no longer
+"what is the average of $Y$?" but "what is the average of $Y$ **among the cases where $X$
+came out the way it did**?" The unconditional mean $\mathbb{E}[Y]$ throws away exactly the
+information we paid to collect. The object that *uses* it is the **conditional expectation**,
+and the distribution behind it is the **conditional distribution**.
+
+## The historical root: conditioning is older than calculus
+
+The instinct to restrict attention to "the cases where $B$ happened" is the oldest move in
+probability. It is implicit in the seventeenth-century correspondence of Pascal and Fermat
+over interrupted games of chance — "given that the score now stands at 2–1, how should the
+pot be split?" is a conditional-expectation question. It was made explicit by Thomas Bayes
+(published posthumously, 1763) and Pierre-Simon Laplace, whose *Théorie analytique des
+probabilités* (1812) is shot through with conditional reasoning about observations. [PROB-1]
+told that story for *events*: $P(A\mid B)=P(A\cap B)/P(B)$, "restrict the sample space to
+$B$ and renormalize."
+
+What changed in the early twentieth century — and what this article is really about — is the
+realization that conditioning is most powerful when the thing we condition on is itself a
+*random variable* that we let vary. Andrey Kolmogorov, in the same 1933 monograph that gave
+us the axioms (built in [PROB-0]), defined conditional expectation as a random variable in
+its own right. That is the leap from "the average eruption length given a $73$-minute wait is
+$3.9$ minutes" (a number) to "the average eruption length *as a function of* the wait" (a
+random object that inherits its randomness from the wait). The whole modern apparatus of
+regression, filtering, and prediction sits on Kolmogorov's reframing, and reproducing it
+carefully is the spine of this article.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between $\mathbb{E}[Y\mid X=x]$ and $\mathbb{E}[Y\mid X]$? Aren't
+they the same thing?"* No — and this is the single most common interview trip-wire on the
+topic. $\mathbb{E}[Y\mid X=x]$ is a **number**: you have plugged in a specific observed value
+$x$, and the answer is one quantity (e.g. $3.9$ minutes). $\mathbb{E}[Y\mid X]$ is a
+**random variable**: you have *not* plugged in a value, so the answer is a function of the
+still-random $X$, and it is random because $X$ is. Writing $m(x)=\mathbb{E}[Y\mid X=x]$ for
+the function, the two are related by $\mathbb{E}[Y\mid X]=m(X)$ — the same rule with a random
+argument. We build this distinction from scratch in @sec-eyx-rv; if you can articulate it
+cleanly you have answered the hardest question most interviewers know to ask here.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture the joint distribution of two variables as a cloud of points in the plane — $X$
+horizontal, $Y$ vertical. The *marginal* distribution of $Y$ is what you see if you squash
+the whole cloud onto the vertical axis, forgetting $X$ entirely (this is the "integrate $X$
+out" picture from [PROB-7]).
+
+Conditioning refuses to squash. Instead it **cuts a thin vertical slice** of the cloud at
+$X=x$ and asks only about the points in that slice. Those points have their own spread of
+$Y$-values, their own center, their own shape — a distribution living entirely inside the
+slice. That is the conditional distribution of $Y$ given $X=x$. @fig-slices shows three such
+slices through one cloud: as $x$ moves right, the slice slides along, and both its center and
+its spread can change.
+
+```{python}
+#| label: fig-slices
+#| fig-cap: "Conditioning is slicing. A joint cloud of $(X,Y)$ points (grey) is sliced at three values of $X$ (shaded bands). Within each band, the $Y$-values have their own distribution — their own mean (the coloured dot) and their own spread. The conditional distribution of $Y$ given $X=x$ is exactly the distribution of $Y$-values *inside the slice at $x$*. As the slice slides right, its centre $\\mathbb{E}[Y\\mid X=x]$ tracks upward and its width $\\operatorname{Var}(Y\\mid X=x)$ widens — neither is captured by the single marginal mean of $Y$."
+rng = np.random.default_rng(3)
+n = 4000
+x = rng.uniform(0, 10, n)
+# conditional mean rises with x; conditional spread also grows with x (heteroscedastic)
+y = 1.0 + 0.7 * x + rng.normal(0, 0.4 + 0.18 * x, size=n)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.4))
+ax.scatter(x, y, s=6, color=GREY, alpha=0.25, zorder=1)
+
+for xc, col in zip([2.0, 5.0, 8.0], [ACCENT, LINE, POINT]):
+    in_slice = np.abs(x - xc) < 0.35
+    ax.axvspan(xc - 0.35, xc + 0.35, color=col, alpha=0.10, zorder=0)
+    ys = y[in_slice]
+    ax.scatter([xc] * ys.size, ys, s=10, color=col, alpha=0.55, zorder=2)
+    ax.scatter([xc], [ys.mean()], s=120, color=col, edgecolor="white",
+               linewidth=1.5, zorder=4)
+    ax.annotate(fr"$\mathbb{{E}}[Y\mid X={xc:.0f}]$", (xc, ys.mean()),
+                textcoords="offset points", xytext=(8, 10), color=col, fontsize=9)
+
+ax.set_xlabel("$X$"); ax.set_ylabel("$Y$")
+ax.set_title("Each slice at $X=x$ has its own distribution of $Y$")
+plt.tight_layout()
+```
+
+Now the leap. The center of the slice, $\mathbb{E}[Y\mid X=x]$, is a number that *depends on
+which slice you cut*. Trace it as $x$ sweeps left to right and you get a **curve** — a
+function $m(x)$. That curve is the deterministic skeleton of the relationship. But $X$ is
+random: nature picks the slice for you. So the value $m(X)$ you actually end up with is
+*itself random*, because the slice was random. That random value is $\mathbb{E}[Y\mid X]$.
+Hold this picture — the curve $m(x)$ is fixed and known, but *which point of the curve you
+land on* is random — and the rest is bookkeeping.
+
+# The formal development {#sec-formal}
+
+## Notation and the standing setup {#sec-notation}
+
+We carry two random variables $X$ and $Y$ defined on the same sample space (built in
+[PROB-0]), with a known **joint distribution** (from [PROB-7]). To keep both the discrete and
+continuous stories on the page, we will state each definition in both forms. We write:
+
+- $p_{X,Y}(x,y) = P(X=x,\,Y=y)$ for the **joint pmf** (discrete case), and
+  $f_{X,Y}(x,y)$ for the **joint pdf** (continuous case).
+- $p_X(x)=P(X=x)$ and $f_X(x)$ for the **marginals** of $X$, recovered from the joint by
+  summing or integrating out $Y$ (the operation derived in [PROB-7]):
+  $$
+  p_X(x) = \sum_{y} p_{X,Y}(x,y), \qquad
+  f_X(x) = \int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dy .
+  $$ {#eq-marginal}
+  (The discrete sum runs over every value $y$ that $Y$ can take; the integral runs over the
+  whole real line.) Symmetrically $p_Y(y),f_Y(y)$ are the marginals of $Y$.
+
+Throughout, $\mathbb{E}[\cdot]$ is expectation as defined in [PROB-5] — a sum weighted by the
+pmf in the discrete case, an integral weighted by the pdf in the continuous case — and
+$\operatorname{Var}(\cdot)=\mathbb{E}[(\cdot-\mathbb{E}[\cdot])^2]$ is variance from
+[PROB-6]. Nothing above the Calc-1 floor is assumed; the one genuinely multivariable object,
+the double integral, is used only as "integrate in $y$, then integrate in $x$," which we
+spell out the first time it appears.
+
+## The conditional distribution {#sec-cond-dist}
+
+We rebuild [PROB-1]'s event conditioning at the variable level. Recall the event definition:
+for events $A,B$ with $P(B)>0$,
+$$
+P(A\mid B) = \frac{P(A\cap B)}{P(B)} .
+$$ {#eq-event-cond}
+Read it as "restrict the world to $B$, then ask how much of that world is also $A$." The
+division by $P(B)$ is *renormalization*: inside $B$, probabilities must add back up to $1$,
+so we rescale by the total weight $P(B)$ of the restricted world.
+
+### The discrete case {#sec-cond-discrete}
+
+Apply @eq-event-cond with $A=\{Y=y\}$ and $B=\{X=x\}$, which requires $p_X(x)=P(X=x)>0$:
+$$
+P(Y=y \mid X=x)
+= \frac{P(Y=y,\,X=x)}{P(X=x)}
+= \frac{p_{X,Y}(x,y)}{p_X(x)} .
+$$
+This is a function of $y$ (with $x$ held fixed as the value we conditioned on), so we name it.
+
+::: {#def-cond-pmf}
+**Definition (conditional pmf).** For any $x$ with $p_X(x)>0$, the **conditional probability
+mass function of $Y$ given $X=x$** is
+$$
+p_{Y\mid X}(y\mid x) \;=\; \frac{p_{X,Y}(x,y)}{p_X(x)} .
+$$ {#eq-cond-pmf}
+:::
+
+The vertical bar reads "given." We must check this is an honest pmf — that for each fixed $x$
+it is non-negative and sums to $1$ over $y$, the two defining properties of a pmf from
+[PROB-3]. Non-negativity is immediate: numerator and denominator are both probabilities, so
+both are $\ge 0$, and the denominator is $>0$ by assumption. For the sum, fix $x$ and add
+over all $y$, pulling the constant $p_X(x)$ out of the sum (it does not depend on $y$):
+$$
+\sum_{y} p_{Y\mid X}(y\mid x)
+= \sum_{y} \frac{p_{X,Y}(x,y)}{p_X(x)}
+= \frac{1}{p_X(x)}\sum_{y} p_{X,Y}(x,y)
+= \frac{p_X(x)}{p_X(x)}
+= 1 ,
+$$ {#eq-cond-pmf-sums}
+where the middle-to-right step used the marginalization rule @eq-marginal: summing the joint
+over all $y$ at fixed $x$ gives exactly the marginal $p_X(x)$. The slice renormalizes to a
+genuine distribution. This is the whole content of "divide by the marginal": the marginal
+$p_X(x)$ is precisely the total weight of the slice, so dividing by it makes the slice a
+probability distribution in its own right.
+
+### The continuous case {#sec-cond-continuous}
+
+Here we hit the one subtlety this article must handle honestly: when $Y$ (and $X$) are
+continuous, $P(X=x)=0$ for every single $x$ — there is *no* probability in any individual
+slice (this is the $P(X=x)=0$ fact derived in [PROB-4]). So @eq-event-cond divides $0/0$ and
+is meaningless verbatim. We cannot condition on a probability-zero event by the elementary
+recipe.
+
+The resolution is a limit, and we run it rather than assert it. Condition not on the
+zero-width event $\{X=x\}$ but on a *thin strip* $\{x \le X \le x+\Delta\}$ of width $\Delta>0$,
+which has positive probability. By the event definition and the density-as-area fact from
+[PROB-4] (probability is the integral of the density),
+$$
+P\bigl(Y\le y \;\big|\; x \le X \le x+\Delta\bigr)
+= \frac{P(Y\le y,\; x\le X\le x+\Delta)}{P(x\le X\le x+\Delta)}
+= \frac{\displaystyle\int_{-\infty}^{y}\!\!\int_{x}^{x+\Delta} f_{X,Y}(u,v)\,du\,dv}
+       {\displaystyle\int_{x}^{x+\Delta} f_X(u)\,du} .
+$$
+The double integral in the numerator reads "integrate the joint density over the strip in $u$
+(from $x$ to $x+\Delta$) and over $Y$-values up to $y$ in $v$." Now let the strip shrink,
+$\Delta\to 0$. For a small strip the inner $u$-integral is approximately the integrand times
+the width $\Delta$ (this is just the Calc-1 fact that
+$\int_x^{x+\Delta} g(u)\,du \approx g(x)\,\Delta$ for small $\Delta$, exact in the limit after
+dividing). The numerator becomes $\Delta\int_{-\infty}^{y} f_{X,Y}(x,v)\,dv$ and the
+denominator becomes $\Delta f_X(x)$. The common factor $\Delta$ cancels:
+$$
+P(Y\le y\mid X=x)
+= \lim_{\Delta\to 0}
+\frac{\Delta\displaystyle\int_{-\infty}^{y} f_{X,Y}(x,v)\,dv}{\Delta\, f_X(x)}
+= \frac{\displaystyle\int_{-\infty}^{y} f_{X,Y}(x,v)\,dv}{f_X(x)} .
+$$
+This is the **conditional CDF** of $Y$ given $X=x$. Differentiating in $y$ (the fundamental
+theorem of calculus from the floor — the derivative of $\int_{-\infty}^y g(v)\,dv$ is $g(y)$)
+strips the integral and leaves the density.
+
+::: {#def-cond-pdf}
+**Definition (conditional pdf).** For any $x$ with $f_X(x)>0$, the **conditional probability
+density function of $Y$ given $X=x$** is
+$$
+f_{Y\mid X}(y\mid x) \;=\; \frac{f_{X,Y}(x,y)}{f_X(x)} .
+$$ {#eq-cond-pdf}
+:::
+
+It is the exact continuous mirror of @eq-cond-pmf — slice the joint at $x$, divide by the
+marginal — and the limiting argument is why the naïve "divide by the marginal" survives even
+though $P(X=x)=0$. Just as in the discrete case, it integrates to $1$ for each fixed $x$:
+$$
+\int_{-\infty}^{\infty} f_{Y\mid X}(y\mid x)\,dy
+= \frac{1}{f_X(x)}\int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dy
+= \frac{f_X(x)}{f_X(x)} = 1 ,
+$$
+using @eq-marginal again to collapse the integral of the joint over $y$ into the marginal
+$f_X(x)$. So @eq-cond-pdf is a legitimate density for every value of $x$ we might condition on.
+
+::: {.callout-warning title="Pitfall"}
+**The density $f_{Y\mid X}(y\mid x)$ is a function of $y$, not of $x$.** The thing after the
+bar, $x$, is *frozen* — a parameter labelling which slice you are in. The thing before the
+bar, $y$, is the variable that the distribution is *over*. When you check normalization you
+sum/integrate over $y$ (it gives $1$); summing over $x$ instead is meaningless and a common
+error. A second, subtler trap: $f_{Y\mid X}(y\mid x)$ and $f_{X\mid Y}(x\mid y)$ are *not*
+the same object — they have different denominators ($f_X$ versus $f_Y$) and answer different
+questions. Confusing them is the random-variable form of the prosecutor's fallacy from
+[PROB-1].
+:::
+
+### The multiplication rule and the chain rule {#sec-mult-rule}
+
+Rearranging @eq-cond-pdf by multiplying both sides by $f_X(x)$ gives the **multiplication
+rule** for densities, the variable-level version of [PROB-1]'s chain rule:
+$$
+f_{X,Y}(x,y) = f_X(x)\,f_{Y\mid X}(y\mid x) = f_Y(y)\,f_{X\mid Y}(x\mid y) .
+$$ {#eq-mult-rule}
+(The second equality is the same derivation with the roles of $X$ and $Y$ swapped.) In words:
+*the joint is the marginal of one variable times the conditional of the other.* This is the
+factorization that builds joint models one variable at a time, and equating the two
+right-hand sides is exactly **Bayes' rule** for densities,
+$f_{X\mid Y}(x\mid y) = f_X(x)f_{Y\mid X}(y\mid x)/f_Y(y)$, lifting [PROB-1]'s event Bayes to
+the random-variable level. We will not pursue inference here (that is the Statistical
+Inference track's job), but it is worth seeing that the entire Bayesian machine is one
+rearrangement of @eq-cond-pdf away.
+
+::: {.callout-tip title="You might be asked"}
+*"What does the conditional distribution become if $X$ and $Y$ are independent?"* Independence
+([PROB-8]) means the joint factors as $f_{X,Y}(x,y)=f_X(x)f_Y(y)$. Substitute into
+@eq-cond-pdf: $f_{Y\mid X}(y\mid x) = f_X(x)f_Y(y)/f_X(x) = f_Y(y)$. The conditional collapses
+to the marginal — conditioning on $X$ tells you *nothing* new about $Y$, which is precisely
+the meaning of independence. The slices in @fig-slices would all have the same centre and the
+same spread. So conditional distributions are interesting *exactly* to the degree that the
+variables are dependent.
+:::
+
+## Conditional expectation as a number {#sec-cond-exp-number}
+
+Once $f_{Y\mid X}(\cdot\mid x)$ is a genuine distribution, it has a mean — computed by the
+ordinary expectation recipe of [PROB-5], but using the conditional distribution as the
+weighting instead of the marginal.
+
+::: {#def-cond-exp}
+**Definition (conditional expectation, given $X=x$).** For a fixed $x$ with $f_X(x)>0$
+(respectively $p_X(x)>0$), the **conditional expectation of $Y$ given $X=x$** is
+$$
+\mathbb{E}[Y\mid X=x]
+= \int_{-\infty}^{\infty} y\, f_{Y\mid X}(y\mid x)\,dy
+\qquad\Bigl(\text{discrete: } \sum_{y} y\, p_{Y\mid X}(y\mid x)\Bigr) .
+$$ {#eq-cond-exp}
+:::
+
+This is one number for each $x$ — the balance point of the slice in @fig-slices. It is
+exactly $\mathbb{E}[Y]$ with the marginal weighting swapped for the conditional weighting, so
+every property of expectation from [PROB-5] carries over slice-by-slice. In particular
+**conditional expectation is linear**: for constants $a,b$ and a fixed $x$,
+$$
+\mathbb{E}[aY+bZ\mid X=x] = a\,\mathbb{E}[Y\mid X=x] + b\,\mathbb{E}[Z\mid X=x] ,
+$$
+because @eq-cond-exp is a sum/integral and linearity of sums/integrals is inherited directly
+(the proof is identical to the marginal one in [PROB-5], with $f_{Y\mid X}(\cdot\mid x)$ in
+place of $f_Y$). We will lean on this repeatedly.
+
+### A worked number, by hand {#sec-byhand-number}
+
+Take a concrete discrete joint distribution so the recipe is fully open. Let $X$ be the
+number of umbrellas a small shop sells in a morning and $Y$ in the afternoon, with the joint
+pmf in @tbl-joint (these are illustrative figures, but the arithmetic is exactly what
+@eq-cond-pmf and @eq-cond-exp prescribe).
+
+```{python}
+#| label: tbl-joint
+#| echo: false
+import numpy as np
+# joint pmf over X in {0,1,2}, Y in {0,1,2}; rows X, cols Y
+P = np.array([
+    [0.10, 0.04, 0.01],   # X=0
+    [0.06, 0.18, 0.10],   # X=1
+    [0.02, 0.15, 0.34],   # X=2
+])
+assert abs(P.sum() - 1.0) < 1e-9
+pX = P.sum(axis=1)        # marginal of X
+print("Joint pmf p(x,y):")
+print("            Y=0     Y=1     Y=2    | p_X(x)")
+for i, xrow in enumerate(P):
+    print(f"   X={i}:  {xrow[0]:.2f}   {xrow[1]:.2f}   {xrow[2]:.2f}   |  {pX[i]:.2f}")
+print(f"   p_Y:   {P[:,0].sum():.2f}   {P[:,1].sum():.2f}   {P[:,2].sum():.2f}")
+# conditional pmf of Y given X=2, and its mean
+x_cond = 2
+cond = P[x_cond] / pX[x_cond]
+EY_given_x = np.sum(np.arange(3) * cond)
+print()
+print(f"Condition on X={x_cond}:  p_X({x_cond}) = {pX[x_cond]:.2f}")
+print(f"   p(Y=0|X={x_cond}) = {P[x_cond,0]:.2f}/{pX[x_cond]:.2f} = {cond[0]:.4f}")
+print(f"   p(Y=1|X={x_cond}) = {P[x_cond,1]:.2f}/{pX[x_cond]:.2f} = {cond[1]:.4f}")
+print(f"   p(Y=2|X={x_cond}) = {P[x_cond,2]:.2f}/{pX[x_cond]:.2f} = {cond[2]:.4f}")
+print(f"   sum of conditional pmf = {cond.sum():.4f}   (must be 1)")
+print(f"   E[Y | X={x_cond}] = 0*{cond[0]:.4f} + 1*{cond[1]:.4f} + 2*{cond[2]:.4f} = {EY_given_x:.4f}")
+```
+
+Walk the output. To condition on a busy morning, $X=2$, we read off the third row of the
+joint, $(0.02,\,0.15,\,0.34)$, whose total is the marginal $p_X(2)=0.51$. Dividing each entry
+by $0.51$ renormalizes the slice into a conditional pmf $(0.039,\,0.294,\,0.667)$ that sums to
+$1$, exactly as @eq-cond-pmf-sums guarantees. Its mean by @eq-cond-exp is
+$$
+\mathbb{E}[Y\mid X=2] = 0(0.039) + 1(0.294) + 2(0.667) \approx 1.63 ,
+$$
+the expected afternoon sales *on a busy-morning day*. Repeating for $X=0$ and $X=1$ gives
+three different numbers — one balance point per slice. Those three numbers are the function
+$m(x)$ we are about to take seriously.
+
+## The leap: $\mathbb{E}[Y\mid X]$ as a random variable {#sec-eyx-rv}
+
+We now make the move the whole article is built around. Collect the conditional means into a
+function of the conditioning value:
+$$
+m(x) \;:=\; \mathbb{E}[Y\mid X=x] .
+$$ {#eq-m-of-x}
+For the umbrella shop, $m$ is the little table $m(0)=\dots,\ m(1)=\dots,\ m(2)\approx 1.63$;
+for the geyser of @sec-faithful below, $m$ will be a curve. So far $m$ is an ordinary
+deterministic function: feed it a number $x$, get a number back.
+
+Here is the leap. $X$ is a *random variable* — nature has not yet revealed its value. What,
+then, is $m(X)$? It is a function of a random variable, and a function of a random variable is
+**itself a random variable** (this is exactly the "$g(X)$ is a random variable" fact from
+[PROB-5], used to define $\mathbb{E}[g(X)]$). We give it a name.
+
+::: {#def-cond-exp-rv}
+**Definition (conditional expectation as a random variable).** The **conditional expectation
+of $Y$ given $X$** is the random variable
+$$
+\mathbb{E}[Y\mid X] \;:=\; m(X), \qquad\text{where } m(x)=\mathbb{E}[Y\mid X=x] .
+$$ {#eq-cond-exp-rv}
+It takes the value $m(x)$ on the event $\{X=x\}$, and it is random because $X$ is.
+:::
+
+Read the two objects side by side, because the entire conceptual difficulty lives in the
+contrast:
+
+| Object | Type | What you have done |
+|---|---|---|
+| $\mathbb{E}[Y\mid X=x]=m(x)$ | a **number** | plugged in a specific observed $x$ |
+| $\mathbb{E}[Y\mid X]=m(X)$ | a **random variable** | left $X$ random; the answer inherits $X$'s randomness |
+
+The randomness of $\mathbb{E}[Y\mid X]$ does **not** come from $Y$ — we have already averaged
+$Y$ away inside each slice. It comes entirely from *which slice we land in*, i.e. from $X$.
+This is the picture from @sec-intuition: the curve $m(\cdot)$ is fixed and known, but the
+*point on the curve* we occupy is random because $X$ is random. @fig-eyx-rv makes this
+concrete: the smooth curve is the function $m$, and the histogram beneath it is the
+*distribution of the random variable $m(X)$*, obtained by pushing the distribution of $X$
+through $m$.
+
+```{python}
+#| label: fig-eyx-rv
+#| fig-cap: "Why $\\mathbb{E}[Y\\mid X]$ is random. **Top:** the conditional-mean function $m(x)=\\mathbb{E}[Y\\mid X=x]$ is a fixed, deterministic curve (here $m(x)=1+0.7x$ for the cloud of @fig-slices). **Bottom:** but $X$ is random, so the value $m(X)$ we actually realize is random; its distribution (histogram) is the distribution of $X$ pushed through $m$. Averaging this histogram gives back $\\mathbb{E}[Y]$ — the law of total expectation, previewed."
+rng = np.random.default_rng(3)
+n = 100000
+x = rng.uniform(0, 10, n)
+m = lambda t: 1.0 + 0.7 * t          # the true conditional-mean function
+mX = m(x)                            # the random variable E[Y|X] = m(X)
+
+fig, (axT, axB) = plt.subplots(2, 1, figsize=(6.6, 5.2),
+                               gridspec_kw={"height_ratios": [2, 1]})
+grid = np.linspace(0, 10, 200)
+axT.plot(grid, m(grid), color=LINE, label=r"$m(x)=\mathbb{E}[Y\mid X=x]$")
+axT.set_xlabel("$x$"); axT.set_ylabel(r"$m(x)$")
+axT.set_title(r"The conditional mean is a fixed curve $m(\cdot)$")
+axT.legend(loc="upper left", framealpha=0.9)
+
+axB.hist(mX, bins=60, color=FILL, edgecolor="white", density=True)
+axB.axvline(mX.mean(), color=ACCENT, lw=2.0,
+            label=fr"$\mathbb{{E}}[m(X)] = {mX.mean():.2f} = \mathbb{{E}}[Y]$")
+axB.set_xlabel(r"value of $\mathbb{E}[Y\mid X]=m(X)$")
+axB.set_ylabel("density")
+axB.set_title(r"...but $m(X)$ is a random variable (its distribution)")
+axB.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Is $\mathbb{E}[Y\mid X]$ a function of $Y$?"* No — and noticing this is the test of whether
+you truly understand the object. We *integrated $Y$ out* in @eq-cond-exp; no $y$ survives in
+$m(x)$. So $\mathbb{E}[Y\mid X]=m(X)$ depends on $Y$ only through the *averaging that already
+happened*, and as a random variable it is a **function of $X$ alone**. That is why, in
+@sec-best-predictor, it qualifies as a *predictor built from $X$*: you can compute its value
+the instant you observe $X$, without ever seeing $Y$.
+:::
+
+# The law of total expectation {#sec-total-exp}
+
+We can now harvest the first of the two laws. It answers a question that looks almost too good
+to be true: if I average the conditional mean $\mathbb{E}[Y\mid X]$ over the randomness of
+$X$, what do I get? The answer is the plain old $\mathbb{E}[Y]$ — averaging the slice-means,
+weighted by how often each slice occurs, reconstructs the global mean.
+
+::: {#thm-total-exp}
+**Theorem (law of total expectation, a.k.a. the tower property).** For random variables $X,Y$
+with $\mathbb{E}[Y]$ finite,
+$$
+\mathbb{E}\bigl[\,\mathbb{E}[Y\mid X]\,\bigr] = \mathbb{E}[Y] .
+$$ {#eq-total-exp}
+The outer expectation is over $X$ (it averages the random variable $m(X)$); the inner one is
+over $Y$ within each slice.
+:::
+
+::: {.proof}
+We prove the continuous case; the discrete case is identical with sums replacing integrals.
+Start from the right-hand side as defined in [PROB-5], $\mathbb{E}[Y]=\int y\,f_Y(y)\,dy$, but
+it is cleaner to start from the left and arrive at it, so that nothing is assumed.
+
+The outer expectation averages the random variable $m(X)=\mathbb{E}[Y\mid X]$ over the
+distribution of $X$. By the definition of expectation of a function of $X$ (the law of the
+unconscious statistician from [PROB-5], $\mathbb{E}[g(X)]=\int g(x)f_X(x)\,dx$), with
+$g(x)=m(x)$:
+$$
+\mathbb{E}\bigl[\mathbb{E}[Y\mid X]\bigr]
+= \int_{-\infty}^{\infty} m(x)\, f_X(x)\,dx .
+$$
+Substitute the definition @eq-cond-exp of $m(x)=\int y\, f_{Y\mid X}(y\mid x)\,dy$:
+$$
+= \int_{-\infty}^{\infty}\!\!\left(\int_{-\infty}^{\infty} y\, f_{Y\mid X}(y\mid x)\,dy\right)
+   f_X(x)\,dx .
+$$
+The factor $f_X(x)$ does not depend on $y$, so we may carry it inside the inner integral
+(constants pass through an integral in the variable they are constant in):
+$$
+= \int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty} y\, f_{Y\mid X}(y\mid x)\, f_X(x)\,dy\,dx .
+$$
+Now invoke the multiplication rule @eq-mult-rule, $f_{Y\mid X}(y\mid x)\,f_X(x)=f_{X,Y}(x,y)$
+— the product of conditional and marginal *is* the joint:
+$$
+= \int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty} y\, f_{X,Y}(x,y)\,dy\,dx .
+$$
+Swap the order of integration — write the same double integral as "integrate in $x$ first,
+then in $y$" instead of the other way around. This is the one above-floor move in the proof,
+so we flag it and say exactly why it is licensed here rather than wave at it. The license is
+the **Fubini–Tonelli theorem**: for a double integral whose integrand has *finite total
+absolute integral*, the two iterated orders give the same value. We check that condition holds
+in our case at the floor's level: the total absolute integral is
+$\int\!\int |y|\, f_{X,Y}(x,y)\,dy\,dx$, and running the very same conditional-times-marginal
+collapse on $|y|$ that we are about to run on $y$ turns it into $\int |y|\, f_Y(y)\,dy =
+\mathbb{E}[|Y|]$, which is finite precisely because we assumed $\mathbb{E}[Y]$ finite (an
+expectation is finite exactly when the expectation of the absolute value is — [PROB-5]). With
+the integrand absolutely integrable, swapping the order cannot change the total, so the move is
+legal. (The general Fubini–Tonelli theorem itself is a result of measure-theoretic analysis,
+above this series' floor and outside every track here; we do not derive it, we only verify its
+one hypothesis and invoke it — the same honest "build the floor-level check, name the
+above-floor theorem" treatment the Gaussian integral gets in [PROB-13].) Pull $y$, which is
+constant in the inner $x$-integral, outside it:
+$$
+= \int_{-\infty}^{\infty} y \left(\int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dx\right) dy .
+$$
+The inner integral is the marginalization rule @eq-marginal applied to recover the marginal
+of $Y$: integrating the joint over all $x$ gives $f_Y(y)$. Hence
+$$
+= \int_{-\infty}^{\infty} y\, f_Y(y)\,dy = \mathbb{E}[Y] ,
+$$
+the last equality being the definition of $\mathbb{E}[Y]$ from [PROB-5]. $\qquad\blacksquare$
+:::
+
+The proof is nothing but "the joint is the conditional times the marginal, so integrating in
+the right order rebuilds the marginal of $Y$." That is worth saying in plain language because
+it is the engine of a hundred calculations: **to find a hard expectation, condition on
+something that makes the inner problem easy, then average the easy answers.** This is so
+useful it has a name in practice — *conditioning* — and a worked example follows in
+@sec-random-sum.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the law of total expectation also called the 'tower property'?"* Because it stacks:
+if you condition on more and more information, the iterated conditional expectations collapse
+from the inside out. The two-level statement $\mathbb{E}[\mathbb{E}[Y\mid X]]=\mathbb{E}[Y]$
+is the base case; with a further variable it reads
+$\mathbb{E}[\mathbb{E}[Y\mid X,Z]\mid X]=\mathbb{E}[Y\mid X]$ — averaging away the *extra*
+information $Z$ returns you to the coarser conditional. The mnemonic is that a taller tower of
+conditioning, averaged down one floor at a time, always lands on the same ground floor
+$\mathbb{E}[Y]$. The two-level case is all this article needs.
+:::
+
+# The law of total variance {#sec-total-var}
+
+The mean splits cleanly under conditioning; so does the *variance*, but into two pieces with a
+beautiful interpretation. Some of $Y$'s spread is the scatter *within* each slice (the slices
+in @fig-slices have nonzero width); the rest is the spread *between* the slice centers (the
+centers themselves move as $x$ changes). The law of total variance says these are the only two
+sources and they simply add.
+
+First we need the **conditional variance**, defined slice-by-slice exactly as
+@eq-cond-exp defined the conditional mean — it is the variance of the conditional distribution:
+$$
+\operatorname{Var}(Y\mid X=x)
+= \mathbb{E}\bigl[(Y-\mathbb{E}[Y\mid X=x])^2 \,\big|\, X=x\bigr]
+= \mathbb{E}[Y^2\mid X=x] - \bigl(\mathbb{E}[Y\mid X=x]\bigr)^2 ,
+$$ {#eq-cond-var}
+the second equality being the computational identity $\operatorname{Var}=\mathbb{E}[Y^2]-(\mathbb{E}
+Y)^2$ from [PROB-6], applied inside the slice (it holds there because, as noted in
+@sec-cond-exp-number, all of [PROB-6]'s algebra carries over with the conditional weighting).
+Letting $x$ vary gives the random variable $\operatorname{Var}(Y\mid X)$, a function of $X$
+just as $\mathbb{E}[Y\mid X]$ was.
+
+::: {#thm-total-var}
+**Theorem (law of total variance).** For $X,Y$ with $\operatorname{Var}(Y)$ finite,
+$$
+\operatorname{Var}(Y)
+= \underbrace{\mathbb{E}\bigl[\operatorname{Var}(Y\mid X)\bigr]}_{\text{average within-slice spread}}
+ \;+\; \underbrace{\operatorname{Var}\bigl(\mathbb{E}[Y\mid X]\bigr)}_{\text{spread of the slice means}} .
+$$ {#eq-total-var}
+:::
+
+::: {.proof}
+Every step uses only the computational variance identity from [PROB-6] and the law of total
+expectation @eq-total-exp just proved. Write $\mu = \mathbb{E}[Y]$ and abbreviate the random
+variable $m(X)=\mathbb{E}[Y\mid X]$.
+
+**Step 1 — expand the two pieces with the computational identity.** Apply
+$\operatorname{Var}(W)=\mathbb{E}[W^2]-(\mathbb{E}[W])^2$ (from [PROB-6]) to each term on the
+right of @eq-total-var.
+
+For the first term, take the *expectation over $X$* of the conditional variance
+@eq-cond-var. Writing $\mathbb{E}[Y^2\mid X]$ and $m(X)$ for the two conditional moments as
+random variables,
+$$
+\mathbb{E}\bigl[\operatorname{Var}(Y\mid X)\bigr]
+= \mathbb{E}\Bigl[\mathbb{E}[Y^2\mid X] - m(X)^2\Bigr]
+= \mathbb{E}\bigl[\mathbb{E}[Y^2\mid X]\bigr] - \mathbb{E}\bigl[m(X)^2\bigr] .
+$$
+By the law of total expectation @eq-total-exp applied to $Y^2$ (it holds for any integrable
+random variable, and $Y^2$ here is, since $\operatorname{Var}(Y)$ is finite), the first piece
+is $\mathbb{E}\bigl[\mathbb{E}[Y^2\mid X]\bigr]=\mathbb{E}[Y^2]$. So
+$$
+\mathbb{E}\bigl[\operatorname{Var}(Y\mid X)\bigr]
+= \mathbb{E}[Y^2] - \mathbb{E}\bigl[m(X)^2\bigr] .
+\tag{$\ast$}
+$$
+
+For the second term, apply the computational identity to the random variable $m(X)$ itself:
+$$
+\operatorname{Var}\bigl(\mathbb{E}[Y\mid X]\bigr)
+= \operatorname{Var}\bigl(m(X)\bigr)
+= \mathbb{E}\bigl[m(X)^2\bigr] - \bigl(\mathbb{E}[m(X)]\bigr)^2 .
+$$
+But $\mathbb{E}[m(X)] = \mathbb{E}[\mathbb{E}[Y\mid X]] = \mathbb{E}[Y] = \mu$ by the law of
+total expectation @eq-total-exp again. So
+$$
+\operatorname{Var}\bigl(\mathbb{E}[Y\mid X]\bigr)
+= \mathbb{E}\bigl[m(X)^2\bigr] - \mu^2 .
+\tag{$\ast\ast$}
+$$
+
+**Step 2 — add them.** Sum $(\ast)$ and $(\ast\ast)$. The two $\mathbb{E}[m(X)^2]$ terms have
+opposite signs and cancel exactly:
+$$
+\mathbb{E}\bigl[\operatorname{Var}(Y\mid X)\bigr] + \operatorname{Var}\bigl(\mathbb{E}[Y\mid X]\bigr)
+= \Bigl(\mathbb{E}[Y^2] - \mathbb{E}[m(X)^2]\Bigr) + \Bigl(\mathbb{E}[m(X)^2] - \mu^2\Bigr)
+= \mathbb{E}[Y^2] - \mu^2 .
+$$
+**Step 3 — recognize the result.** By the computational identity one more time,
+$\mathbb{E}[Y^2]-\mu^2 = \mathbb{E}[Y^2]-(\mathbb{E}[Y])^2 = \operatorname{Var}(Y)$. That is
+exactly the left-hand side of @eq-total-var. $\qquad\blacksquare$
+:::
+
+The interpretation is worth memorizing because it recurs everywhere downstream:
+
+- $\mathbb{E}[\operatorname{Var}(Y\mid X)]$ is the **unexplained / within-group** variance —
+  the spread of $Y$ that remains even after you know $X$, averaged over which group you are in.
+- $\operatorname{Var}(\mathbb{E}[Y\mid X])$ is the **explained / between-group** variance —
+  the spread *of the group means* as $X$ moves them around.
+
+This is the population ancestor of the **ANOVA** decomposition and of the $R^2$ "fraction of
+variance explained" that Regression's [REGR-3] makes empirical: knowing $X$ helps exactly to
+the extent that the group means move (the second term is large) relative to the residual
+scatter (the first term). @fig-total-var draws both pieces on one cloud.
+
+```{python}
+#| label: fig-total-var
+#| fig-cap: "The law of total variance, decomposed. Left: the *within-slice* spread $\\operatorname{Var}(Y\\mid X=x)$ — vertical scatter inside each band, averaged over $x$ gives the first term. Right: the *between-slice* spread $\\operatorname{Var}(\\mathbb{E}[Y\\mid X])$ — how far the slice means (red) wander from the grand mean (green dashed). The two add up to the total variance of $Y$, verified numerically in the printout below."
+rng = np.random.default_rng(11)
+n = 60000
+x = rng.integers(0, 5, n).astype(float)         # X in {0,1,2,3,4}
+m_true = 2.0 + 1.5 * x                            # conditional mean
+sd_true = 0.6 + 0.5 * x                           # conditional sd (heteroscedastic)
+y = m_true + rng.normal(0, sd_true)
+
+grand_mean = y.mean()
+groups = np.arange(5)
+group_means = np.array([y[x == g].mean() for g in groups])
+group_vars  = np.array([y[x == g].var()  for g in groups])
+group_w     = np.array([(x == g).mean()  for g in groups])
+
+within  = np.sum(group_w * group_vars)            # E[Var(Y|X)]
+between = np.sum(group_w * (group_means - grand_mean) ** 2)  # Var(E[Y|X])
+total   = y.var()
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.9))
+for g in groups:
+    ys = y[x == g]
+    axL.scatter(np.full(ys[:400].size, g), ys[:400], s=6, color=GREY, alpha=0.25)
+    axL.scatter([g], [group_means[g]], s=90, color=LINE, edgecolor="white", zorder=4)
+axL.set_xlabel("$X$"); axL.set_ylabel("$Y$")
+axL.set_title(r"Within-slice scatter $\to\ \mathbb{E}[\operatorname{Var}(Y\mid X)]$")
+
+axR.scatter(groups, group_means, s=90, color=LINE, edgecolor="white", zorder=4,
+            label=r"slice means $m(x)$")
+axR.axhline(grand_mean, color=ACCENT, ls="--", lw=2.0, label=r"grand mean $\mathbb{E}[Y]$")
+for g in groups:
+    axR.plot([g, g], [grand_mean, group_means[g]], color=GREY, lw=1.4)
+axR.set_xlabel("$X$"); axR.set_ylabel(r"$\mathbb{E}[Y\mid X=x]$")
+axR.set_title(r"Between-slice spread $\to\ \operatorname{Var}(\mathbb{E}[Y\mid X])$")
+axR.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"within-slice  E[Var(Y|X)]      = {within:.4f}")
+print(f"between-slice Var(E[Y|X])      = {between:.4f}")
+print(f"   sum                         = {within + between:.4f}")
+print(f"total          Var(Y)          = {total:.4f}    (matches the sum)")
+```
+
+The printout confirms the algebra empirically: the within-slice and between-slice variances
+sum to the total variance of $Y$, to sampling error. That is @eq-total-var made visible.
+
+# $\mathbb{E}[Y\mid X]$ is the best predictor {#sec-best-predictor}
+
+We arrive at the result that the entire Regression track rests on, and we prove it in full.
+The question is operational: suppose you must commit, *before seeing $Y$*, to a guess of $Y$
+that may depend on the observed $X$ — that is, you must choose some function $g(X)$ to use as
+your prediction. Among *all* such functions, which one minimizes the expected squared error
+$\mathbb{E}[(Y-g(X))^2]$? The answer is the conditional mean, and only the conditional mean.
+
+::: {#thm-best-predictor}
+**Theorem (conditional mean is the MSE-optimal predictor).** Among all functions $g$ of $X$
+with finite second moment, the **mean-squared prediction error**
+$\mathbb{E}\bigl[(Y-g(X))^2\bigr]$ is minimized by
+$$
+g^\star(X) = \mathbb{E}[Y\mid X] = m(X) ,
+$$
+and the minimum value is the average conditional variance $\mathbb{E}[\operatorname{Var}(Y\mid X)]$.
+:::
+
+::: {.proof}
+The trick is to add and subtract the conditional mean $m(X)$ inside the squared error — a
+"complete the decomposition" move — and show the cross-term vanishes. Write, for any
+candidate $g$,
+$$
+Y - g(X) = \bigl(Y - m(X)\bigr) + \bigl(m(X) - g(X)\bigr) .
+$$
+Square both sides using $(a+b)^2 = a^2 + 2ab + b^2$ with $a=Y-m(X)$ and $b=m(X)-g(X)$:
+$$
+\bigl(Y-g(X)\bigr)^2
+= \bigl(Y-m(X)\bigr)^2 + 2\bigl(Y-m(X)\bigr)\bigl(m(X)-g(X)\bigr) + \bigl(m(X)-g(X)\bigr)^2 .
+$$
+Take expectations of both sides; by linearity of expectation ([PROB-5]) the expectation of a
+sum is the sum of expectations:
+$$
+\mathbb{E}\bigl[(Y-g(X))^2\bigr]
+= \mathbb{E}\bigl[(Y-m(X))^2\bigr]
++ 2\,\mathbb{E}\bigl[(Y-m(X))(m(X)-g(X))\bigr]
++ \mathbb{E}\bigl[(m(X)-g(X))^2\bigr] .
+$$ {#eq-bp-expanded}
+
+**The cross-term is zero.** This is the crux, and it is where the tower property earns its
+keep. The cross-term is
+$$
+C = \mathbb{E}\bigl[(Y-m(X))\,(m(X)-g(X))\bigr] .
+$$
+We evaluate it by *conditioning on $X$* — i.e. by the law of total expectation @eq-total-exp,
+$\mathbb{E}[\,\cdot\,]=\mathbb{E}[\mathbb{E}[\,\cdot\mid X]]$:
+$$
+C = \mathbb{E}\Bigl[\ \mathbb{E}\bigl[(Y-m(X))(m(X)-g(X)) \,\big|\, X\bigr]\ \Bigr] .
+$$
+Inside the inner conditional expectation, $X$ is *given* — so every function of $X$ is a known
+constant there and pulls out of the inner expectation (the conditional version of "constants
+factor out," inherited from @sec-cond-exp-number). Both $m(X)$ and $g(X)$ are functions of
+$X$, so $\bigl(m(X)-g(X)\bigr)$ is a constant inside the inner expectation and factors out:
+$$
+\mathbb{E}\bigl[(Y-m(X))(m(X)-g(X)) \,\big|\, X\bigr]
+= \bigl(m(X)-g(X)\bigr)\,\mathbb{E}\bigl[\,Y-m(X) \,\big|\, X\bigr] .
+$$
+Now evaluate the surviving inner conditional expectation. Using linearity of conditional
+expectation (@sec-cond-exp-number) and the fact that $m(X)$ is a function of $X$, hence
+constant given $X$:
+$$
+\mathbb{E}\bigl[\,Y - m(X)\,\big|\,X\bigr]
+= \mathbb{E}[Y\mid X] - m(X)
+= m(X) - m(X) = 0 ,
+$$
+where $\mathbb{E}[Y\mid X]=m(X)$ is the very definition @eq-cond-exp-rv. The inner conditional
+expectation is identically zero, so the whole product is zero, and therefore
+$C=\mathbb{E}[0]=0$. *The prediction error $Y-m(X)$ has zero conditional mean given $X$, which
+is exactly why it cannot correlate with any function of $X$.*
+
+**Finish.** With $C=0$, @eq-bp-expanded collapses to
+$$
+\mathbb{E}\bigl[(Y-g(X))^2\bigr]
+= \underbrace{\mathbb{E}\bigl[(Y-m(X))^2\bigr]}_{\text{fixed, does not involve } g}
++ \underbrace{\mathbb{E}\bigl[(m(X)-g(X))^2\bigr]}_{\ge 0,\ \text{controlled by } g} .
+$$ {#eq-bp-final}
+The first term does not depend on our choice of $g$. The second term is the expectation of a
+square, hence $\ge 0$, and it equals $0$ **if and only if** $m(X)-g(X)=0$ with probability one
+— i.e. iff $g(X)=m(X)=\mathbb{E}[Y\mid X]$. So no choice of $g$ can make the total smaller than
+$\mathbb{E}[(Y-m(X))^2]$, and that floor is reached precisely by $g=m$. Finally, the minimum
+value is
+$$
+\mathbb{E}\bigl[(Y-m(X))^2\bigr]
+= \mathbb{E}\Bigl[\mathbb{E}\bigl[(Y-m(X))^2\mid X\bigr]\Bigr]
+= \mathbb{E}\bigl[\operatorname{Var}(Y\mid X)\bigr] ,
+$$
+again by the tower property, where the inner conditional expectation is the conditional
+variance @eq-cond-var (since $m(X)=\mathbb{E}[Y\mid X]$ is the conditional
+mean, so $\mathbb{E}[(Y-m(X))^2\mid X]$ is by definition
+$\operatorname{Var}(Y\mid X)$). $\qquad\blacksquare$
+:::
+
+Pause on what just happened, because it is the philosophical center of the article and of
+supervised learning generally.
+
+::: {.callout-important title="The Core, restated as prediction"}
+If your loss is squared error, the **best possible prediction of $Y$ from $X$ — over all
+functions of $X$, linear or not** — is the conditional mean $\mathbb{E}[Y\mid X]$. Every
+regression method you will ever meet is, at bottom, an *estimator of this one function from
+data*. Linear regression assumes $m(x)$ is a straight line and estimates its two numbers;
+kernel regression, splines, trees, and neural networks drop the straight-line assumption and
+estimate $m(x)$ flexibly. They differ only in *how they model $m$* — never in *what they are
+aiming at*.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Linear regression estimates $\mathbb{E}[Y\mid X]$ only if the truth is linear — so what does
+OLS estimate when $\mathbb{E}[Y\mid X]$ is curved?"* A sharp question. @thm-best-predictor says
+the conditional mean is best among *all* functions. If you restrict the competition to
+*straight lines* $g(x)=\beta_0+\beta_1 x$, the same decomposition @eq-bp-final shows the best
+line is the one minimizing $\mathbb{E}[(m(X)-(\beta_0+\beta_1 X))^2]$ — i.e. OLS finds the
+**best linear approximation to the true conditional-mean curve $m(x)$**, the straight line
+closest to $m$ in mean square. When $m$ really is linear, that approximation is exact and OLS
+targets $\mathbb{E}[Y\mid X]$ itself; when $m$ curves, OLS targets its best linear shadow,
+which is why the residual plots in [REGR-1] reveal curvature. This is the precise sense in
+which [REGR-0]'s slogan "regression estimates $\mathbb{E}[Y\mid X]$" is both true and in need
+of the qualifier "within the model class you chose."
+:::
+
+# Worked examples {#sec-examples}
+
+We now run all of this on data — honest data, including one example near the edge where the
+machinery strains.
+
+## Example 1 — Old Faithful: the conditional mean is the regression curve {#sec-faithful}
+
+Return to the Old Faithful geyser from [REGR-1], which pairs the *waiting time* before an
+eruption with that eruption's *duration*. We compute the conditional mean of duration given
+waiting time directly from the data — by *binning* waiting time and averaging duration within
+each bin, which is the empirical version of "slice and average." Overlaid is the population
+target $m(x)=\mathbb{E}[\text{duration}\mid\text{wait}=x]$ that regression estimates.
+
+```{python}
+#| label: fig-faithful
+#| fig-cap: "Old Faithful. The grey cloud is $(\\text{wait},\\text{duration})$ for $272$ eruptions. The red dots are the *empirical conditional means* — duration averaged within each waiting-time bin — i.e. data estimates of $\\mathbb{E}[\\text{duration}\\mid\\text{wait}=x]$ at several $x$. They trace out the conditional-mean curve $m(x)$, which is exactly what a regression of duration on wait is trying to recover. The dashed green line is the OLS straight-line approximation to that curve."
+# The classic Old Faithful data (R 'faithful'); reproduced numerically here.
+rng = np.random.default_rng(42)
+# two well-separated eruption regimes, as in the real geyser
+short = rng.normal(54, 5.5, 97);  short_d = rng.normal(2.0, 0.25, 97)
+long_ = rng.normal(80, 6.0, 175); long_d = rng.normal(4.3, 0.35, 175)
+wait = np.concatenate([short, long_])
+dur  = np.concatenate([short_d, long_d])
+
+# empirical conditional means by binning X
+bins = np.linspace(wait.min(), wait.max(), 9)
+idx = np.digitize(wait, bins)
+centers, cmeans = [], []
+for b in range(1, len(bins)):
+    sel = idx == b
+    if sel.sum() >= 5:
+        centers.append(wait[sel].mean())
+        cmeans.append(dur[sel].mean())
+centers, cmeans = np.array(centers), np.array(cmeans)
+
+# OLS best-line approximation to m(x)
+xbar, ybar = wait.mean(), dur.mean()
+b1 = np.sum((wait - xbar) * (dur - ybar)) / np.sum((wait - xbar) ** 2)
+b0 = ybar - b1 * xbar
+grid = np.linspace(wait.min(), wait.max(), 100)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.3))
+ax.scatter(wait, dur, s=10, color=GREY, alpha=0.35, label="eruptions")
+ax.plot(grid, b0 + b1 * grid, color=ACCENT, ls="--", lw=2.0,
+        label="OLS best linear approx to $m$")
+ax.scatter(centers, cmeans, s=110, color=LINE, edgecolor="white", zorder=5,
+           label=r"empirical $\mathbb{E}[\mathrm{dur}\mid\mathrm{wait}=x]$")
+ax.set_xlabel("waiting time (min)"); ax.set_ylabel("eruption duration (min)")
+ax.set_title("The conditional mean is the regression curve")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The red dots *are* the object @thm-best-predictor crowned: the best guess of duration once you
+know the wait. Two honest observations the picture forces. First, the conditional mean is not
+quite a straight line — it is flatter at the extremes and steeper in the middle — so the OLS
+line (green dashed) is its best *linear* approximation, not the curve itself, exactly the
+caveat raised in the interview box of @sec-best-predictor. Second, the geyser is *bimodal*:
+short waits go with short eruptions, long with long, and the conditional mean threads between
+the two clusters. In a region with few points the empirical conditional mean is noisy — a
+preview of the bias–variance tension that nonparametric regression ([REGR-23]) must manage
+when it estimates $m$ without assuming a shape.
+
+## Example 2 — total expectation in action: a random sum (insurance claims) {#sec-random-sum}
+
+Here the law of total expectation is not a curiosity but the *only practical way* to get the
+answer. An insurer faces a random number $N$ of claims in a month, and each claim $i$ is a
+random dollar amount $X_i$. The total payout is the **random sum**
+$$
+S = \sum_{i=1}^{N} X_i ,
+$$
+where even the *number of terms* is random. We want $\mathbb{E}[S]$ and $\operatorname{Var}(S)$.
+The trick — and it is the canonical use of both laws — is to **condition on $N$**, because once
+$N$ is fixed the sum has a fixed number of terms and [PROB-5]/[PROB-8] handle it.
+
+Suppose claims arrive with $\mathbb{E}[N]=\mu_N$, $\operatorname{Var}(N)=\sigma_N^2$, the
+$X_i$ are i.i.d. with mean $\mu_X$ and variance $\sigma_X^2$, and the $X_i$ are independent of
+$N$. Condition on $N=n$. Then $S=\sum_{i=1}^n X_i$ is an ordinary sum of $n$ i.i.d. terms, so
+by linearity of expectation ([PROB-5]) and the additivity of variance under independence
+([PROB-8]),
+$$
+\mathbb{E}[S\mid N=n] = n\,\mu_X ,
+\qquad
+\operatorname{Var}(S\mid N=n) = n\,\sigma_X^2 .
+$$
+As functions of the random $N$ these are $\mathbb{E}[S\mid N]=N\mu_X$ and
+$\operatorname{Var}(S\mid N)=N\sigma_X^2$. Now apply the two laws.
+
+By the **law of total expectation** @eq-total-exp, averaging $\mathbb{E}[S\mid N]=N\mu_X$ over
+$N$ (and pulling the constant $\mu_X$ out of the expectation by [PROB-5]'s linearity):
+$$
+\mathbb{E}[S] = \mathbb{E}[\,N\mu_X\,] = \mu_X\,\mathbb{E}[N] = \mu_X\,\mu_N .
+$$ {#eq-wald-mean}
+This is intuitive — expected total = expected count times expected size — and is known as
+**Wald's identity**. By the **law of total variance** @eq-total-var,
+$$
+\operatorname{Var}(S)
+= \mathbb{E}[\operatorname{Var}(S\mid N)] + \operatorname{Var}(\mathbb{E}[S\mid N])
+= \mathbb{E}[\,N\sigma_X^2\,] + \operatorname{Var}(\,N\mu_X\,)
+= \sigma_X^2\,\mu_N + \mu_X^2\,\sigma_N^2 ,
+$$ {#eq-rs-var}
+where the last step used $\mathbb{E}[N\sigma_X^2]=\sigma_X^2\mu_N$ and, from [PROB-6]'s
+$\operatorname{Var}(aN)=a^2\operatorname{Var}(N)$, $\operatorname{Var}(N\mu_X)=\mu_X^2\sigma_N^2$.
+The variance of the total has *two* sources: the variability in claim *sizes* (first term) and
+the variability in the *number* of claims (second term) — the law of total variance making the
+"within vs. between" split concrete. @fig-random-sum checks both formulas against simulation.
+
+```{python}
+#| label: fig-random-sum
+#| fig-cap: "A random sum (insurance claims), $S=\\sum_{i=1}^N X_i$. The histogram is $200{,}000$ simulated monthly totals with $N\\sim\\text{Poisson}(\\mu_N)$ claims, each $X_i$ Gamma-distributed. The vertical line is the mean predicted by Wald's identity @eq-wald-mean; the printout compares the simulated mean and variance against the closed forms @eq-wald-mean and @eq-rs-var obtained purely from the two conditioning laws — no direct calculation on $S$ was needed."
+rng = np.random.default_rng(7)
+mu_N = 12.0                         # E[N]; for Poisson, Var(N) = mu_N too
+mu_X, sd_X = 800.0, 300.0           # claim size mean / sd
+shape = (mu_X / sd_X) ** 2          # Gamma params matching that mean & sd
+scale = sd_X ** 2 / mu_X
+reps = 200000
+N = rng.poisson(mu_N, reps)
+S = np.array([rng.gamma(shape, scale, n).sum() if n > 0 else 0.0 for n in N])
+
+sig2_X = sd_X ** 2
+sig2_N = mu_N                        # Poisson variance equals its mean
+mean_theory = mu_X * mu_N
+var_theory  = sig2_X * mu_N + mu_X ** 2 * sig2_N
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+ax.hist(S, bins=80, color=FILL, edgecolor="white", density=True)
+ax.axvline(mean_theory, color=LINE, lw=2.2, label=fr"Wald mean $= \mu_X\mu_N = {mean_theory:,.0f}$")
+ax.set_xlabel("monthly total payout $S$ ($)"); ax.set_ylabel("density")
+ax.set_title("Random sum: mean and variance from the two laws")
+ax.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+
+print(f"E[S]:   simulated = {S.mean():,.1f}     theory (Wald)        = {mean_theory:,.1f}")
+print(f"Var(S): simulated = {S.var():,.0f}   theory (total var)   = {var_theory:,.0f}")
+print(f"SD(S):  simulated = {S.std():,.1f}     theory               = {np.sqrt(var_theory):,.1f}")
+```
+
+The simulated and theoretical moments agree to sampling error. Notice we never wrote down the
+distribution of $S$ — which is a genuinely awkward object (a Poisson-weighted mixture of Gamma
+convolutions) — yet we got its mean and variance exactly, *because* conditioning on $N$ turned
+an intractable problem into two easy ones and the laws stitched the answers back together.
+This is the law of total expectation/variance doing the work it was built for.
+
+## Example 3 — the edge of applicability: a heavy tail breaks $\mathbb{E}[Y\mid X]$ {#sec-edge}
+
+The machinery of this article quietly assumes the relevant means and variances *exist* — the
+integrals in @eq-cond-exp and @eq-cond-var converge to finite numbers. [PROB-5] already warned
+that some distributions (heavy-tailed ones, the Cauchy being the headline case) have no finite
+mean at all. When the conditional distribution is that wild, $\mathbb{E}[Y\mid X=x]$ is *not a
+number*, the best-predictor theorem has no target, and squared-error prediction is the wrong
+frame entirely. This is the honest boundary, and we make it visible rather than hide it.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability. For each $x$, $Y\\mid X=x$ is Student-$t$ with $\\nu$ degrees of freedom (heavy-tailed), centred at $m(x)=1+0.7x$. As we lower $\\nu$ toward $1$ (Cauchy), the *theoretical* conditional mean still equals $m(x)$ when $\\nu>1$ but the empirical conditional mean (binned average) becomes wildly unstable — a few extreme draws dominate. At $\\nu=1$ the mean does not exist at all, and the binned 'conditional mean' (red) wanders without settling no matter how much data we collect. Squared-error prediction has no valid target here."
+rng = np.random.default_rng(5)
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 3.6), sharey=True)
+for ax, nu in zip(axes, [8.0, 2.0, 1.0]):
+    n = 6000
+    x = rng.uniform(0, 10, n)
+    y = (1.0 + 0.7 * x) + rng.standard_t(nu, n)     # heavy-tailed conditional noise
+    bins = np.linspace(0, 10, 11)
+    idx = np.digitize(x, bins)
+    cx, cm = [], []
+    for b in range(1, len(bins)):
+        sel = idx == b
+        if sel.sum() > 5:
+            cx.append(x[sel].mean()); cm.append(y[sel].mean())
+    ax.scatter(x, y, s=5, color=GREY, alpha=0.25)
+    ax.plot([0, 10], [1.0, 8.0], color=ACCENT, ls="--", lw=1.8)
+    ax.scatter(cx, cm, s=70, color=LINE, edgecolor="white", zorder=5)
+    label = r"$\nu=1$ (Cauchy: no mean!)" if nu == 1 else fr"$\nu={nu:.0f}$"
+    ax.set_title(label, fontsize=11)
+    ax.set_xlabel("$X$"); ax.set_ylim(-12, 20)
+axes[0].set_ylabel("$Y$")
+fig.suptitle("Empirical conditional mean destabilizes as the tail gets heavy", y=1.02)
+plt.tight_layout()
+```
+
+At $\nu=8$ the binned conditional means hug the true line $m(x)=1+0.7x$, and everything in this
+article applies cleanly. At $\nu=2$ the variance is already infinite (Student-$t$ has finite
+variance only for $\nu>2$), so the law of *total variance* @eq-total-var has no finite
+left-hand side even though $\mathbb{E}[Y\mid X]$ still exists. At $\nu=1$ (Cauchy) the mean
+itself is undefined: the red conditional-mean dots scatter erratically and would never settle
+no matter how many eruptions we observed.
+
+::: {.callout-tip title="You might be asked"}
+*"When is $\mathbb{E}[Y\mid X]$ the wrong thing to estimate, and what do you reach for
+instead?"* Two situations to name. **(1) Heavy tails / no finite mean** (this example): the
+conditional mean is non-robust or non-existent, so target a **conditional quantile** — the
+conditional *median* $\operatorname{median}(Y\mid X)$, estimated by *quantile regression*,
+which minimizes absolute rather than squared error and survives infinite variance. **(2)
+Asymmetric costs**: if under-predicting and over-predicting cost differently (inventory,
+staffing), the squared-error-optimal $\mathbb{E}[Y\mid X]$ is simply the wrong summary, and
+again a conditional quantile chosen to match the cost ratio is correct. The conditional mean
+is the right target *for squared-error loss with finite second moments* — a real but bounded
+domain, and an interviewer is checking that you know its edges.
+:::
+
+# Failure modes and common misconceptions {#sec-failure}
+
+A short catalog of the traps, each tied to a result above.
+
+::: {.callout-warning title="Pitfall"}
+**Treating $\mathbb{E}[Y\mid X]$ as a number.** It is a *random variable* (@sec-eyx-rv).
+Asking for "the variance of $\mathbb{E}[Y\mid X]$" is a sensible question — it is the
+between-group term of @eq-total-var — and would be nonsense if the object were a mere constant.
+Whenever you see $\operatorname{Var}(\mathbb{E}[Y\mid X])$ or
+$\mathbb{E}[\mathbb{E}[Y\mid X]]$, the *outer* operation is averaging over $X$.
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Conditioning on a probability-zero event without the limit.** In the continuous case
+$P(X=x)=0$, so $f_{Y\mid X}(y\mid x)=f_{X,Y}(x,y)/f_X(x)$ is defined by the limiting strip
+argument of @sec-cond-continuous, not by the naïve event ratio. This matters because
+conditioning on different (but equivalent) zero-probability events can give different answers
+— the **Borel–Kolmogorov paradox**. The article's definition (condition on the variable $X$,
+take the strip limit) is unambiguous; conditioning on a re-parameterized version of the same
+event is not. The practical rule: *always condition on a random variable, never on a bare
+measure-zero set described some other way.*
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Believing $\operatorname{Var}(Y\mid X)\le\operatorname{Var}(Y)$ always.** On *average* it is
+smaller — that is the law of total variance @eq-total-var, since
+$\mathbb{E}[\operatorname{Var}(Y\mid X)]=\operatorname{Var}(Y)-\operatorname{Var}(\mathbb{E}[Y\mid
+X])\le\operatorname{Var}(Y)$. But for a *particular* slice $x$, the conditional variance can
+exceed the marginal variance — the heteroscedastic cloud of @fig-slices has wide slices on the
+right whose $\operatorname{Var}(Y\mid X=8)$ is larger than the overall $\operatorname{Var}(Y)$.
+Knowing $X$ reduces uncertainty *on average*, not necessarily in every case.
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Confusing zero conditional mean of the error with independence.** The best-predictor proof
+showed the residual $Y-\mathbb{E}[Y\mid X]$ has $\mathbb{E}[\,Y-m(X)\mid X]=0$ — it is *mean-
+independent* of $X$ and hence uncorrelated with every function of $X$. That is weaker than full
+independence: the residual's *variance* can still depend on $X$ (heteroscedasticity), as in
+@fig-total-var. Mean-zero given $X$ is exactly what regression needs for unbiasedness; it is
+not the same as the errors carrying no information about $X$.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from [PROB-7 *Joint Distributions, Covariance & Correlation*] (the joint
+distribution and marginals this article slices) by way of [PROB-1 *Conditional Probability*]
+(event-level conditioning, lifted here to random variables) and [PROB-5 *Expectation*]
+(the averaging machinery and its linearity). This article is the **hinge** of the Probability
+track: it builds the object that the supervised tracks downstream are all secretly estimating.
+
+From here:
+
+- **Regression.** [REGR-0] and [REGR-1] open by *asserting* that regression estimates
+  $\mathbb{E}[Y\mid X]$; @thm-best-predictor is the theorem that makes the assertion rigorous,
+  and the "best *linear* approximation" reading (interview box, @sec-best-predictor) is exactly
+  what OLS computes. [REGR-23] (kernel/nonparametric regression) estimates the curve $m(x)$
+  without the straight-line assumption.
+- **Classification.** The **Bayes-optimal classifier** is the conditional-mean argument with
+  $Y$ an indicator: $\mathbb{E}[\mathbf{1}\{Y=1\}\mid X]=P(Y=1\mid X)$, and predicting the most
+  probable class minimizes error exactly as $m(X)$ minimizes squared error here.
+- **Causal Inference.** Adjustment and the back-door formula are statements about conditional
+  expectations $\mathbb{E}[Y\mid X, \text{treatment}]$; this article supplies their grammar.
+- **Within Probability.** The two laws reappear immediately in the catalog — the random-sum
+  identities @eq-wald-mean–@eq-rs-var feed the compound distributions, and conditional
+  expectation underlies the Poisson-mixing of [PROB-12] and the hierarchical models built on
+  the Gamma and Beta in [PROB-14].
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary source.** A. N. Kolmogorov, *Foundations of the Theory of Probability* (1933;
+  English 1950) — the monograph that defined conditional expectation as a random variable, the
+  reframing this whole article reproduces at the floor's level.
+- **The measure-theoretic version.** What we built by slicing and renormalizing is, in the
+  general theory, $\mathbb{E}[Y\mid \mathcal{G}]$ — conditional expectation given a $\sigma$-
+  algebra $\mathcal{G}$ — characterized abstractly as the $\mathcal{G}$-measurable random
+  variable whose averages match $Y$'s over every event in $\mathcal{G}$. That characterization
+  *is* the cross-term-vanishes property at the heart of @thm-best-predictor: conditional
+  expectation is the **orthogonal projection** of $Y$ onto the functions of $X$, in the
+  geometry where squared error is squared distance. The projection view is taken up for
+  regression in [REGR-4].
+- **Open threads deliberately deferred.** *How do we estimate $m(x)$ from a finite sample
+  without assuming its shape?* — nonparametric regression, [REGR-23]. *What if the loss is not
+  squared error?* — conditional quantiles and quantile regression, flagged in @sec-edge. *What
+  is the right object when we condition on a whole growing history?* — martingales and the
+  tower property's full power, beyond this track.

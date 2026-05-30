@@ -1,0 +1,1115 @@
+---
+title: "Variance, Standard Deviation, and Variance as a Sum of Squares"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the curve / theoretical value
+ACCENT = "#0a7d4d"     # highlights / the mean
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas
+```
+
+> **Where this sits in the track.** This article is the immediate sequel to
+> [PROB-5 *Expectation: The Long-Run Average*], which built the single number that says
+> *where* a random variable lands on average — the expectation $\mathbb{E}[X]$ — and proved
+> its workhorse property, **linearity**. Expectation answers "where is the center?" The
+> obvious next question, and the one this article answers, is "**how far from the center do
+> we typically land?**" That is *spread*, and the spread of a single random variable is the
+> **variance**. We define it, derive the computational shortcut every practitioner uses,
+> show why squaring the deviations (not taking their absolute value) is the analytically
+> forced choice rather than an arbitrary convention, and pull apart the population and
+> sample *sums of squares* that the Regression track ([REGR-3]) consumes by name. It
+> assumes [PROB-5] (expectation and its linearity) and, beneath that, [PROB-3]/[PROB-4]
+> (the pmf and pdf). It sets up [PROB-7 *Joint Distributions, Covariance & Correlation*]
+> (covariance generalizes variance to *pairs*), [PROB-17 *Random Vectors & Covariance
+> Matrices*] (the covariance matrix is the vector version of this one number), and
+> [PROB-19 *Chebyshev's Inequality*] (which turns variance into a probability bound).
+
+## Abstract {.unnumbered}
+
+The expectation $\mu = \mathbb{E}[X]$ tells you where a random variable centers, but two
+variables with the *same* center can behave completely differently — one tightly clustered,
+the other wildly scattered. To capture that difference we need a number for **spread**. The
+natural move is to ask how far $X$ typically falls from its mean; because deviations come in
+both signs and must not cancel, we measure the *squared* deviation and average it. That
+average is the **variance**,
+$$\operatorname{Var}(X) = \mathbb{E}\!\bigl[(X-\mu)^2\bigr].$$
+This article derives, with every step on the page, three things the reader will use forever:
+the **computational identity** $\operatorname{Var}(X) = \mathbb{E}[X^2] - (\mathbb{E}[X])^2$;
+the **scaling rule** $\operatorname{Var}(aX+b) = a^2\operatorname{Var}(X)$, which exposes
+*why variance is not linear*; and the **sum-of-squares structure** that makes variance the
+hinge between probability and least-squares regression. The single claim it defends is that
+**squaring is not a stylistic choice but the analytically inevitable one** — it is the only
+power that makes the mean the minimizer of average deviation, keeps the algebra closed under
+sums, and turns "spread" into a quantity calculus can touch. The **standard deviation**
+$\sigma = \sqrt{\operatorname{Var}(X)}$ then carries that spread back into the original units
+so it can be read off a plot.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **variance** of a random variable is the *average squared distance from its mean*:
+$$
+\operatorname{Var}(X) = \mathbb{E}\!\bigl[(X-\mu)^2\bigr], \qquad \mu = \mathbb{E}[X].
+$$
+Squaring is forced, not chosen: it is the unique simple penalty that cannot cancel across
+signs, that makes the mean the value minimizing total deviation, and that keeps the algebra
+closed under sums and rescalings. Three consequences follow and never leave you: the
+shortcut $\operatorname{Var}(X) = \mathbb{E}[X^2] - \mu^2$, the rescaling law
+$\operatorname{Var}(aX+b) = a^2\operatorname{Var}(X)$, and the **standard deviation**
+$\sigma = \sqrt{\operatorname{Var}(X)}$, which puts spread back into the units of $X$.
+:::
+
+Everything below orbits that box. The identity $\operatorname{Var}(X) = \mathbb{E}[X^2] -
+\mu^2$ will look like a piece of algebraic luck, but by the end you should read it as
+inevitable: it is just the expansion of a square, run through the linearity of expectation
+that [PROB-5] gave us. The factor of $a^2$ in the scaling law — not $a$, not $|a|$ — is the
+fingerprint of the square, and it is *why* variance behaves the way it does under
+standardization, under sums, and under the $\sqrt{n}$ shrinkage of a sample mean you will
+meet downstream.
+
+# Why we are doing this: the problem that forced variance {#sec-why}
+
+Hold one question in view for the whole article: **why the *square* of the deviation, and
+why is that the natural measure of spread rather than a workaround?** Every derivation below
+is, at bottom, an answer to some piece of that question. If a step ever feels arbitrary,
+come back here.
+
+## Center is not enough {#sec-center-not-enough}
+
+[PROB-5] gave us the expectation: one number locating the center of a distribution. But the
+center is silent about the most practically urgent feature of a random quantity — *how
+reliable it is.* A factory line whose parts average $10.00$ mm is worthless information to a
+machinist until they know whether the parts cluster within a hundredth of a millimetre or
+swing wildly by a whole millimetre. A fund returning $7\%$ on average is one thing if it
+returns $6\%$–$8\%$ year to year and quite another if it swings between $-30\%$ and $+44\%$.
+The mean is the same; the *risk* is not. Spread is the missing half of any honest summary,
+and quantifying it is what this article is for.
+
+@fig-same-mean makes the point before any symbol: three distributions, deliberately built to
+share the identical mean, that no one would call "the same."
+
+```{python}
+#| label: fig-same-mean
+#| fig-cap: "Three distributions with the *identical* mean $\\mu = 10$ but very different spread. The center (green line) is common to all three; what separates them is how far the mass typically sits from that center. The mean alone cannot tell these apart — variance is the number that can."
+fig, axes = plt.subplots(1, 3, figsize=(9.2, 3.2), sharey=True)
+xs = np.linspace(4, 16, 400)
+mu = 10.0
+for ax, sd, name in zip(axes, [0.7, 1.6, 3.0], ["tight", "moderate", "wide"]):
+    pdf = np.exp(-(xs - mu) ** 2 / (2 * sd ** 2)) / np.sqrt(2 * np.pi * sd ** 2)
+    ax.fill_between(xs, pdf, color=FILL, alpha=0.7)
+    ax.plot(xs, pdf, color=LINE)
+    ax.axvline(mu, color=ACCENT, lw=1.6)
+    ax.set_title(f"{name}:  $\\sigma={sd}$", fontsize=11)
+    ax.set_xlabel("$x$")
+    ax.set_yticks([])
+axes[0].set_ylabel("density")
+plt.tight_layout()
+```
+
+## The history: from "error" to "dispersion" {#sec-history}
+
+The square of the deviation did not arrive as an abstraction; it arrived as the
+*measurement error* of working astronomers and geodesists at the turn of the nineteenth
+century — the very same setting that produced least squares (the story told in [REGR-1]).
+Carl Friedrich Gauss, reconciling many noisy observations of a planet's position around
+1809, modeled each observation as the truth plus a random error and asked how to weigh
+errors against one another. His answer, the *normal* (Gaussian) law of errors, has the
+squared deviation sitting in its exponent — large errors are penalised quadratically, small
+ones barely at all. The square was baked into the dominant error model from the start.
+
+But the *name* and the modern role came later. Pierre-Simon Laplace and others worked with
+the "mean square error"; Pafnuty Chebyshev, in the 1860s–1880s, used the average squared
+deviation to prove that a random quantity cannot stray too far from its mean too often —
+the inequality we build in [PROB-19]. The word **variance** itself was coined only in 1918,
+by Ronald Fisher, in the paper that launched the *analysis of variance*. Fisher's decisive
+move was to treat the total squared deviation in a dataset as something that could be *split
+into pieces* — variance attributable to this cause, that cause, and leftover noise — each
+piece a sum of squares. That additivity, the thing that makes variance carve up so cleanly,
+is exactly what we will see comes for free *because* the measure is a square and not, say,
+an absolute value.
+
+So the *why* threads through everything that follows: we square because the square is what
+the Gaussian error law rewards, what makes the mean the natural center, what concentrates a
+quantity around that center (Chebyshev), and what lets total spread decompose additively
+(Fisher). Keep that quartet of reasons in mind; each derivation below cashes one of them out.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is variance defined with a square and not the average absolute deviation
+$\mathbb{E}[\,|X-\mu|\,]$? Isn't the absolute deviation more intuitive — it's in the right
+units and it's literally 'how far off you are on average'?"* This is the single most common
+conceptual probe on this topic, and there are four honest answers, each of which we
+*derive* later rather than assert:
+
+1. **The mean is the minimizer of mean *squared* deviation, not of mean absolute
+   deviation.** Choosing the square makes $\mathbb{E}[X]$ — the center we already committed
+   to in [PROB-5] — the natural reference point. We prove this in @sec-mean-minimizes. (The
+   *median* minimizes mean absolute deviation, which is why absolute-deviation methods are
+   median-based; see the aside there.)
+2. **Squares are differentiable; absolute values have a corner.** $|t|$ is not
+   differentiable at $0$, so optimisation with it has no clean closed form. $t^2$ is smooth,
+   which is what lets calculus — and least squares ([REGR-1]) — produce formulas.
+3. **Variance is additive for independent variables; mean absolute deviation is not.** The
+   identity $\operatorname{Var}(X+Y) = \operatorname{Var}(X)+\operatorname{Var}(Y)$ (under
+   independence) has *no* analogue for absolute deviations. This additivity is the engine of
+   nearly everything downstream ([PROB-8], [PROB-19], the whole of regression inference).
+4. **It matches the Gaussian error model**, the most common noise model in measurement,
+   where the squared deviation is exactly the quantity the likelihood penalises ([REGR-1]).
+
+The honest catch you should volunteer: the very thing that makes the square analytically
+golden — its quadratic growth — also makes variance **hypersensitive to outliers and to
+heavy tails**, and for some distributions the variance does not even *exist*. We meet that
+boundary head-on in @sec-failure. A sharp interviewer is testing whether you know the price
+of the square, not just its benefits.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture the distribution of $X$ as a pile of mass spread along the number line, and put a
+pin at the mean $\mu$ — the balance point [PROB-5] established. Spread asks: *on average,
+how far is the mass from that pin?*
+
+The naive measure is the **average signed deviation**, $\mathbb{E}[X-\mu]$. But this is
+useless, and provably zero: the deviations above the mean exactly cancel the deviations
+below it, because the mean is precisely the balance point. (We confirm $\mathbb{E}[X-\mu]=0$
+in one line in @sec-signed-cancels.) Signed distance cancels by design.
+
+So we must kill the signs *before* averaging. Two candidates present themselves: take the
+**absolute value** $|X-\mu|$, or take the **square** $(X-\mu)^2$. Both are non-negative;
+both are zero only when $X=\mu$; both grow as $X$ wanders from the center. @fig-abs-vs-sq
+shows the two penalty curves side by side. The square is smooth and grows ever faster as you
+move out — a deviation of $3$ counts *nine* times a deviation of $1$ — while the absolute
+value grows at a constant rate with a sharp corner at zero.
+
+```{python}
+#| label: fig-abs-vs-sq
+#| fig-cap: "Two ways to turn a signed deviation $t = x-\\mu$ into a non-negative penalty. The absolute value $|t|$ (grey) grows linearly and has a sharp corner at $t=0$. The square $t^2$ (red) is smooth everywhere and grows quadratically, so it weights a deviation of 3 nine times as heavily as a deviation of 1. Variance averages the *square*; the smoothness and the quadratic growth are exactly the two properties that make it the analytically natural choice."
+t = np.linspace(-3, 3, 400)
+fig, ax = plt.subplots()
+ax.plot(t, np.abs(t), color=GREY, lw=2.0, label=r"$|t|$  (absolute deviation)")
+ax.plot(t, t ** 2, color=LINE, lw=2.2, label=r"$t^2$  (squared deviation)")
+ax.axvline(0, color=ACCENT, lw=1.0, alpha=0.6)
+ax.set_xlabel(r"deviation from the mean,  $t = x - \mu$")
+ax.set_ylabel("penalty")
+ax.set_title("Squaring vs. absolute value")
+ax.legend(loc="upper center", framealpha=0.9)
+plt.tight_layout()
+```
+
+The choice between them is the central decision of this article, and the rest of @sec-why
+above already told you which way it goes and why. Variance commits to the square. The
+**standard deviation** then takes a square root at the very end, purely to undo the unit
+distortion that squaring introduced: if $X$ is in metres, $(X-\mu)^2$ is in metres-squared,
+and $\sqrt{\operatorname{Var}(X)}$ brings us back to metres so the number is comparable to
+$X$ itself. That is the entire conceptual arc — *deviate, square, average, then square-root
+to return to scale.* The formal development just makes each step exact.
+
+# The formal development {#sec-formal}
+
+## Definition, and a refresher on the tools we carry in {#sec-def}
+
+We import two facts from [PROB-5], and we state them explicitly so nothing is assumed.
+
+**Imported fact 1 — the expectation.** For a discrete random variable $X$ with pmf $p(x) =
+P(X=x)$ (built in [PROB-3]), and for a continuous $X$ with pdf $f(x)$ (built in [PROB-4]),
+$$
+\mathbb{E}[X] \;=\; \sum_{x} x\,p(x) \qquad\text{(discrete)}, \qquad
+\mathbb{E}[X] \;=\; \int_{-\infty}^{\infty} x\,f(x)\,dx \qquad\text{(continuous)}.
+$$
+The expectation is the probability-weighted average of the values $X$ can take.
+
+**Imported fact 2 — the law of the unconscious statistician (LOTUS), and linearity.**
+[PROB-5] proved that for *any* function $g$, you do not need the distribution of $g(X)$ to
+compute its expectation — you weight $g(x)$ by the distribution of $X$:
+$$
+\mathbb{E}[g(X)] \;=\; \sum_{x} g(x)\,p(x) \qquad\text{or}\qquad \int g(x) f(x)\,dx,
+$$ {#eq-lotus}
+and that expectation is **linear**: for constants $a,b$ and functions $g,h$,
+$$
+\mathbb{E}[\,a\,g(X) + b\,h(X) + c\,] \;=\; a\,\mathbb{E}[g(X)] + b\,\mathbb{E}[h(X)] + c.
+$$ {#eq-linearity}
+Linearity @eq-linearity is the single tool that powers nearly every derivation below; it
+holds with no assumptions whatsoever (no independence, nothing). When we "pull the
+expectation through a sum" or "pull a constant out of an expectation," @eq-linearity is the
+licence.
+
+With those in hand, variance is just an expectation of a particular function — the squared
+deviation — so LOTUS @eq-lotus lets us compute it directly.
+
+::: {#def-variance}
+**Definition (variance and standard deviation).** Let $X$ be a random variable with finite
+mean $\mu = \mathbb{E}[X]$. Its **variance** is the expected squared deviation from the mean,
+$$
+\operatorname{Var}(X) \;=\; \mathbb{E}\!\bigl[(X-\mu)^2\bigr],
+$$ {#eq-var-def}
+and its **standard deviation** is the non-negative square root,
+$$
+\sigma_X \;=\; \operatorname{SD}(X) \;=\; \sqrt{\operatorname{Var}(X)} .
+$$ {#eq-sd-def}
+The variance is often written $\sigma_X^2$ (or $\sigma^2$ when $X$ is clear), a notation
+that *builds the square into the symbol* and reminds you that $\operatorname{Var}(X)$ lives
+in squared units.
+:::
+
+Two immediate sanity facts, each one line. First, $\operatorname{Var}(X) \ge 0$ always:
+$(X-\mu)^2$ is a square, hence non-negative for every outcome, and the expectation of a
+non-negative quantity is non-negative (an average of numbers $\ge 0$ cannot be $< 0$).
+Second, $\operatorname{Var}(X) = 0$ if and only if $X$ is **constant** (equal to $\mu$ with
+probability $1$): a non-negative quantity has average zero only if it is zero wherever there
+is any probability, so $(X-\mu)^2 = 0$ everywhere the mass lives, i.e. $X=\mu$. Zero spread
+means *no randomness left*, which is exactly what we want the number to say.
+
+Spelling out @eq-var-def through LOTUS @eq-lotus with $g(x) = (x-\mu)^2$ gives the explicit
+formulas we actually evaluate:
+$$
+\operatorname{Var}(X) = \sum_{x} (x-\mu)^2\,p(x) \quad\text{(discrete)}, \qquad
+\operatorname{Var}(X) = \int_{-\infty}^{\infty} (x-\mu)^2\,f(x)\,dx \quad\text{(continuous)}.
+$$ {#eq-var-explicit}
+
+## The signed deviation cancels (so we *had* to do something) {#sec-signed-cancels}
+
+Before squaring, let us confirm the claim from @sec-intuition that the *un*-squared
+deviation is worthless. Using linearity @eq-linearity with $\mu$ a constant,
+$$
+\mathbb{E}[X-\mu] = \mathbb{E}[X] - \mu = \mu - \mu = 0 .
+$$
+The average deviation is identically zero, for *every* distribution. This is not a feature
+of any particular $X$; it is the defining property of the mean as the balance point. It is
+precisely why a non-cancelling transform — the square — is mandatory before we average.
+
+## The computational identity: variance as $\mathbb{E}[X^2]-\mu^2$ {#sec-comp-identity}
+
+Definition @eq-var-def is conceptually clean but computationally clumsy: to use it directly
+you must first find $\mu$, then form the new variable $(X-\mu)^2$, then average *that*. There
+is a shortcut that practitioners reach for every single time, and we derive it now with no
+step skipped. It is nothing more than "expand the square, then use linearity."
+
+::: {#thm-comp-identity}
+**Theorem (computational formula for variance).** For any random variable $X$ with finite
+mean $\mu=\mathbb{E}[X]$ and finite $\mathbb{E}[X^2]$,
+$$
+\operatorname{Var}(X) \;=\; \mathbb{E}[X^2] - \bigl(\mathbb{E}[X]\bigr)^2 \;=\; \mathbb{E}[X^2] - \mu^2 .
+$$ {#eq-comp-identity}
+:::
+
+::: {.proof}
+Start from the definition @eq-var-def and expand the squared deviation with ordinary
+algebra — $(X-\mu)^2 = X^2 - 2\mu X + \mu^2$, where $\mu$ is a *constant* (a fixed number,
+once the distribution is given), not a random variable:
+$$
+\operatorname{Var}(X) = \mathbb{E}\!\bigl[(X-\mu)^2\bigr]
+= \mathbb{E}\!\bigl[\,X^2 - 2\mu X + \mu^2\,\bigr].
+$$
+Now apply linearity @eq-linearity to split the expectation of the sum into a sum of
+expectations, and to pull the constants $-2\mu$ and $\mu^2$ outside their expectations:
+$$
+\mathbb{E}\!\bigl[\,X^2 - 2\mu X + \mu^2\,\bigr]
+= \mathbb{E}[X^2] - 2\mu\,\mathbb{E}[X] + \mu^2 .
+$$
+The middle term used that $-2\mu$ is constant; the last term used that the expectation of a
+constant is the constant itself, $\mathbb{E}[\mu^2] = \mu^2$. Now substitute $\mathbb{E}[X] =
+\mu$ in the middle term:
+$$
+\mathbb{E}[X^2] - 2\mu\cdot\mu + \mu^2 = \mathbb{E}[X^2] - 2\mu^2 + \mu^2 = \mathbb{E}[X^2] - \mu^2 .
+$$
+The two $\mu^2$ terms combine ($-2\mu^2 + \mu^2 = -\mu^2$), leaving exactly
+@eq-comp-identity. $\qquad\blacksquare$
+:::
+
+The identity has a slogan worth memorising in plain words: **variance is the mean of the
+square minus the square of the mean.** It is faster because it sweeps over the data *once* —
+accumulate $\sum x_i$ and $\sum x_i^2$ in a single pass — instead of needing $\mu$ before you
+can start. Read @eq-comp-identity the other way and it says something structural:
+$$
+\mathbb{E}[X^2] = \operatorname{Var}(X) + \mu^2 = \sigma^2 + \mu^2 ,
+$$ {#eq-second-moment}
+i.e. **the average squared value splits into spread plus center-squared.** That split is the
+scalar seed of the bias–variance decomposition you will meet across the modelling tracks,
+and of the sum-of-squares decomposition in @sec-sum-of-squares.
+
+::: {.callout-warning title="Pitfall"}
+**The computational identity is a numerical trap in finite-precision arithmetic.** Although
+$\mathbb{E}[X^2] - \mu^2$ is *algebraically* exact, computing a sample variance as $\frac1n
+\sum x_i^2 - \bar x^2$ subtracts two large, nearly equal numbers when the data are large in
+magnitude but tightly clustered (say, values near $10^9$ with spread near $1$). The
+catastrophic cancellation can return a *negative* "variance." The textbook formula is fine
+for hand calculation and for well-scaled data; production code uses a numerically stable
+one-pass scheme (Welford's algorithm) or simply centers first. The math is exact; the
+floating-point arithmetic is not.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Show me that $\operatorname{Var}(X) = \mathbb{E}[X^2] - (\mathbb{E}[X])^2$, and tell me a
+consequence."* The derivation above is the expected answer — expand, use linearity, collect.
+The consequence interviewers like: since $\operatorname{Var}(X) \ge 0$, the identity forces
+$\mathbb{E}[X^2] \ge (\mathbb{E}[X])^2$ for *every* random variable. That is the
+probabilistic statement of the inequality $\mathbb{E}[X^2] \ge \mu^2$ — a special case of
+**Jensen's inequality** for the convex function $t\mapsto t^2$ — and it says the average of
+the squares is at least the square of the average, with equality only when $X$ is constant
+(zero variance). Being able to read a known inequality straight out of "variance is
+non-negative" signals real fluency.
+:::
+
+## The mean is the value that minimizes mean squared deviation {#sec-mean-minimizes}
+
+We promised in @sec-why that squaring is what makes the *mean* the natural reference point.
+Here is the precise statement and its proof: of all constants $c$ you could measure
+deviation from, the one that minimizes the average squared deviation $\mathbb{E}[(X-c)^2]$ is
+$c=\mu$, and the minimum value is the variance itself. This is the result that *ties the
+center to the spread*: variance is not "spread about some arbitrary point," it is "spread
+about the one point that makes spread smallest."
+
+::: {#thm-mean-minimizes}
+**Theorem (the mean minimizes mean squared deviation).** Let $X$ have finite mean
+$\mu=\mathbb{E}[X]$ and finite variance. Define $m(c) = \mathbb{E}[(X-c)^2]$ for a constant
+$c$. Then
+$$
+m(c) = \operatorname{Var}(X) + (\mu - c)^2 ,
+$$ {#eq-mean-minimizes}
+so $m(c)$ is minimized uniquely at $c=\mu$, where $m(\mu) = \operatorname{Var}(X)$.
+:::
+
+::: {.proof}
+We compute $m(c)$ by the same expand-and-use-linearity move as @thm-comp-identity, but with
+a twist that makes the structure pop. Insert $\mu$ and subtract it back inside the square — a
+standard "add zero" trick, since $-c = -\mu + (\mu - c)$:
+$$
+(X - c)^2 = \bigl((X-\mu) + (\mu - c)\bigr)^2 .
+$$
+Let $A = X-\mu$ (a random variable, with $\mathbb{E}[A] = 0$ by @sec-signed-cancels) and let
+$D = \mu - c$ (a *constant*). Expand the square $(A+D)^2 = A^2 + 2AD + D^2$:
+$$
+(X-c)^2 = (X-\mu)^2 + 2(\mu-c)(X-\mu) + (\mu-c)^2 .
+$$
+Take the expectation of both sides and apply linearity @eq-linearity, pulling the constant
+$2(\mu-c)$ and the constant $(\mu-c)^2$ outside:
+$$
+m(c) = \mathbb{E}\!\bigl[(X-\mu)^2\bigr] + 2(\mu-c)\,\mathbb{E}[X-\mu] + (\mu-c)^2 .
+$$
+The first term is $\operatorname{Var}(X)$ by definition @eq-var-def. The middle term
+*vanishes* because $\mathbb{E}[X-\mu] = 0$ (the cancellation of @sec-signed-cancels) — this
+is the crucial step, and it is exactly *why* $\mu$ is special. The last term is $(\mu-c)^2$.
+So
+$$
+m(c) = \operatorname{Var}(X) + (\mu - c)^2 ,
+$$
+which is @eq-mean-minimizes. Now read it: $\operatorname{Var}(X)$ does not depend on $c$, and
+$(\mu-c)^2$ is a non-negative quantity that is zero exactly when $c=\mu$ and strictly
+positive otherwise. So $m(c)$ is smallest precisely at $c=\mu$, with minimum value
+$m(\mu)=\operatorname{Var}(X)$. $\qquad\blacksquare$
+:::
+
+This is a genuinely load-bearing result. It says the variance is the *irreducible* mean
+squared error of predicting $X$ by a single constant — the best you can do with a constant
+guess is to guess the mean, and what is left over is the variance. That sentence is the
+seed of the entire regression idea ([PROB-9] makes the conditional version, and [REGR-1]
+turns it into a line): when we are allowed to use a predictor instead of a constant, we are
+trying to beat this floor.
+
+::: {.callout-tip title="You might be asked"}
+*"You said the mean minimizes mean squared deviation. What minimizes the mean *absolute*
+deviation $\mathbb{E}[\,|X-c|\,]$?"* The **median**, not the mean — and we should *derive*
+this, not assert it, because it is the precise sense in which absolute deviation pairs with a
+different center than the square does. Take $X$ continuous with pdf $f$ and CDF $F(x) =
+P(X\le x)$ (the objects from [PROB-4]), and define the mean-absolute-deviation objective
+$$
+a(c) = \mathbb{E}\bigl[\,|X-c|\,\bigr] = \int_{-\infty}^{\infty} |x-c|\,f(x)\,dx .
+$$
+Split the absolute value at $x=c$, where $|x-c| = c-x$ for $x<c$ and $|x-c| = x-c$ for
+$x\ge c$:
+$$
+a(c) = \int_{-\infty}^{c} (c-x)\,f(x)\,dx \;+\; \int_{c}^{\infty} (x-c)\,f(x)\,dx .
+$$
+Differentiate with respect to $c$. The variable $c$ appears in two places in each integral —
+in the limit of integration and in the integrand — so we use the Calc-1 Leibniz/Fundamental-
+Theorem rule $\frac{d}{dc}\int_{g(c)}^{h(c)} \phi(x,c)\,dx = \phi(h(c),c)\,h'(c) -
+\phi(g(c),c)\,g'(c) + \int \frac{\partial \phi}{\partial c}\,dx$. The two *boundary* terms
+both carry the factor $|x-c|$ evaluated at $x=c$, which is $0$, so they drop out, leaving only
+the derivatives of the integrands ($\frac{\partial}{\partial c}(c-x) = 1$ and
+$\frac{\partial}{\partial c}(x-c) = -1$):
+$$
+a'(c) = \int_{-\infty}^{c} f(x)\,dx \;-\; \int_{c}^{\infty} f(x)\,dx
+= P(X < c) - P(X > c) = F(c) - \bigl(1 - F(c)\bigr) = 2F(c) - 1 .
+$$
+Setting $a'(c) = 0$ gives $F(c) = \tfrac12$ — *that is the definition of a median*: the value
+with half the probability mass on each side. (And $a'(c) = 2F(c)-1$ is increasing in $c$
+because $F$ is non-decreasing, so this stationary point is the minimum, not a maximum.) The
+intuition the formula makes precise: moving $c$ a hair to the right helps the points above it
+and hurts the points below it by equal *unit* amounts, so the absolute-deviation objective is
+balanced when the *counts* (probability masses) on the two sides are equal — not the squared
+distances. That is exactly why squared deviation balances at the mean (the balance point of
+*mass times distance*) while absolute deviation balances at the median (the balance point of
+*mass alone*). Each penalty has its own natural center: squared deviation pairs with the mean
+(and hence with variance and least-squares regression); absolute deviation pairs with the
+median (and hence with robust, quantile-based methods, [REGR-1]'s robust alternatives).
+Choosing the square is choosing the mean as your reference.
+:::
+
+## The scaling law: why variance carries an $a^2$, not an $a$ {#sec-scaling}
+
+How does spread respond when we shift and rescale the variable — replace $X$ by $aX+b$ for
+constants $a$ (a stretch) and $b$ (a shift)? The answer is the rule that, more than any
+other, reveals that **variance is not linear**, and the $a^2$ is the unmistakable signature
+of the square.
+
+::: {#thm-scaling}
+**Theorem (affine scaling of variance).** For constants $a$ and $b$ and any random variable
+$X$ with finite variance,
+$$
+\operatorname{Var}(aX + b) = a^2\,\operatorname{Var}(X), \qquad
+\operatorname{SD}(aX+b) = |a|\,\operatorname{SD}(X) .
+$$ {#eq-scaling}
+:::
+
+::: {.proof}
+Let $Y = aX + b$. First find its mean, using linearity @eq-linearity of expectation:
+$$
+\mu_Y = \mathbb{E}[aX+b] = a\,\mathbb{E}[X] + b = a\mu + b .
+$$
+Now form the deviation of $Y$ from *its* mean and watch the shift $b$ cancel:
+$$
+Y - \mu_Y = (aX + b) - (a\mu + b) = aX - a\mu = a(X-\mu) .
+$$
+The $+b$ added to $Y$ and the $+b$ inside $\mu_Y$ subtract off — **a pure shift moves the
+whole distribution but changes none of the distances to the center, so it cannot change
+spread.** Square the deviation and take the expectation, pulling the constant $a^2$ out by
+linearity:
+$$
+\operatorname{Var}(Y) = \mathbb{E}\!\bigl[(Y-\mu_Y)^2\bigr]
+= \mathbb{E}\!\bigl[\bigl(a(X-\mu)\bigr)^2\bigr]
+= \mathbb{E}\!\bigl[a^2 (X-\mu)^2\bigr]
+= a^2\,\mathbb{E}\!\bigl[(X-\mu)^2\bigr]
+= a^2 \operatorname{Var}(X) .
+$$
+That proves the variance statement. For the standard deviation, take the non-negative square
+root of both sides, remembering that $\sqrt{a^2} = |a|$ (not $a$, since the square root is
+defined to be non-negative and $a$ could be negative):
+$$
+\operatorname{SD}(Y) = \sqrt{a^2 \operatorname{Var}(X)} = \sqrt{a^2}\,\sqrt{\operatorname{Var}(X)} = |a|\,\operatorname{SD}(X). \qquad\blacksquare
+$$
+:::
+
+Two readings of @eq-scaling, both essential:
+
+- **Shifts do nothing.** Adding a constant $b$ — sliding the whole distribution left or
+  right — leaves variance untouched. Spread is about *relative* position, not absolute
+  location. This is why you can center data (subtract the mean) without changing its
+  variance.
+- **Stretches scale by the *square*.** Double the scale ($a=2$) and the variance
+  *quadruples*, while the standard deviation merely doubles. This is the most important
+  practical reason the standard deviation exists: because $\sigma = |a|\,\sigma_X$ scales
+  *linearly* with the data, it lives in the same units and scales the same way as $X$, so it
+  is the spread you can actually read off a plot and compare to a deviation. Variance, in
+  squared units, scaling by $a^2$, cannot be read that way.
+
+::: {.callout-tip title="You might be asked"}
+*"Is variance a linear operator? Is $\operatorname{Var}(aX) = a\operatorname{Var}(X)$?"* No —
+and this is the trap. Expectation is linear ($\mathbb{E}[aX] = a\mathbb{E}[X]$), but variance
+is **not**: $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$, with the square. Nor is
+variance additive in general — $\operatorname{Var}(X+Y)$ is *not* $\operatorname{Var}(X) +
+\operatorname{Var}(Y)$ unless $X$ and $Y$ are uncorrelated, because of a cross term we have
+not met yet (it is the **covariance**, and the full identity $\operatorname{Var}(X+Y) =
+\operatorname{Var}(X)+\operatorname{Var}(Y)+2\operatorname{Cov}(X,Y)$ is derived in
+[PROB-7]). The reason variance fails to be linear is precisely the square in its definition:
+squaring a sum produces cross terms. Knowing *why* it fails — not just *that* it fails — is
+what separates a memorised rule from understanding.
+:::
+
+## Standardization: the z-score {#sec-zscore}
+
+The scaling law @eq-scaling lets us perform the single most useful transformation of a random
+variable: **standardization**, which slides and stretches $X$ into a new variable with mean
+$0$ and variance $1$, stripping away its units and scale so different variables become
+comparable. Define
+$$
+Z = \frac{X - \mu}{\sigma}, \qquad \mu = \mathbb{E}[X],\ \ \sigma = \operatorname{SD}(X) > 0 .
+$$ {#eq-zscore}
+This is an affine map $Z = aX + b$ with $a = 1/\sigma$ and $b = -\mu/\sigma$. Compute its
+mean and variance from the rules we just proved. The mean, by linearity:
+$$
+\mathbb{E}[Z] = \frac{1}{\sigma}\mathbb{E}[X] - \frac{\mu}{\sigma} = \frac{\mu}{\sigma} - \frac{\mu}{\sigma} = 0 .
+$$
+The variance, by the scaling law @eq-scaling with $a = 1/\sigma$ (the shift $b$ contributing
+nothing):
+$$
+\operatorname{Var}(Z) = \left(\frac{1}{\sigma}\right)^{2}\operatorname{Var}(X)
+= \frac{1}{\sigma^2}\cdot\sigma^2 = 1 .
+$$
+So $Z$ has mean $0$ and variance (hence standard deviation) $1$ regardless of what $X$ was.
+A z-score answers "how many standard deviations from the mean is this value?" — a unit-free
+question you can ask of a test score, a stock return, and a sensor reading in the same breath
+and get comparable answers. The standardized normal $\mathcal{N}(0,1)$ that runs through all
+of statistics ([PROB-13]) is exactly this construction applied to a normal $X$, and
+Chebyshev's inequality ([PROB-19]) is most cleanly stated in z-score units: "the probability
+of being more than $k$ standard deviations out is at most $1/k^2$."
+
+# Variance as a sum of squares {#sec-sum-of-squares}
+
+We now reach the structure the Regression track requests by name: variance *is* a sum of
+squares, and that sum of squares is the quantity that splits, adds, and decomposes. This
+section makes the population-and-sample story exact, because the two are computed
+differently and the difference (the famous "$n-1$") trips up everyone the first time.
+
+## From population variance to the empirical sum of squares {#sec-pop-to-sample}
+
+Everything so far is the **population** (theoretical) variance: $\operatorname{Var}(X) =
+\mathbb{E}[(X-\mu)^2]$, a property of the *distribution*, computed from the pmf or pdf. In
+practice we rarely know the distribution; we have **data** — a finite sample
+$x_1,\dots,x_n$ — and we want to estimate the spread *from the numbers*.
+
+Suppose, for a moment, that the $n$ values are simply the list of outcomes, each equally
+likely — the **empirical distribution** that puts mass $1/n$ on each observed $x_i$ (the
+object [PROB-22] studies as the empirical CDF). Its mean is the **sample mean**
+$$
+\bar x = \frac{1}{n}\sum_{i=1}^{n} x_i ,
+$$
+and applying the population variance formula @eq-var-explicit *to this empirical
+distribution* — every $x_i$ weighted by $p(x_i) = 1/n$ — gives
+$$
+\frac{1}{n}\sum_{i=1}^{n} (x_i - \bar x)^2 .
+$$ {#eq-sample-var-n}
+The thing inside, before dividing, is the central object of this section: the **total sum of
+squared deviations**, the empirical sum of squares,
+$$
+\boxed{\;\operatorname{SS} \;=\; \sum_{i=1}^{n} (x_i - \bar x)^2 .\;}
+$$ {#eq-SS}
+*This* is "variance as a sum of squares" in its rawest form: every observation contributes
+its squared distance from the sample mean, and we add them up. The population variance was an
+*integral* (or weighted sum) of squared deviations; the empirical version is a plain
+**unweighted sum** of squared deviations, because each point carries equal weight $1/n$. The
+square is doing the same job it always did — kill the sign, penalise far points hard, stay
+smooth — but now over a finite list of numbers.
+
+## Why we divide by $n-1$, not $n$ — derived, not decreed {#sec-n-minus-1}
+
+Here is the step everyone meets and few are shown. Why does the standard **sample variance**
+divide the sum of squares by $n-1$,
+$$
+s^2 = \frac{1}{n-1}\sum_{i=1}^{n}(x_i-\bar x)^2 = \frac{\operatorname{SS}}{n-1},
+$$ {#eq-sample-var}
+when the population formula and the naive empirical version @eq-sample-var-n divide by $n$?
+The honest answer is **unbiasedness**, and we can derive it cleanly here using only the tools
+already built, treating the data as a random sample $X_1,\dots,X_n$ drawn independently from
+a distribution with true mean $\mu$ and true variance $\sigma^2$.
+
+We will need one fact about *sums* of independent variables that belongs to [PROB-8] but
+which we state and use explicitly so the chain is complete: for independent $X_1,\dots,X_n$,
+the variance of their sum is the sum of their variances, hence the **sample mean**
+$\bar X = \frac1n\sum X_i$ has
+$$
+\mathbb{E}[\bar X] = \mu, \qquad \operatorname{Var}(\bar X) = \frac{\sigma^2}{n} .
+$$ {#eq-sample-mean-moments}
+The mean of $\bar X$ is $\mu$ by linearity ($\mathbb{E}[\frac1n\sum X_i] = \frac1n \sum
+\mathbb{E}[X_i] = \frac1n \cdot n\mu = \mu$). The variance is $\sigma^2/n$ by the scaling law
+@eq-scaling applied to the constant $1/n$ out front, combined with variance-adds-for-
+independents: $\operatorname{Var}(\frac1n\sum X_i) = \frac{1}{n^2}\sum
+\operatorname{Var}(X_i) = \frac{1}{n^2}\cdot n\sigma^2 = \sigma^2/n$. (We flag the
+additivity-under-independence as the one imported ingredient; it is built in [PROB-8], and we
+are using only its statement.) Equation @eq-sample-mean-moments is itself worth carrying: the
+sample mean is *less variable than a single observation by a factor of $n$* — the
+$\sqrt{n}$-shrinkage of its standard deviation $\sigma/\sqrt{n}$ is the reason averages are
+trustworthy.
+
+Now the derivation. We compute the expected value of the *un*-corrected sum of squares
+@eq-SS, and watch a factor of $n-1$ emerge on its own.
+
+::: {#thm-bessel}
+**Theorem (expected sum of squares; Bessel's correction).** If $X_1,\dots,X_n$ are
+independent with common mean $\mu$ and variance $\sigma^2$, then
+$$
+\mathbb{E}\!\left[\sum_{i=1}^{n}(X_i - \bar X)^2\right] = (n-1)\,\sigma^2 ,
+$$ {#eq-bessel}
+so that $s^2 = \frac{1}{n-1}\sum (X_i-\bar X)^2$ satisfies $\mathbb{E}[s^2] = \sigma^2$ (it is
+**unbiased** for $\sigma^2$), whereas dividing by $n$ would systematically *under*estimate.
+:::
+
+::: {.proof}
+The key is an algebraic identity that re-expresses the sum of squared deviations about the
+*sample* mean $\bar X$ in terms of deviations about the *true* mean $\mu$. We add and subtract
+$\mu$ inside each squared term — the same "add zero" device as @thm-mean-minimizes:
+$$
+X_i - \bar X = (X_i - \mu) - (\bar X - \mu).
+$$
+Square this and sum over $i$, writing $U_i = X_i - \mu$ (deviation of an observation from the
+truth) and $V = \bar X - \mu$ (deviation of the sample mean from the truth, the *same* for
+every $i$):
+$$
+\sum_{i=1}^{n}(X_i-\bar X)^2 = \sum_{i=1}^{n}(U_i - V)^2
+= \sum_{i=1}^{n}\bigl(U_i^2 - 2U_i V + V^2\bigr).
+$$
+Distribute the sum over the three pieces, pulling the common constant $V$ (constant *across
+$i$*, though random) outside the sums where it appears:
+$$
+= \sum_{i=1}^{n} U_i^2 \;-\; 2V\sum_{i=1}^{n} U_i \;+\; nV^2 .
+$$
+The last term is $nV^2$ because $V^2$ is added $n$ times. Now simplify the middle sum. By the
+definition of $\bar X$,
+$$
+\sum_{i=1}^{n} U_i = \sum_{i=1}^{n}(X_i - \mu) = \Bigl(\sum_{i=1}^{n} X_i\Bigr) - n\mu = n\bar X - n\mu = n(\bar X - \mu) = nV .
+$$
+Substitute $\sum U_i = nV$ into the middle term:
+$$
+\sum_{i=1}^{n}(X_i-\bar X)^2 = \sum_{i=1}^{n} U_i^2 - 2V\,(nV) + nV^2 = \sum_{i=1}^{n} U_i^2 - 2nV^2 + nV^2 = \sum_{i=1}^{n} U_i^2 - nV^2 .
+$$
+So the deviations-about-the-sample-mean equal the deviations-about-the-truth *minus* a
+correction $nV^2$:
+$$
+\sum_{i=1}^{n}(X_i - \bar X)^2 = \sum_{i=1}^{n}(X_i - \mu)^2 - n(\bar X - \mu)^2 .
+$$ {#eq-ss-decomp}
+This identity is worth a sentence on its own: **the sample mean is the point that makes the
+sum of squares smallest** (it is the empirical version of @thm-mean-minimizes), so measuring
+spread about $\bar X$ always gives a *smaller* total than measuring about the true $\mu$ — by
+exactly $n(\bar X-\mu)^2$. That is the source of the downward bias we are about to correct.
+
+Take the expectation of @eq-ss-decomp, using linearity:
+$$
+\mathbb{E}\!\left[\sum_{i=1}^{n}(X_i-\bar X)^2\right] = \sum_{i=1}^{n}\mathbb{E}\!\bigl[(X_i-\mu)^2\bigr] - n\,\mathbb{E}\!\bigl[(\bar X - \mu)^2\bigr] .
+$$
+Now evaluate the two expectations. For each $i$, $\mathbb{E}[(X_i-\mu)^2]$ is, by definition
+@eq-var-def, the variance of $X_i$, which is $\sigma^2$; summed over $n$ terms that is
+$n\sigma^2$. And $\mathbb{E}[(\bar X - \mu)^2]$ is, again by definition @eq-var-def (the mean
+of $\bar X$ *is* $\mu$ by @eq-sample-mean-moments), the variance of $\bar X$, which is
+$\sigma^2/n$. Substitute:
+$$
+\mathbb{E}\!\left[\sum_{i=1}^{n}(X_i-\bar X)^2\right] = n\sigma^2 - n\cdot\frac{\sigma^2}{n} = n\sigma^2 - \sigma^2 = (n-1)\sigma^2 .
+$$
+That is @eq-bessel. Dividing the sum of squares by $n-1$ therefore gives an expectation of
+exactly $\sigma^2$:
+$$
+\mathbb{E}[s^2] = \frac{1}{n-1}\,\mathbb{E}\!\left[\sum(X_i-\bar X)^2\right] = \frac{(n-1)\sigma^2}{n-1} = \sigma^2 . \qquad\blacksquare
+$$
+:::
+
+The derivation tells you *why* it is $n-1$ and not some other number: we spent one piece of
+information — one "degree of freedom" — estimating the mean $\bar X$ from the very same data,
+which pulls the sum of squares down by exactly the variance of $\bar X$, i.e. by one
+$\sigma^2$'s worth. Correcting that lost degree of freedom is dividing by $n-1$.
+
+::: {.callout-tip title="You might be asked"}
+*"Why $n-1$ in the sample variance? And when does it not matter?"* The crisp answer is
+unbiasedness: @thm-bessel shows $\mathbb{E}[\sum (X_i-\bar X)^2] = (n-1)\sigma^2$, so dividing
+by $n-1$ makes $s^2$ unbiased while dividing by $n$ underestimates $\sigma^2$. The deeper
+phrasing interviewers reward: you **lose one degree of freedom** by estimating $\mu$ with
+$\bar X$, because the residuals $x_i - \bar x$ are constrained to sum to zero (they satisfy
+$\sum (x_i - \bar x) = 0$, one linear constraint), so only $n-1$ of them are free. When does
+it not matter? For large $n$, $n/(n-1) \to 1$ and the distinction is numerically negligible;
+it is the small-sample correction. And note the boundary: at $n=1$ there is *no* spread
+information at all, and indeed @eq-sample-var divides by $n-1 = 0$ — undefined, correctly
+signaling that a single point tells you nothing about variability.
+:::
+
+@fig-bessel shows the bias concretely: repeatedly drawing small samples and computing the
+sum of squares divided by $n$ versus $n-1$, against the known truth.
+
+```{python}
+#| label: fig-bessel
+#| fig-cap: "Bessel's correction in action. We draw 20,000 samples of size $n=5$ from a distribution with true variance $\\sigma^2 = 4$ (so $\\sigma=2$), and for each sample compute the sum of squared deviations divided by $n$ (left) and by $n-1$ (right). Dividing by $n$ (the naive empirical variance) centers *below* the truth — it is biased downward, exactly the $(n-1)/n$ shortfall predicted by @eq-bessel. Dividing by $n-1$ centers on the true $\\sigma^2$. The correction is largest for small $n$."
+rng = np.random.default_rng(20240529)
+n, sigma, reps = 5, 2.0, 20000
+samples = rng.normal(0.0, sigma, size=(reps, n))
+ss = np.sum((samples - samples.mean(axis=1, keepdims=True)) ** 2, axis=1)
+var_n   = ss / n
+var_nm1 = ss / (n - 1)
+truth = sigma ** 2
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.6), sharey=True, sharex=True)
+bins = np.linspace(0, 16, 50)
+for ax, data, lab, mean in [
+    (axL, var_n,   r"divide by $n$",     var_n.mean()),
+    (axR, var_nm1, r"divide by $n-1$",   var_nm1.mean()),
+]:
+    ax.hist(data, bins=bins, color=FILL, edgecolor="white", alpha=0.9)
+    ax.axvline(truth, color=ACCENT, lw=2.0, label=fr"true $\sigma^2={truth:.0f}$")
+    ax.axvline(mean,  color=LINE, lw=2.0, ls="--", label=f"avg estimate {mean:.2f}")
+    ax.set_title(lab); ax.set_xlabel("estimate of variance")
+    ax.legend(fontsize=8, framealpha=0.9)
+axL.set_ylabel("count")
+plt.tight_layout()
+print(f"mean of (SS/n)   = {var_n.mean():.3f}   (biased low; predicted {(n-1)/n*truth:.3f})")
+print(f"mean of (SS/n-1) = {var_nm1.mean():.3f}   (unbiased; truth {truth:.3f})")
+```
+
+## Why the sum of squares is *the* decomposable quantity {#sec-decomposable}
+
+The identity @eq-ss-decomp is the first taste of the property that made Fisher coin the word
+"variance" (@sec-history): a sum of squares **splits into interpretable pieces.** It said
+$$
+\underbrace{\sum (X_i-\mu)^2}_{\text{spread about the truth}} = \underbrace{\sum(X_i-\bar X)^2}_{\text{spread about the sample mean}} + \underbrace{n(\bar X-\mu)^2}_{\text{how far the sample mean missed}},
+$$
+a clean "total = within + between" split, each term a non-negative sum of squares.
+
+This is the exact mechanism the Regression track requests under the name **SST = SSR + SSE**
+([REGR-3]). There, the total sum of squares of the response, $\sum (y_i - \bar y)^2$, splits
+into the part the fitted line *explains* (regression sum of squares) plus the part it *leaves
+over* (the residual/error sum of squares). The reason such a split exists at all — the reason
+the cross term vanishes and the pieces add — is the same reason it vanished in our proof: the
+fitted values are built to make the residuals orthogonal to (uncorrelated with) the
+explained part, so the cross term is zero, and **squared quantities of orthogonal pieces
+add** (the Pythagorean theorem, in the geometry [REGR-1] and [PROB-7] develop). Absolute
+deviations have *no* such decomposition; only the square does. That single fact — the square
+decomposes, the absolute value does not — is the deepest of the four reasons from @sec-why
+that statistics is built on squares, and it is why this article is a prerequisite for
+regression.
+
+# Worked examples {#sec-examples}
+
+We now compute variances on honest cases — discrete and continuous, well-behaved and at the
+edge — carrying the first one through by hand so the formulas breathe.
+
+## Example 1 — a fair die, by hand both ways {#sec-die}
+
+Let $X$ be the value on one roll of a fair six-sided die: $X \in \{1,2,3,4,5,6\}$, each with
+probability $p(x) = 1/6$. This is a genuine discrete distribution (a uniform pmf on six
+points), small enough to do every step in the open and check the computational identity
+against the definition.
+
+**The mean.** By the discrete expectation formula,
+$$
+\mu = \mathbb{E}[X] = \sum_{x=1}^{6} x\cdot\frac{1}{6} = \frac{1+2+3+4+5+6}{6} = \frac{21}{6} = 3.5 .
+$$
+
+**Variance the long way (definition @eq-var-explicit).** Form each squared deviation
+$(x-3.5)^2$, weight by $1/6$, and sum:
+$$
+\operatorname{Var}(X) = \frac{1}{6}\Bigl[(1-3.5)^2 + (2-3.5)^2 + (3-3.5)^2 + (4-3.5)^2 + (5-3.5)^2 + (6-3.5)^2\Bigr].
+$$
+The squared deviations are $6.25,\ 2.25,\ 0.25,\ 0.25,\ 2.25,\ 6.25$, summing to $17.5$, so
+$$
+\operatorname{Var}(X) = \frac{17.5}{6} = \frac{35}{12} \approx 2.9167 .
+$$
+
+**Variance the short way (computational identity @eq-comp-identity).** First the mean of the
+square:
+$$
+\mathbb{E}[X^2] = \frac{1}{6}\sum_{x=1}^{6} x^2 = \frac{1+4+9+16+25+36}{6} = \frac{91}{6} \approx 15.1667 .
+$$
+Then subtract the square of the mean:
+$$
+\operatorname{Var}(X) = \mathbb{E}[X^2] - \mu^2 = \frac{91}{6} - (3.5)^2 = \frac{91}{6} - 12.25 = 15.1667 - 12.25 = 2.9167 .
+$$
+The two routes agree exactly, as @thm-comp-identity guarantees. The standard deviation is
+$\sigma = \sqrt{35/12} \approx 1.708$ — and *that* is the number to carry: a die roll lands,
+on average, about $1.7$ pips away from its mean of $3.5$. The variance $2.92$ is in
+"pips-squared," which is not a quantity anyone can feel; the standard deviation in pips is.
+
+```{python}
+#| label: fig-die
+#| fig-cap: "The fair die. **Left:** the uniform pmf with the mean $\\mu=3.5$ (green) and a band of $\\pm\\sigma \\approx \\pm 1.71$ around it (shaded). **Right:** each outcome's *squared deviation* $(x-\\mu)^2$ — the quantity variance averages. The far outcomes (1 and 6) contribute $6.25$ each, the near ones (3 and 4) only $0.25$: the square makes distant outcomes dominate the spread, which is the whole point of squaring."
+xs = np.arange(1, 7)
+p = np.full(6, 1 / 6)
+mu = 3.5
+var = np.sum((xs - mu) ** 2 * p)
+sd = np.sqrt(var)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.5))
+axL.bar(xs, p, color=FILL, edgecolor="white", width=0.7)
+axL.axvspan(mu - sd, mu + sd, color=ACCENT, alpha=0.15)
+axL.axvline(mu, color=ACCENT, lw=2.0, label=fr"$\mu={mu}$")
+axL.set_xlabel("die face $x$"); axL.set_ylabel("$p(x)=1/6$")
+axL.set_title(fr"pmf, with $\mu\pm\sigma$ ($\sigma\approx{sd:.2f}$)")
+axL.legend(framealpha=0.9)
+
+axR.bar(xs, (xs - mu) ** 2, color=LINE, edgecolor="white", width=0.7, alpha=0.85)
+axR.set_xlabel("die face $x$"); axR.set_ylabel(r"$(x-\mu)^2$")
+axR.set_title("squared deviation per outcome")
+plt.tight_layout()
+print(f"Var(X) = {var:.4f} = 35/12 = {35/12:.4f};  SD = {sd:.4f}")
+```
+
+## Example 2 — a continuous variance by integration: the uniform on $[a,b]$ {#sec-uniform}
+
+For a continuous case where we can do the calculus in full, take $X \sim \text{Uniform}(a,b)$
+— the model of "a value equally likely to land anywhere in $[a,b]$" built in [PROB-4], with
+density $f(x) = 1/(b-a)$ on $[a,b]$ and zero outside. Bus arrival times within a known
+window, rounding errors, and the output of a good random-number generator on an interval all
+look like this. We will use the computational identity @eq-comp-identity because the integrals
+are tidier.
+
+**The mean** (a Calc-1 integral):
+$$
+\mu = \mathbb{E}[X] = \int_a^b x\cdot\frac{1}{b-a}\,dx = \frac{1}{b-a}\cdot\frac{x^2}{2}\Bigg|_a^b = \frac{b^2 - a^2}{2(b-a)} = \frac{(b-a)(b+a)}{2(b-a)} = \frac{a+b}{2},
+$$
+where we factored the difference of squares $b^2 - a^2 = (b-a)(b+a)$ and cancelled $b-a$. The
+mean is the midpoint, as symmetry demands.
+
+**The mean of the square** (again Calc-1):
+$$
+\mathbb{E}[X^2] = \int_a^b x^2\cdot\frac{1}{b-a}\,dx = \frac{1}{b-a}\cdot\frac{x^3}{3}\Bigg|_a^b = \frac{b^3 - a^3}{3(b-a)} = \frac{(b-a)(b^2+ab+a^2)}{3(b-a)} = \frac{a^2+ab+b^2}{3},
+$$
+factoring the difference of cubes $b^3 - a^3 = (b-a)(b^2+ab+a^2)$ and cancelling $b-a$.
+
+**The variance**, by @eq-comp-identity. Subtract $\mu^2 = \left(\frac{a+b}{2}\right)^2 =
+\frac{a^2 + 2ab + b^2}{4}$:
+$$
+\operatorname{Var}(X) = \frac{a^2+ab+b^2}{3} - \frac{a^2+2ab+b^2}{4} .
+$$
+Put over the common denominator $12$:
+$$
+= \frac{4(a^2+ab+b^2) - 3(a^2+2ab+b^2)}{12} = \frac{4a^2 + 4ab + 4b^2 - 3a^2 - 6ab - 3b^2}{12} = \frac{a^2 - 2ab + b^2}{12} = \frac{(b-a)^2}{12} .
+$$
+So a uniform distribution on an interval of width $w = b-a$ has variance $w^2/12$ and standard
+deviation $w/\sqrt{12} \approx 0.289\,w$ — spread proportional to the *width*, scaling by the
+square ($w^2$) in variance and linearly ($w$) in standard deviation, exactly as the scaling
+law @sec-scaling promised. @fig-uniform shows it for $[0,1]$.
+
+```{python}
+#| label: fig-uniform
+#| fig-cap: "The Uniform$(0,1)$ density (flat, height 1 on $[0,1]$), with mean $\\mu=0.5$ (green) and the $\\mu\\pm\\sigma$ band shaded, where $\\sigma = 1/\\sqrt{12}\\approx 0.289$. The $\\pm\\sigma$ band covers the central $2\\sigma\\approx 0.577$ of the unit interval — a flat distribution keeps most of its mass within one standard deviation, unlike a peaked one."
+a, b = 0.0, 1.0
+xs = np.linspace(-0.25, 1.25, 400)
+dens = np.where((xs >= a) & (xs <= b), 1.0 / (b - a), 0.0)
+mu = (a + b) / 2
+sd = (b - a) / np.sqrt(12)
+
+fig, ax = plt.subplots()
+ax.fill_between(xs, dens, color=FILL, alpha=0.6)
+ax.plot(xs, dens, color=LINE)
+ax.axvspan(mu - sd, mu + sd, color=ACCENT, alpha=0.18, label=fr"$\mu\pm\sigma$")
+ax.axvline(mu, color=ACCENT, lw=2.0, label=fr"$\mu={mu}$")
+ax.set_xlabel("$x$"); ax.set_ylabel("density $f(x)$")
+ax.set_title(fr"Uniform$(0,1)$:  $\sigma=1/\sqrt{{12}}\approx{sd:.3f}$")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+print(f"Var = (b-a)^2/12 = {(b-a)**2/12:.5f};  SD = {sd:.5f}")
+```
+
+## Example 3 — real data: comparing the spread of two stocks {#sec-stocks}
+
+Here is the use case that drove the modern language of variance: **risk.** Two assets can
+have the same average return yet wildly different volatility, and "volatility" is, almost
+verbatim, the standard deviation of returns. We simulate daily returns for two
+realistic-but-synthetic stocks engineered to share nearly the same mean return — a calm
+utility and a volatile growth name — and compute the sample mean and sample variance
+@eq-sample-var on the data, exactly as an analyst would.
+
+```{python}
+#| label: fig-stocks
+#| fig-cap: "Two stocks, nearly identical *mean* daily return but very different *spread* of returns ($n=252$ trading days each). **Left:** the return series — the growth stock (red) swings far more violently around the common mean (green) than the calm utility (blue). **Right:** histograms of the returns, with each stock's $\\pm\\sigma$ band. The means coincide; the standard deviations — the volatilities — differ by roughly a factor of three. This is precisely the information the mean alone hides, and the number 'risk' is built from."
+rng = np.random.default_rng(11)
+n = 252
+calm   = rng.normal(0.0005, 0.006, size=n)   # low-volatility utility
+growth = rng.normal(0.0005, 0.020, size=n)   # high-volatility growth name
+
+def sample_stats(x):
+    xbar = x.mean()
+    s2 = np.sum((x - xbar) ** 2) / (len(x) - 1)   # eq-sample-var, divide by n-1
+    return xbar, s2, np.sqrt(s2)
+
+mc, vc, sc = sample_stats(calm)
+mg, vg, sg = sample_stats(growth)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+days = np.arange(n)
+axL.plot(days, growth, color=LINE, lw=1.0, alpha=0.8, label="growth")
+axL.plot(days, calm,  color=POINT, lw=1.0, alpha=0.8, label="utility")
+axL.axhline((mc + mg) / 2, color=ACCENT, lw=1.5, label="~common mean")
+axL.set_xlabel("trading day"); axL.set_ylabel("daily return")
+axL.set_title("Return series"); axL.legend(fontsize=8, framealpha=0.9)
+
+bins = np.linspace(-0.07, 0.07, 40)
+axR.hist(growth, bins=bins, color=LINE,  alpha=0.5, label=fr"growth  $\sigma={sg:.4f}$")
+axR.hist(calm,   bins=bins, color=POINT, alpha=0.5, label=fr"utility $\sigma={sc:.4f}$")
+axR.axvline(mc, color=ACCENT, lw=1.5)
+axR.set_xlabel("daily return"); axR.set_ylabel("count")
+axR.set_title("Return distributions"); axR.legend(fontsize=8, framealpha=0.9)
+plt.tight_layout()
+print(f"utility: mean={mc:+.5f}  var={vc:.6f}  SD(volatility)={sc:.5f}")
+print(f"growth : mean={mg:+.5f}  var={vg:.6f}  SD(volatility)={sg:.5f}")
+print(f"ratio of volatilities (growth/utility) = {sg/sc:.2f}")
+```
+
+The two means are essentially equal; the standard deviations differ by roughly three-fold.
+An investor choosing between them on *mean return alone* would see a coin flip; the variance
+reveals that one is three times riskier. Note also the unit logic: we report the **standard
+deviation** as the volatility, not the variance, because $\sigma$ is in "return units" (per
+day) and is directly comparable to the returns themselves, whereas the variance is in
+"return-squared" units that no trader quotes. This is @sec-scaling's lesson cashed out in the
+field.
+
+## Example 4 — the edge of applicability: a distribution with *no* variance {#sec-cauchy}
+
+An honest article shows where the tool breaks, and variance has a sharp boundary: **for
+heavy-tailed distributions, the variance can be infinite or simply fail to exist.** The
+canonical case is the **Cauchy distribution**, with density
+$$
+f(x) = \frac{1}{\pi(1 + x^2)}, \qquad -\infty < x < \infty,
+$$
+a bell-shaped curve that looks innocuous — symmetric, peaked at zero — but whose tails decay
+only like $1/x^2$, far too slowly. [PROB-5] already flagged that the Cauchy has *no mean* (the
+defining integral $\int x f(x)\,dx$ does not converge). With no finite mean there is no $\mu$
+to deviate from, so the variance @eq-var-def is not even defined. Even for heavy-tailed
+distributions that *do* have a finite mean, the variance integral $\int (x-\mu)^2 f(x)\,dx$
+can diverge: the squared deviation $(x-\mu)^2$ grows so fast that, against a tail decaying too
+slowly, the product fails to integrate to anything finite. **This is the price of the square**
+— the very quadratic growth that makes variance penalise far points usefully (@sec-why) makes
+it explode when far points are too probable.
+
+The failure is not abstract; it wrecks the things we built. @fig-cauchy shows running sample
+"variances" for a well-behaved normal and for a Cauchy: the normal's running variance settles
+down to its true value as data accumulate (a preview of the laws of large numbers, owned by
+the Inference track), while the Cauchy's running variance *never settles* — it lurches
+upward at random whenever a freak large value lands, because the sample variance is a
+consistent estimator of nothing.
+
+```{python}
+#| label: fig-cauchy
+#| fig-cap: "The edge of applicability. Running *sample* variance (divide by $n-1$) as data accumulate, for a standard normal (blue, finite variance $\\sigma^2=1$) and a standard Cauchy (red, no finite variance). The normal's running variance converges to its true value (green). The Cauchy's refuses to converge: every so often an extreme value lands and the running variance jumps. No amount of data tames it, because the population quantity it would estimate does not exist. When you see a 'sample variance' that keeps climbing with $n$, suspect a heavy tail."
+rng = np.random.default_rng(3)
+N = 4000
+normal_draws = rng.standard_normal(N)
+cauchy_draws = rng.standard_cauchy(N)
+
+def running_var(x):
+    n = np.arange(1, len(x) + 1)
+    csum = np.cumsum(x)
+    csum2 = np.cumsum(x ** 2)
+    mean = csum / n
+    # sample variance with (n-1); guard the n=1 term
+    var = (csum2 - n * mean ** 2) / np.maximum(n - 1, 1)
+    return var
+
+rv_norm = running_var(normal_draws)
+rv_cauchy = running_var(cauchy_draws)
+ks = np.arange(1, N + 1)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+axL.plot(ks, rv_norm, color=POINT, lw=1.2)
+axL.axhline(1.0, color=ACCENT, lw=1.8, label=r"true $\sigma^2=1$")
+axL.set_title("Normal: running variance converges")
+axL.set_xlabel("sample size $n$"); axL.set_ylabel("running sample variance")
+axL.set_ylim(0, 2.5); axL.legend(framealpha=0.9)
+
+axR.plot(ks, rv_cauchy, color=LINE, lw=1.2)
+axR.set_title("Cauchy: running variance never settles")
+axR.set_xlabel("sample size $n$"); axR.set_ylabel("running sample variance")
+plt.tight_layout()
+print(f"normal running var at n={N}: {rv_norm[-1]:.3f} (near 1)")
+print(f"cauchy running var at n={N}: {rv_cauchy[-1]:.1f} (meaningless; depends wildly on the draw)")
+```
+
+# Failure modes and when to reach for something else {#sec-failure}
+
+The square that makes variance analytically beautiful is also the source of every way it
+fails. An honest practitioner carries all of these.
+
+- **Outlier sensitivity.** Because each deviation is *squared*, one wild observation
+  contributes enormously to the sum of squares and can dominate the variance. A single
+  fat-finger data-entry error ($999$ instead of $9.99$) can inflate a sample variance by
+  orders of magnitude. The variance is *not* robust. When robustness matters, reach for the
+  **interquartile range** (the spread of the middle 50%, ignoring the tails entirely) or the
+  **median absolute deviation** (MAD), both of which a few extreme points cannot move.
+- **Heavy tails / non-existence.** As @sec-cauchy showed, for sufficiently heavy-tailed
+  distributions the variance is infinite or undefined, and the sample variance estimates
+  nothing. Financial returns, file sizes, city populations, and insurance claims often have
+  tails heavy enough that variance is a dangerous summary. The tells: a "sample variance" that
+  keeps growing with $n$, or that swings wildly between subsamples. Reach for **quantiles**,
+  **tail-index** estimates, or explicit heavy-tailed models.
+- **Wrong units for communication.** Variance is in *squared* units and is almost never the
+  right thing to *report* to a human — quote the **standard deviation**, which is in the data's
+  own units. Variance is the right thing to *compute with* (it adds, it decomposes); standard
+  deviation is the right thing to *speak.*
+- **Skew makes $\pm\sigma$ misleading.** For a symmetric distribution, "$\mu \pm \sigma$" is a
+  fair picture of the bulk. For a strongly skewed one (incomes, durations), the mean and
+  standard deviation can place the "typical range" in a region where there is little mass, or
+  even below zero for an inherently positive quantity. Variance summarises *spread*, not
+  *shape*; pair it with a histogram and, if needed, with skewness/kurtosis or with quantiles.
+
+::: {.callout-warning title="Pitfall"}
+**A small variance does not mean a "good," "accurate," or "low-risk" quantity — only a
+*concentrated* one.** A broken thermometer that always reads exactly $20.0^\circ$ has *zero*
+variance and is worthless. Variance measures consistency about the mean, not correctness of
+the mean: a precise-but-biased instrument has tiny variance and large error. The full
+accounting splits *total* error into variance **plus** squared bias (the
+$\mathbb{E}[X^2]=\sigma^2+\mu^2$ split of @eq-second-moment, applied to an error), and you
+need both halves. Confusing low variance with high quality is one of the most common — and
+most expensive — misreadings in applied work.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When is variance the right measure of spread, and when is it the wrong one?"* The honest
+summary to recite:
+
+- **Use variance / standard deviation** when the distribution has finite second moment and
+  reasonably light tails, when you need a quantity that *adds* across independent sources
+  ([PROB-8]) or *decomposes* (ANOVA, regression $R^2$, [REGR-3]), and when you are working
+  inside the Gaussian-adjacent world where it is the natural and sufficient summary of spread
+  ([PROB-13]). It is the only spread measure with the clean algebra of @sec-scaling and
+  @sec-sum-of-squares, which is why all of classical statistics runs on it.
+- **Do not use it** when the data are heavy-tailed or contain genuine outliers you cannot
+  clean (use IQR, MAD, or quantiles), when you must *communicate* a typical range to a
+  non-technical audience (quote percentiles), or when the distribution is so skewed that mean
+  $\pm$ standard deviation paints a false picture. And never read low variance as low *error*
+  — that conflates spread with bias.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-5 *Expectation*]**, which gave the center $\mu = \mathbb{E}[X]$ and
+the linearity that powered every derivation here. This article added the *spread*: the
+variance $\operatorname{Var}(X) = \mathbb{E}[(X-\mu)^2]$, its computational shortcut
+@eq-comp-identity, its scaling law @eq-scaling, and the sum-of-squares structure
+@sec-sum-of-squares. From here the spine continues:
+
+- **[PROB-7 *Joint Distributions, Covariance & Correlation*]** — variance is the spread of
+  *one* variable; **covariance** $\operatorname{Cov}(X,Y) = \mathbb{E}[(X-\mu_X)(Y-\mu_Y)]$ is
+  the same idea for a *pair*, measuring how two move together. It completes the
+  $\operatorname{Var}(X+Y)$ identity we deferred in @sec-scaling, and its scale-free cousin is
+  the correlation coefficient.
+- **[PROB-8 *Independence & the i.i.d. Sample*]** — supplies the rigorous proof of the one
+  imported ingredient we flagged in @sec-n-minus-1: that variance *adds* for independent
+  variables, hence $\operatorname{Var}(\bar X) = \sigma^2/n$ and the $\sqrt{n}$-shrinkage of
+  the sample mean.
+- **[PROB-17 *Random Vectors & Covariance Matrices*]** — packages many variances and
+  covariances into one object, the covariance matrix $\Sigma$, whose diagonal *is* the list of
+  variances from this article.
+- **[PROB-19 *Chebyshev's Inequality*]** — turns the variance into a probability bound: a
+  random variable cannot stray more than $k$ standard deviations from its mean with probability
+  more than $1/k^2$, *whatever* its distribution. This is variance earning its keep as a
+  concentration guarantee, exactly the use Chebyshev invented it for (@sec-history).
+
+**Cross-track payoff.** The sum-of-squares decomposition of @sec-sum-of-squares is consumed
+by name in **[REGR-3 *How Good Is the Fit?*]** (the SST = SSR + SSE split and $R^2$), and the
+"variance is mean squared error about the best constant" result of @thm-mean-minimizes is the
+scalar prototype of the conditional-expectation-as-best-predictor result of **[PROB-9]** that
+all of regression rests on.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** R. A. Fisher, "The Correlation between Relatives on the Supposition of
+  Mendelian Inheritance," *Transactions of the Royal Society of Edinburgh* 52 (1918) — the
+  paper that coined "variance" and introduced its decomposition, the seed of ANOVA. For the
+  error-theory origins, Gauss's 1809 *Theoria Motus* (the normal law of errors, with the
+  squared deviation in the exponent).
+- **The robustness counter-tradition.** For why and when to abandon variance for robust spread
+  measures (MAD, IQR, trimmed estimators), P. J. Huber, *Robust Statistics* (1981) — the
+  systematic case against the square when outliers are real.
+- **Open threads this article deliberately deferred.** *Why does variance* add *for
+  independent variables, and what is the cross term when they are not?* — [PROB-7]/[PROB-8].
+  *How does variance bound probabilities without knowing the distribution?* — Chebyshev,
+  [PROB-19]. *What replaces a single variance when there are many correlated variables?* — the
+  covariance matrix, [PROB-17]. *Is the sample variance the "best" estimator of $\sigma^2$, and
+  what is its own variance?* — the sampling distribution of $s^2$ is a chi-square story,
+  [PROB-15]. *Why exactly does the sum of squares split additively in regression?* — the
+  orthogonality/Pythagorean picture, [REGR-1] and [REGR-4].

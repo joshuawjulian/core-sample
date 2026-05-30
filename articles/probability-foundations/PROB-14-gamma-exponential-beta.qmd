@@ -1,0 +1,1083 @@
+---
+title: "Gamma, Exponential, and Beta"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article,
+# matched to the rest of the Probability Foundations track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+CURVE  = "#2b3a67"     # the density curve / data
+CURVE2 = "#c1121f"     # comparison curve / fitted line
+ACCENT = "#0a7d4d"     # highlights / the mean
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the fifth stop in the **distribution catalog**
+> of the Probability Foundations track. It assumes [PROB-4 *Continuous Random Variables: the
+> Probability Density Function*] for what a density is and how
+> $P(a\le X\le b)=\int_a^b f$ recovers probabilities; [PROB-5 *Expectation*] and
+> [PROB-6 *Variance*] for computing a mean and variance from a density; and
+> [PROB-12 *The Poisson Distribution*] for the rare-event count whose *gaps in time* turn out
+> to be the exponential we build here. The one tool we reach for above the Calculus-I floor
+> — **integration by parts** and a single recursive integral — is a Calc-1 technique that we
+> state and use openly. It **sets up** [PROB-15 *Chi-Square, Student's t, and F*], where the
+> chi-square is revealed as a special gamma, and [PROB-16 *The Exponential Family*], where
+> all three of these distributions reappear as members of one form. Downstream it is consumed
+> by Statistical Inference's conjugate-Bayes machinery ([INFR-E4]), which uses the gamma and
+> the beta as priors.
+
+## Abstract {.unnumbered}
+
+Three distributions, one parent. The **exponential** models the waiting time until a single
+random event; the **gamma** models the waiting time until the $\alpha$-th such event; and the
+**beta** models a random *proportion* trapped in $[0,1]$. This article derives all three from
+the ground up and shows they are one family. It first builds the **gamma function**
+$\Gamma(\alpha)=\int_0^\infty t^{\alpha-1}e^{-t}\,dt$ — the continuous factorial — and proves
+its recurrence $\Gamma(\alpha)=(\alpha-1)\Gamma(\alpha-1)$ in full, because that single
+integral is the normalizing constant all three distributions need. It then derives the
+exponential as the **memoryless** waiting time of a Poisson process (memorylessness proved,
+not asserted), builds the gamma as a **sum of independent exponentials**, and constructs the
+beta from a **ratio of gammas** — deriving its mean and variance along the way. The single
+claim the article defends is that these are not three unrelated formula sheets but **one
+mechanism seen from three angles**: the gamma function ties them, and the beta–gamma identity
+makes the family literally close on itself. We close on the honest boundary — the exponential's
+own memorylessness is exactly why it is the *wrong* model for anything that ages or wears out.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **gamma function** $\Gamma(\alpha)=\int_0^\infty t^{\alpha-1}e^{-t}\,dt$ is the
+continuous version of the factorial ($\Gamma(n)=(n-1)!$), and it is the normalizing constant
+behind all three distributions of this article. The **exponential**$(\lambda)$ is the waiting
+time until the first event of a rate-$\lambda$ Poisson process; it is the *unique* continuous
+distribution with **no memory** — having waited an hour tells you nothing about the wait
+remaining. The **gamma**$(\alpha,\beta)$ is the waiting time until the $\alpha$-th event,
+equivalently the sum of $\alpha$ independent exponentials. The **beta**$(\alpha,\beta)$ lives
+on $[0,1]$ and models a random proportion; it is built as a normalized ratio of two gammas,
+which is exactly why it is the natural distribution for an unknown probability. One parent —
+the gamma function — three children.
+:::
+
+Everything below orbits that box. The gamma function's recurrence is proved in
+@sec-gamma-function; memorylessness in @sec-memoryless; the gamma-as-sum-of-exponentials in
+@sec-gamma-dist; and the beta and its beta–gamma tie in @sec-beta. If a step ever feels
+arbitrary, return to the Core: we are describing one waiting-and-proportion mechanism, and
+every formula is a fingerprint of it.
+
+# Why we are here: the gap between the counts {#sec-why}
+
+Keep one question in view the whole way through: **once you can count random events, how do
+you describe the time *between* them and the *fraction* of them that come out one way?** The
+distribution catalog so far answered "how many?" — Bernoulli and binomial counted successes
+([PROB-11]), Poisson counted rare events in a window ([PROB-12]). But counting leaves two
+natural questions unanswered, and those two questions are this article.
+
+## The problem the exponential was invented to solve
+
+[PROB-12] modeled the **number** of rare events in a fixed interval — calls to a switchboard
+in an hour, decays of a radioactive sample in a second, customers arriving in a day. But an
+operator does not experience "$3.2$ calls per hour" as a number; they experience **gaps**:
+the call comes, then a stretch of quiet, then another call. The natural question is not "how
+many this hour?" but "**how long until the next one?**" That waiting time is a *continuous*
+random variable on $[0,\infty)$, and the distribution that governs it is the exponential.
+
+The historical thread runs straight through reliability and physics. Radioactive decay was
+the first place the question bit hard: Rutherford and Geiger, counting alpha particles around
+1908, found the *counts* in fixed intervals were Poisson — and therefore the *waiting times
+between* particles had to be exponential, because the two are the same process seen as "how
+many" versus "how long." The same pair governs queues (Erlang's telephone-traffic work,
+1909), component lifetimes, and the inter-arrival times of essentially any process where
+events happen independently at a constant average rate.
+
+## The problem the gamma and beta were invented to solve
+
+Two refinements force themselves immediately. First, you rarely care about just the *next*
+event — you care about the wait until the *$\alpha$-th*: until the third server fails, until
+the tenth customer arrives, until enough decays have accumulated to register. Add up $\alpha$
+independent exponential gaps and you get the **gamma**. The gamma is the exponential's
+"several waits later" generalization, and (we will see) it is also what you get when the
+"number of waits" $\alpha$ is allowed to be a *fraction*, which is where the gamma function
+comes in.
+
+Second, a completely different need: many quantities are not times at all but **proportions**
+— the fraction of voters who approve, the conversion rate of a website, the reliability of a
+component as a number in $[0,1]$. A proportion is *bounded*; the normal ([PROB-13]) puts
+probability outside $[0,1]$ and is the wrong shape, while the gamma lives on $[0,\infty)$ and
+is also wrong. We need a distribution *on the unit interval*. The **beta** is that
+distribution — and, remarkably, it is built out of gammas, so the same machinery serves both
+needs. By the end you will see the three as one family, joined at the gamma function.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the relationship between the Poisson and the exponential?"* They are the **same
+process** described two ways. A Poisson process has events occurring independently at a
+constant average rate $\lambda$; the Poisson distribution ([PROB-12]) counts **how many**
+events land in a fixed window, while the exponential measures **how long** you wait between
+consecutive events. "Counts are Poisson" and "gaps are exponential" are logically equivalent
+statements about the same underlying randomness — we prove that equivalence in
+@sec-exp-from-poisson, rather than leave it as a slogan. If an interviewer asks you to derive
+one from the other, that derivation is the move they want.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Three pictures, no symbols manipulated yet.
+
+**The exponential is a constant-hazard wait.** Imagine standing at a bus stop where, in *any*
+given minute, the bus has the same small chance of arriving, regardless of how long you have
+already waited. The buses do not "build up." This constant per-instant chance is the defining
+feature, and it forces the waiting-time density to *decay at a constant proportional rate* —
+which is exactly what $e^{-\lambda x}$ does. The longer waits are rarer, and they get rarer by
+the same factor for each additional unit of waiting. The whole shape is a single downhill
+slide from a peak at zero.
+
+**The gamma is a pile of exponential waits.** If one wait is exponential, then the time until
+the third event is the sum of three independent exponential gaps. Summing pushes the bulk away
+from zero (it is unlikely that *all three* gaps are tiny) and pulls a right tail (any one gap
+can be long). So the gamma starts at zero, rises to a hump, and trails off to the right — and
+the more events you wait for, the more the hump moves right and the more symmetric it looks
+(a preview of the Central Limit Theorem, owned by [INFR-A2]).
+
+**The beta is a tug-of-war on $[0,1]$.** Picture two opposing pulls on a point in the unit
+interval: a parameter $\alpha$ pulling toward $1$ and a parameter $\beta$ pulling toward $0$.
+When $\alpha=\beta$ the density is symmetric about $1/2$; raise $\alpha$ and the mass slides
+right, raise $\beta$ and it slides left. With $\alpha=\beta=1$ the two pulls cancel into a
+flat line — the uniform distribution — which is why the beta is the natural way to express
+"a probability I am unsure about." @fig-gallery shows all three families.
+
+```{python}
+#| label: fig-gallery
+#| fig-cap: "The three families this article builds. **Left:** exponentials — a downhill slide from a peak at zero, steeper for larger rate $\\lambda$. **Middle:** gammas with fixed scale — as the shape $\\alpha$ grows, the hump moves right and rounds out (a sum of more waits). **Right:** betas on $[0,1]$ — symmetric when $\\alpha=\\beta$, flat (uniform) when $\\alpha=\\beta=1$, and pushed toward an end when the parameters are unequal."
+from scipy.stats import expon, gamma as gamma_d, beta as beta_d
+
+fig, (axL, axM, axR) = plt.subplots(1, 3, figsize=(9.6, 3.3))
+
+x = np.linspace(0, 6, 400)
+for lam, c in [(0.6, ACCENT), (1.0, CURVE), (2.0, CURVE2)]:
+    axL.plot(x, lam*np.exp(-lam*x), color=c, label=fr"$\lambda={lam}$")
+axL.set_title("Exponential"); axL.set_xlabel("$x$"); axL.set_ylabel("density")
+axL.legend(fontsize=8.5, framealpha=0.9)
+
+xg = np.linspace(0, 14, 400)
+for a, c in [(1, ACCENT), (2, CURVE), (5, CURVE2)]:
+    axM.plot(xg, gamma_d.pdf(xg, a, scale=1.5), color=c, label=fr"$\alpha={a},\ \beta=1.5$")
+axM.set_title(r"Gamma (scale $\beta=1.5$)"); axM.set_xlabel("$x$")
+axM.legend(fontsize=8.5, framealpha=0.9)
+
+xb = np.linspace(0, 1, 400)
+for (a, b), c in [((1, 1), GREY), ((2, 2), CURVE), ((5, 2), CURVE2), ((2, 5), ACCENT)]:
+    axR.plot(xb, beta_d.pdf(xb, a, b), color=c, label=fr"$\alpha={a},\ \beta={b}$")
+axR.set_title("Beta on $[0,1]$"); axR.set_xlabel("$x$")
+axR.legend(fontsize=8.0, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Formal development {#sec-formal}
+
+## The gamma function: a continuous factorial {#sec-gamma-function}
+
+Before any distribution, the constant they all share. The factorial $n!=n\cdot(n-1)\cdots 1$
+is defined only for non-negative integers. We are about to need a version that works for any
+positive real number $\alpha$ — because, for instance, "wait for $2.5$ events" will turn out
+to make sense. The gamma function is that extension.
+
+::: {#def-gamma-function}
+**Definition (gamma function).** For any real $\alpha>0$,
+$$
+\Gamma(\alpha)=\int_{0}^{\infty} t^{\alpha-1}e^{-t}\,dt.
+$$ {#eq-gamma-function}
+:::
+
+Every symbol earns its keep: $t$ is the dummy integration variable, $t^{\alpha-1}$ is a power
+that grows with $t$, and $e^{-t}$ is the decay that drags the product back to zero so the area
+is finite. The integral converges for every $\alpha>0$: near $t=0$ the integrand behaves like
+$t^{\alpha-1}$, which is integrable there exactly when $\alpha>0$ (the Calc-1 fact that
+$\int_0^1 t^{p}\,dt$ is finite iff $p>-1$), and as $t\to\infty$ the $e^{-t}$ decay beats any
+power $t^{\alpha-1}$, so the tail contributes a finite amount. That is why the definition
+restricts to $\alpha>0$.
+
+The one property we will use everywhere is its recurrence, which is what makes it "factorial-
+like." We prove it by integration by parts — a Calc-1 technique, stated and used openly.
+
+::: {#thm-gamma-recurrence}
+**Theorem (the gamma recurrence).** For every $\alpha>1$,
+$$
+\Gamma(\alpha)=(\alpha-1)\,\Gamma(\alpha-1).
+$$ {#eq-gamma-recurrence}
+Consequently, for every positive integer $n$, $\Gamma(n)=(n-1)!$.
+:::
+
+::: {.proof}
+Start from the definition and apply **integration by parts**, $\int u\,dv=uv-\int v\,du$. The
+choice that lowers the power is
+$$
+u=t^{\alpha-1},\qquad dv=e^{-t}\,dt,
+$$
+so that $du=(\alpha-1)t^{\alpha-2}\,dt$ (the Calc-1 power rule) and $v=-e^{-t}$ (since
+$\frac{d}{dt}(-e^{-t})=e^{-t}$). Then
+$$
+\Gamma(\alpha)=\int_0^\infty t^{\alpha-1}e^{-t}\,dt
+=\Bigl[\,\underbrace{t^{\alpha-1}\cdot(-e^{-t})}_{uv}\,\Bigr]_0^\infty
+-\int_0^\infty (-e^{-t})\,(\alpha-1)t^{\alpha-2}\,dt.
+$$
+Examine the boundary term $\bigl[-t^{\alpha-1}e^{-t}\bigr]_0^\infty$. At the upper end, as
+$t\to\infty$, the exponential $e^{-t}$ crushes the power $t^{\alpha-1}$ to zero (the
+exponential decays faster than any power grows), so the term is $0$ there. At the lower end
+$t=0$, the factor $t^{\alpha-1}\to 0$ because $\alpha-1>0$ (this is exactly where we use
+$\alpha>1$), so the term is $0$ there too. The boundary term vanishes entirely.
+
+What remains is
+$$
+\Gamma(\alpha)=(\alpha-1)\int_0^\infty t^{\alpha-2}e^{-t}\,dt
+=(\alpha-1)\int_0^\infty t^{(\alpha-1)-1}e^{-t}\,dt
+=(\alpha-1)\,\Gamma(\alpha-1),
+$$
+where the last equality is just the definition @eq-gamma-function read at the argument
+$\alpha-1$. That proves @eq-gamma-recurrence.
+
+For the integer fact, first compute the base case directly:
+$$
+\Gamma(1)=\int_0^\infty t^{0}e^{-t}\,dt=\int_0^\infty e^{-t}\,dt
+=\bigl[-e^{-t}\bigr]_0^\infty=0-(-1)=1.
+$$
+Now apply the recurrence repeatedly: $\Gamma(2)=1\cdot\Gamma(1)=1=1!$,
+$\Gamma(3)=2\cdot\Gamma(2)=2=2!$, and in general
+$\Gamma(n)=(n-1)\Gamma(n-1)=(n-1)(n-2)\cdots 1\cdot\Gamma(1)=(n-1)!$. So $\Gamma$ interpolates
+the factorial through every positive real, agreeing with $(n-1)!$ at the integers.
+$\qquad\blacksquare$
+:::
+
+One more value will surface when the gamma meets the normal in [PROB-15], and we record it now
+so the chain stays explicit. The half-integer value $\Gamma(\tfrac12)=\sqrt{\pi}$ is *not*
+proved here: it reduces to the Gaussian integral $\int_{-\infty}^\infty e^{-x^2/2}\,dx=\sqrt{2\pi}$,
+which is **built in full in [PROB-13] @sec-gaussian-integral**. We flag it as that imported
+ingredient rather than re-derive the polar-coordinates trick — the only above-floor object we
+borrow rather than build, and it is built elsewhere in this same track.
+
+::: {.callout-tip title="You might be asked"}
+*"Why $\alpha-1$ in the exponent of the integrand, not $\alpha$? It looks like an off-by-one
+trap."* It is a deliberate convention that makes the recurrence and the integer case land on
+$\Gamma(n)=(n-1)!$ rather than $n!$. The "$-1$" is the price of having
+$\Gamma(\alpha)=(\alpha-1)\Gamma(\alpha-1)$ come out clean. It does cause a perennial
+off-by-one headache when you connect $\Gamma$ to the factorial — the thing to memorize is
+$\Gamma(n)=(n-1)!$, *not* $\Gamma(n)=n!$. Stating that you know the shift exists, and which
+way it goes, is exactly what the question is checking.
+:::
+
+## The exponential distribution {#sec-exponential}
+
+::: {#def-exponential}
+**Definition (exponential distribution).** A continuous random variable $X$ is
+**exponentially distributed** with **rate** $\lambda>0$, written $X\sim\mathrm{Exp}(\lambda)$,
+if its density is
+$$
+f(x)=\lambda e^{-\lambda x},\qquad x\ge 0,
+$$ {#eq-exp-density}
+and $f(x)=0$ for $x<0$.
+:::
+
+The rate $\lambda$ has units of "events per unit time"; its reciprocal $1/\lambda$ is the
+mean wait, as we are about to prove. First, two sanity checks done in full.
+
+**It is a valid density.** A density must integrate to $1$ over its support ([PROB-4]):
+$$
+\int_0^\infty \lambda e^{-\lambda x}\,dx
+=\lambda\Bigl[-\tfrac{1}{\lambda}e^{-\lambda x}\Bigr]_0^\infty
+=\lambda\cdot\tfrac{1}{\lambda}\bigl(0-(-1)\bigr)=1,
+$$
+using $\frac{d}{dx}\bigl(-\tfrac1\lambda e^{-\lambda x}\bigr)=e^{-\lambda x}$ and
+$e^{-\lambda x}\to 0$ as $x\to\infty$. Good.
+
+**Its CDF.** For $x\ge 0$,
+$$
+F(x)=P(X\le x)=\int_0^x \lambda e^{-\lambda u}\,du
+=\bigl[-e^{-\lambda u}\bigr]_0^x=1-e^{-\lambda x}.
+$$ {#eq-exp-cdf}
+The complementary form $P(X>x)=e^{-\lambda x}$ — the **survival function** — is the one we
+will lean on for memorylessness; it is the probability the wait exceeds $x$.
+
+### Mean and variance {#sec-exp-moments}
+
+::: {#thm-exp-moments}
+**Theorem (moments of the exponential).** If $X\sim\mathrm{Exp}(\lambda)$ then
+$$
+E[X]=\frac{1}{\lambda},\qquad \operatorname{Var}(X)=\frac{1}{\lambda^2}.
+$$
+:::
+
+::: {.proof}
+**The mean.** By the definition of expectation for a continuous variable ([PROB-5]),
+$$
+E[X]=\int_0^\infty x\,\lambda e^{-\lambda x}\,dx.
+$$
+Integrate by parts with $u=x$, $dv=\lambda e^{-\lambda x}\,dx$, so $du=dx$ and
+$v=-e^{-\lambda x}$:
+$$
+E[X]=\bigl[\,x\cdot(-e^{-\lambda x})\,\bigr]_0^\infty-\int_0^\infty(-e^{-\lambda x})\,dx
+=\bigl[-x e^{-\lambda x}\bigr]_0^\infty+\int_0^\infty e^{-\lambda x}\,dx.
+$$
+The boundary term is $0$ at both ends: at $x=0$ the factor $x$ is zero, and as $x\to\infty$
+the exponential beats the linear $x$. The remaining integral is
+$\int_0^\infty e^{-\lambda x}\,dx=\bigl[-\tfrac1\lambda e^{-\lambda x}\bigr]_0^\infty=\tfrac1\lambda$.
+So $E[X]=1/\lambda$ — the average wait is the reciprocal of the rate, exactly as the units
+demand.
+
+**The variance.** Use the computational identity
+$\operatorname{Var}(X)=E[X^2]-(E[X])^2$ ([PROB-6]). We need $E[X^2]$:
+$$
+E[X^2]=\int_0^\infty x^2\,\lambda e^{-\lambda x}\,dx.
+$$
+Integrate by parts with $u=x^2$, $dv=\lambda e^{-\lambda x}\,dx$, giving $du=2x\,dx$ and
+$v=-e^{-\lambda x}$:
+$$
+E[X^2]=\bigl[-x^2 e^{-\lambda x}\bigr]_0^\infty+\int_0^\infty 2x\,e^{-\lambda x}\,dx
+=0+\frac{2}{\lambda}\int_0^\infty x\,\lambda e^{-\lambda x}\,dx
+=\frac{2}{\lambda}\cdot E[X]=\frac{2}{\lambda}\cdot\frac1\lambda=\frac{2}{\lambda^2}.
+$$
+The boundary term vanishes by the same reasoning as before, and we recognized the leftover
+integral as $\tfrac{2}{\lambda}$ times the mean integral we already evaluated. Therefore
+$$
+\operatorname{Var}(X)=E[X^2]-(E[X])^2=\frac{2}{\lambda^2}-\Bigl(\frac1\lambda\Bigr)^2
+=\frac{2}{\lambda^2}-\frac{1}{\lambda^2}=\frac{1}{\lambda^2}.\qquad\blacksquare
+$$
+:::
+
+Notice $\operatorname{Var}(X)=(E[X])^2$: the standard deviation equals the mean. An
+exponential wait is as variable as it is long — a high-variance, right-skewed object, nothing
+like the tidy normal.
+
+### Memorylessness — the property that defines it {#sec-memoryless}
+
+Here is the structural fact that singles the exponential out, and we prove it both directions
+rather than assert it.
+
+::: {#thm-memoryless}
+**Theorem (memorylessness).** $X\sim\mathrm{Exp}(\lambda)$ satisfies, for all $s,t\ge 0$,
+$$
+P(X>s+t\mid X>s)=P(X>t).
+$$ {#eq-memoryless}
+Conversely, the exponential is the *only* continuous distribution on $[0,\infty)$ with this
+property.
+:::
+
+::: {.proof}
+**Forward direction.** By the definition of conditional probability ([PROB-1]),
+$$
+P(X>s+t\mid X>s)=\frac{P(\{X>s+t\}\cap\{X>s\})}{P(X>s)}.
+$$
+Since $s+t\ge s$, the event $\{X>s+t\}$ is contained in $\{X>s\}$, so their intersection is
+just $\{X>s+t\}$. Using the survival function $P(X>x)=e^{-\lambda x}$ from @eq-exp-cdf,
+$$
+P(X>s+t\mid X>s)=\frac{P(X>s+t)}{P(X>s)}=\frac{e^{-\lambda(s+t)}}{e^{-\lambda s}}
+=e^{-\lambda(s+t)+\lambda s}=e^{-\lambda t}=P(X>t).
+$$
+The $e^{-\lambda s}$ cancels completely. Having already waited $s$ leaves *no trace*: the
+remaining wait has the same distribution as a fresh start. That is what "memoryless" means.
+
+**Converse direction.** Suppose a continuous random variable $X$ on $[0,\infty)$ satisfies
+@eq-memoryless. Write its survival function $G(x)=P(X>x)$. The memoryless condition, after
+multiplying through by $P(X>s)=G(s)$, says
+$$
+P(X>s+t)=P(X>s)\,P(X>t),\qquad\text{i.e.}\qquad G(s+t)=G(s)\,G(t)
+$$
+for all $s,t\ge 0$. This is the **Cauchy functional equation for products**. We solve it. Let
+$g(x)=\ln G(x)$, valid where $G(x)>0$ (and $G$ is positive on $[0,\infty)$, else the variable
+would be bounded and could not satisfy the relation for all $t$). Taking logs turns the
+product into a sum:
+$$
+g(s+t)=g(s)+g(t).
+$$
+This is *additive*. For a function that is monotone (here $G$ is non-increasing, so $g$ is
+too) the only solutions of $g(s+t)=g(s)+g(t)$ are linear, $g(x)=cx$ for some constant $c$. We
+verify and pin $c$: from additivity, $g(nx)=ng(x)$ for integer $n$ and
+$g(x)=g(\tfrac{x}{m}\cdot m)=m\,g(\tfrac{x}{m})$, so $g(\tfrac{p}{q}x)=\tfrac{p}{q}g(x)$ for
+every rational $p/q$; monotonicity then forces the same linear relation at every real
+multiple, giving $g(x)=x\,g(1)=cx$ with $c=g(1)$. Since $G$ is a survival function it is
+non-increasing and $G(x)\le 1$, so $g(x)=\ln G(x)\le 0$, forcing $c\le 0$; write $c=-\lambda$
+with $\lambda\ge 0$. Then
+$$
+G(x)=e^{g(x)}=e^{-\lambda x}.
+$$
+A non-degenerate distribution needs $\lambda>0$. But $G(x)=e^{-\lambda x}$ is exactly the
+exponential survival function @eq-exp-cdf, whose density is $\lambda e^{-\lambda x}$. So the
+exponential is the unique continuous memoryless distribution on $[0,\infty)$.
+$\qquad\blacksquare$
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"What does 'memoryless' actually mean, and why is the exponential the only continuous
+distribution that has it?"* Memoryless means the past does not change the future: given that
+you have already waited $s$, the distribution of the *remaining* wait is identical to the
+distribution of the *whole* wait from scratch — formally @eq-memoryless. The reason the
+exponential is the unique continuous case is the functional equation $G(s+t)=G(s)G(t)$, whose
+only monotone solution is $G(x)=e^{-\lambda x}$ (proved just above). The discrete analogue is
+the geometric distribution ([PROB-11]), memoryless on the integers for the same algebraic
+reason. Interviewers love this because it connects a *property* (no aging) to a *form* (the
+exponential), and the bridge is a clean functional-equation argument.
+:::
+
+### The exponential *is* the Poisson gap {#sec-exp-from-poisson}
+
+We promised in @sec-why that "Poisson counts" and "exponential gaps" are the same process. We
+prove it now, building directly on [PROB-12].
+
+::: {#thm-poisson-exp}
+**Theorem (waiting times in a Poisson process).** In a Poisson process with rate $\lambda$ —
+where the number of events in any interval of length $x$ is $\mathrm{Poisson}(\lambda x)$ —
+the waiting time $T$ until the first event is $\mathrm{Exp}(\lambda)$.
+:::
+
+::: {.proof}
+The key observation: the waiting time $T$ exceeds $x$ **if and only if** *zero* events occur
+in the interval $(0,x]$. (If the first event had arrived by time $x$, the wait would be at
+most $x$; conversely if no event has arrived by $x$, the wait exceeds $x$.) So
+$$
+P(T>x)=P\bigl(\text{no events in }(0,x]\bigr).
+$$
+The number of events in an interval of length $x$ is $N\sim\mathrm{Poisson}(\lambda x)$, whose
+pmf ([PROB-12]) is $P(N=k)=\dfrac{(\lambda x)^k e^{-\lambda x}}{k!}$. Set $k=0$:
+$$
+P(N=0)=\frac{(\lambda x)^0 e^{-\lambda x}}{0!}=e^{-\lambda x}.
+$$
+Therefore $P(T>x)=e^{-\lambda x}$, so $P(T\le x)=1-e^{-\lambda x}$, which is exactly the
+exponential CDF @eq-exp-cdf. Differentiating, the density is
+$\frac{d}{dx}(1-e^{-\lambda x})=\lambda e^{-\lambda x}$. Hence $T\sim\mathrm{Exp}(\lambda)$.
+$\qquad\blacksquare$
+:::
+
+This is the bridge: the *count* in a window is Poisson, the *gap* between events is
+exponential, and they share the single rate $\lambda$. Memorylessness is the same coin's
+other face — a Poisson process has no memory (events in disjoint intervals are independent),
+so the wait for the next one cannot depend on how long you have already waited.
+
+## The gamma distribution {#sec-gamma-dist}
+
+If one gap is exponential, the time until the $\alpha$-th event is a *sum* of gaps. That sum
+is the gamma. We give the definition, then derive it as a sum.
+
+::: {#def-gamma-dist}
+**Definition (gamma distribution).** A continuous random variable $X$ has the **gamma
+distribution** with **shape** $\alpha>0$ and **rate** $\lambda>0$, written
+$X\sim\mathrm{Gamma}(\alpha,\lambda)$, if its density is
+$$
+f(x)=\frac{\lambda^{\alpha}}{\Gamma(\alpha)}\,x^{\alpha-1}e^{-\lambda x},\qquad x\ge 0,
+$$ {#eq-gamma-density}
+and $0$ for $x<0$. (Some texts use the **scale** $\beta=1/\lambda$ instead; then
+$f(x)=\frac{1}{\Gamma(\alpha)\beta^\alpha}x^{\alpha-1}e^{-x/\beta}$. We use the rate
+throughout, to match the exponential's $\lambda$; we flag the scale form because [PROB-15] and
+much software default to it.)
+:::
+
+Notice the pieces: $x^{\alpha-1}$ is the rising power, $e^{-\lambda x}$ is the decay, and
+$\frac{\lambda^\alpha}{\Gamma(\alpha)}$ is the normalizing constant — and *there is the gamma
+function*, doing the job we built it for. When $\alpha=1$ the power $x^{\alpha-1}=x^0=1$ and
+$\Gamma(1)=1$, so @eq-gamma-density collapses to $\lambda e^{-\lambda x}$: the exponential is
+$\mathrm{Gamma}(1,\lambda)$, exactly as the "wait for one event" story demands.
+
+**It integrates to $1$.** This is where the gamma function pays for itself. Substitute
+$t=\lambda x$, so $x=t/\lambda$ and $dx=dt/\lambda$:
+$$
+\int_0^\infty \frac{\lambda^\alpha}{\Gamma(\alpha)}x^{\alpha-1}e^{-\lambda x}\,dx
+=\frac{\lambda^\alpha}{\Gamma(\alpha)}\int_0^\infty\Bigl(\frac{t}{\lambda}\Bigr)^{\alpha-1}
+   e^{-t}\,\frac{dt}{\lambda}
+=\frac{\lambda^\alpha}{\Gamma(\alpha)}\cdot\frac{1}{\lambda^{\alpha-1}}\cdot\frac{1}{\lambda}
+   \int_0^\infty t^{\alpha-1}e^{-t}\,dt.
+$$
+The powers of $\lambda$ collect to $\lambda^\alpha/\lambda^{\alpha-1}/\lambda=\lambda^0=1$, and
+the remaining integral is precisely $\Gamma(\alpha)$ by @eq-gamma-function. So the whole thing
+is $\frac{1}{\Gamma(\alpha)}\cdot\Gamma(\alpha)=1$. The normalizing constant is *forced* to be
+$\lambda^\alpha/\Gamma(\alpha)$; there was no freedom in it.
+
+### Mean, variance, and the sum-of-exponentials structure {#sec-gamma-moments}
+
+::: {#thm-gamma-moments}
+**Theorem (moments of the gamma).** If $X\sim\mathrm{Gamma}(\alpha,\lambda)$ then
+$$
+E[X]=\frac{\alpha}{\lambda},\qquad \operatorname{Var}(X)=\frac{\alpha}{\lambda^2}.
+$$
+:::
+
+::: {.proof}
+We compute $E[X^r]$ for a general power $r$ in one stroke, because both moments fall out and
+the gamma function does the work. By [PROB-5],
+$$
+E[X^r]=\int_0^\infty x^r\,\frac{\lambda^\alpha}{\Gamma(\alpha)}x^{\alpha-1}e^{-\lambda x}\,dx
+=\frac{\lambda^\alpha}{\Gamma(\alpha)}\int_0^\infty x^{(\alpha+r)-1}e^{-\lambda x}\,dx.
+$$
+The remaining integral is the *unnormalized* gamma density with shape $\alpha+r$. Substitute
+$t=\lambda x$ exactly as in the normalization check above:
+$$
+\int_0^\infty x^{(\alpha+r)-1}e^{-\lambda x}\,dx
+=\frac{1}{\lambda^{\alpha+r}}\int_0^\infty t^{(\alpha+r)-1}e^{-t}\,dt
+=\frac{\Gamma(\alpha+r)}{\lambda^{\alpha+r}}.
+$$
+Therefore
+$$
+E[X^r]=\frac{\lambda^\alpha}{\Gamma(\alpha)}\cdot\frac{\Gamma(\alpha+r)}{\lambda^{\alpha+r}}
+=\frac{\Gamma(\alpha+r)}{\Gamma(\alpha)\,\lambda^{r}}.
+$$ {#eq-gamma-moment}
+Now read off the two moments using the recurrence @eq-gamma-recurrence. For $r=1$,
+$\Gamma(\alpha+1)=\alpha\,\Gamma(\alpha)$, so
+$$
+E[X]=\frac{\Gamma(\alpha+1)}{\Gamma(\alpha)\,\lambda}=\frac{\alpha\,\Gamma(\alpha)}{\Gamma(\alpha)\,\lambda}=\frac{\alpha}{\lambda}.
+$$
+For $r=2$, apply the recurrence twice:
+$\Gamma(\alpha+2)=(\alpha+1)\Gamma(\alpha+1)=(\alpha+1)\alpha\,\Gamma(\alpha)$, so
+$$
+E[X^2]=\frac{\Gamma(\alpha+2)}{\Gamma(\alpha)\,\lambda^2}=\frac{(\alpha+1)\alpha}{\lambda^2}.
+$$
+Then
+$$
+\operatorname{Var}(X)=E[X^2]-(E[X])^2
+=\frac{(\alpha+1)\alpha}{\lambda^2}-\frac{\alpha^2}{\lambda^2}
+=\frac{\alpha^2+\alpha-\alpha^2}{\lambda^2}=\frac{\alpha}{\lambda^2}.\qquad\blacksquare
+$$
+:::
+
+These match the "sum of $\alpha$ exponentials" picture exactly. If $X=\sum_{i=1}^\alpha Y_i$
+with $Y_i\sim\mathrm{Exp}(\lambda)$ independent (for integer $\alpha$), then linearity of
+expectation ([PROB-5]) gives $E[X]=\alpha\cdot\frac1\lambda=\frac\alpha\lambda$, and
+independence makes variances add ([PROB-8]),
+$\operatorname{Var}(X)=\alpha\cdot\frac1{\lambda^2}=\frac\alpha{\lambda^2}$. The moments we got
+from the gamma function and the moments we get from the sum-of-exponentials picture **agree**,
+which is the consistency we should demand. We now prove that the sum really *is* gamma, not
+just that the first two moments match.
+
+::: {#thm-gamma-sum}
+**Theorem (gamma is a sum of exponentials).** If $Y_1,\dots,Y_n$ are independent
+$\mathrm{Exp}(\lambda)$ variables, then $S_n=Y_1+\cdots+Y_n\sim\mathrm{Gamma}(n,\lambda)$.
+:::
+
+::: {.proof}
+We induct on $n$, using the **convolution** formula for the density of a sum of independent
+continuous variables ([PROB-8]): if $S=A+B$ with $A,B$ independent, then
+$f_S(s)=\int f_A(t)f_B(s-t)\,dt$ over the values where both densities are nonzero.
+
+*Base case* $n=1$: $S_1=Y_1\sim\mathrm{Exp}(\lambda)=\mathrm{Gamma}(1,\lambda)$, already noted.
+
+*Inductive step.* Assume $S_{n-1}\sim\mathrm{Gamma}(n-1,\lambda)$, with density
+$f_{n-1}(t)=\frac{\lambda^{n-1}}{\Gamma(n-1)}t^{n-2}e^{-\lambda t}$ for $t\ge 0$. Then
+$S_n=S_{n-1}+Y_n$, and both summands are supported on $[0,\infty)$, so for $s\ge 0$ the
+convolution runs over $0\le t\le s$ (we need $t\ge 0$ for $S_{n-1}$ and $s-t\ge 0$ for $Y_n$):
+$$
+f_n(s)=\int_0^s f_{n-1}(t)\,\lambda e^{-\lambda(s-t)}\,dt
+=\int_0^s \frac{\lambda^{n-1}}{\Gamma(n-1)}t^{n-2}e^{-\lambda t}\cdot\lambda e^{-\lambda(s-t)}\,dt.
+$$
+Pull out constants and combine the exponentials, $e^{-\lambda t}e^{-\lambda(s-t)}=e^{-\lambda s}$
+(the $t$ cancels):
+$$
+f_n(s)=\frac{\lambda^{n}}{\Gamma(n-1)}\,e^{-\lambda s}\int_0^s t^{n-2}\,dt.
+$$
+The integral is elementary, $\int_0^s t^{n-2}\,dt=\dfrac{s^{n-1}}{n-1}$. And $\Gamma(n-1)$ with
+the extra factor $\tfrac{1}{n-1}$ rebuilds the next factorial: $(n-1)\Gamma(n-1)=\Gamma(n)$ by
+the recurrence @eq-gamma-recurrence, so $\dfrac{1}{(n-1)\Gamma(n-1)}=\dfrac{1}{\Gamma(n)}$.
+Thus
+$$
+f_n(s)=\frac{\lambda^{n}}{\Gamma(n-1)}\,e^{-\lambda s}\cdot\frac{s^{n-1}}{n-1}
+=\frac{\lambda^{n}}{\Gamma(n)}\,s^{n-1}e^{-\lambda s},
+$$
+which is exactly the $\mathrm{Gamma}(n,\lambda)$ density @eq-gamma-density. By induction the
+claim holds for all $n$. $\qquad\blacksquare$
+:::
+
+So the gamma is, for integer shape, literally "wait for $n$ events." The gamma function lets
+us *also* read @eq-gamma-density for non-integer $\alpha$ — "wait for $2.5$ events" — which
+has no event-counting story but is a perfectly good, often-needed distribution (it is what we
+fit to skewed positive data in @sec-rainfall). @fig-gamma-build shows the sum building up.
+
+```{python}
+#| label: fig-gamma-build
+#| fig-cap: "The gamma as a pile of exponential waits. Each panel histograms the sum $S_n=Y_1+\\cdots+Y_n$ of $n$ independent $\\mathrm{Exp}(1)$ gaps (so $\\lambda=1$) and overlays the predicted $\\mathrm{Gamma}(n,1)$ density (red). At $n=1$ it is the bare exponential; as $n$ grows the hump marches right to $E[S_n]=n$ and rounds toward a bell — the Central Limit Theorem starting to bite."
+from scipy.stats import gamma as gamma_d
+rng = np.random.default_rng(11)
+N = 200_000
+fig, axes = plt.subplots(1, 4, figsize=(10.0, 3.0), sharey=False)
+for ax, n in zip(axes, (1, 2, 5, 12)):
+    s = rng.exponential(scale=1.0, size=(N, n)).sum(axis=1)
+    ax.hist(s, bins=120, density=True, color="#cfd8e8", edgecolor="none")
+    xx = np.linspace(0, s.max(), 400)
+    ax.plot(xx, gamma_d.pdf(xx, n, scale=1.0), color=CURVE2)
+    ax.set_title(fr"$n={n}$  (mean ${n}$)", fontsize=10)
+    ax.set_xlabel("$S_n$")
+axes[0].set_ylabel("density")
+plt.tight_layout()
+```
+
+## The beta distribution {#sec-beta}
+
+Now the change of scene: from times on $[0,\infty)$ to **proportions on $[0,1]$**. The beta is
+the distribution of a random fraction, and we build it from gammas so the family closes on
+itself.
+
+::: {#def-beta}
+**Definition (beta distribution).** A continuous random variable $X$ has the **beta
+distribution** with parameters $\alpha>0,\beta>0$, written $X\sim\mathrm{Beta}(\alpha,\beta)$,
+if its density is
+$$
+f(x)=\frac{1}{B(\alpha,\beta)}\,x^{\alpha-1}(1-x)^{\beta-1},\qquad 0\le x\le 1,
+$$ {#eq-beta-density}
+and $0$ elsewhere, where the normalizing constant is the **beta function**
+$$
+B(\alpha,\beta)=\int_0^1 x^{\alpha-1}(1-x)^{\beta-1}\,dx.
+$$ {#eq-beta-function}
+:::
+
+The shape is a tug-of-war: $x^{\alpha-1}$ rewards values near $1$, $(1-x)^{\beta-1}$ rewards
+values near $0$, and the exponents $\alpha,\beta$ set the strengths. With $\alpha=\beta=1$ both
+powers are $1$ and $f(x)=1/B(1,1)$; we will see $B(1,1)=1$, so the density is the flat
+**uniform** on $[0,1]$ — the "I have no idea what this probability is" distribution.
+
+The constant $B(\alpha,\beta)$ is defined as an integral, which is unsatisfying. The beta–gamma
+identity expresses it in closed form, and it is the structural link of the whole article.
+
+::: {#thm-beta-gamma}
+**Theorem (the beta–gamma identity).** For all $\alpha,\beta>0$,
+$$
+B(\alpha,\beta)=\frac{\Gamma(\alpha)\,\Gamma(\beta)}{\Gamma(\alpha+\beta)}.
+$$ {#eq-beta-gamma}
+Moreover, if $U\sim\mathrm{Gamma}(\alpha,1)$ and $V\sim\mathrm{Gamma}(\beta,1)$ are
+independent, then
+$$
+X=\frac{U}{U+V}\ \sim\ \mathrm{Beta}(\alpha,\beta),
+$$
+and $X$ is **independent** of the total $U+V$.
+:::
+
+::: {.proof}
+We build the beta directly out of two gammas; the identity @eq-beta-gamma falls out of the
+same computation, so nothing is asserted separately. Let $U\sim\mathrm{Gamma}(\alpha,1)$ and
+$V\sim\mathrm{Gamma}(\beta,1)$ be independent. Because they are independent, their joint
+density is the product of the marginals ([PROB-8]), for $u,v>0$:
+$$
+f_{U,V}(u,v)=\frac{u^{\alpha-1}e^{-u}}{\Gamma(\alpha)}\cdot\frac{v^{\beta-1}e^{-v}}{\Gamma(\beta)}
+=\frac{u^{\alpha-1}v^{\beta-1}e^{-(u+v)}}{\Gamma(\alpha)\Gamma(\beta)}.
+$$
+Change variables to the **fraction** and the **total**,
+$$
+x=\frac{u}{u+v},\qquad s=u+v,
+$$
+so that $u=xs$ and $v=s-u=s(1-x)$, with $x\in(0,1)$ and $s>0$. This is a two-variable change
+of variables, so we need the Jacobian factor that rescales the area element — the
+two-dimensional cousin of the Calc-1 substitution rule, used here at exactly the level
+[PROB-4] introduces the single-variable version and flagged as such. The Jacobian matrix of
+$(u,v)$ with respect to $(x,s)$ is
+$$
+\frac{\partial(u,v)}{\partial(x,s)}
+=\begin{pmatrix}\partial u/\partial x & \partial u/\partial s\\[2pt]
+\partial v/\partial x & \partial v/\partial s\end{pmatrix}
+=\begin{pmatrix} s & x\\ -s & 1-x\end{pmatrix}.
+$$
+Its determinant is $s(1-x)-x(-s)=s(1-x)+sx=s$. The area element transforms as
+$du\,dv=|s|\,dx\,ds=s\,dx\,ds$ (with $s>0$). Substitute $u=xs$, $v=s(1-x)$, and $u+v=s$ into
+the joint density and multiply by the Jacobian $s$:
+$$
+f_{X,S}(x,s)=\frac{(xs)^{\alpha-1}\bigl(s(1-x)\bigr)^{\beta-1}e^{-s}}{\Gamma(\alpha)\Gamma(\beta)}\cdot s.
+$$
+Collect the powers of $s$: from $(xs)^{\alpha-1}$ comes $s^{\alpha-1}$, from
+$\bigl(s(1-x)\bigr)^{\beta-1}$ comes $s^{\beta-1}$, and the Jacobian adds one more $s^1$, for a
+total of $s^{(\alpha-1)+(\beta-1)+1}=s^{\alpha+\beta-1}$. Separating the $x$-part from the
+$s$-part:
+$$
+f_{X,S}(x,s)
+=\underbrace{\frac{x^{\alpha-1}(1-x)^{\beta-1}}{\Gamma(\alpha)\Gamma(\beta)}}_{\text{depends on }x}
+\ \cdot\ \underbrace{s^{\alpha+\beta-1}e^{-s}}_{\text{depends on }s}.
+$$
+The joint density **factors** into a function of $x$ alone times a function of $s$ alone — so
+$X$ and $S$ are independent (this is the [PROB-8] criterion for independence), proving the
+last claim. To extract the marginal density of $X$, integrate $s$ out over $(0,\infty)$:
+$$
+f_X(x)=\frac{x^{\alpha-1}(1-x)^{\beta-1}}{\Gamma(\alpha)\Gamma(\beta)}
+\int_0^\infty s^{\alpha+\beta-1}e^{-s}\,ds
+=\frac{x^{\alpha-1}(1-x)^{\beta-1}}{\Gamma(\alpha)\Gamma(\beta)}\,\Gamma(\alpha+\beta),
+$$
+where the remaining integral is $\Gamma(\alpha+\beta)$ by @eq-gamma-function. So
+$$
+f_X(x)=\frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)}\,x^{\alpha-1}(1-x)^{\beta-1}.
+$$
+This is precisely the beta density @eq-beta-density with normalizing constant
+$\frac{\Gamma(\alpha)\Gamma(\beta)}{\Gamma(\alpha+\beta)}$. Comparing with the definition
+@eq-beta-function, we have simultaneously proved both that $X\sim\mathrm{Beta}(\alpha,\beta)$
+*and* that $B(\alpha,\beta)=\frac{\Gamma(\alpha)\Gamma(\beta)}{\Gamma(\alpha+\beta)}$, since
+the density must integrate to $1$. $\qquad\blacksquare$
+:::
+
+This is the punchline of the article. The beta is a **normalized competition between two
+gammas** — $U/(U+V)$ — which is exactly why it is the natural model for a fraction: if $U$
+counts "evidence for" and $V$ counts "evidence against," the proportion $U/(U+V)$ is beta. And
+$B(1,1)=\frac{\Gamma(1)\Gamma(1)}{\Gamma(2)}=\frac{1\cdot1}{1}=1$, confirming
+$\mathrm{Beta}(1,1)$ is the uniform.
+
+### Mean and variance of the beta {#sec-beta-moments}
+
+::: {#thm-beta-moments}
+**Theorem (moments of the beta).** If $X\sim\mathrm{Beta}(\alpha,\beta)$ then
+$$
+E[X]=\frac{\alpha}{\alpha+\beta},\qquad
+\operatorname{Var}(X)=\frac{\alpha\beta}{(\alpha+\beta)^2(\alpha+\beta+1)}.
+$$
+:::
+
+::: {.proof}
+We compute the general moment $E[X^r]$ and the beta–gamma identity does the rest. By [PROB-5],
+$$
+E[X^r]=\int_0^1 x^r\,\frac{1}{B(\alpha,\beta)}x^{\alpha-1}(1-x)^{\beta-1}\,dx
+=\frac{1}{B(\alpha,\beta)}\int_0^1 x^{(\alpha+r)-1}(1-x)^{\beta-1}\,dx.
+$$
+The remaining integral is, by the very definition @eq-beta-function, the beta function
+$B(\alpha+r,\beta)$. So
+$$
+E[X^r]=\frac{B(\alpha+r,\beta)}{B(\alpha,\beta)}.
+$$
+Now turn each beta function into gammas via @eq-beta-gamma:
+$$
+E[X^r]
+=\frac{\Gamma(\alpha+r)\Gamma(\beta)/\Gamma(\alpha+\beta+r)}{\Gamma(\alpha)\Gamma(\beta)/\Gamma(\alpha+\beta)}
+=\frac{\Gamma(\alpha+r)\,\Gamma(\alpha+\beta)}{\Gamma(\alpha)\,\Gamma(\alpha+\beta+r)}.
+$$ {#eq-beta-moment}
+For the mean, $r=1$. Use $\Gamma(\alpha+1)=\alpha\Gamma(\alpha)$ and
+$\Gamma(\alpha+\beta+1)=(\alpha+\beta)\Gamma(\alpha+\beta)$ (the recurrence @eq-gamma-recurrence,
+each applied once):
+$$
+E[X]=\frac{\alpha\Gamma(\alpha)\,\Gamma(\alpha+\beta)}{\Gamma(\alpha)\,(\alpha+\beta)\Gamma(\alpha+\beta)}
+=\frac{\alpha}{\alpha+\beta}.
+$$
+For $E[X^2]$, $r=2$. Now $\Gamma(\alpha+2)=(\alpha+1)\alpha\,\Gamma(\alpha)$ and
+$\Gamma(\alpha+\beta+2)=(\alpha+\beta+1)(\alpha+\beta)\,\Gamma(\alpha+\beta)$:
+$$
+E[X^2]=\frac{(\alpha+1)\alpha}{(\alpha+\beta+1)(\alpha+\beta)}.
+$$
+Then, writing $\mu=\alpha/(\alpha+\beta)$ for the mean and combining over a common denominator,
+$$
+\operatorname{Var}(X)=E[X^2]-\mu^2
+=\frac{(\alpha+1)\alpha}{(\alpha+\beta+1)(\alpha+\beta)}-\frac{\alpha^2}{(\alpha+\beta)^2}.
+$$
+Put both terms over $(\alpha+\beta)^2(\alpha+\beta+1)$. The first becomes
+$\dfrac{(\alpha+1)\alpha(\alpha+\beta)}{(\alpha+\beta)^2(\alpha+\beta+1)}$ and the second
+$\dfrac{\alpha^2(\alpha+\beta+1)}{(\alpha+\beta)^2(\alpha+\beta+1)}$. Subtract the numerators:
+$$
+(\alpha+1)\alpha(\alpha+\beta)-\alpha^2(\alpha+\beta+1)
+=\alpha\bigl[(\alpha+1)(\alpha+\beta)-\alpha(\alpha+\beta+1)\bigr].
+$$
+Expand inside the bracket:
+$(\alpha+1)(\alpha+\beta)=\alpha^2+\alpha\beta+\alpha+\beta$ and
+$\alpha(\alpha+\beta+1)=\alpha^2+\alpha\beta+\alpha$; their difference is just $\beta$. So the
+numerator is $\alpha\beta$, giving
+$$
+\operatorname{Var}(X)=\frac{\alpha\beta}{(\alpha+\beta)^2(\alpha+\beta+1)}.\qquad\blacksquare
+$$
+:::
+
+The mean $\alpha/(\alpha+\beta)$ reads beautifully through the $U/(U+V)$ construction: it is
+the *fraction* of the total "mass" carried by $\alpha$. And the variance shrinks as
+$\alpha+\beta$ grows with the ratio fixed — more total evidence, tighter the proportion —
+which is exactly the behavior we want from a model of a probability we are learning about.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the beta the natural prior for an unknown probability, and what does conjugacy mean?"*
+Two reasons, both visible now. First, **support**: a probability lives in $[0,1]$, and the beta
+is the flexible distribution on exactly that interval — uniform when you are ignorant
+($\alpha=\beta=1$), peaked when you are confident. Second, **conjugacy**: if your prior on a
+coin's bias $p$ is $\mathrm{Beta}(\alpha,\beta)$ and you observe $k$ heads in $n$ flips
+(a binomial likelihood $\propto p^k(1-p)^{n-k}$, [PROB-11]), then the posterior is
+proportional to $p^{\alpha-1}(1-p)^{\beta-1}\cdot p^k(1-p)^{n-k}=p^{\alpha+k-1}(1-p)^{\beta+n-k-1}$
+— *again a beta*, $\mathrm{Beta}(\alpha+k,\ \beta+n-k)$. The prior and posterior live in the
+same family, so updating is just "add the successes to $\alpha$, the failures to $\beta$." That
+is conjugacy, and it is why the beta is the workhorse prior for proportions. The full Bayesian
+machinery is owned by [INFR-E4]; the *distributional* reason it works is the algebra you just
+saw — the powers of $p$ simply add.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the family on honest problems — including one where the exponential is the
+*wrong* tool, so the boundary is visible and not a highlight reel.
+
+## Example 1 — call-center waits and the no-show paradox {#sec-callcenter}
+
+A support line receives calls as a Poisson process at rate $\lambda=`{python} "12"`$ calls per
+hour, so the time between calls is $\mathrm{Exp}(12)$ with time measured in hours
+(@thm-poisson-exp). Three questions, by hand from the CDF @eq-exp-cdf.
+
+```{python}
+#| label: tbl-callcenter
+#| echo: false
+lam = 12.0  # per hour
+mean_min = 60.0 / lam
+# Q1: P(wait > 10 minutes) = P(X > 1/6 hour)
+p1 = np.exp(-lam * (10/60))
+# Q2: median wait
+median_hr = np.log(2) / lam
+# Q3: memoryless -- already waited 8 min, P(wait > 10 more min)
+p3 = np.exp(-lam * (10/60))
+print(f"mean wait        = 1/lambda = {mean_min:.2f} minutes")
+print(f"Q1 P(wait>10min) = e^(-12 * 1/6)        = {p1:.4f}")
+print(f"Q2 median wait   = ln2/lambda            = {60*median_hr:.2f} minutes")
+print(f"Q3 after 8 min already waited, P(>10 more) = {p3:.4f}  (same as Q1!)")
+```
+
+- **Mean wait.** $E[X]=1/\lambda=1/12$ hour $=`{python} f"{mean_min:.0f}"`$ minutes.
+- **Chance of waiting more than 10 minutes** ($=1/6$ hour). The survival function gives
+  $P(X>1/6)=e^{-12/6}=e^{-2}=`{python} f"{p1:.4f}"`$ — about $`{python} f"{100*p1:.0f}"`\%$.
+- **The no-show "paradox."** You have already waited 8 minutes with no call. Probability you
+  wait *at least 10 more*? By memorylessness (@thm-memoryless), the 8 minutes are forgotten:
+  $P(X>8{+}10\mid X>8)=P(X>10)=`{python} f"{p3:.4f}"`$ — identical to a fresh start. The line
+  does not "owe" you a call for having waited. This is the most counterintuitive consequence of
+  the exponential, and it is exactly @eq-memoryless made concrete.
+
+## Example 2 — reliability of a redundant system (the gamma) {#sec-reliability}
+
+A satellite carries one active gyroscope plus **two cold spares**; when one fails, the next is
+switched in. Each gyroscope's lifetime is $\mathrm{Exp}(\lambda)$ with mean
+$1/\lambda=`{python} "2.0"`$ years, and failures are independent. The satellite functions until
+*all three* have failed, so the total mission life is the sum of three independent exponential
+lifetimes — a $\mathrm{Gamma}(3,\lambda)$ by @thm-gamma-sum. How likely is the mission to last
+at least 5 years?
+
+```{python}
+#| label: tbl-reliability
+#| echo: false
+from math import factorial
+from scipy.stats import gamma as gamma_d
+lam = 0.5            # per year, mean life 2 yr
+alpha = 3
+mean_life = alpha / lam
+# P(T >= 5): gamma survival
+p_survive = gamma_d.sf(5.0, alpha, scale=1/lam)
+# closed-form for integer shape: P(T>t)=e^{-lam t} sum_{k=0}^{alpha-1} (lam t)^k/k!
+t = 5.0
+closed = np.exp(-lam*t) * sum((lam*t)**k / factorial(k) for k in range(alpha))
+print(f"mean mission life = alpha/lambda = {mean_life:.1f} years")
+print(f"P(mission >= 5 yr) via gamma.sf       = {p_survive:.4f}")
+print(f"P(mission >= 5 yr) via closed Poisson form = {closed:.4f}  (agree)")
+```
+
+The expected mission life is $E[T]=\alpha/\lambda=`{python} f"{mean_life:.0f}"`$ years
+(@thm-gamma-moments). For the survival probability there is a clean closed form for *integer*
+shape that ties straight back to the Poisson, and we use it as a cross-check rather than
+trusting the library blindly. The mission outlives $t$ exactly when **fewer than $\alpha=3$**
+failures have occurred by time $t$ in the rate-$\lambda$ failure process; the number of
+failures in $[0,t]$ is $\mathrm{Poisson}(\lambda t)$ ([PROB-12]), so
+$$
+P(T>t)=P\bigl(\text{at most }2\text{ failures by }t\bigr)
+=\sum_{k=0}^{2}\frac{(\lambda t)^k e^{-\lambda t}}{k!}.
+$$
+With $\lambda=0.5$, $t=5$ (so $\lambda t=2.5$), this is
+$e^{-2.5}\bigl(1+2.5+\tfrac{2.5^2}{2}\bigr)=`{python} f"{closed:.4f}"`$ — matching the gamma
+computation. The redundancy is what buys the survival probability above: a single gyro
+($\alpha=1$) would have $P(\text{life}>5)=e^{-2.5}\approx`{python} f"{np.exp(-2.5):.3f}"`$,
+far worse. @fig-reliability shows the gamma survival curve sharpening with redundancy.
+
+```{python}
+#| label: fig-reliability
+#| fig-cap: "Redundancy reshapes the lifetime. Each curve is the survival function $P(T>t)$ for a system that fails after $\\alpha$ independent $\\mathrm{Exp}(0.5)$ component lifetimes (mean 2 yr each). With one component ($\\alpha=1$) the curve is the bare exponential; adding cold spares ($\\alpha=2,3$) pushes the survival curve out and squares off its shoulder — the system reliably reaches its mean life before dropping off. The dot marks the 5-year, $\\alpha=3$ probability computed in the text."
+from scipy.stats import gamma as gamma_d
+lam = 0.5
+t = np.linspace(0, 14, 400)
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+for a, c in [(1, GREY), (2, ACCENT), (3, CURVE2)]:
+    ax.plot(t, gamma_d.sf(t, a, scale=1/lam), color=c, label=fr"$\alpha={a}$ (mission life)")
+ax.plot(5.0, gamma_d.sf(5.0, 3, scale=1/lam), "o", color=CURVE2, ms=7, zorder=5)
+ax.set_xlabel("mission duration $t$ (years)"); ax.set_ylabel(r"$P(T>t)$")
+ax.set_title("Survival vs. number of redundant components")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+```
+
+## Example 3 — a Bayesian conversion rate (the beta) {#sec-conversion}
+
+A new web design has been shown to $n=`{python} "40"`$ visitors, of whom $k=`{python} "9"`$
+converted. The conversion rate $p$ is unknown. Starting from a *uniform* prior
+$\mathrm{Beta}(1,1)$ — "any rate in $[0,1]$ equally plausible" — the posterior after the data
+is $\mathrm{Beta}(1+k,\ 1+n-k)=\mathrm{Beta}(10,32)$ by the conjugacy shown above. We read the
+posterior off using the beta moments we derived.
+
+```{python}
+#| label: tbl-conversion
+#| echo: false
+from scipy.stats import beta as beta_d
+n, k = 40, 9
+a_post, b_post = 1 + k, 1 + (n - k)
+mean = a_post / (a_post + b_post)
+var = a_post*b_post / ((a_post+b_post)**2 * (a_post+b_post+1))
+lo, hi = beta_d.ppf([0.025, 0.975], a_post, b_post)
+naive = k / n
+print(f"posterior = Beta({a_post}, {b_post})")
+print(f"posterior mean  = a/(a+b)              = {mean:.4f}")
+print(f"naive estimate  = k/n                  = {naive:.4f}")
+print(f"posterior sd    = sqrt(var)            = {np.sqrt(var):.4f}")
+print(f"95% credible interval                  = [{lo:.3f}, {hi:.3f}]")
+```
+
+The posterior mean is $\dfrac{10}{10+32}=`{python} f"{10/42:.4f}"`$ (@thm-beta-moments), a touch
+below the naive $k/n=`{python} f"{9/40:.4f}"`$ because the uniform prior gently pulls toward
+$1/2$ — the "add one success and one failure" effect of starting from $\mathrm{Beta}(1,1)$.
+The posterior standard deviation is $`{python} f"{np.sqrt((10*32)/((42**2)*43)):.4f}"`$,
+and a $95\%$ credible interval is roughly
+$[`{python} f"{beta_d.ppf(0.025,10,32):.3f}"`,\ `{python} f"{beta_d.ppf(0.975,10,32):.3f}"`]$ —
+the *whole distribution* of plausible rates, not a point. As more visitors arrive, $\alpha+\beta$
+grows and the variance shrinks: the beta tightens around the true rate. @fig-conversion shows
+the posterior sharpening with sample size.
+
+```{python}
+#| label: fig-conversion
+#| fig-cap: "Bayesian updating with the beta. Starting from the flat uniform prior $\\mathrm{Beta}(1,1)$ (grey), each curve is the posterior after observing a 22.5\\% conversion rate in $n=10, 40, 200$ visitors. The posterior is always a beta (conjugacy), its mean sits near the observed rate, and it sharpens as $\\alpha+\\beta$ grows — exactly the variance behavior derived in @thm-beta-moments."
+from scipy.stats import beta as beta_d
+x = np.linspace(0, 1, 500)
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+ax.plot(x, beta_d.pdf(x, 1, 1), color=GREY, ls="--", label=r"prior $\mathrm{Beta}(1,1)$")
+for n, c in [(10, ACCENT), (40, CURVE), (200, CURVE2)]:
+    k = round(0.225 * n)
+    ax.plot(x, beta_d.pdf(x, 1+k, 1+n-k), color=c,
+            label=fr"posterior, $n={n}$ ($k={k}$)")
+ax.set_xlabel("conversion rate $p$"); ax.set_ylabel("posterior density")
+ax.set_title("Beta posterior sharpens with data")
+ax.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+## Example 4 — the edge of applicability: machine lifetimes that age {#sec-aging}
+
+Now the honest counterexample, the case where the exponential is the *wrong* tool. Pumps,
+bearings, and engines do not fail memorylessly — they **wear out**. An old pump is *more*
+likely to fail in the next month than a new one, which directly violates @eq-memoryless. If you
+model an aging part with an exponential, you will systematically misjudge its risk: too
+pessimistic when it is new, dangerously optimistic when it is old.
+
+The right tool is a gamma (or, more commonly in reliability, a Weibull) whose **hazard rate**
+*increases* with age. The hazard rate $h(x)=f(x)/P(X>x)$ is the instantaneous failure rate
+given survival to $x$; for the exponential it is the *constant* $\lambda$ (that constancy *is*
+memorylessness), while for an aging part it must climb. @fig-aging contrasts the two.
+
+```{python}
+#| label: fig-aging
+#| fig-cap: "Why the exponential is wrong for things that age. **Left:** densities of a memoryless exponential (mean 5 yr) and a gamma with shape $\\alpha=4$ matched to the same mean — the gamma has a hump, peaking at a typical wear-out age, while the exponential insists the most likely lifetime is *zero*. **Right:** the hazard rate $h(x)=f(x)/P(X{>}x)$. The exponential's is flat (constant risk forever — memorylessness); the aging gamma's hazard *rises* with age, the correct shape for wear-out. Fitting an exponential to an aging part assumes the flat line and gets the risk profile qualitatively wrong."
+from scipy.stats import expon, gamma as gamma_d
+mean = 5.0
+x = np.linspace(0.001, 16, 500)
+# exponential, mean 5 => lambda = 1/5
+f_exp = expon.pdf(x, scale=mean)
+s_exp = expon.sf(x, scale=mean)
+# gamma shape 4, same mean 5 => scale = mean/alpha = 1.25
+a = 4; scale = mean / a
+f_gam = gamma_d.pdf(x, a, scale=scale)
+s_gam = gamma_d.sf(x, a, scale=scale)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+axL.plot(x, f_exp, color=CURVE2, label="exponential (memoryless)")
+axL.plot(x, f_gam, color=CURVE, label=r"gamma $\alpha=4$ (ages)")
+axL.set_title("Lifetime densities, same mean"); axL.set_xlabel("age (yr)"); axL.set_ylabel("density")
+axL.legend(fontsize=9, framealpha=0.9)
+
+axR.plot(x, f_exp/s_exp, color=CURVE2, label="exponential: flat hazard")
+axR.plot(x, f_gam/s_gam, color=CURVE, label="gamma: rising hazard")
+axR.set_title("Hazard rate $h(x)=f/P(X>x)$"); axR.set_xlabel("age (yr)"); axR.set_ylabel("hazard")
+axR.set_ylim(0, 1.0)
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+**When you reach for something else:** if the failure rate changes with age, abandon the
+exponential. Use a **gamma** or **Weibull** (the reliability standard, with a tunable
+increasing or decreasing hazard), or a **log-normal** for multiplicatively-generated lifetimes.
+Reserve the exponential for the genuinely memoryless case — radioactive decay, arrivals in a
+stable queue, the gap between independent shocks — where the constant-hazard assumption is
+*true*, not merely convenient.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+::: {.callout-warning title="Pitfall"}
+**The exponential's defining virtue is its most dangerous assumption.** Memorylessness
+(@thm-memoryless) makes the math clean and is the reason the exponential is everywhere in
+textbooks — but it asserts that *nothing ages*. Apply it to anything with wear, fatigue,
+burn-in, or learning curves and you will get the risk profile qualitatively wrong, as in
+@sec-aging. The reflex diagnostic: estimate the hazard rate from your data and see if it is
+flat. If it trends up (wear-out) or down (infant mortality), the exponential is the wrong
+model and you want a gamma, Weibull, or log-normal.
+:::
+
+A few more boundaries worth stating plainly:
+
+- **The gamma's shape $\alpha$ must be estimated, and it is not robust.** Fitting a gamma to
+  positive skewed data is reasonable, but the maximum-likelihood estimate of $\alpha$ involves
+  the *digamma* function and is sensitive to a few small or zero-valued observations (the
+  $x^{\alpha-1}$ factor blows up near $0$ when $\alpha<1$). When the data have exact zeros, the
+  gamma is undefined there and you need a zero-inflated or shifted model instead.
+- **The beta cannot put mass exactly at $0$ or $1$.** It is a *continuous* density on the open
+  interval; $P(X=0)=P(X=1)=0$. If your proportions genuinely pile up at the boundaries — many
+  users who convert at rate exactly $0$, say — a plain beta misfits, and you want a
+  zero/one-inflated beta or a different model.
+- **These are univariate, independent-pieces models.** The gamma-as-sum-of-exponentials story
+  (@thm-gamma-sum) and the beta-from-gammas story (@thm-beta-gamma) both *assume independence*.
+  Correlated waits (a traffic jam delays every car) or correlated trials break the
+  constructions; the marginal may still be gamma or beta, but the sum/ratio identities no
+  longer apply.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the exponential the right model, and what is the single assumption you must check?"*
+The exponential is right for the **waiting time of a memoryless, constant-rate process** — the
+gaps of a Poisson process: radioactive decays, arrivals at a stable queue, independent shocks.
+The one assumption to check is **constant hazard** (equivalently, memorylessness): does the
+chance of the event in the next instant depend on how long you have already waited? If yes
+(aging, wear, fatigue, infant mortality), the exponential is wrong and you escalate to the
+gamma or Weibull. State that you would *plot the empirical hazard rate* to decide — that is the
+practitioner's move the question is fishing for.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from [PROB-12 *The Poisson Distribution*] — whose event *counts* became the event
+*gaps* of this article (@thm-poisson-exp) — and from the continuous-density groundwork of
+[PROB-4], [PROB-5], and [PROB-6]. This article built three named continuous distributions end
+to end and showed they are one family joined at the gamma function: the exponential
+(@sec-exponential), the gamma (@sec-gamma-dist), and the beta (@sec-beta), with the beta–gamma
+identity (@thm-beta-gamma) closing the loop. From here the catalog continues and the family's
+members fan out:
+
+- **[PROB-15 *Chi-Square, Student's t, and F*]** — the **chi-square** is a special gamma
+  ($\mathrm{Gamma}(k/2,\,1/2)$), and the half-integer value $\Gamma(\tfrac12)=\sqrt\pi$ we
+  flagged in @sec-gamma-function is what normalizes it. Everything classical inference does
+  with sample variances runs through that identity.
+- **[PROB-16 *The Exponential Family*]** — the exponential, gamma, and beta are all members of
+  one canonical algebraic form; this article's densities reappear there as worked examples,
+  and the $A'(\theta)=E[T]$ moment trick recovers the means we computed by hand.
+- **Across the tracks:** the **beta** and **gamma** are the conjugate priors of
+  [INFR-E4] (Beta–Binomial and Gamma–Poisson Bayesian updating), the machinery sketched in
+  @sec-conversion; the **exponential/gamma** lifetimes feed survival analysis and reliability
+  modeling wherever waiting times appear.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Leonhard Euler introduced the gamma function around 1729 while seeking
+  a smooth interpolation of the factorial; the integral form @eq-gamma-function and the name
+  $\Gamma$ are due to Legendre. Agner Krarup Erlang's 1909–1917 telephone-traffic papers gave
+  the gamma its reliability-and-queueing meaning (the integer-shape gamma is still called the
+  *Erlang* distribution); Ernest Rutherford and Hans Geiger's 1908 alpha-particle counts are
+  the canonical Poisson-count / exponential-gap dataset.
+- **The conjugacy thread.** The beta as the conjugate prior for a probability is the entry
+  point to Bayesian inference; its proper home is [INFR-E4], but the algebraic *why* — powers
+  of $p$ simply add — is the @sec-conversion calculation. Thomas Bayes' own 1763 essay used,
+  in effect, a uniform ($\mathrm{Beta}(1,1)$) prior on a binomial probability.
+- **Open threads this article deliberately deferred.** *Why $\Gamma(\tfrac12)=\sqrt\pi$?* —
+  it reduces to the Gaussian integral built in [PROB-13] @sec-gaussian-integral. *What single
+  form contains all three of these distributions, the normal, and the Poisson?* — the
+  exponential family, [PROB-16]. *How does the chi-square emerge as a gamma, and the t and F
+  from it?* — [PROB-15]. *What replaces the exponential when the hazard is not constant?* —
+  the Weibull and the broader survival-analysis toolkit, flagged in @sec-aging.

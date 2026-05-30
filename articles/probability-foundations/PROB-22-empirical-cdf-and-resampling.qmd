@@ -1,0 +1,1006 @@
+---
+title: "The Empirical CDF and Sampling With Replacement"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the true curve / theoretical value
+ACCENT = "#0a7d4d"     # highlights / the mean
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas / bands
+
+
+def ecdf(sample):
+    """Return (xs, Fs): the sorted distinct step locations and the empirical
+    CDF value just *after* each step. Pure bookkeeping — the very object this
+    article defines — used only to draw the pictures."""
+    xs = np.sort(sample)
+    n = xs.size
+    Fs = np.arange(1, n + 1) / n
+    return xs, Fs
+```
+
+> **Where this sits in the track.** This is the first of the two articles that close the
+> Probability Foundations track by building the **objects that sampling theory consumes**.
+> It rests directly on three earlier results and uses each of them by name. From
+> [PROB-2 *Random Variables*] it takes the **cumulative distribution function**
+> $F(x)=P(X\le x)$ as the one object that describes *any* random variable — here we learn
+> to *estimate* that object from data. From [PROB-8 *Independence and the i.i.d. Sample*]
+> it takes the **i.i.d. sample**: $n$ draws from one distribution, independent and
+> identically distributed. From [PROB-11 *Bernoulli, Binomial & Negative-Binomial*] it
+> takes the fact that **a sum of independent indicator variables is Binomial**, which is
+> what makes the empirical CDF's sampling behavior exactly computable. The convergence
+> statement at the end is phrased in the vocabulary of [PROB-21 *Modes of Convergence*]. It
+> sets up, across the track boundary, the **bootstrap** ([INFR] track, owned by the
+> Statistical Inference article on resampling) and the resampling that powers **bagging**
+> in the Classification and Unsupervised Learning tracks. This track *builds the object and
+> licenses the resampling*; the downstream tracks build the *methods* on top of it.
+
+## Abstract {.unnumbered}
+
+You have a finite sample — $n$ numbers, drawn independently from some unknown distribution
+$F$ — and you want $F$ itself: the whole curve, $F(x)=P(X\le x)$ for every $x$. You do not
+get $F$. But you get the single best guess the data can make about it, and it is almost
+embarrassingly simple: **the fraction of your data at or below $x$**. That step function is
+the **empirical CDF**, $\hat F_n$. This article defines it, proves that at each fixed point
+it is an unbiased estimate of $F(x)$ with variance $F(x)\bigl(1-F(x)\bigr)/n$ — because the
+count of points below $x$ is exactly a Binomial — and shows that it converges to $F$ not
+just pointwise but *uniformly*, the Glivenko–Cantelli theorem. The single claim the article
+defends is that **$\hat F_n$ is a distribution in its own right** — a legitimate
+probability distribution that puts mass $1/n$ on each observed point — so that "drawing a
+fresh sample from the data, with replacement" is not a trick but literally *sampling from
+$\hat F_n$*. That one observation is the entire theoretical foundation of resampling, and
+the reason the bootstrap is allowed to exist.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The data's own best guess at the unknown distribution $F$ is the **empirical CDF**
+$$
+\hat F_n(x) \;=\; \frac{\#\{i : X_i \le x\}}{n} \;=\; \frac{1}{n}\sum_{i=1}^n \mathbf 1\{X_i \le x\},
+$$
+the fraction of the sample at or below $x$. It is a genuine CDF: a right-continuous step
+function climbing from $0$ to $1$ in jumps of $1/n$. The distribution it describes places
+probability $1/n$ on each observed value — so **sampling with replacement from your data
+is exactly sampling from $\hat F_n$**. Because $\hat F_n(x)$ counts i.i.d. yes/no events, it
+is a scaled Binomial: unbiased for $F(x)$, with variance $F(x)(1-F(x))/n$ that vanishes as
+$n$ grows, and (Glivenko–Cantelli) the whole curve converges *uniformly* to $F$.
+:::
+
+Everything below orbits that box. Two ideas live inside it and they reinforce each other.
+The first is **estimation**: $\hat F_n$ is what you write down when someone hands you data
+and asks "what distribution did this come from?" and you refuse to assume a parametric
+shape. The second is **resampling**: once you accept that $\hat F_n$ is a real
+distribution, you can *draw from it*, and drawing from it means picking observed data points
+uniformly at random — with replacement, because each draw is independent and $\hat F_n$
+does not change between draws. The bridge from "estimate of $F$" to "thing I can sample
+from" is the whole point, and it is what makes the last third of the article — and the
+entire bootstrap that follows in the Inference track — possible.
+
+# Why we are here: the problem of the unknown distribution {#sec-why}
+
+Keep one question in view for the whole article: **we want $F$, we cannot have $F$, so what
+do we use instead — and what is that substitute good for?** Every step below answers a piece
+of that.
+
+## The problem before there was an answer
+
+Almost everything in statistics is a statement about a distribution we never see. A clinician
+wants the distribution of recovery times; an engineer wants the distribution of component
+lifetimes; an economist wants the distribution of household incomes. In each case there is a
+true $F$ — the function $F(x)=P(X\le x)$ from [PROB-2] that fully describes the random
+quantity — and in each case all we are handed is a finite, noisy sample drawn from it.
+
+For a long stretch of statistical history the only move available was to *assume the shape*.
+Declare the data normal, or exponential, or Poisson, estimate the one or two parameters of
+that family, and proceed. This is the **parametric** program, and when the shape assumption
+is right it is wonderfully efficient — two numbers ($\mu,\sigma^2$) stand in for an entire
+curve. But it pays for that efficiency with a standing risk: *if the assumed shape is wrong,
+every downstream answer is wrong*, and the data themselves were never consulted about the
+shape.
+
+The question that forced the empirical CDF into existence is the obvious dual: **can the data
+describe their own distribution, without us guessing its form first?** Can we let the sample
+draw the curve? The answer, and it is one of the cleanest ideas in the subject, is yes — and
+the construction is so direct that the only surprise is how much it can do.
+
+## The honest dual: assume nothing about the shape
+
+The empirical CDF is the **nonparametric** answer. "Nonparametric" does not mean "no
+parameters"; it means we refuse to commit to a finite-dimensional family of shapes. Instead
+of "$F$ is a normal with these two unknowns," we say "$F$ is *some* distribution, and our
+estimate of it is whatever the data literally show." The estimate will turn out to have $n$
+'parameters' — one per data point — which is exactly the sense in which it assumes nothing
+about the form.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between a parametric and a nonparametric estimate of a
+distribution, and when would you reach for each?"* A **parametric** estimate fixes a family
+(say $\mathcal N(\mu,\sigma^2)$) and estimates its few parameters; it is efficient and gives
+smooth, extrapolatable curves *when the family is right*, and badly biased when it is wrong.
+A **nonparametric** estimate like $\hat F_n$ assumes only that an $F$ exists and lets the
+data dictate the shape; it is robust to misspecification and asymptotically correct for *any*
+$F$, but it is rougher (a step function), it never extrapolates beyond the observed range,
+and it needs more data to reach the same precision. Reach for parametric when you have a
+principled reason to trust the shape (a physical mechanism, a limit theorem) and little data;
+reach for the empirical CDF when you distrust the shape, have a reasonable amount of data, or
+specifically want to *resample* — which, as we will see in @sec-resampling, is the property
+that makes the bootstrap run.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture the sample as a handful of pebbles dropped on the number line: $X_1,\dots,X_n$, $n$
+positions, possibly with ties. Now walk left to right and keep a running tally: "what
+fraction of the pebbles have I passed (or am I standing on) so far?" That running fraction,
+read off as you sweep $x$ from $-\infty$ to $+\infty$, *is* the empirical CDF. It starts at
+$0$ (no pebbles passed), and every time you step onto a pebble it jumps up by $1/n$ (or by
+$k/n$ if $k$ pebbles share that spot), and it ends at $1$ once every pebble is behind you.
+
+Compare that to the true $F$, which (if $F$ is continuous) is a smooth curve climbing from
+$0$ to $1$. The empirical CDF is its **staircase shadow**: same overall ascent, same
+endpoints, but built out of $n$ flat treads and $n$ vertical risers instead of a smooth
+slope. The more pebbles you drop, the finer the treads, and the staircase hugs the smooth
+curve ever more tightly. @fig-ecdf-intuition shows exactly this for a sample drawn from a
+known $F$, so you can see the staircase chasing the curve.
+
+```{python}
+#| label: fig-ecdf-intuition
+#| fig-cap: "The empirical CDF as a staircase shadow of the true CDF. A sample of $n=15$ points (ticks on the axis) is drawn from a standard normal. The blue step function is $\\hat F_n$: it starts at 0, jumps by $1/n$ at each observation, and ends at 1. The red curve is the true $F$ it is trying to recover. Each jump sits directly above its data point. With only 15 points the staircase is coarse, but it already tracks the overall climb of the true curve."
+from scipy import stats
+
+rng = np.random.default_rng(3)
+n = 15
+sample = rng.normal(0, 1, size=n)
+xs, Fs = ecdf(sample)
+
+grid = np.linspace(-3.2, 3.2, 400)
+fig, ax = plt.subplots()
+ax.plot(grid, stats.norm.cdf(grid), color=LINE, label=r"true $F(x)=\Phi(x)$")
+# draw the empirical CDF as an explicit staircase
+ax.step(np.concatenate([[grid[0]], xs, [grid[-1]]]),
+        np.concatenate([[0], Fs, [1]]),
+        where="post", color=POINT, label=r"empirical $\hat F_n(x)$")
+ax.scatter(xs, Fs, color=POINT, s=22, zorder=4)
+ax.plot(sample, np.full_like(sample, -0.03), "|", color=ACCENT,
+        markersize=14, markeredgewidth=1.6, label="the sample")
+ax.set_xlabel("$x$"); ax.set_ylabel("probability $\\le x$")
+ax.set_ylim(-0.06, 1.05)
+ax.set_title("A 15-point empirical CDF chasing the true curve")
+ax.legend(loc="upper left", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+There are two ways to read this same picture, and holding both at once is the key to the
+article. **Read it vertically** and $\hat F_n$ is an *estimator*: at any fixed $x$, its
+height is our guess at $F(x)$. **Read it as an object** and the staircase *is a probability
+distribution*: the jumps are a probability mass function placing weight $1/n$ on each data
+point. The first reading leads to @sec-formal (bias, variance, convergence); the second
+leads to @sec-resampling (sampling from the data itself). They are the same staircase.
+
+# The formal development {#sec-formal}
+
+## The indicator function, built from scratch {#sec-indicator}
+
+The definition rests on one small device — the **indicator function** — so we build it
+explicitly rather than assume it. For any statement $A$ that is either true or false, define
+
+$$
+\mathbf 1\{A\} \;=\;
+\begin{cases}
+1 & \text{if $A$ is true},\\[2pt]
+0 & \text{if $A$ is false}.
+\end{cases}
+$$ {#eq-indicator}
+
+That is the entire definition: a switch that reports $1$ for "yes" and $0$ for "no". The
+statement we will plug in is "$X_i \le x$". So $\mathbf 1\{X_i \le x\}$ is $1$ when the $i$-th
+data point lands at or below the threshold $x$, and $0$ otherwise.
+
+The reason the indicator is the right tool is that **summing indicators counts**. If you add
+up $\mathbf 1\{X_i \le x\}$ over all $i$, every "yes" contributes $1$ and every "no"
+contributes $0$, so the sum is precisely the number of data points at or below $x$:
+
+$$
+\sum_{i=1}^n \mathbf 1\{X_i \le x\} \;=\; \#\{\,i : X_i \le x\,\}.
+$$ {#eq-count}
+
+This identity — *counting is summing indicators* — is the hinge of the whole article. It is
+what lets us pour the machinery of expectation and variance, built for sums, onto a thing
+that looks like a count.
+
+## The definition {#sec-definition}
+
+::: {#def-ecdf}
+**Definition (empirical CDF).** Let $X_1,\dots,X_n$ be a sample of real numbers. The
+**empirical cumulative distribution function** is the function
+$$
+\hat F_n(x) \;=\; \frac{1}{n}\sum_{i=1}^n \mathbf 1\{X_i \le x\},
+\qquad x \in \mathbb R .
+$$ {#eq-ecdf-def}
+Equivalently, by @eq-count, $\hat F_n(x)$ is the proportion of the sample at or below $x$.
+:::
+
+Every symbol earns its place. The sum $\sum_{i=1}^n$ runs over all $n$ data points; each
+term is the on/off switch of @eq-indicator for that point; dividing by $n$ turns the count
+into a proportion, a number in $[0,1]$. The hat marks it as something computed *from data*,
+to distinguish it from the true, unhatted $F$. The subscript $n$ records the sample size,
+because — crucially — $\hat F_n$ is itself random and changes with every new sample.
+
+Before trusting $\hat F_n$ as a stand-in for $F$, we should check it really *is* a CDF.
+Recall from [PROB-2] that a function qualifies as a cumulative distribution function exactly
+when it has three properties: it is non-decreasing, it is right-continuous, and it tends to
+$0$ as $x\to-\infty$ and to $1$ as $x\to+\infty$. We verify all three, because a "distribution
+estimate" that was not a distribution would be a fraud.
+
+::: {#lem-ecdf-is-cdf}
+**Lemma ($\hat F_n$ is a valid CDF).** For every sample, the function $\hat F_n$ of
+@eq-ecdf-def is non-decreasing, right-continuous, and satisfies $\hat F_n(x)\to 0$ as
+$x\to-\infty$ and $\hat F_n(x)\to 1$ as $x\to+\infty$.
+:::
+
+::: {.proof}
+**Non-decreasing.** Take any $x_1 < x_2$. If a data point satisfies $X_i \le x_1$, then since
+$x_1 < x_2$ it also satisfies $X_i \le x_2$. So every term that is $1$ in the sum for
+$\hat F_n(x_1)$ is also $1$ in the sum for $\hat F_n(x_2)$, and possibly more terms switch on.
+The count @eq-count can only stay the same or rise as $x$ increases, hence so does
+$\hat F_n$. There is no algebra to hide: a larger threshold can only catch more points.
+
+**Right-continuous.** Fix a point $x_0$ and let $x$ decrease down to $x_0$ from above. We must
+show $\hat F_n(x)\to\hat F_n(x_0)$. A data point $X_i$ is counted in $\hat F_n(x)$ for $x>x_0$
+iff $X_i\le x$. As $x$ shrinks toward $x_0$, the only points whose status could change are
+those with $X_i$ in the shrinking interval $(x_0, x]$. Take $x$ close enough to $x_0$ that
+this interval contains *no* data points (possible because there are finitely many points, so
+there is a gap above $x_0$ unless a point sits exactly at $x_0$ — and a point exactly at $x_0$
+satisfies $X_i\le x_0$ and is already counted in $\hat F_n(x_0)$). For such $x$ the count
+equals the count at $x_0$, so $\hat F_n(x)=\hat F_n(x_0)$. Hence the limit from the right is
+$\hat F_n(x_0)$: right-continuous. (The same argument shows the function is *flat* between
+consecutive data points and *jumps* at the data, which is the staircase of
+@fig-ecdf-intuition.)
+
+**Limits.** Let $m=\min_i X_i$ and $M=\max_i X_i$. For any $x<m$, no data point satisfies
+$X_i\le x$, so the count is $0$ and $\hat F_n(x)=0$; thus $\hat F_n(x)\to 0$ as $x\to-\infty$.
+For any $x\ge M$, *every* data point satisfies $X_i\le x$, so the count is $n$ and
+$\hat F_n(x)=n/n=1$; thus $\hat F_n(x)\to 1$ as $x\to+\infty$. $\qquad\blacksquare$
+:::
+
+So $\hat F_n$ is a bona fide CDF. The distribution it describes is **discrete**: it places
+all its probability on the $n$ observed points, with mass $1/n$ at each (or $k/n$ at a value
+hit $k$ times). That last sentence is the one we cash in for resampling in @sec-resampling.
+
+## Each value $\hat F_n(x)$ is a scaled Binomial {#sec-binomial}
+
+Now fix a single threshold $x$ and ask the estimation question: *how good is the number
+$\hat F_n(x)$ as a guess for the true number $F(x)$?* To answer it we must treat $\hat F_n(x)$
+as what it is — a random quantity, because the data are random — and find its distribution.
+
+Here is where [PROB-8] and [PROB-11] pay off. Consider one term of the sum,
+$\mathbf 1\{X_i \le x\}$. It is a single yes/no event: "did the $i$-th draw land at or below
+$x$?" Its value is $1$ with probability $P(X_i\le x)$ and $0$ otherwise. But $X_i$ is drawn
+from $F$, so by the very definition of the CDF,
+
+$$
+P(X_i \le x) \;=\; F(x).
+$$ {#eq-success-prob}
+
+A random variable that is $1$ with probability $p$ and $0$ with probability $1-p$ is, by
+definition ([PROB-11]), a **Bernoulli$(p)$** variable. So each indicator
+$\mathbf 1\{X_i \le x\}$ is a Bernoulli trial with success probability $p=F(x)$ — call its
+value a "success" when the point falls at or below $x$.
+
+Three facts about this collection of indicators, all imported by name from earlier articles:
+
+1. They are **identically distributed**: each $X_i$ comes from the same $F$, so each
+   indicator has the same success probability $F(x)$ ([PROB-8], the "identically distributed"
+   half of i.i.d.).
+2. They are **independent**: the draws $X_1,\dots,X_n$ are independent ([PROB-8], the
+   "independent" half), and a function of $X_i$ alone (the indicator) inherits that
+   independence — knowing whether $X_3$ fell below $x$ tells you nothing about whether $X_7$
+   did.
+3. A **sum of $n$ independent Bernoulli$(p)$ variables is Binomial$(n,p)$** — this is exactly
+   the result built in [PROB-11], where the Binomial pmf was derived as the distribution of
+   the number of successes in $n$ independent trials.
+
+Let $S_n(x) = \sum_{i=1}^n \mathbf 1\{X_i \le x\}$ be the count from @eq-count — the number of
+"successes". By the three facts,
+
+$$
+S_n(x) \;\sim\; \text{Binomial}\bigl(n,\, F(x)\bigr),
+$$ {#eq-binomial}
+
+and the empirical CDF is just that count divided by $n$:
+
+$$
+\hat F_n(x) \;=\; \frac{S_n(x)}{n}.
+$$ {#eq-ecdf-as-binom}
+
+**This is the master fact of the section.** It says the random height of the staircase at any
+fixed $x$ is a Binomial coin-counting problem in disguise. Everything quantitative about
+$\hat F_n(x)$ — its mean, its variance, how fast it settles down — now follows from the
+Binomial, which we already understand completely.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is $\hat F_n(x)$ Binomial and not something more complicated?"* Because at a *fixed*
+$x$, each observation contributes a single independent yes/no outcome — below $x$ or not —
+with the same probability $F(x)$, and the empirical CDF just counts the yeses and divides by
+$n$. Counting independent identical yes/no trials *is* the Binomial; there is nothing more to
+it. The subtlety, which a sharp interviewer will push on next, is that this is true only at a
+*single* $x$. As a whole *function* of $x$, the heights $\hat F_n(x)$ at different thresholds
+are dependent (they are built from the same data and are forced to increase together), so the
+process is not a bag of independent Binomials — it is a correlated family. The single-point
+Binomial governs pointwise behaviour; the joint behaviour across all $x$ is what
+Glivenko–Cantelli in @sec-gc controls.
+:::
+
+## Mean and variance: unbiased, and shrinking like $1/n$ {#sec-mean-var}
+
+We now read the mean and variance of $\hat F_n(x)$ straight off the Binomial. From [PROB-11]
+(and [PROB-5], [PROB-6]) we have the two standard facts about a Binomial$(n,p)$ count: its
+mean is $np$ and its variance is $np(1-p)$. We will use them with $p=F(x)$, and we will also
+re-derive the variance one rung lower, from the indicators, so nothing is taken on faith.
+
+**The mean (unbiasedness).** Take the expectation of @eq-ecdf-as-binom. Expectation is linear
+([PROB-5]) and $n$ is a constant, so
+
+$$
+\mathbb E\bigl[\hat F_n(x)\bigr]
+= \mathbb E\!\left[\frac{S_n(x)}{n}\right]
+= \frac{1}{n}\,\mathbb E\bigl[S_n(x)\bigr]
+= \frac{1}{n}\cdot n\,F(x)
+= F(x).
+$$ {#eq-unbiased}
+
+Here $\mathbb E[S_n(x)] = n\,F(x)$ is the Binomial mean $np$ with $p=F(x)$. The conclusion is
+clean and important: **$\hat F_n(x)$ is an unbiased estimator of $F(x)$**, for every $x$, for
+every sample size. On average — over many independent repetitions of the whole sampling
+experiment — the staircase height at $x$ is dead-on the true curve. There is no systematic
+distortion to correct for. (We can see @eq-unbiased even faster from @eq-ecdf-def directly:
+each $\mathbb E[\mathbf 1\{X_i\le x\}] = P(X_i\le x) = F(x)$ because the expectation of a
+$0/1$ indicator is just the probability it equals $1$; the average of $n$ copies of $F(x)$
+is $F(x)$.)
+
+**The variance.** Take the variance of @eq-ecdf-as-binom. Pulling the constant $1/n$ out of a
+variance squares it ([PROB-6], $\operatorname{Var}(aX)=a^2\operatorname{Var}(X)$):
+
+$$
+\operatorname{Var}\bigl(\hat F_n(x)\bigr)
+= \operatorname{Var}\!\left(\frac{S_n(x)}{n}\right)
+= \frac{1}{n^2}\operatorname{Var}\bigl(S_n(x)\bigr)
+= \frac{1}{n^2}\cdot n\,F(x)\bigl(1-F(x)\bigr)
+= \frac{F(x)\bigl(1-F(x)\bigr)}{n}.
+$$ {#eq-variance}
+
+Here $\operatorname{Var}(S_n(x))=n\,F(x)(1-F(x))$ is the Binomial variance $np(1-p)$ with
+$p=F(x)$. We can also reach @eq-variance from the indicators directly, which makes the role of
+independence explicit. Each indicator $\mathbf 1\{X_i\le x\}$ is Bernoulli$(F(x))$ with
+variance $F(x)(1-F(x))$ ([PROB-11]: a Bernoulli$(p)$ has variance $p(1-p)$). Because the
+indicators are independent, **the variance of their sum is the sum of their variances**
+([PROB-8], the additivity of variance under independence):
+
+$$
+\operatorname{Var}\bigl(S_n(x)\bigr)
+= \sum_{i=1}^n \operatorname{Var}\bigl(\mathbf 1\{X_i\le x\}\bigr)
+= n\,F(x)\bigl(1-F(x)\bigr),
+$$
+
+and dividing by $n^2$ recovers @eq-variance. Independence is doing real work here: without it
+the cross-covariance terms would not vanish and the variance would not be this clean.
+
+Read @eq-variance for meaning, because it answers the practical question "how much data do I
+need?":
+
+- **It vanishes like $1/n$.** Quadruple the sample and the variance quarters; the standard
+  deviation, $\sqrt{F(x)(1-F(x))/n}$, falls like $1/\sqrt n$ — the universal statistical
+  exchange rate. To halve your uncertainty about $F(x)$, you need four times the data.
+- **It is largest in the middle.** The factor $F(x)(1-F(x))$ is a downward parabola in
+  $F(x)$, maximized at $F(x)=\tfrac12$ (the median region) and pinched to $0$ at the tails
+  where $F(x)\to 0$ or $1$. So the empirical CDF is *most* uncertain near the median of the
+  distribution and *least* uncertain far out in the tails — there is simply less room for the
+  proportion to wobble when it is near $0$ or $1$.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the empirical CDF a consistent estimator of $F(x)$?"* Yes, pointwise, and you can prove
+it in one line from what we have. An estimator is **consistent** if it converges in
+probability to the truth as $n\to\infty$ ([PROB-21]). Here $\hat F_n(x)$ is unbiased
+(@eq-unbiased) with variance $F(x)(1-F(x))/n \to 0$ (@eq-variance). By **Chebyshev's
+inequality** ([PROB-19]), for any $\varepsilon>0$,
+$P(|\hat F_n(x)-F(x)|\ge\varepsilon)\le \operatorname{Var}(\hat F_n(x))/\varepsilon^2
+= F(x)(1-F(x))/(n\varepsilon^2)\to 0$. So $\hat F_n(x)\xrightarrow{\;p\;}F(x)$: at every
+fixed point, the staircase height converges in probability to the true curve. The stronger,
+*uniform* statement — that the *worst* gap over all $x$ at once goes to zero — is
+Glivenko–Cantelli, @sec-gc.
+:::
+
+@fig-shrink visualizes both facts at once: as $n$ grows the staircase tightens around $F$,
+and a pointwise $\pm$ one-standard-deviation band (computed from @eq-variance) narrows like
+$1/\sqrt n$, fattest in the middle and pinched at the tails.
+
+```{python}
+#| label: fig-shrink
+#| fig-cap: "The empirical CDF converging as the sample grows. Each panel overlays $\\hat F_n$ (blue staircase) on the true exponential CDF (red), for $n=20, 100, 500$. The shaded band is the pointwise $\\pm 1$ standard deviation $\\sqrt{F(x)(1-F(x))/n}$ from @eq-variance: it shrinks like $1/\\sqrt n$ across panels, and within each panel it is widest near the median and pinched toward the tails, exactly as the factor $F(x)(1-F(x))$ predicts."
+from scipy import stats
+
+rng = np.random.default_rng(11)
+grid = np.linspace(0, 5, 400)
+trueF = stats.expon.cdf(grid)            # exponential(1) true CDF
+fig, axes = plt.subplots(1, 3, figsize=(9.2, 3.3), sharey=True)
+for ax, n in zip(axes, (20, 100, 500)):
+    s = rng.exponential(1.0, size=n)
+    xs, Fs = ecdf(s)
+    band = np.sqrt(trueF * (1 - trueF) / n)
+    ax.fill_between(grid, np.clip(trueF - band, 0, 1), np.clip(trueF + band, 0, 1),
+                    color=FILL, alpha=0.55, lw=0, label=r"$\pm 1$ SD")
+    ax.plot(grid, trueF, color=LINE, lw=1.8, label="true $F$")
+    ax.step(np.concatenate([[grid[0]], xs, [grid[-1]]]),
+            np.concatenate([[0], Fs, [1]]), where="post",
+            color=POINT, lw=1.3, label=r"$\hat F_n$")
+    ax.set_title(f"$n = {n}$"); ax.set_xlabel("$x$")
+    ax.set_xlim(0, 5)
+axes[0].set_ylabel("probability $\\le x$")
+axes[0].legend(loc="lower right", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Glivenko–Cantelli: the whole curve converges, all at once {#sec-gc}
+
+Pointwise convergence (the Chebyshev argument above) says: pick any single $x$, and the
+staircase height there settles on $F(x)$. That is reassuring but not quite what we want.
+What we want is that the staircase converges *as a curve* — that there is no $x$, anywhere,
+where it stays stubbornly far from $F$. The right way to say "the whole curve is close" is to
+measure the **largest vertical gap** between the two functions, the supremum distance
+
+$$
+D_n \;=\; \sup_{x\in\mathbb R} \,\bigl|\hat F_n(x) - F(x)\bigr|,
+$$ {#eq-Dn}
+
+where $\sup$ (supremum) is the worst-case gap over every threshold $x$ at once. The
+**Glivenko–Cantelli theorem** says this worst-case gap vanishes.
+
+::: {#thm-gc}
+**Theorem (Glivenko–Cantelli).** Let $X_1,X_2,\dots$ be i.i.d. with CDF $F$. Then the
+empirical CDF converges *uniformly* to $F$: with probability $1$,
+$$
+D_n = \sup_{x}\,\bigl|\hat F_n(x)-F(x)\bigr| \xrightarrow[n\to\infty]{} 0.
+$$
+:::
+
+This is sometimes called the **fundamental theorem of statistics**, and the name is earned:
+it is the formal license to treat the sample as a faithful proxy for the population. Where the
+pointwise result controls each $x$ separately, Glivenko–Cantelli controls them *all
+simultaneously*, in the strongest convergence mode (almost-sure, from [PROB-21]).
+
+A complete measure-theoretic proof is beyond our Calc-1 floor and belongs to the empirical-
+process machinery in a graduate probability course; we will not pretend otherwise. But the
+*reason it is true* is fully within reach, and we give the honest logical chain rather than
+wave at it. The argument has two ingredients, both already in hand:
+
+1. **Pointwise convergence at every $x$.** By the law of large numbers — itself a consequence
+   of the convergence we sketched via Chebyshev in the previous callout — for each fixed $x$,
+   $\hat F_n(x)\to F(x)$. (The LLN is owned by the Statistical Inference track; here we use
+   only the pointwise convergence it delivers.)
+2. **Monotonicity lets finitely many points control the whole line.** This is the clever
+   step, and it is pure Calc-1 reasoning about increasing functions. Both $\hat F_n$ and $F$
+   are non-decreasing and both run from $0$ to $1$. Pick a fine grid of thresholds
+   $-\infty = t_0 < t_1 < \dots < t_k = +\infty$ chosen so that $F$ rises by at most
+   $\varepsilon$ across each cell, i.e. $F(t_{j})-F(t_{j-1}) \le \varepsilon$ (possible for
+   any $\varepsilon>0$ because $F$ climbs a total of $1$). Now consider any $x$, lying in some
+   cell $t_{j-1} \le x < t_j$. Because *both* functions are increasing,
+   $$
+   \hat F_n(t_{j-1}) \le \hat F_n(x) \le \hat F_n(t_j),
+   \qquad
+   F(t_{j-1}) \le F(x) \le F(t_j).
+   $$
+   We now bound the signed gap $\hat F_n(x)-F(x)$ on both sides, using nothing but these two
+   chains of inequalities. For the **upper** side, take the largest $\hat F_n$ and the smallest
+   $F$ available in the cell:
+   $$
+   \hat F_n(x) - F(x) \;\le\; \hat F_n(t_j) - F(t_{j-1}).
+   $$
+   Add and subtract $F(t_j)$ to split this into a grid-point gap plus a cell-rise term:
+   $$
+   \hat F_n(t_j) - F(t_{j-1})
+   = \underbrace{\bigl(\hat F_n(t_j) - F(t_j)\bigr)}_{\text{gap at the grid point }t_j}
+     + \underbrace{\bigl(F(t_j) - F(t_{j-1})\bigr)}_{\le\,\varepsilon}
+   \;\le\; \bigl|\hat F_n(t_j)-F(t_j)\bigr| + \varepsilon .
+   $$
+   For the **lower** side, take the smallest $\hat F_n$ and the largest $F$:
+   $$
+   \hat F_n(x) - F(x) \;\ge\; \hat F_n(t_{j-1}) - F(t_j),
+   $$
+   and this time add and subtract $F(t_{j-1})$:
+   $$
+   \hat F_n(t_{j-1}) - F(t_j)
+   = \underbrace{\bigl(\hat F_n(t_{j-1}) - F(t_{j-1})\bigr)}_{\text{gap at the grid point }t_{j-1}}
+     - \underbrace{\bigl(F(t_j) - F(t_{j-1})\bigr)}_{\le\,\varepsilon}
+   \;\ge\; -\bigl|\hat F_n(t_{j-1})-F(t_{j-1})\bigr| - \varepsilon .
+   $$
+   Combining the two sides, the *absolute* gap at the arbitrary point $x$ is controlled by the
+   absolute gaps at the two enclosing grid points plus $\varepsilon$:
+   $$
+   \bigl|\hat F_n(x) - F(x)\bigr|
+   \;\le\;
+   \max\bigl(\bigl|\hat F_n(t_{j-1})-F(t_{j-1})\bigr|,\;
+             \bigl|\hat F_n(t_j)-F(t_j)\bigr|\bigr) + \varepsilon .
+   $$
+   This holds for *every* $x$ (each falls in some cell), so taking the supremum over $x$ on the
+   left, the worst gap $D_n$ is at most $\varepsilon$ plus the largest gap over the *finitely
+   many* grid points $t_1,\dots,t_{k-1}$:
+   $$
+   D_n \;\le\; \max_{1\le j\le k-1}\bigl|\hat F_n(t_j)-F(t_j)\bigr| + \varepsilon .
+   $$
+3. **Finitely many pointwise limits combine.** By step 1 each of those finitely many grid-point
+   gaps goes to $0$; a maximum of finitely many things that each go to $0$ also goes to $0$.
+   So for large $n$ the worst grid-point gap is below $\varepsilon$, making $D_n \le
+   2\varepsilon$. Since $\varepsilon$ was arbitrary, $D_n\to 0$.
+
+The single idea that makes this work — and that is worth carrying away even without the full
+proof — is that **monotonicity converts a statement about infinitely many points into a
+statement about a finite grid.** You only ever need to control the curve at a finite mesh,
+because between mesh points an increasing function cannot wander far.
+
+The companion quantitative result, which we cite rather than derive (its proof needs the same
+empirical-process tools), pins down *how fast* $D_n$ shrinks: the
+**Dvoretzky–Kiefer–Wolfowitz (DKW) inequality** states that for every $\varepsilon>0$,
+$P\bigl(D_n > \varepsilon\bigr) \le 2e^{-2n\varepsilon^2}$. This is what lets you draw an
+honest *uniform* confidence band around the empirical CDF — a band of half-width
+$\sqrt{\ln(2/\alpha)/(2n)}$ that traps the *entire* true curve with probability $1-\alpha$.
+@fig-gc shows both the shrinking worst-case gap and such a band.
+
+```{python}
+#| label: fig-gc
+#| fig-cap: "Glivenko–Cantelli in action. **Left:** the worst-case gap $D_n = \\sup_x|\\hat F_n - F|$ versus sample size (log–log axes), averaged over 200 replications, with the DKW-rate reference line $\\propto 1/\\sqrt n$. The gap marches down at the $1/\\sqrt n$ rate. **Right:** a single $n=80$ sample with the 95% DKW uniform band (shaded) around $\\hat F_n$; the true $F$ (red) lies entirely inside the band, which is the band's guarantee."
+from scipy import stats
+
+rng = np.random.default_rng(202)
+ns = np.array([10, 20, 40, 80, 160, 320, 640, 1280])
+reps = 200
+mean_D = []
+for n in ns:
+    Ds = []
+    for _ in range(reps):
+        s = np.sort(rng.normal(0, 1, size=n))
+        Femp = np.arange(1, n + 1) / n
+        Ftrue = stats.norm.cdf(s)
+        # sup gap checked just above and below each jump
+        D = np.max(np.abs(np.concatenate([Femp - Ftrue,
+                                           Femp - 1.0 / n - Ftrue])))
+        Ds.append(D)
+    mean_D.append(np.mean(Ds))
+mean_D = np.array(mean_D)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+axL.loglog(ns, mean_D, "o-", color=POINT, label=r"mean $D_n$")
+axL.loglog(ns, mean_D[0] * np.sqrt(ns[0] / ns), "--", color=GREY,
+           label=r"$\propto 1/\sqrt{n}$ reference")
+axL.set_xlabel("sample size $n$"); axL.set_ylabel(r"worst-case gap $D_n$")
+axL.set_title("The worst gap vanishes at rate $1/\\sqrt n$")
+axL.legend(fontsize=9, framealpha=0.9)
+
+n = 80
+s = rng.normal(0, 1, size=n)
+xs, Fs = ecdf(s)
+alpha = 0.05
+eps = np.sqrt(np.log(2 / alpha) / (2 * n))   # DKW half-width
+grid = np.linspace(-3.2, 3.2, 400)
+lo = np.clip(np.interp(grid, xs, Fs, left=0, right=1) - eps, 0, 1)
+hi = np.clip(np.interp(grid, xs, Fs, left=0, right=1) + eps, 0, 1)
+axR.fill_between(grid, lo, hi, color=FILL, alpha=0.55, lw=0, label="95% DKW band")
+axR.step(np.concatenate([[grid[0]], xs, [grid[-1]]]),
+         np.concatenate([[0], Fs, [1]]), where="post", color=POINT, label=r"$\hat F_n$")
+axR.plot(grid, stats.norm.cdf(grid), color=LINE, label="true $F$")
+axR.set_xlabel("$x$"); axR.set_ylabel("probability $\\le x$")
+axR.set_title(f"95% uniform band ($n={n}$)")
+axR.legend(loc="upper left", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+# The plug-in principle: estimating any feature of $F$ {#sec-plugin}
+
+We have an estimate of the *whole distribution*. The natural next question — and the one that
+makes $\hat F_n$ a workhorse rather than a curiosity — is: *can we use it to estimate
+particular features of $F$*, like its mean, its variance, its median, its $90$th percentile?
+The answer is a single, almost mechanical, idea.
+
+Almost every quantity you care about is a **functional** of $F$ — a rule $\theta = T(F)$ that
+takes the whole distribution and returns a number. The mean is a functional,
+$T(F)=\int x\,dF(x) = \mathbb E[X]$. The variance is a functional. The median is the
+functional "the $x$ where $F$ crosses $\tfrac12$". A percentile, a tail probability, a
+correlation between two coordinates — all functionals of the underlying distribution.
+
+::: {.callout-important title="The plug-in principle"}
+To estimate a feature $\theta = T(F)$ of the unknown distribution, **apply the very same
+functional to the empirical distribution**:
+$$
+\hat\theta \;=\; T\bigl(\hat F_n\bigr).
+$$
+You estimate "a property of $F$" by computing "that exact property of the data's own
+distribution $\hat F_n$." No new formula per feature — one principle covers them all.
+:::
+
+The principle is so natural it can feel like a tautology, but it has real content, and it has
+a recurring consequence worth internalizing: **because $\hat F_n$ puts mass $1/n$ on each data
+point, plugging it into a functional turns integrals against $dF$ into averages over the
+data.** Let us make this concrete with the mean, because it explains why the plug-in estimate
+of the mean is exactly the familiar sample average.
+
+The mean functional is $T(F) = \int x\,dF(x)$, the expectation of $X$ under $F$. The empirical
+distribution $\hat F_n$ is the discrete distribution with probability $1/n$ at each $X_i$. The
+expectation under a discrete distribution is the sum of (value $\times$ probability) over its
+support ([PROB-5]). Therefore
+
+$$
+\hat\theta = T(\hat F_n)
+= \int x \, d\hat F_n(x)
+= \sum_{i=1}^n X_i \cdot \underbrace{\frac{1}{n}}_{\text{mass at }X_i}
+= \frac{1}{n}\sum_{i=1}^n X_i
+= \bar X.
+$$ {#eq-plugin-mean}
+
+The plug-in estimate of the population mean *is* the sample mean — not by a separate
+definition, but as the forced output of the plug-in principle. The same machine, fed the
+variance functional, returns $\frac1n\sum (X_i-\bar X)^2$; fed the median functional, it
+returns the sample median; fed the $q$-quantile functional, the sample $q$-quantile. One
+principle, every summary statistic.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the plug-in estimator always unbiased?"* No — and this is the honest catch a sharp
+examiner wants. The plug-in mean $\bar X$ happens to be unbiased, but plug-in is *not*
+unbiasedness-preserving in general. The classic example is variance: the plug-in variance
+$\frac1n\sum(X_i-\bar X)^2$ uses divisor $n$, and its expectation is
+$\frac{n-1}{n}\sigma^2$, *not* $\sigma^2$ — it is biased low, which is the entire reason the
+"sample variance" people quote uses divisor $n-1$ (Bessel's correction). The plug-in
+principle gives a *consistent* estimator for any reasonable functional (it inherits
+$\hat F_n\to F$), but consistency is an $n\to\infty$ promise; finite-sample bias is a separate
+question that has to be checked functional by functional. Knowing that plug-in buys
+consistency but not unbiasedness is exactly the distinction interviewers probe.
+:::
+
+# Sampling with replacement: drawing from the data itself {#sec-resampling}
+
+We have spent the article reading the staircase *vertically*, as an estimator. Now we read it
+*as an object*, and collect the payoff promised in the Core. This is the conceptual hinge of
+the whole article and the bridge to everything downstream.
+
+## $\hat F_n$ is a distribution you can draw from
+
+We proved in @lem-ecdf-is-cdf that $\hat F_n$ is a genuine CDF, describing the discrete
+distribution that puts probability mass $1/n$ on each observed value $X_1,\dots,X_n$. A
+distribution you can write down is a distribution you can **sample from**. So ask: what does
+it *mean* to generate a fresh draw $X^*$ from $\hat F_n$?
+
+By construction $\hat F_n$ assigns $P(X^* = X_i) = 1/n$ to each data index $i$. Generating one
+draw from $\hat F_n$ is therefore exactly:
+
+> pick an index $i$ uniformly at random from $\{1,\dots,n\}$ and report the value $X_i$.
+
+That is the entire mechanism. And if we want a *whole new sample* of size $n$ from $\hat F_n$ —
+$X_1^*,\dots,X_n^*$ — we repeat this independently $n$ times. Crucially, **the distribution
+$\hat F_n$ does not change between draws** (it is a fixed object, computed once from the
+original data), so each pick is from the same $1/n$-per-point distribution, independent of the
+previous picks. Picking from the same fixed set, independently, again and again, is precisely
+**sampling with replacement**: a value already chosen remains available and can be chosen
+again.
+
+::: {.callout-important title="The identification that makes the bootstrap legal"}
+**Drawing a sample of size $n$ from the data with replacement is *identical to* drawing an
+i.i.d. sample of size $n$ from the empirical distribution $\hat F_n$.** These are not two
+analogous operations; they are the same operation described twice. This is why resampling is
+mathematically legitimate rather than a heuristic: a resample is a real i.i.d. sample from a
+real (estimated) distribution. Since $\hat F_n$ is close to $F$ (Glivenko–Cantelli,
+@thm-gc), a resample from $\hat F_n$ behaves much like a fresh sample from $F$ — which is the
+whole engine of the bootstrap.
+:::
+
+Sampling *with* replacement (not without) is forced by the requirement that the draws be
+i.i.d. from a fixed distribution. If we sampled *without* replacement, removing each chosen
+point, then the second draw would come from a different distribution than the first (one fewer
+point, masses $1/(n-1)$), the draws would be dependent, and after $n$ draws we would simply
+recover the original sample in a shuffled order — useless for assessing variability. With
+replacement keeps the distribution fixed at $\hat F_n$ on every draw, which is exactly what
+"i.i.d. from $\hat F_n$" demands.
+
+## What a resample looks like {#sec-resample-picture}
+
+A concrete consequence worth seeing: in a with-replacement resample of size $n$, some original
+points appear multiple times and others not at all. How many are left out? The probability a
+specific point is *missed* on one draw is $1-\tfrac1n$ (there are $n$ equally likely picks and
+exactly one of them is this point, so the other $n-1$ miss it). Because the $n$ draws are
+independent, the probability the point is missed on *all* $n$ draws is the product
+$\bigl(1-\tfrac1n\bigr)^n$. As $n$ grows this tends to $e^{-1}\approx 0.368$. That limit is the
+Calc-1 definition of $e$, but it is exactly the kind of identity worth re-deriving rather than
+quoting. Take the log and read off a derivative:
+$$
+\ln\!\Bigl(1-\tfrac1n\Bigr)^{n}
+= n\,\ln\!\Bigl(1-\tfrac1n\Bigr)
+= \frac{\ln\!\bigl(1 - \tfrac1n\bigr) - \ln(1)}{1/n}.
+$$
+Set $h = 1/n$, so $h\to 0$ as $n\to\infty$. The right-hand side is
+$\dfrac{\ln(1-h)-\ln(1)}{h}$, which (up to the sign of the step) is precisely the
+difference-quotient defining the derivative of $g(u)=\ln u$ at $u=1$. Since $g'(u)=1/u$, that
+derivative is $g'(1)=1$; the step here is $-h$, so the quotient tends to $-g'(1) = -1$. Hence
+$\ln\bigl(1-\tfrac1n\bigr)^n \to -1$, and exponentiating (the exponential is continuous, so it
+passes through the limit) gives $\bigl(1-\tfrac1n\bigr)^n \to e^{-1}$. So **about $37\%$ of the
+original points are absent from any given resample**, and the rest appear with various
+multiplicities. That
+"$0.632$" (the complement, the fraction *included*) is a number that resurfaces all over
+resampling-based model evaluation. @fig-resample shows the empirical CDF of the data alongside
+the empirical CDFs of several resamples, all hugging it, plus the distribution of how many
+times a point appears.
+
+```{python}
+#| label: fig-resample
+#| fig-cap: "Sampling with replacement = sampling from $\\hat F_n$. **Left:** the original sample's empirical CDF (thick blue) with the empirical CDFs of 30 with-replacement resamples (thin grey) scattered around it — each resample is a genuine i.i.d. draw from $\\hat F_n$, so its staircase wiggles around the original. **Right:** across 5000 resamples of size $n$, how many times a fixed original point is included; the spike at 0 has height $\\approx (1-1/n)^n \\to e^{-1}\\approx 0.368$, the chance a point is left out entirely (red line)."
+rng = np.random.default_rng(77)
+n = 40
+data = rng.gamma(2.0, 1.5, size=n)          # an honest skewed sample
+xs0, Fs0 = ecdf(data)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+grid = np.linspace(0, data.max() * 1.05, 300)
+for _ in range(30):
+    rs = rng.choice(data, size=n, replace=True)
+    xr, Fr = ecdf(rs)
+    axL.step(np.concatenate([[0], xr, [grid[-1]]]),
+             np.concatenate([[0], Fr, [1]]), where="post",
+             color=GREY, lw=0.7, alpha=0.5)
+axL.step(np.concatenate([[0], xs0, [grid[-1]]]),
+         np.concatenate([[0], Fs0, [1]]), where="post",
+         color=POINT, lw=2.2, label=r"original $\hat F_n$")
+axL.plot([], [], color=GREY, lw=0.9, label="30 resample ECDFs")
+axL.set_xlabel("$x$"); axL.set_ylabel("probability $\\le x$")
+axL.set_title("Resamples wiggle around $\\hat F_n$")
+axL.legend(loc="lower right", fontsize=9, framealpha=0.9)
+
+# multiplicity of a fixed point (index 0) across many resamples
+B = 5000
+counts = np.empty(B, dtype=int)
+for b in range(B):
+    idx = rng.integers(0, n, size=n)
+    counts[b] = np.sum(idx == 0)
+vals, freqs = np.unique(counts, return_counts=True)
+axR.bar(vals, freqs / B, color=POINT, alpha=0.85, width=0.8)
+axR.axhline((1 - 1 / n) ** n, color=LINE, lw=1.8,
+            label=fr"$(1-1/n)^n \approx {(1-1/n)**n:.3f}$")
+axR.set_xlabel("times a fixed point appears in a resample")
+axR.set_ylabel("relative frequency")
+axR.set_title("About 37% of points are left out")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## A worked resampling estimate: the standard error of the median {#sec-se-median}
+
+Here is the plug-in principle and resampling working together on a problem with no tidy
+formula. We have a sample and we want the **sample median** as our estimate of the population
+median — a plug-in estimate, $T(\hat F_n)$ with $T$ = "the median functional". Fine. But how
+*uncertain* is that median? For the mean there is a clean formula for the standard error
+($\sigma/\sqrt n$), but the median's sampling distribution has no such elementary closed form.
+
+Resampling answers it directly, exactly because a resample is a real sample from $\hat F_n$.
+The recipe — which is the bootstrap, owned and developed fully in the Inference track, shown
+here only to demonstrate that $\hat F_n$ makes it *possible*:
+
+1. Draw a resample of size $n$ from the data with replacement (= draw from $\hat F_n$).
+2. Compute the median of that resample.
+3. Repeat $B$ times, collecting $B$ resampled medians.
+4. The spread (standard deviation) of those $B$ medians estimates the standard error of the
+   sample median.
+
+The logic is exactly Glivenko–Cantelli plus the identification box: variability *across
+resamples from $\hat F_n$* mimics variability *across fresh samples from $F$*, because
+$\hat F_n\approx F$. @fig-bootstrap-median carries it out on a real-looking skewed sample.
+
+```{python}
+#| label: fig-bootstrap-median
+#| fig-cap: "Estimating the standard error of the sample median by resampling. From a single skewed sample of $n=60$ (light histogram, with its observed median marked), we draw $B=4000$ with-replacement resamples and record each one's median. The histogram of those resampled medians (blue) is the *bootstrap distribution* of the median; its standard deviation is the estimated standard error. There is no elementary formula for this number — resampling from $\\hat F_n$ supplies it directly."
+rng = np.random.default_rng(404)
+n = 60
+data = rng.lognormal(mean=1.0, sigma=0.6, size=n)   # honest right-skew
+obs_median = np.median(data)
+
+B = 4000
+boot_meds = np.array([np.median(rng.choice(data, size=n, replace=True))
+                      for _ in range(B)])
+se_med = boot_meds.std(ddof=1)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.5))
+axL.hist(data, bins=18, color=FILL, alpha=0.7, edgecolor="white")
+axL.axvline(obs_median, color=LINE, lw=2, label=f"sample median = {obs_median:.2f}")
+axL.set_xlabel("$x$"); axL.set_ylabel("count")
+axL.set_title(f"The original sample ($n={n}$)")
+axL.legend(fontsize=9, framealpha=0.9)
+
+axR.hist(boot_meds, bins=35, color=POINT, alpha=0.85, edgecolor="white")
+axR.axvline(obs_median, color=LINE, lw=2)
+axR.set_xlabel("median of a resample")
+axR.set_ylabel("count")
+axR.set_title(f"Bootstrap dist. of the median\nest. SE $\\approx$ {se_med:.3f}")
+plt.tight_layout()
+print(f"observed sample median      = {obs_median:.4f}")
+print(f"bootstrap SE of the median  = {se_med:.4f}  (from B={B} resamples)")
+```
+
+The standard error printed under the figure was produced without a single distributional
+assumption beyond "the data are i.i.d." — no normality, no formula for the median's variance.
+That is the practical magic the empirical CDF unlocks, and the Inference track's bootstrap
+article turns this demonstration into a full method (confidence intervals, bias correction,
+when it fails).
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The empirical CDF is robust and assumption-light, but it is not magic, and an honest account
+shows where it strains. This section is the line between "can compute a staircase" and "knows
+when to trust it."
+
+## It cannot see between, or beyond, the data {#sec-no-extrapolation}
+
+$\hat F_n$ is flat everywhere except at the observed points and is *exactly* $0$ below the
+minimum and $1$ above the maximum. So it asserts, flatly, that **no value smaller than your
+smallest observation or larger than your largest is possible** — $P(X \le x)=1$ for all $x$
+beyond the max. For a tail probability or an extreme quantile (a $99.9$th percentile from
+$n=200$ points), this is not just imprecise, it is *wrong in kind*: the empirical CDF has
+nothing to say about the tail it never sampled. It never extrapolates. If your question lives
+in the tail — value-at-risk, flood levels, extreme losses — the empirical CDF is the wrong
+tool and you reach for extreme-value theory or a parametric tail model. (Order statistics and
+the limits of extremes are the subject of the companion article [PROB-23].)
+
+## It is rough, and a smooth truth deserves a smooth estimate {#sec-roughness}
+
+When $F$ is continuous, the truth is a smooth curve and $\hat F_n$ approximates it with a
+jagged staircase. For the CDF itself the steps are usually harmless. But the *density* $f=F'$
+cannot be estimated by differentiating $\hat F_n$ at all — the derivative of a step function
+is zero almost everywhere and undefined at the jumps. If you want the density (the bell-shape
+itself, not the cumulative climb), the empirical CDF gives you nothing usable, and you reach
+for a **kernel density estimate** or a histogram, which deliberately smooth. @fig-edge shows
+both failure modes: the empirical CDF flattening to wrong certainty in the tail of a
+heavy-tailed sample, and the futility of reading a density off the steps.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability. **Left:** $n=150$ draws from a heavy-tailed (Pareto) distribution. The empirical CDF (blue) slams to 1 just past the largest observation, declaring larger values impossible, while the true CDF (red) still has real tail mass to the right — the empirical CDF is blind to the tail it never sampled. **Right:** the empirical CDF (blue steps) versus a kernel density estimate of the same data's *density*: you cannot recover the smooth density by differentiating the staircase, because its slope is zero between jumps. Different questions need different tools."
+from scipy import stats
+
+rng = np.random.default_rng(9)
+n = 150
+b = 2.5                                  # Pareto shape
+data = stats.pareto.rvs(b, size=n, random_state=rng)
+xs, Fs = ecdf(data)
+grid = np.linspace(1, np.quantile(data, 0.995) * 1.4, 400)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+axL.step(np.concatenate([[1], xs, [grid[-1]]]),
+         np.concatenate([[0], Fs, [1]]), where="post", color=POINT, label=r"$\hat F_n$")
+axL.plot(grid, stats.pareto.cdf(grid, b), color=LINE, label="true $F$ (Pareto)")
+axL.axvline(xs.max(), color=GREY, ls=":", lw=1.4, label="largest observation")
+axL.set_xlabel("$x$"); axL.set_ylabel("probability $\\le x$")
+axL.set_title("Blind beyond the largest point")
+axL.legend(loc="lower right", fontsize=8, framealpha=0.9)
+
+# A second, lighter sample to compare ECDF vs KDE on the same axes is confusing;
+# instead show ECDF (left axis) and KDE of the density (right axis) for clarity.
+sample2 = rng.normal(0, 1, size=120)
+xs2, Fs2 = ecdf(sample2)
+g2 = np.linspace(-3.5, 3.5, 400)
+kde = stats.gaussian_kde(sample2)
+axR.step(np.concatenate([[g2[0]], xs2, [g2[-1]]]),
+         np.concatenate([[0], Fs2, [1]]), where="post",
+         color=POINT, label=r"$\hat F_n$ (steps, left axis)")
+axR.set_xlabel("$x$"); axR.set_ylabel("CDF (steps)")
+axR2 = axR.twinx()
+axR2.plot(g2, kde(g2), color=ACCENT, lw=2, label="KDE of density (right axis)")
+axR2.plot(g2, stats.norm.pdf(g2), color=LINE, ls="--", lw=1.4, label="true density")
+axR2.set_ylabel("density"); axR2.grid(False)
+axR.set_title("Steps give a CDF, not a density")
+lines = axR.get_lines() + axR2.get_lines()
+axR.legend(lines, [l.get_label() for l in lines], loc="upper left", fontsize=7.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+## It needs the i.i.d. assumption it was built on {#sec-iid-needed}
+
+Every result here — unbiasedness, the Binomial variance, Glivenko–Cantelli, and the legality
+of resampling — rode on the sample being **i.i.d.** from a single $F$ ([PROB-8]). When that
+breaks, so do the guarantees, quietly:
+
+- **Dependence** (time series, spatial data, clustered observations). The indicators are no
+  longer independent, so the variance formula @eq-variance is wrong (usually too optimistic),
+  and a naive with-replacement resample destroys the dependence structure, badly
+  underestimating uncertainty. The fix is a dependence-aware resample (block bootstrap) — a
+  different object.
+- **Non-stationarity** (the distribution drifts over the sample). There is no single $F$ for
+  $\hat F_n$ to converge to; the staircase is an average of moving targets and estimates none
+  of them.
+
+::: {.callout-warning title="Pitfall"}
+**The empirical CDF and the bootstrap are only as i.i.d. as your data.** The most common way
+resampling lies is not a flaw in the math — it is feeding it dependent or drifting data and
+trusting the resulting standard errors. With-replacement resampling *assumes* the data are an
+i.i.d. sample from one distribution; if they are a time series, clustered, or non-stationary,
+the resamples scramble the very structure that drives the real uncertainty, and you get
+confidence intervals that are too narrow. Always ask "are these draws exchangeable?" *before*
+you resample, never after.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When is the empirical CDF the right tool, and when is it the wrong one?"* The recitable
+summary:
+
+- **Use it** when you have an i.i.d. (or at least exchangeable) sample, you want a
+  distribution estimate without committing to a parametric shape, your questions live *inside*
+  the range of the data (central probabilities, the median, an interquartile range), and you
+  want to resample to get standard errors for a statistic with no clean formula. In that
+  regime it is unbeatable: assumption-light, consistent for any $F$, and the foundation of the
+  bootstrap.
+- **Do not use it** for tail/extreme quantiles beyond the data (use extreme-value theory),
+  for the *density* rather than the CDF (use a KDE/histogram), or when the data are dependent
+  or non-stationary (use dependence-aware methods). And remember it never extrapolates: it is
+  silent about any region you did not sample.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived carrying four results and used each by name: the **CDF** as the universal
+descriptor of a random variable ([PROB-2]); the **i.i.d. sample** ([PROB-8]); the
+**Binomial as a sum of independent Bernoullis** ([PROB-11]); and the **convergence
+vocabulary** ([PROB-21]) in which Glivenko–Cantelli is stated. This article turned the CDF
+into something *estimable from data* and, more consequentially, into something you can *sample
+from*. From here:
+
+- **[PROB-23 *Order Statistics and the Uniform Distribution of Null p-Values*]** — the
+  companion closing article. Sorting the sample turns $\hat F_n$ into the order statistics
+  $X_{(1)}\le\dots\le X_{(n)}$; it derives the distribution of each, and the probability
+  integral transform $F(X)\sim\text{Uniform}(0,1)$ that makes a correct p-value uniform under
+  the null. The two articles together are what the data tracks consume.
+- **Across the track boundary — the bootstrap (Statistical Inference track).** This article
+  proved the resampling is *legal*; the Inference track builds the *method*: bootstrap
+  confidence intervals, bias correction, the percentile and BCa intervals, and the honest
+  catalogue of when the bootstrap fails. The @sec-se-median demonstration here is a single
+  frame of that full treatment.
+- **Across the track boundary — bagging and resampling in learning (Classification,
+  Unsupervised Learning).** Bootstrap aggregation ("bagging") and random forests draw their
+  resamples from exactly the $\hat F_n$ defined here; the $\approx 0.632$ inclusion fraction
+  from @sec-resample-picture reappears there as the "out-of-bag" sample used for free
+  validation.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** V. Glivenko (1933) and F. P. Cantelli (1933) independently proved the
+  uniform convergence theorem that bears their joint name. The quantitative companion is
+  A. Dvoretzky, J. Kiefer, and J. Wolfowitz (1956), sharpened to its optimal constant by
+  P. Massart (1990) — together the **DKW inequality** behind the uniform band in @fig-gc.
+- **The resampling idea.** B. Efron, "Bootstrap Methods: Another Look at the Jackknife,"
+  *Annals of Statistics* 7 (1979) — the paper that named the bootstrap and made the
+  "sample from $\hat F_n$" identification of @sec-resampling the basis of a general method.
+  Efron and Tibshirani's *An Introduction to the Bootstrap* (1993) is the standard book-length
+  treatment.
+- **The empirical-process view.** The proper home of Glivenko–Cantelli and DKW is
+  *empirical process theory*, which studies the random function $\sqrt n\,(\hat F_n - F)$ as
+  an object in its own right; its limit is the **Brownian bridge**, the gateway to the
+  Kolmogorov–Smirnov goodness-of-fit test. A. W. van der Vaart's *Asymptotic Statistics*
+  (1998), Ch. 19, is the graduate reference.
+- **Open threads this article deliberately deferred.** *How do we turn the bootstrap SE of
+  @sec-se-median into a confidence interval, and when is that interval trustworthy?* — the
+  Inference track's bootstrap article. *What is the distribution of the sorted sample, and why
+  are null p-values uniform?* — [PROB-23]. *Can we estimate the density, not just the CDF?* —
+  kernel density estimation, in the nonparametric strand of the downstream tracks.

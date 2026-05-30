@@ -1,0 +1,909 @@
+---
+title: "Random Variables: Turning Outcomes into Numbers"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # outcomes / samples
+LINE   = "#c1121f"     # the CDF / theoretical curve
+ACCENT = "#0a7d4d"     # highlights / mapped values
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the third article of *Probability
+> Foundations* and the hinge between the abstract machinery of the first two and the
+> concrete distributions of everything after. We assume only
+> [PROB-0 *What Is Probability?*] — the sample space $\Omega$, events as subsets, and the
+> Kolmogorov axioms — and [PROB-1 *Conditional Probability, Independence & Bayes' Rule*],
+> from which we borrow only the basic axiom-level facts (the complement rule and finite
+> additivity). PROB-0 built a probability $P$ that acts on *events* (subsets of $\Omega$);
+> the trouble is that $\Omega$ can be anything — pairs of dice, sequences of coin flips,
+> a point on a dartboard — and you cannot do arithmetic on "the outcome was tails-then-
+> heads." This article performs the move that lets calculus touch chance: it defines a
+> **random variable** as a function $X:\Omega\to\mathbb{R}$ that pins a *number* on every
+> outcome, and then names the one object — the **cumulative distribution function**
+> $F(x)=P(X\le x)$ — that completely describes *any* such number, discrete, continuous, or
+> a hybrid of both. It sets up the two concrete forks, [PROB-3 *Discrete Random Variables*]
+> (the CDF's jumps become a mass function) and [PROB-4 *Continuous Random Variables*] (its
+> smooth rise becomes a density), and the data-driven version of the very same object in
+> [PROB-22 *The Empirical CDF*].
+
+## Abstract {.unnumbered}
+
+A probability space gives us a rule $P$ for weighing *events* — subsets of an arbitrary
+sample space $\Omega$. But $\Omega$ is rarely made of numbers, and we cannot average,
+add, or plot "the outcome was a king of hearts." This article makes the move that turns
+probability into a quantitative science: a **random variable** is a function
+$X:\Omega\to\mathbb{R}$ that attaches a real number to every outcome, and the probability
+$P$ on $\Omega$ is *pushed forward* onto the number line so that events like
+$\{a\le X\le b\}$ inherit a probability. We then prove that **one object describes a
+random variable completely** — the cumulative distribution function $F(x)=P(X\le x)$ —
+and derive its three defining properties (monotone non-decreasing, right-continuous,
+limits $0$ at $-\infty$ and $1$ at $+\infty$) directly from the Kolmogorov axioms,
+*including* the continuity-from-above step that most treatments wave away. The single
+claim this article defends is that **the CDF is the universal fingerprint of a random
+variable**: it works for a discrete count, a continuous measurement, and the messy
+mixtures real data produces, all on equal footing, and its *shape* — where it jumps and
+where it rises smoothly — is exactly the diagnostic that decides whether the next article
+you need is [PROB-3] (mass) or [PROB-4] (density). We carry this through on honest
+examples — dice, a real income distribution, and a rainfall amount that is a genuine
+mixture — including the case at the edge where neither a pure mass nor a pure density
+will do.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A **random variable** is a function
+$$
+X:\Omega\to\mathbb{R}
+$$
+that assigns a real number $X(\omega)$ to every outcome $\omega$ in the sample space
+$\Omega$. It carries the probability $P$ on $\Omega$ over to the number line: the
+probability that $X$ falls in a set $B\subseteq\mathbb{R}$ is the probability of the
+outcomes that $X$ sends into $B$,
+$$
+P(X\in B) \;=\; P\big(\{\omega\in\Omega : X(\omega)\in B\}\big).
+$$
+Every random variable — no matter what $\Omega$ is, no matter whether $X$ is a count, a
+measurement, or a mix — is **completely described by one function**, its **cumulative
+distribution function** (CDF)
+$$
+F(x) \;=\; P(X\le x),
+$$
+the probability that $X$ comes out at or below the level $x$. The CDF is the universal
+fingerprint: it always exists, it determines every probability $P(a<X\le b)=F(b)-F(a)$,
+and its *shape* tells you what kind of variable you have — **jumps** mark probability
+sitting on single values (discrete, [PROB-3]), a **smooth rise** marks probability spread
+over a continuum (continuous, [PROB-4]), and **both at once** mark a mixture.
+:::
+
+Everything below orbits that box. Two ideas are doing all the work and it is worth naming
+them before any algebra. First, a random variable is *not* random and *not* a variable in
+the algebra sense — it is a deterministic **function**; the randomness lives in which
+$\omega$ nature draws, and $X$ merely reports a number for it. Second, the CDF is not one
+descriptor among several — it is *the* descriptor, the one object that every random
+variable possesses and that pins down its entire probabilistic behavior. The mass
+functions of [PROB-3] and the densities of [PROB-4] are not rivals to the CDF; they are
+the CDF seen from two special angles.
+
+# Why we are here: the problem the random variable solves {#sec-why}
+
+Keep one question in view for the whole article: **we have a way to weigh events on an
+arbitrary sample space — how do we turn that into numbers we can do arithmetic with, and
+is there a single object that describes the result?** Every step below answers a piece of
+that question. If a move feels arbitrary, return here.
+
+## What PROB-0 gave us, and the wall it ran into
+
+[PROB-0] built a **probability space** $(\Omega,\mathcal{F},P)$: a sample space $\Omega$
+of all possible outcomes, a collection $\mathcal{F}$ of **events** (subsets of $\Omega$
+we are allowed to assign probability to), and a function $P$ obeying **Kolmogorov's
+axioms** — non-negativity $P(E)\ge 0$, normalization $P(\Omega)=1$, and **countable
+additivity**: for disjoint events $E_1,E_2,\dots$,
+$$
+P\!\left(\bigcup_{i} E_i\right) = \sum_{i} P(E_i).
+$$ {#eq-additivity}
+That machinery is complete and rigorous, but it has a practical wall built into it: $P$
+acts on **subsets of $\Omega$**, and $\Omega$ need not contain a single number. Flip a
+coin twice and $\Omega=\{HH,HT,TH,TT\}$. Deal a poker hand and $\Omega$ is a set of
+$2{,}598{,}960$ five-card combinations. Throw a dart and $\Omega$ is a disk in the plane.
+You cannot ask "what is the *average* of $HH$ and $TT$," you cannot plot a histogram of
+poker hands, you cannot take the variance of a dartboard region. **Arithmetic, calculus,
+and every summary statistic require numbers, and $\Omega$ does not supply them.**
+
+Yet what we almost always *care about* is a number extracted from the outcome. Flipping
+twice, we care about the **number of heads**, not the literal string $HT$. Dealing cards,
+we care about the **hand's value** or the **number of aces**. Throwing the dart, we care
+about the **distance from the bullseye**. In each case there is a rule that reads the
+outcome and reports a number. **That rule is the random variable.** It is the bridge from
+the un-numbered world of $\Omega$ to the number line where arithmetic lives.
+
+## Why this is the move that lets calculus touch probability
+
+Once outcomes become numbers, the entire apparatus of analysis becomes available. We can
+*order* values (and so ask $P(X\le x)$), *add* them (and so define an average, [PROB-5]),
+*square deviations* (and so define spread, [PROB-6]), and — once values fill a continuum —
+*integrate* (and so define a density, [PROB-4]). None of that is expressible on a raw
+$\Omega$ of card-strings. The random variable is the single definitional act that
+converts a combinatorial object into an analytic one. Historically this is exactly why the
+concept had to be invented before probability could become the calculus-driven field it
+is today (see @sec-deeper); the early dice-counters of the 1600s were, in effect, working
+with random variables (a *count* of favorable arrangements) without the language for them.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is it called a random variable if it is really a deterministic function?"* Because
+the name is historical and the modern definition sharpened it. The function $X$ itself is
+fixed and deterministic — feed it an outcome $\omega$ and it returns the same number
+$X(\omega)$ every time. What is random is the *input*: nature draws $\omega$ from $\Omega$
+according to $P$, and that randomness flows *through* the fixed function to make the
+*output* $X(\omega)$ unpredictable. So "random variable" is shorthand for "a deterministic
+function of a random outcome." Saying this crisply — function, not variable; randomness in
+the input, not the rule — is the single fastest way to show an interviewer you understand
+what the object actually is.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture two parallel lines. The top line is $\Omega$: a scatter of outcomes — coin
+strings, card hands, dart positions — with no inherent order. The bottom line is the real
+number line $\mathbb{R}$. A random variable $X$ is a bundle of arrows, one from each
+outcome up top down to a number below: $HH\mapsto 2$, $HT\mapsto 1$, $TH\mapsto 1$,
+$TT\mapsto 0$ for "number of heads in two flips." Several outcomes may point to the same
+number (both $HT$ and $TH$ land on $1$), and that is the whole game: **the probability of
+a number is the combined probability of all the outcomes whose arrows land on it.** We are
+*pushing* the probability mass off the messy top line and *piling* it up on the clean
+number line below. @fig-pushforward draws exactly this.
+
+```{python}
+#| label: fig-pushforward
+#| fig-cap: "A random variable as a function $X:\\Omega\\to\\mathbb{R}$, illustrated on two coin flips. **Top row:** the four equally-likely outcomes of $\\Omega$, each with probability $1/4$. **Arrows:** the rule $X=$ (number of heads) sends each outcome to a number on the line below. **Bottom row:** the probability is *pushed forward* and pooled — the value $1$ collects both $HT$ and $TH$, so it inherits mass $1/4+1/4=1/2$. This pooling is the entire content of $P(X\\in B)=P(\\{\\omega:X(\\omega)\\in B\\})$."
+fig, ax = plt.subplots(figsize=(7.6, 4.2))
+ax.axis("off")
+
+outcomes = ["HH", "HT", "TH", "TT"]
+ox = [1.0, 2.2, 3.4, 4.6]
+oy = 3.0
+vals = {"HH": 2, "HT": 1, "TH": 1, "TT": 0}
+vx = {0: 1.4, 1: 2.8, 2: 4.2}
+vy = 0.6
+mass = {0: 0.25, 1: 0.50, 2: 0.25}
+
+# top: outcomes
+for o, x in zip(outcomes, ox):
+    ax.scatter([x], [oy], s=900, facecolor="white", edgecolor=POINT, linewidth=2, zorder=3)
+    ax.text(x, oy, o, ha="center", va="center", fontsize=12, color=POINT, zorder=4)
+    ax.text(x, oy + 0.45, "$1/4$", ha="center", fontsize=9, color=GREY)
+ax.text(0.1, oy, r"$\Omega$:", ha="right", va="center", fontsize=13, color=POINT)
+
+# bottom: number line
+ax.hlines(vy, 0.7, 5.0, color="black", lw=1.2, zorder=1)
+for v, x in vx.items():
+    ax.scatter([x], [vy], s=120, color=ACCENT, zorder=3)
+    ax.text(x, vy - 0.35, f"$X={v}$", ha="center", fontsize=11, color=ACCENT)
+    ax.text(x, vy + 0.25, f"mass {mass[v]:.2f}", ha="center", fontsize=9, color=ACCENT)
+ax.text(0.1, vy, r"$\mathbb{R}$:", ha="right", va="center", fontsize=13)
+
+# arrows
+for o, x in zip(outcomes, ox):
+    ax.annotate("", xy=(vx[vals[o]], vy + 0.12), xytext=(x, oy - 0.28),
+                arrowprops=dict(arrowstyle="->", color=GREY, lw=1.4))
+ax.set_xlim(-0.2, 5.2); ax.set_ylim(0, 3.8)
+plt.tight_layout()
+```
+
+Now turn the picture sideways and *accumulate*. Instead of asking "how much mass landed
+on the value $x$?", walk left to right along the number line dragging a scoop and ask "how
+much mass have I collected by the time I reach $x$?" That running total is the **CDF**
+$F(x)=P(X\le x)$. It starts at $0$ far to the left (no mass yet), only ever climbs (you
+can never collect *negative* mass), and finishes at $1$ far to the right (you have scooped
+up everything). Three of its four defining properties are already visible from this scoop
+picture alone — monotone, and the two end limits; the fourth (right-continuity) is a
+subtlety about *which side* of a jump the value sits on, and we prove all four carefully in
+@sec-cdf-props. The reason we elevate the CDF over the push-forward picture is that the
+scoop works *identically* whether the mass sits in lumps (discrete) or is smeared
+(continuous) — it is the one description that does not care which.
+
+# The formal development {#sec-formal}
+
+## The random variable, defined {#sec-def-rv}
+
+::: {#def-rv}
+**Definition (random variable).** Let $(\Omega,\mathcal{F},P)$ be a probability space. A
+**random variable** is a function
+$$
+X:\Omega\to\mathbb{R}
+$$ {#eq-rv-def}
+such that for every real number $x$, the set $\{\omega\in\Omega : X(\omega)\le x\}$ is an
+event — i.e. it belongs to $\mathcal{F}$, so that $P$ is allowed to act on it. We write
+this set compactly as $\{X\le x\}$, and more generally write $\{X\in B\}$ for
+$\{\omega:X(\omega)\in B\}$.
+:::
+
+Two things in @def-rv deserve unpacking, because the reader rusty on measure-theoretic
+language will otherwise trip on them.
+
+**What the symbols mean.** $\Omega$ is the sample space from [PROB-0]; $\omega$ is a single
+outcome in it; $X(\omega)$ is the number the rule $X$ reports for that outcome. The brace
+notation $\{X\le x\}$ is *not* a set of numbers — it is the set of *outcomes* $\omega$ for
+which the reported number is at most $x$. For the two-coin example, $\{X\le 1\}$ is the
+event $\{HT,TH,TT\}$ (the outcomes with at most one head), a genuine subset of $\Omega$.
+
+**Why the "is an event" clause is there — and why we will not belabor it.** The clause
+requiring $\{X\le x\}\in\mathcal{F}$ is called **measurability**. It exists because $P$ was
+only ever defined on the events in $\mathcal{F}$, so for $P(X\le x)$ to even *mean*
+something, the set $\{X\le x\}$ has to be one of those events. This is the one genuinely
+above-the-floor idea in the definition, and per this track's contract we **flag it rather
+than build it**: the full theory of which functions are measurable belongs to measure
+theory, above this track's Calc-1 floor. The honest practical fact — true for every random
+variable you will meet in this series — is that **any function you can actually write down
+is measurable.** Counts, sums, maxima, indicators, smooth transforms: all measurable. We
+note the requirement so the definition is correct, and then proceed as every practitioner
+does, never having to check it by hand.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the definition only require $\{X\le x\}$ to be an event, and not $\{X=x\}$ or
+$\{a<X<b\}$?"* Because **all the other events you care about can be built from the
+$\{X\le x\}$ family using the operations the event collection $\mathcal{F}$ is already
+closed under** (complement, countable union, countable intersection — guaranteed by
+[PROB-0]'s definition of $\mathcal{F}$ as a $\sigma$-algebra). For instance
+$\{X>x\}=\{X\le x\}^{c}$ is a complement; $\{a<X\le b\}=\{X\le b\}\setminus\{X\le a\}$ is a
+set difference; and $\{X=x\}=\bigcap_{n}\{x-\tfrac1n<X\le x\}$ is a countable intersection.
+So requiring measurability of the single family $\{X\le x\}$ for all $x$ automatically
+delivers it for everything else — which, not coincidentally, is the *same* family the CDF
+is built from. That is exactly why the CDF, and not some other function, is the natural
+universal descriptor.
+:::
+
+## The distribution: pushing probability onto the line {#sec-distribution}
+
+The random variable lets us *define* a probability directly on the number line, inherited
+from $P$.
+
+::: {#def-dist}
+**Definition (distribution / push-forward).** The **distribution** of a random variable
+$X$ is the assignment, to each (measurable) set $B\subseteq\mathbb{R}$, of the number
+$$
+P_X(B) \;=\; P(X\in B) \;=\; P\big(\{\omega : X(\omega)\in B\}\big).
+$$ {#eq-pushforward}
+This $P_X$ is itself a probability — it satisfies the Kolmogorov axioms on $\mathbb{R}$ —
+because it simply *re-reads* the original $P$ through $X$.
+:::
+
+It is worth confirming the parenthetical claim rather than asserting it, because it is the
+quiet justification for treating $X$ as living in its own self-contained probabilistic
+world (the world [PROB-3]–[PROB-23] all operate in, never mentioning $\Omega$ again).
+
+::: {#lem-pushforward}
+**Lemma ($P_X$ is a probability).** The push-forward $P_X$ defined by @eq-pushforward
+satisfies the three Kolmogorov axioms on $\mathbb{R}$.
+:::
+
+::: {.proof}
+We check each axiom by tracing it back to the corresponding axiom for $P$ on $\Omega$.
+
+*Non-negativity.* For any $B$, $P_X(B)=P(\{X\in B\})$ is a probability of an event under
+$P$, hence $\ge 0$ by [PROB-0]'s first axiom.
+
+*Normalization.* Take $B=\mathbb{R}$. Every outcome $\omega$ has $X(\omega)\in\mathbb{R}$
+(the function lands *somewhere* on the line), so $\{X\in\mathbb{R}\}=\Omega$. Therefore
+$P_X(\mathbb{R})=P(\Omega)=1$ by the second axiom.
+
+*Countable additivity.* Let $B_1,B_2,\dots$ be disjoint subsets of $\mathbb{R}$. Their
+**preimages** $A_i=\{\omega:X(\omega)\in B_i\}$ are disjoint events in $\Omega$: if some
+$\omega$ were in both $A_i$ and $A_j$, then $X(\omega)$ would lie in both $B_i$ and $B_j$,
+contradicting their disjointness. Moreover the preimage of a union is the union of
+preimages, $\{X\in\bigcup_i B_i\}=\bigcup_i A_i$. So
+$$
+P_X\!\left(\bigcup_i B_i\right)
+= P\!\left(\bigcup_i A_i\right)
+\overset{\text{@eq-additivity}}{=} \sum_i P(A_i)
+= \sum_i P_X(B_i),
+$$
+using countable additivity of $P$ in the middle step. All three axioms transfer.
+$\qquad\blacksquare$
+:::
+
+@lem-pushforward is the licence — usually used silently — to forget $\Omega$ once $X$ is in
+hand. From here on we may speak of "the probability that $X\in B$" as a self-contained fact
+about the number line, and every later article does exactly that. But $P_X$ as defined acts
+on *arbitrary* sets $B$, which is unwieldy. We now show that a single, simpler function — the
+CDF — already contains all of $P_X$.
+
+## The cumulative distribution function {#sec-cdf-def}
+
+::: {#def-cdf}
+**Definition (cumulative distribution function).** The **CDF** of a random variable $X$ is
+the function $F:\mathbb{R}\to[0,1]$ given by
+$$
+F(x) \;=\; P(X\le x) \;=\; P_X\big((-\infty,x]\big),
+$$ {#eq-cdf-def}
+the probability that $X$ takes a value at or below $x$.
+:::
+
+The CDF is just the distribution evaluated on the special "left-rays" $(-\infty,x]$. Its
+power is that **these rays generate everything**: any interval probability is a difference
+of two CDF values. We prove this workhorse identity first, because every later computation
+leans on it.
+
+::: {#thm-interval}
+**Theorem (interval probabilities from the CDF).** For any real $a<b$,
+$$
+P(a < X \le b) \;=\; F(b) - F(a).
+$$ {#eq-interval}
+:::
+
+::: {.proof}
+The left-ray $(-\infty,b]$ splits into two disjoint pieces at $a$:
+$$
+(-\infty,b] = (-\infty,a]\;\cup\;(a,b],
+$$
+and these two pieces share no point. Translating to events for $X$, the events $\{X\le a\}$
+and $\{a<X\le b\}$ are disjoint and their union is $\{X\le b\}$. By **finite additivity**
+(the two-event case of @eq-additivity, established in [PROB-0]),
+$$
+P(X\le b) = P(X\le a) + P(a<X\le b).
+$$
+Rearranging and substituting @eq-cdf-def, $P(a<X\le b)=F(b)-F(a)$. $\qquad\blacksquare$
+:::
+
+@eq-interval is why the *cumulative* form is the right choice: by tabulating only the
+running total $F$, we can recover the probability of *any* half-open interval by a single
+subtraction, and (since the rays generate all the sets via the operations of @sec-def-rv)
+the probability of any event at all. The CDF is not merely *a* descriptor; @thm-interval
+shows it is a *complete* one.
+
+## The three defining properties — derived from the axioms {#sec-cdf-props}
+
+We claimed in the Core that the CDF is monotone, right-continuous, and runs from $0$ to
+$1$. We now prove all three from the Kolmogorov axioms. The first is immediate; the limits
+and right-continuity require **continuity of probability**, a consequence of countable
+additivity that we derive inline rather than assume.
+
+::: {#thm-cdf-props}
+**Theorem (the CDF axioms).** Let $F$ be the CDF of a random variable $X$. Then
+
+**(i) Monotone non-decreasing:** if $a\le b$ then $F(a)\le F(b)$.
+
+**(ii) Limits:** $\displaystyle\lim_{x\to-\infty}F(x)=0$ and
+$\displaystyle\lim_{x\to+\infty}F(x)=1$.
+
+**(iii) Right-continuous:** $\displaystyle\lim_{x\downarrow x_0}F(x)=F(x_0)$ for every
+$x_0$, where $x\downarrow x_0$ means $x$ decreases to $x_0$ from the right.
+
+Conversely, any function satisfying (i)–(iii) is the CDF of some random variable. (The
+converse is the deep direction; we discuss it but do not prove it — see @sec-deeper.)
+:::
+
+Before the proof we need one tool. Countable additivity is stated for *disjoint unions*,
+but limits like $x\to\infty$ are about *nested* sequences of events that grow or shrink.
+The bridge is the following, which we derive so nothing is imported unproven.
+
+::: {#lem-continuity}
+**Lemma (continuity of probability).** Let $A_1\subseteq A_2\subseteq A_3\subseteq\cdots$
+be an **increasing** sequence of events with union $A=\bigcup_n A_n$. Then
+$P(A_n)\to P(A)$ as $n\to\infty$. Dually, if $B_1\supseteq B_2\supseteq\cdots$ is a
+**decreasing** sequence with intersection $B=\bigcap_n B_n$, then $P(B_n)\to P(B)$.
+:::
+
+::: {.proof}
+*Increasing case.* Turn the nested sequence into a disjoint one. Define the "new mass added
+at step $n$" as the shells
+$$
+D_1 = A_1,\qquad D_n = A_n \setminus A_{n-1}\ \ (n\ge 2).
+$$
+The $D_n$ are pairwise disjoint (each $D_n$ is the part of $A_n$ not already in $A_{n-1}$,
+and since the $A$'s are nested, no point appears in two shells), and the first $n$ shells
+rebuild $A_n$ exactly: $\bigcup_{k=1}^{n}D_k = A_n$. Their full union is
+$\bigcup_{k=1}^{\infty}D_k=A$. Apply countable additivity @eq-additivity to the disjoint
+$D_k$, and recognize the partial sum as $P(A_n)$ via *finite* additivity:
+$$
+P(A) = \sum_{k=1}^{\infty} P(D_k)
+     = \lim_{n\to\infty}\sum_{k=1}^{n} P(D_k)
+     = \lim_{n\to\infty} P\!\left(\bigcup_{k=1}^{n}D_k\right)
+     = \lim_{n\to\infty} P(A_n).
+$$
+The middle equality is just the definition of the value of an infinite series as the limit
+of its partial sums (Calc-1). That is the increasing claim.
+
+*Decreasing case.* Take complements to flip a decreasing sequence into an increasing one.
+If $B_1\supseteq B_2\supseteq\cdots$, then the complements $B_n^{c}$ are increasing with
+union $B^{c}=\big(\bigcap_n B_n\big)^{c}$ (a complement of an intersection is the union of
+complements — a set identity from [PROB-0]). Apply the increasing case to $B_n^c$, then use
+the complement rule $P(E^c)=1-P(E)$ (proved in [PROB-0] from the axioms):
+$$
+1-P(B_n) = P(B_n^c)\ \longrightarrow\ P(B^c) = 1 - P(B),
+$$
+so $P(B_n)\to P(B)$. $\qquad\blacksquare$
+:::
+
+Now the main theorem.
+
+::: {.proof}
+**(i) Monotone.** Suppose $a\le b$. Then $\{X\le a\}\subseteq\{X\le b\}$: any outcome whose
+value is at most $a$ certainly has value at most $b$. Probability is monotone under set
+inclusion — this is itself a one-line consequence of the axioms, since
+$\{X\le b\}=\{X\le a\}\cup\{a<X\le b\}$ is a disjoint union, so by finite additivity
+$F(b)=F(a)+P(a<X\le b)\ge F(a)$ because the added term is a probability and hence $\ge 0$.
+Thus $F(a)\le F(b)$.
+
+**(ii) Limits.** We use @lem-continuity. For the right limit, let $x_n=n\to+\infty$ along
+the integers. The events $\{X\le n\}$ are *increasing* (larger $n$, larger ray) and their
+union is
+$$
+\bigcup_{n=1}^{\infty}\{X\le n\} = \{X<\infty\} = \Omega,
+$$
+because every outcome has a finite real value $X(\omega)$, so it is $\le n$ for all large
+enough $n$. By the increasing case of @lem-continuity,
+$F(n)=P(X\le n)\to P(\Omega)=1$. Since $F$ is monotone (part (i)), the limit along the
+integers forces the full limit: $\lim_{x\to+\infty}F(x)=1$.
+
+For the left limit, let $x_n=-n\to-\infty$. The events $\{X\le -n\}$ are *decreasing* and
+their intersection is
+$$
+\bigcap_{n=1}^{\infty}\{X\le -n\} = \{X=-\infty\} = \varnothing,
+$$
+because no outcome has value below *every* finite level. By the decreasing case of
+@lem-continuity, $F(-n)=P(X\le -n)\to P(\varnothing)=0$ (and $P(\varnothing)=0$ was proved
+in [PROB-0]). Monotonicity again upgrades this to $\lim_{x\to-\infty}F(x)=0$.
+
+**(iii) Right-continuous.** Fix $x_0$ and let $x_n=x_0+\tfrac1n\downarrow x_0$. The events
+$\{X\le x_0+\tfrac1n\}$ are *decreasing* as $n$ grows (the ray shrinks toward $x_0$). Their
+intersection is exactly $\{X\le x_0\}$:
+$$
+\bigcap_{n=1}^{\infty}\Big\{X\le x_0+\tfrac1n\Big\} = \{X\le x_0\}.
+$$
+To see this, an outcome is in the intersection iff $X(\omega)\le x_0+\tfrac1n$ for *every*
+$n$; letting $n\to\infty$ this says $X(\omega)\le x_0$ (a value below every $x_0+\tfrac1n$
+is at most their limit $x_0$), and conversely any $\omega$ with $X(\omega)\le x_0$ satisfies
+every inequality. By the decreasing case of @lem-continuity,
+$F(x_0+\tfrac1n)=P(X\le x_0+\tfrac1n)\to P(X\le x_0)=F(x_0)$. Monotonicity makes the limit
+along this particular sequence the full right limit, giving $\lim_{x\downarrow x_0}F(x)=F(x_0)$.
+$\qquad\blacksquare$
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why is a CDF right-continuous and not left-continuous — isn't that an arbitrary
+convention?"* It is not arbitrary; it is forced by the choice $F(x)=P(X\le x)$ with a
+**closed** $\le$. The inequality $\le$ *includes* the point $x$, so the mass sitting exactly
+at $x_0$ (if any) is already counted in $F(x_0)$ — which is precisely what the proof of
+part (iii) shows, by shrinking rays *from the right* down onto the closed ray $\{X\le x_0\}$.
+Approaching from the *left*, by contrast, you have not yet swept up the mass at $x_0$, so the
+left limit is $F(x_0^-)=P(X<x_0)$, which is *smaller* by exactly $P(X=x_0)$. So the size of a
+jump in $F$ at $x_0$ equals $P(X=x_0)$ — a fact we make central in @sec-classification, and
+the engine behind the mass function of [PROB-3]. Had we defined $F$ with a strict $<$, we
+would have gotten a left-continuous function instead; the standard $\le$ convention is what
+makes "the jump is the point mass" come out clean.
+:::
+
+## What the CDF determines — point mass and intervals {#sec-determines}
+
+@thm-interval already gave half-open intervals. The remaining piece is the probability of a
+single point, which we now read straight off the jumps of $F$ — closing the loop the
+interview box above opened.
+
+::: {#thm-pointmass}
+**Theorem (point mass = jump).** For any $x_0$,
+$$
+P(X = x_0) \;=\; F(x_0) - F(x_0^-),
+\qquad\text{where } F(x_0^-)=\lim_{x\uparrow x_0}F(x)=P(X<x_0).
+$$ {#eq-pointmass}
+:::
+
+::: {.proof}
+First identify the left limit. Let $x_n=x_0-\tfrac1n\uparrow x_0$. The events
+$\{X\le x_0-\tfrac1n\}$ are *increasing* with union $\{X<x_0\}$ (an outcome has value
+strictly below $x_0$ iff it is $\le x_0-\tfrac1n$ for some $n$). By the increasing case of
+@lem-continuity, $F(x_0^-)=\lim_n F(x_0-\tfrac1n)=P(X<x_0)$.
+
+Now split the closed ray at the point: $\{X\le x_0\}=\{X<x_0\}\cup\{X=x_0\}$, a disjoint
+union. Finite additivity gives $F(x_0)=P(X<x_0)+P(X=x_0)=F(x_0^-)+P(X=x_0)$, and
+rearranging yields @eq-pointmass. $\qquad\blacksquare$
+:::
+
+So **the CDF determines the probability of every single value** (its jump heights) and of
+**every interval** (its differences). Combined with the generating argument of @sec-def-rv,
+this is the precise sense in which the CDF is a *complete* fingerprint: two random variables
+with the same CDF assign the same probability to every event, so they are
+probabilistically identical (we say they are **equal in distribution**, written
+$X\overset{d}{=}Y$ — a phrase that recurs throughout the track, e.g. in [PROB-21]).
+
+# The CDF's shape diagnoses the variable {#sec-classification}
+
+This is the payoff that makes PROB-2 the hinge of the track. The *shape* of $F$ sorts every
+random variable into exactly one of three kinds, and that sorting is what decides which
+article you need next.
+
+- **Discrete** ([PROB-3]). All of $F$'s rise happens in **jumps**: $F$ is a *staircase*,
+  flat between values and stepping up at the supported points. By @eq-pointmass each jump
+  has height $P(X=x_0)>0$, so probability sits *on points*. The natural descriptor is the
+  **probability mass function** $p(x)=P(X=x)$ — the jump heights — and probabilities are
+  *sums* of mass.
+- **Continuous** ([PROB-4]). $F$ rises **smoothly** with **no jumps**: by @eq-pointmass
+  every $P(X=x_0)=0$, so no single value carries probability. The natural descriptor is the
+  **probability density function** $f(x)=F'(x)$ — the *slope* of the CDF — and probabilities
+  are *integrals*, $P(a<X\le b)=\int_a^b f(x)\,dx$ by @eq-interval and the Calc-1
+  Fundamental Theorem of Calculus. (This is the one place [PROB-4] leans directly on the
+  floor's integration.)
+- **Mixed.** $F$ has **both** jumps and smooth rises: probability sits partly on isolated
+  points and partly spread over a continuum. Neither a pure mass nor a pure density
+  suffices; you decompose $F$ into a jump part and a smooth part and handle each with its
+  own tool. This is not a pathology — it is what a great deal of real data looks like
+  (@sec-rainfall).
+
+@fig-three-cdfs shows the three shapes side by side. Reading this picture is, in practice,
+the first thing a working statistician does with a new variable.
+
+```{python}
+#| label: fig-three-cdfs
+#| fig-cap: "The CDF's shape is the diagnostic. **Left (discrete):** a pure staircase — all rise is in jumps, each jump height is a point mass $P(X=x_0)$, so probability sits on points and you use a *mass function* ([PROB-3]). **Middle (continuous):** a smooth, jumpless climb — every point has probability $0$, so probability is spread and you use a *density*, the slope of this curve ([PROB-4]). **Right (mixed):** a smooth rise interrupted by a jump (here a spike of probability exactly at $x=0$) — neither pure tool fits, and you split $F$ into its jump and smooth parts."
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 3.4))
+
+# --- discrete: staircase ---
+ax = axes[0]
+xv = np.array([0, 1, 2, 3, 4])
+pv = np.array([0.15, 0.25, 0.30, 0.20, 0.10])
+cv = np.cumsum(pv)
+ax.hlines(0, -1, xv[0], color=LINE, lw=2)
+for i, x in enumerate(xv):
+    right = xv[i+1] if i+1 < len(xv) else 5
+    ax.hlines(cv[i], x, right, color=LINE, lw=2)
+    ax.scatter([x], [cv[i]], color=LINE, s=30, zorder=4)
+    prev = cv[i-1] if i > 0 else 0.0
+    ax.scatter([x], [prev], facecolors="white", edgecolors=LINE, s=30, zorder=4, lw=1.4)
+ax.set_title("discrete: staircase"); ax.set_ylim(-0.03, 1.05)
+ax.set_xlabel("$x$"); ax.set_ylabel("$F(x)$")
+
+# --- continuous: smooth logistic-shaped CDF ---
+ax = axes[1]
+xs = np.linspace(-4, 4, 400)
+Fc = 1 / (1 + np.exp(-1.5 * xs))
+ax.plot(xs, Fc, color=LINE, lw=2)
+ax.set_title("continuous: smooth"); ax.set_ylim(-0.03, 1.05)
+ax.set_xlabel("$x$"); ax.set_ylabel("$F(x)$")
+
+# --- mixed: smooth with a jump at 0 ---
+ax = axes[2]
+xs1 = np.linspace(-4, 0, 200)
+xs2 = np.linspace(0, 4, 200)
+jump = 0.35
+F1 = 0.30 / (1 + np.exp(-1.2 * xs1))           # smooth part below 0
+base = 0.30 / (1 + np.exp(0))                  # value approaching 0 from left
+F2 = base + jump + (0.70 - jump - base) * (1 - np.exp(-0.9 * xs2))
+ax.plot(xs1, F1, color=LINE, lw=2)
+ax.plot(xs2, F2 / F2[-1], color=LINE, lw=2)    # normalize tail to reach ~1
+ax.scatter([0], [base], facecolors="white", edgecolors=LINE, s=34, zorder=4, lw=1.4)
+ax.scatter([0], [(base + jump)], color=LINE, s=34, zorder=4)
+ax.annotate("", xy=(0, base + jump), xytext=(0, base),
+            arrowprops=dict(arrowstyle="->", color=GREY, ls="--", lw=1.3))
+ax.text(0.15, base + jump/2, "jump\n$=P(X{=}0)$", fontsize=8, color=GREY, va="center")
+ax.set_title("mixed: smooth + jump"); ax.set_ylim(-0.03, 1.05)
+ax.set_xlabel("$x$"); ax.set_ylabel("$F(x)$")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Given an unfamiliar random variable, how do you decide whether to reach for a pmf or a
+pdf?"* Look at — or estimate — its CDF and read the shape, exactly as in @fig-three-cdfs.
+**Staircase $\Rightarrow$ discrete $\Rightarrow$ mass function** (sum). **Smooth and
+jumpless $\Rightarrow$ continuous $\Rightarrow$ density** (integrate). **Both $\Rightarrow$
+mixture** (split it). The single underlying question is the one this whole article is built
+to answer: *does probability sit at isolated points, spread over a continuum, or both?* —
+and @eq-pointmass turns that into a concrete test, since the point mass at $x_0$ is just the
+jump height $F(x_0)-F(x_0^-)$, which is positive iff there is a jump. An interviewer asking
+this is checking that you see pmf and pdf as two readings of one object (the CDF), not two
+unrelated formulas.
+:::
+
+# Worked examples {#sec-examples}
+
+We carry three honest examples end to end — one of each CDF shape — with the third sitting
+at the **edge of applicability**, where the clean discrete/continuous split breaks and a
+mixture is the truth.
+
+## Example 1 — number of heads in two flips (discrete) {#sec-ex-coins}
+
+Return to the push-forward of @fig-pushforward. The sample space is
+$\Omega=\{HH,HT,TH,TT\}$ with each outcome equally likely (probability $1/4$, from
+[PROB-0]'s equally-likely model for a fair coin). Define the random variable
+$$
+X(\omega) = \#\{\text{heads in } \omega\},
+\qquad
+X(HH)=2,\ X(HT)=X(TH)=1,\ X(TT)=0.
+$$
+The distribution is built by the push-forward @eq-pushforward — *pool the outcome
+probabilities that map to each value*:
+$$
+P(X=0)=P(\{TT\})=\tfrac14,\quad
+P(X=1)=P(\{HT,TH\})=\tfrac14+\tfrac14=\tfrac12,\quad
+P(X=2)=P(\{HH\})=\tfrac14.
+$$
+These are non-negative and sum to $1$, confirming via @lem-pushforward that we have a bona
+fide distribution on $\{0,1,2\}$. Now assemble the CDF by accumulating (the running scoop):
+$$
+F(x)=\begin{cases}
+0 & x<0,\\
+\tfrac14 & 0\le x<1,\\
+\tfrac34 & 1\le x<2,\\
+1 & x\ge 2.
+\end{cases}
+$$
+Each flat segment is a stretch with no new mass; each jump occurs at a supported value and
+has height equal to that value's mass, exactly as @eq-pointmass demands
+($F(1)-F(1^-)=\tfrac34-\tfrac14=\tfrac12=P(X=1)$). And @thm-interval is a sanity check:
+$P(0<X\le 2)=F(2)-F(0)=1-\tfrac14=\tfrac34$, which equals $P(X=1)+P(X=2)=\tfrac12+\tfrac14$.
+@fig-coins draws it.
+
+```{python}
+#| label: fig-coins
+#| fig-cap: "Number of heads in two fair flips. **Left:** the push-forward distribution as point masses $P(X{=}0,1,2)=\\tfrac14,\\tfrac12,\\tfrac14$; the value $1$ is heaviest because two outcomes ($HT,TH$) feed it. **Right:** the CDF staircase. Each jump height equals the corresponding point mass (@eq-pointmass); filled dots mark the value $F$ actually takes (right-continuous), open dots the left limit. This pure staircase is the visual signature of a discrete variable."
+xv = np.array([0, 1, 2])
+pv = np.array([0.25, 0.50, 0.25])
+cv = np.cumsum(pv)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+
+axL.vlines(xv, 0, pv, color=POINT, lw=3)
+axL.scatter(xv, pv, color=POINT, s=55, zorder=3)
+for x, p in zip(xv, pv):
+    axL.text(x, p + 0.02, f"{p:.2f}", ha="center", fontsize=10, color=POINT)
+axL.set_ylim(0, 0.6); axL.set_xticks(xv)
+axL.set_xlabel("heads $x$"); axL.set_ylabel("$P(X=x)$")
+axL.set_title("push-forward distribution")
+
+axR.hlines(0, -1, xv[0], color=LINE, lw=2)
+for i, x in enumerate(xv):
+    right = xv[i+1] if i+1 < len(xv) else 3
+    axR.hlines(cv[i], x, right, color=LINE, lw=2)
+    axR.scatter([x], [cv[i]], color=LINE, s=45, zorder=4)
+    prev = cv[i-1] if i > 0 else 0.0
+    axR.scatter([x], [prev], facecolors="white", edgecolors=LINE, s=45, zorder=4, lw=1.5)
+axR.set_ylim(-0.03, 1.05); axR.set_xticks(xv)
+axR.set_xlabel("heads $x$"); axR.set_ylabel("$F(x)$")
+axR.set_title("CDF (staircase)")
+plt.tight_layout()
+```
+
+## Example 2 — a real income distribution (continuous) {#sec-ex-income}
+
+A continuous variable's CDF has no jumps; we see one on real-style data. Household income
+is a textbook continuous, right-skewed quantity (most households cluster low, a long thin
+tail of high earners). We simulate a realistic income sample from a lognormal shape — the
+standard honest model for incomes — and plot its **empirical CDF** $\hat F_n$, the data's
+own estimate of $F$ (the object [PROB-22] studies in full). The point here is qualitative
+and exactly on-message: the empirical CDF climbs *smoothly* (its tiny steps are the finite
+sample, not true jumps), with no value carrying positive probability — the signature of a
+continuous variable, in contrast to the staircase of @fig-coins.
+
+```{python}
+#| label: fig-income
+#| fig-cap: "A continuous variable's CDF, on realistic household incomes ($n=4{,}000$, lognormal shape). **Left:** a histogram of the sample — a right-skewed continuum with a long high-income tail and no value singled out. **Right:** the empirical CDF $\\hat F_n(x)=\\tfrac1n\\#\\{X_i\\le x\\}$, climbing smoothly from $0$ to $1$ with no genuine jumps (each tiny step is one of the $n$ sample points, vanishing as $n\\to\\infty$). Probability is *spread*, so $P(\\text{income}=\\$50{,}000\\text{ exactly})=0$ and the right tool is a density ([PROB-4]), not a mass function. The dashed line marks the median, the income $x$ where $\\hat F_n(x)=0.5$ — read directly off the CDF."
+rng = np.random.default_rng(7)
+income = rng.lognormal(mean=np.log(55_000), sigma=0.6, size=4000)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+
+axL.hist(income / 1000, bins=45, color=POINT, alpha=0.85, edgecolor="white", linewidth=0.4)
+axL.set_xlabel("household income (\\$000s)"); axL.set_ylabel("count")
+axL.set_title("sample (right-skewed continuum)")
+axL.set_xlim(0, 250)
+
+xs = np.sort(income)
+ecdf = np.arange(1, len(xs) + 1) / len(xs)
+axR.plot(xs / 1000, ecdf, color=LINE, lw=1.8)
+median = np.median(income)
+axR.axhline(0.5, color=GREY, ls="--", lw=1.1)
+axR.axvline(median / 1000, color=GREY, ls="--", lw=1.1)
+axR.text(median/1000 + 4, 0.05, f"median\n\\${median/1000:.0f}k", fontsize=8.5, color=GREY)
+axR.set_xlim(0, 250); axR.set_ylim(-0.03, 1.05)
+axR.set_xlabel("household income (\\$000s)"); axR.set_ylabel("$\\hat F_n(x)$")
+axR.set_title("empirical CDF (smooth climb)")
+plt.tight_layout()
+print(f"sample median income = ${median:,.0f}")
+print(f"P(income <= $40k) ~ {(income <= 40_000).mean():.3f}   (read off the CDF)")
+```
+
+Notice a practical bonus the CDF hands us for free: the **median** is just the income level
+$x$ where $\hat F_n(x)=\tfrac12$, read straight off the curve, and any percentile is the
+same horizontal-line-to-curve lookup. Quantiles *are* the CDF inverted — a fact [PROB-23]
+builds on for order statistics and the probability integral transform.
+
+## Example 3 — rainfall, the edge case where neither tool fits (mixed) {#sec-rainfall}
+
+Here is the honest boundary the Core promised. **Daily rainfall** at a given location is a
+real, common quantity that is *neither* purely discrete *nor* purely continuous. On a great
+many days it does not rain at all, so the value is **exactly $0$ with positive
+probability** — a genuine point mass, a *jump* in the CDF. But on days it does rain, the
+amount is a continuous positive quantity spread over a range — a *smooth* rise in the CDF.
+The variable is a **mixture**, and it is precisely the case where forcing a single tool is
+the mistake @sec-classification warns about.
+
+Let $X$ be the rainfall (in mm) on a random day, and suppose it rains on a fraction
+$1-\pi$ of days, where $\pi=P(X=0)$ is the probability of a dry day. We construct $X$
+honestly as: a dry day ($X=0$) with probability $\pi$, otherwise a continuous positive
+amount. The CDF then has a jump of height $\pi$ at $0$ and rises smoothly above it.
+
+```{python}
+#| label: fig-rainfall
+#| fig-cap: "Daily rainfall: a genuine mixture, the edge of applicability. **Left:** the sample — a tall spike of *dry days* at exactly $0$mm (a point mass) plus a continuous spread of positive amounts on rainy days. **Right:** the resulting CDF. It *jumps* by $\\pi=P(X{=}0)$ at the origin (the dry-day mass, by @eq-pointmass) and then rises *smoothly* (the rainy-day continuum). Neither a pure mass function ([PROB-3], which would ignore the continuum) nor a pure density ([PROB-4], which would ignore the spike at $0$) describes this variable; you split $F=\\pi\\,\\mathbf{1}\\{x\\ge0\\}+(1-\\pi)F_{\\text{rain}}$ into its jump and smooth parts and handle each separately."
+rng = np.random.default_rng(11)
+n = 3000
+pi_dry = 0.45                               # P(X = 0): probability of a dry day
+is_rain = rng.random(n) > pi_dry
+amounts = np.where(is_rain, rng.gamma(shape=2.0, scale=4.0, size=n), 0.0)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.6))
+
+# left: histogram with the spike at 0 drawn explicitly as a mass
+rainy_amts = amounts[amounts > 0]
+axL.hist(rainy_amts, bins=40, color=POINT, alpha=0.85, edgecolor="white",
+         linewidth=0.4, label="rainy days (continuous)")
+axL.vlines(0, 0, (amounts == 0).sum(), color=LINE, lw=5, label="dry days $X=0$ (mass)")
+axL.set_xlabel("rainfall (mm)"); axL.set_ylabel("count")
+axL.set_title("dry-day spike + rainy-day continuum")
+axL.legend(fontsize=8.5)
+
+# right: empirical CDF showing the jump at 0 then smooth rise
+xs = np.sort(amounts)
+ecdf = np.arange(1, n + 1) / n
+axR.plot(xs, ecdf, color=LINE, lw=1.8)
+axR.scatter([0], [0], facecolors="white", edgecolors=LINE, s=34, zorder=4, lw=1.4)
+axR.scatter([0], [(amounts == 0).mean()], color=LINE, s=34, zorder=4)
+axR.annotate("", xy=(0, (amounts == 0).mean()), xytext=(0, 0),
+             arrowprops=dict(arrowstyle="->", color=GREY, ls="--", lw=1.3))
+axR.text(1.0, (amounts == 0).mean()/2, f"jump $\\pi\\approx{(amounts==0).mean():.2f}$\n$=P(X{{=}}0)$",
+         fontsize=8.5, color=GREY, va="center")
+axR.set_ylim(-0.03, 1.05)
+axR.set_xlabel("rainfall (mm)"); axR.set_ylabel("$\\hat F_n(x)$")
+axR.set_title("mixed CDF: jump at 0, then smooth")
+plt.tight_layout()
+print(f"P(dry day, X=0) = {(amounts == 0).mean():.3f}   (the jump height)")
+print(f"P(X <= 5 mm)    = {(amounts <= 5).mean():.3f}   (includes the dry-day mass)")
+```
+
+The CDF handles this without strain — it jumps by $\pi$ at $0$ and rises smoothly after —
+which is the whole reason we elevated the CDF to *the* universal descriptor: it is the one
+object that does not break at the boundary between discrete and continuous. A pmf alone
+would record the dry-day spike but be blind to the rainy continuum; a density alone would
+model the rainy amounts but assign probability $0$ to the (very common!) event of a dry
+day, a serious error. The correct move is to **decompose**: write
+$$
+F(x) = \pi\,\mathbf{1}\{x\ge 0\} + (1-\pi)\,F_{\text{rain}}(x),
+$$
+where $\mathbf{1}\{x\ge0\}$ is the indicator (the CDF of the constant $0$) and
+$F_{\text{rain}}$ is the continuous CDF of the rainy-day amount, and treat the jump with
+[PROB-3]'s tools and the smooth part with [PROB-4]'s. Mixtures like this — a spike at zero
+plus a continuous tail — are everywhere in applied work: insurance claim sizes (many zero
+claims), time-to-event data with a "cured" fraction, and spending data with many
+non-spenders, to name three.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+## Confusing the random variable with its value, or with $\Omega$ {#sec-confuse}
+
+The most common conceptual error is collapsing the three distinct objects: the **outcome**
+$\omega\in\Omega$, the **random variable** $X$ (the function), and the **value**
+$X(\omega)\in\mathbb{R}$ (a number). $X$ is not a number — it is the *rule*; $x$ is a
+number. The notation enforces the distinction: capital $X$ for the variable, lowercase $x$
+for a particular value, so that $\{X\le x\}$ reads "the (random) variable comes out at or
+below the (fixed) level $x$." Sloppiness here makes statements like $P(X\le x)$ look
+circular when they are not.
+
+## Treating $\le$ and $<$ as interchangeable {#sec-strict}
+
+For a **continuous** variable, $P(X=x_0)=0$ (no jump, by @eq-pointmass), so
+$P(X\le x_0)=P(X<x_0)$ and the distinction is harmless — a habit that then transfers
+*wrongly* to the discrete and mixed cases, where the endpoint carries real mass. For the
+two-coin variable, $P(X\le 1)=\tfrac34$ but $P(X<1)=\tfrac14$; they differ by the jump
+$P(X=1)=\tfrac12$. The discriminator is always @eq-pointmass: $\le$ and $<$ differ by
+exactly the point mass at the boundary, which is the CDF's jump there — zero for a
+continuous variable, generally nonzero otherwise. **Decide whether the boundary value is in
+your event *before* you compute, and look at whether $F$ jumps there.**
+
+## When the CDF is the wrong altitude {#sec-wrong}
+
+::: {.callout-warning title="Pitfall"}
+The CDF is the universal *descriptor*, but it is not always the *convenient* one, and
+treating it as the only object you need is its own failure mode. For a discrete variable
+the **mass function** $p(x)=P(X=x)$ ([PROB-3]) is what you actually compute with — summing
+masses is easier than differencing a staircase. For a continuous variable the **density**
+$f(x)=F'(x)$ ([PROB-4]) is what enters every integral, expectation, and likelihood; the CDF
+of many important continuous variables (the normal, [PROB-13]) has *no elementary closed
+form* at all, so you work with the density and treat $F$ as a tabulated/numerical object.
+And for *multivariate* problems — two or more variables at once — the one-dimensional CDF
+$F(x)=P(X\le x)$ is simply the wrong object; you need the **joint** distribution of
+[PROB-7]. The honest statement: the CDF *exists and describes completely* in every case,
+but the *working* object is whichever of mass / density / joint matches the variable's
+shape and dimension. Reaching for the CDF when a density is what the integral needs is a
+real, common inefficiency.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"You said the CDF determines the variable completely — so why do we ever bother with pmfs,
+pdfs, or MGFs?"* Because *complete description* and *convenient computation* are different
+goals. The CDF is the **canonical** object — it always exists, it is unique, and equality
+in distribution is defined through it — which is why it is the right thing to *define* a
+random variable by. But to *calculate* a mean ([PROB-5]), fit a model, or prove a limit
+theorem, you reach for the representation suited to the task: the mass function or density
+for summing/integrating, the moment generating function ([PROB-20]) for sums of independent
+variables, the quantile function (the inverted CDF, [PROB-23]) for simulation and
+percentiles. They are all *equivalent* — each determines the others — but they are not
+equally *ergonomic*. Knowing which representation to grab for which job is exactly the
+practitioner judgment this track is building.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-0 *What Is Probability?*]** (sample spaces, events, the axioms) and
+**[PROB-1 *Conditional Probability & Bayes' Rule*]** (the axiom-level facts we reused). This
+article performed the pivotal move of the whole series: it defined a **random variable** as
+a function $X:\Omega\to\mathbb{R}$ (@def-rv), pushed the probability forward onto the number
+line (@lem-pushforward), and proved that **one object — the CDF $F(x)=P(X\le x)$ —
+completely describes any random variable**, deriving its three axioms (monotone,
+right-continuous, limits $0$ and $1$) from Kolmogorov via continuity of probability
+(@thm-cdf-props, @lem-continuity) and showing it determines every interval (@thm-interval)
+and point mass (@thm-pointmass). The CDF's *shape* sorts variables into discrete /
+continuous / mixed (@sec-classification) — the seam that opens the next two articles:
+
+- **[PROB-3 *Discrete Random Variables: The pmf*]** — the left fork. When $F$ is a
+  staircase, the jumps are a **probability mass function** $p(x)=P(X=x)$, and probabilities
+  are sums of mass. The two-coin variable of @sec-ex-coins is its first example.
+- **[PROB-4 *Continuous Random Variables: The pdf*]** — the right fork. When $F$ is smooth,
+  its slope is a **density** $f(x)=F'(x)$, and probabilities are integrals (the income of
+  @sec-ex-income lives here). The mixture of @sec-rainfall needs *both* forks at once.
+- **[PROB-22 *The Empirical CDF*]** — the same object $F$, but *estimated from data*: the
+  $\hat F_n$ we plotted in @sec-ex-income and @sec-rainfall is the data's own stand-in for
+  the true CDF, and the foundation of resampling.
+
+Downstream, expectation ([PROB-5]) and variance ([PROB-6]) are the first *summaries* of a
+random variable; joint distributions ([PROB-7]) extend the CDF to several variables at once;
+and modes of convergence ([PROB-21]) are defined through CDFs ("convergence in distribution"
+is literally convergence of $F_n$).
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The historical thread.** The informal idea of a random variable — a number read off a
+  chance experiment — is as old as the dice problems of Cardano, Pascal, and Fermat in the
+  16th–17th centuries, but it had no rigorous definition for centuries. The modern object,
+  *a measurable function on a probability space*, arrived only with **Kolmogorov's 1933
+  *Grundbegriffe der Wahrscheinlichkeitsrechnung***, the same source as [PROB-0]'s axioms.
+  Kolmogorov's insight — that probability is a *measure* and a random variable is a
+  *measurable function*, so that all of real analysis becomes available — is precisely the
+  "lets calculus touch chance" move of @sec-why, made watertight. The CDF as the canonical
+  descriptor predates this, going back to the 19th-century *distribution function*.
+- **The converse of @thm-cdf-props, deferred honestly.** We proved that every CDF is
+  monotone, right-continuous, and runs from $0$ to $1$; we *stated but did not prove* the
+  converse — that any such function is the CDF of some random variable. The construction
+  (define $X$ on $\Omega=(0,1)$ with uniform $P$ via the *quantile function*
+  $X(\omega)=\inf\{x:F(x)\ge\omega\}$, then verify $P(X\le x)=F(x)$) is genuinely
+  above this track's floor in its handling of the inverse and is the heart of the
+  **probability integral transform** — so we hand it to **[PROB-23]**, which owns that
+  result and uses it to simulate any distribution and to prove null p-values are uniform.
+- **The measure-theoretic unification we flagged.** The pmf-sum of [PROB-3] and the
+  pdf-integral of [PROB-4] are two instances of one operation: integrating against a measure
+  (a *counting* measure in the discrete case, *Lebesgue* measure in the continuous one). The
+  CDF is the bookkeeping device that lets us state probabilities without naming the measure.
+  That unification, and the precise sense in which a "density" is a *Radon–Nikodym
+  derivative* $dP_X/d\mu$, sits above the floor; we flag it so the $\sum$/$\int$ duality
+  reads as one idea in disguise, not a coincidence.
+- **Open threads.** *What single number says where $X$ typically lands?* — the expectation,
+  [PROB-5]. *How spread out is it?* — the variance, [PROB-6]. *How do two random variables
+  behave together?* — joint distributions and the joint CDF, [PROB-7]. *In what sense can a
+  sequence of random variables converge?* — through their CDFs, [PROB-21].

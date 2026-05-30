@@ -1,0 +1,1093 @@
+---
+title: "Continuous Random Variables: The Probability Density Function"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the density curve / theoretical value
+ACCENT = "#0a7d4d"     # highlights / areas
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded area under a density
+```
+
+> **Where this sits in the track.** This is the continuous half of the fork that opens at
+> [PROB-2 *Random Variables: Turning Outcomes into Numbers*], which built the one object
+> that describes *any* random number — the **cumulative distribution function**
+> $F(x)=P(X\le x)$ — and previewed that distributions split into the **discrete** (jumps in
+> $F$) and the **continuous** (a smoothly rising $F$). Its sibling [PROB-3 *Discrete Random
+> Variables: The Probability Mass Function*] handled the jumps with a probability *mass*
+> function. This article handles the smooth case: where every single value has probability
+> zero, yet probability is spread across a continuum like a *density* of mass along a wire.
+> We build the **probability density function** $f(x)=F'(x)$ from the Calculus-I
+> fundamental theorem, show why a density is not a probability, and derive the
+> change-of-variables rule for a monotone transform. It assumes [PROB-2] and floor-level
+> integration; it sets up [PROB-5 *Expectation*] (the integral $\int x f(x)\,dx$), the
+> continuous distribution catalog [PROB-13 *Normal*] and [PROB-14 *Gamma, Exponential &
+> Beta*], and the vector change-of-variables of [PROB-18].
+
+## Abstract {.unnumbered}
+
+For a random variable that can land *anywhere* in an interval — a waiting time, a voltage,
+a measurement error — the question "what is the probability it equals exactly $3.0$?" has a
+startling answer: **zero.** Not "very small," exactly zero, and for every single value at
+once. This article explains why that is forced rather than paradoxical, and how we recover
+the ability to compute probabilities anyway. The instrument is the **probability density
+function** $f(x)$, defined as the derivative of the cumulative distribution function
+$F(x)=P(X\le x)$. The Calculus-I fundamental theorem of calculus then turns probabilities
+into areas: $P(a\le X\le b)=\int_a^b f(x)\,dx$. The single claim this article defends is
+that **a density is not a probability but a *rate* — probability per unit length** — which
+is why it may legally exceed $1$, why only its integral over a set carries meaning, and why
+transforming the variable bends the density by the derivative of the transform. We follow
+this from the definition through three honest worked examples (uniform, triangular,
+exponential) to the change-of-variables formula and the edges where the whole continuous
+picture frays.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+For a continuous random variable, **probability is an area, not a height.** Each individual
+value has probability $0$; what carries the probability is a **density** $f(x)=F'(x)$ — the
+*rate* at which probability accumulates as you sweep $x$ to the right. To get the
+probability that $X$ lands in an interval, you **add up the density across it**:
+$$P(a\le X\le b)=\int_a^b f(x)\,dx.$$
+Because $f$ is a rate (probability per unit length) and not a probability, it may rise
+above $1$; the only constraints are that it never goes negative and that the total area
+under it is $1$.
+:::
+
+Everything below orbits that box. The equation $f=F'$ will look like a definition pulled
+from a hat, but by the end you should see it as the only sensible thing it could be: $F(x)$
+is *accumulated* probability up to $x$, and the density is how fast that accumulation is
+happening right at $x$ — exactly the relationship between a running total and its rate that
+the fundamental theorem of calculus is about. Hold onto "density is a rate"; it resolves
+every apparent paradox in this article, including the headline one — $P(X=x)=0$ everywhere,
+and yet $X$ certainly lands *somewhere*.
+
+# Why we are here: the problem a continuum forces {#sec-why}
+
+Keep one question in view for the whole article: **when a quantity can take any value in a
+continuum, how do we put probabilities on it without contradiction?** Every move below is
+an answer to a piece of that question. If a step ever feels arbitrary, come back here.
+
+## The crack that the discrete picture cannot paper over
+
+The previous article, [PROB-3], handled a random variable that takes *countably many*
+values — a die's face, a count of defects, the number of heads in ten flips. There, life is
+easy: you assign each value $x$ a chunk of probability $p(x)=P(X=x)$, you insist those
+chunks are non-negative and sum to $1$, and the probability of any event is the sum of the
+chunks it contains. The probability *lives on the points*.
+
+Now change the question by one word. Instead of "how many heads in ten flips," ask "**how
+long** until the next bus arrives?" The answer can be $4$ minutes, or $4.1$, or
+$4.137\ldots$ — any non-negative real number. Or "what is the **exact** measurement error
+of this voltmeter?" — any real number, positive or negative. The set of possible values is
+no longer a list you can write down; it is an interval, an *uncountable* continuum.
+
+Try to carry the discrete machinery across and it breaks immediately. Suppose we wanted to
+assign a positive probability $p(x)=P(X=x)>0$ to each value $x$ in the interval $[0,1]$.
+There are uncountably many such values. Here is the contradiction, and it is worth seeing in
+full because it is *the* reason densities exist.
+
+Pick any positive number $\varepsilon>0$, however tiny. Ask: how many values $x$ can have
+$P(X=x)\ge\varepsilon$? If there were $N$ such values, the total probability would be at
+least $N\varepsilon$, and since total probability cannot exceed $1$ (that is Kolmogorov's
+axiom $P(\Omega)=1$, built in [PROB-0]), we must have $N\varepsilon\le 1$, so
+$N\le 1/\varepsilon$. That is a *finite* number. So **for each fixed $\varepsilon$, only
+finitely many values can have probability at least $\varepsilon$.**
+
+Now take the values with positive probability and sort them by how much they carry: those
+with $P\ge \tfrac12$ (finitely many), those with $\tfrac14\le P<\tfrac12$ (finitely many),
+those with $\tfrac18\le P<\tfrac14$ (finitely many), and so on down the powers of two.
+*Every* value with positive probability falls into exactly one of these bins, because its
+probability, being positive, eventually exceeds some $\tfrac{1}{2^k}$. A countable union of
+finite sets is countable. So **at most countably many values can carry positive
+probability** — no matter what distribution we cook up.
+
+But our continuum $[0,1]$ is *uncountable*. So at most a countable handful of its points
+could carry any probability, and the uncountably many others must each carry exactly $0$.
+If we want the probability to be spread *evenly* over the whole interval — no point special
+— there is no escape: **every individual value must have probability zero.**
+
+::: {.callout-tip title="You might be asked"}
+*"If $P(X=x)=0$ for every value, isn't the total probability $0$, contradicting
+$P(\Omega)=1$?"* This is the sharpest objection and you should have the answer ready. No:
+you cannot recover the total by "adding up" the point probabilities, because there are
+**uncountably many** of them, and Kolmogorov's additivity axiom only promises that
+probability adds over **countable** collections of disjoint events (see [PROB-0]). An
+uncountable sum of zeros is simply not a defined operation in the axioms — it is not "zero,"
+it is *undefined*. The total probability is recovered a different way, by **integration**,
+which is the limit of sums over finer and finer *partitions* (countably many pieces at each
+stage), not a sum over the individual points. That is precisely the gap the density fills.
+:::
+
+So the continuum hands us a genuine problem: the object that worked for discrete variables —
+probability sitting on points — is mathematically dead on arrival. We need to relocate the
+probability from the points to the *intervals*.
+
+## The physical analogy that names the fix
+
+The resolution is older than probability and comes from physics. Ask: "what is the mass of
+a steel wire *at the single point* $3$ cm from its left end?" Zero — a point has no length,
+hence no mass. Yet the wire certainly has mass, distributed along it. The way we describe
+that mass is not by assigning mass to points but by a **linear mass density** $\rho(x)$,
+measured in grams per centimeter. The mass of any *segment* is the density integrated over
+it: $\int_a^b \rho(x)\,dx$ grams. The density at a point can be large (a dense alloy) and
+even exceed $1$ g/cm, yet the mass *at* the point is still zero, because mass is
+density $\times$ length and the length of a single point is zero.
+
+Probability for a continuous variable is exactly this, with "probability" in place of
+"mass" and "per unit of the variable" in place of "per centimeter." The probability of a
+single value is zero (it has no length to spread over); the probability of an interval is a
+density integrated across it. **The probability density function is the probability analogue
+of mass density.** That one analogy carries the entire article, and it is the *why* we will
+keep returning to: every property of $f$ has a direct counterpart in a mass density, and we
+prove each one below rather than lean on the picture. Non-negativity (you cannot have
+negative mass in a segment, just as a non-decreasing $F$ cannot have negative slope —
+@thm-valid-density), total area one (the whole wire has its full mass, just as $X$ lands
+somewhere with probability $1$ — @thm-valid-density), the freedom to exceed $1$ (a dense
+alloy has more than $1$ g/cm, just as a sharply-peaked density tops $1$ — the pitfall in
+@sec-density-laws), and the way it transforms (re-coordinatizing the wire rescales the
+density by the local stretch, just as $Y=g(X)$ rescales $f$ by the Jacobian —
+@thm-change-of-vars). The analogy supplies the *intuition*; the theorems below supply the
+*proof*.
+
+::: {.callout-tip title="You might be asked"}
+*"Why $P(X=x)=0$ in one sentence?"* "A single value has no width, and for a continuous
+variable probability is spread out as a density per unit width, so a zero-width slice
+catches zero probability — just like a single point of a wire has zero mass." That sentence,
+delivered cleanly, is what an interviewer wants. The contradiction argument above is the
+*proof*; the wire is the *picture*.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formula, picture the two functions we will relate and watch the discrete picture
+*melt* into the continuous one. @fig-melt does this melt explicitly: it takes a discrete
+variable, splits its mass into ever-finer pieces, and watches the staircase CDF smooth into
+a curve and the mass spikes flatten into a density.
+
+```{python}
+#| label: fig-melt
+#| fig-cap: "From mass to density. We model a wait time as a discrete variable on a grid, then refine the grid (top row, left to right: 6, 16, then 60 buckets), keeping the *total* probability fixed at 1. Top: the probability of each bucket shrinks toward 0 as buckets multiply — the discrete pmf 'spikes' flatten. Bottom: but the **height per unit width** (bucket probability divided by bucket width) converges to a stable curve — the density $f$. The density is what survives the refinement; the individual probabilities do not."
+from scipy import stats
+
+fig, axes = plt.subplots(2, 3, figsize=(9.0, 5.2), sharex='col')
+
+# An underlying continuous shape (a gamma-like bump) we will discretize.
+true = stats.gamma(a=3.0, scale=1.4)
+xgrid = np.linspace(0, 14, 600)
+dens = true.pdf(xgrid)
+
+for col, K in enumerate((6, 16, 60)):
+    edges = np.linspace(0, 14, K + 1)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    width = edges[1] - edges[0]
+    # Probability assigned to each bucket = area of the true density over it.
+    probs = true.cdf(edges[1:]) - true.cdf(edges[:-1])
+
+    axT = axes[0, col]
+    axT.bar(centers, probs, width=width * 0.9, color=FILL, edgecolor="white")
+    axT.set_title(f"{K} buckets:  $P(\\mathrm{{bucket}})$", fontsize=10)
+    axT.set_ylim(0, 0.36)
+    if col == 0:
+        axT.set_ylabel("bucket probability")
+
+    axB = axes[1, col]
+    axB.bar(centers, probs / width, width=width * 0.9, color=FILL, edgecolor="white",
+            label="prob / width")
+    axB.plot(xgrid, dens, color=LINE, lw=2.0, label="limiting density $f$")
+    axB.set_ylim(0, 0.30)
+    axB.set_xlabel("wait $x$ (min)")
+    if col == 0:
+        axB.set_ylabel("prob per unit width")
+    if col == 2:
+        axB.legend(fontsize=8, framealpha=0.9)
+
+plt.tight_layout()
+```
+
+The lesson of @fig-melt is the whole intuition in one image. As we slice the continuum
+finer, **the probability of any one slice goes to zero** (top row) — this is the
+$P(X=x)=0$ phenomenon arriving as a limit. But **the probability *per unit width* settles
+down to a fixed curve** (bottom row). That curve is the density. The density is the part of
+the discrete picture that is stable under refinement; the bucket probabilities are the part
+that evaporates.
+
+Now the second picture, the one we compute with. There are two functions, and the
+fundamental theorem of calculus is the bridge between them:
+
+- The **CDF** $F(x)=P(X\le x)$ is the *running total*: how much probability has piled up by
+  the time we reach $x$. It starts at $0$ far to the left, climbs to $1$ far to the right,
+  and never decreases.
+- The **density** $f(x)$ is the *rate of climb* of that running total — its slope,
+  $f(x)=F'(x)$. Where $F$ rises steeply, probability is piling up fast, so the density is
+  high. Where $F$ is flat, no probability is accruing, so the density is zero.
+
+@fig-cdf-pdf draws both for one distribution, stacked, so the slope-and-area relationship is
+visible at a glance.
+
+```{python}
+#| label: fig-cdf-pdf
+#| fig-cap: "The two functions and the one relationship between them, for a single continuous distribution. **Top:** the density $f(x)$. The shaded area between $a=2$ and $b=5$ is the probability $P(2\\le X\\le 5)$. **Bottom:** the CDF $F(x)$, the running total of that area from the left. The density is the *slope* of the CDF at each point (steep CDF $\\Rightarrow$ tall density); the probability of the interval is the *rise* of the CDF across it, $F(b)-F(a)$, marked by the bracket. Same number, read two ways: area under $f$, or rise of $F$."
+dist = stats.gamma(a=3.0, scale=1.4)
+x = np.linspace(0, 14, 600)
+a, b = 2.0, 5.0
+
+fig, (axf, axF) = plt.subplots(2, 1, figsize=(6.6, 5.4), sharex=True)
+
+axf.plot(x, dist.pdf(x), color=LINE, label="density $f(x)$")
+mask = (x >= a) & (x <= b)
+axf.fill_between(x[mask], dist.pdf(x[mask]), color=FILL, alpha=0.9)
+axf.text(3.3, 0.06, r"area $=P(2\le X\le 5)$", fontsize=9, ha="center")
+axf.set_ylabel("$f(x)$"); axf.set_title("Density: probability is the shaded area")
+axf.legend(fontsize=9, framealpha=0.9)
+
+axF.plot(x, dist.cdf(x), color=POINT, label="CDF $F(x)$")
+Fa, Fb = dist.cdf(a), dist.cdf(b)
+axF.plot([a, a], [0, Fa], color=GREY, lw=1.0, ls=":")
+axF.plot([b, b], [0, Fb], color=GREY, lw=1.0, ls=":")
+axF.annotate("", xy=(b + 0.4, Fb), xytext=(b + 0.4, Fa),
+             arrowprops=dict(arrowstyle="<->", color=ACCENT, lw=1.6))
+axF.text(b + 0.7, 0.5 * (Fa + Fb), r"$F(b)-F(a)$", color=ACCENT, fontsize=9, va="center")
+axF.set_ylim(0, 1.05)
+axF.set_xlabel("$x$"); axF.set_ylabel("$F(x)$")
+axF.set_title("CDF: probability is the rise of the running total")
+axF.legend(fontsize=9, framealpha=0.9, loc="lower right")
+plt.tight_layout()
+```
+
+With this picture in hand, the formal development is short: define the density as the
+derivative of the CDF, invoke the fundamental theorem to turn it back into area, and read
+off the three properties. The pictures above are the intuition; the next section is the
+proof.
+
+# The formal development {#sec-formal}
+
+## What "continuous" means, precisely {#sec-def-continuous}
+
+We first pin down the class of variables this article is about. From [PROB-2] we carry the
+CDF and its universal properties, which we restate so the chain is explicit.
+
+::: {#def-cdf}
+**Definition (cumulative distribution function).** For any random variable $X$, the
+**cumulative distribution function** is
+$$F(x)=P(X\le x),\qquad x\in\mathbb{R}.$$
+It satisfies, for every random variable: (i) it is *non-decreasing*; (ii)
+$\lim_{x\to-\infty}F(x)=0$ and $\lim_{x\to+\infty}F(x)=1$; (iii) it is *right-continuous*.
+These three are derived from Kolmogorov's axioms in [PROB-2].
+:::
+
+A discrete variable's CDF is a *staircase*: flat, then a jump of height $p(x)$ at each value
+$x$ the variable can take. The continuous case is the opposite extreme: no jumps at all.
+
+::: {#def-continuous-rv}
+**Definition (continuous random variable).** A random variable $X$ is **(absolutely)
+continuous** if its CDF $F$ can be written as the integral of some non-negative function
+$f$:
+$$F(x)=\int_{-\infty}^{x} f(t)\,dt \qquad\text{for every } x\in\mathbb{R}.$$
+Any such $f$ is called a **probability density function** (pdf) of $X$.
+:::
+
+The qualifier "absolutely" flags that this is slightly stronger than "$F$ has no jumps"; the
+gap between the two is a measure-theoretic subtlety (there exist exotic CDFs that are
+continuous but have no density — the Cantor-type "singular" distributions), and it lives
+above our floor. We flag it here and move on: every distribution this series uses in
+practice is absolutely continuous and has a density. Holding to @def-continuous-rv keeps us
+on solid Calc-1 ground, because it makes the density a derivative, as we now show.
+
+::: {.callout-note title="What we are importing, and where it is built"}
+We borrow one fact from [PROB-0]/[PROB-2]: that $F(x)=P(X\le x)$ is a legitimate
+probability of the event $\{X\le x\}$ and obeys the axioms. Everything else in this article
+is built here from that fact plus Calculus I. The measure-theoretic notion of "absolutely
+continuous" is named, not assumed; we use only its consequence — that $F$ is an integral of
+$f$ — which is all the fundamental theorem needs.
+:::
+
+## The density is the derivative of the CDF {#sec-ftc}
+
+@def-continuous-rv writes $F$ as an integral of $f$. The **fundamental theorem of calculus**
+— the one genuinely load-bearing tool from the floor — runs that relationship backward and
+tells us how to *find* $f$ from $F$.
+
+Recall the theorem in the exact form we need (this is Calc-1, stated so nothing is implicit).
+If a function $F$ is built as a running integral of a continuous integrand,
+$F(x)=\int_{-\infty}^{x} f(t)\,dt$, then $F$ is differentiable wherever $f$ is continuous,
+and its derivative recovers the integrand:
+$$\frac{d}{dx}\,F(x)=\frac{d}{dx}\int_{-\infty}^{x} f(t)\,dt = f(x).$$
+The intuition is the running-total/rate picture from @sec-intuition: the derivative of "area
+accumulated up to $x$" is the height of the curve at $x$, because pushing the right endpoint
+an extra $dx$ adds a sliver of area of height $f(x)$ and width $dx$, i.e. $f(x)\,dx$, so the
+rate of area gain is $f(x)$.
+
+This gives the practical recipe and our central identity.
+
+::: {#thm-pdf-is-derivative}
+**Theorem (density as derivative).** If $X$ is continuous with CDF $F$, then at every point
+$x$ where $F$ is differentiable, a density is given by
+$$f(x)=F'(x).$$
+:::
+
+::: {.proof}
+By @def-continuous-rv, $F(x)=\int_{-\infty}^{x}f(t)\,dt$ for some non-negative $f$.
+Differentiating both sides with respect to $x$ and applying the fundamental theorem of
+calculus to the right-hand side gives $F'(x)=f(x)$ at every $x$ where $f$ is continuous (so
+that the fundamental theorem applies). $\qquad\blacksquare$
+:::
+
+A word on the phrase "*a* density" rather than "*the* density." Because changing $f$ at a
+handful of isolated points does not change any integral $\int_a^b f$, the density is not
+unique at individual points — but it *is* unique up to such harmless edits, and at every
+point where $F$ is differentiable, @thm-pdf-is-derivative pins the value down. In practice we
+always quote the natural, continuous version.
+
+## Probabilities are areas: the master formula {#sec-area}
+
+Now we close the loop and recover what the whole apparatus was for — computing the
+probability that $X$ lands in an interval. This is the formula in the Core box, and it
+follows in two lines.
+
+::: {#thm-interval}
+**Theorem (interval probability).** If $X$ is continuous with density $f$, then for any
+$a\le b$,
+$$P(a\le X\le b)=\int_a^b f(x)\,dx.$$
+:::
+
+::: {.proof}
+The event $\{X\le b\}$ is the disjoint union of $\{X\le a\}$ and $\{a<X\le b\}$ (every
+outcome with $X\le b$ either has $X\le a$ or has $a<X\le b$, never both). By the additivity
+of probability over disjoint events ([PROB-0]),
+$$P(X\le b)=P(X\le a)+P(a<X\le b),$$
+so, rearranging and using the definition of $F$,
+$$P(a<X\le b)=P(X\le b)-P(X\le a)=F(b)-F(a).$$
+Now write each $F$ as the integral from @def-continuous-rv and combine them. Because
+$\int_{-\infty}^{b}=\int_{-\infty}^{a}+\int_{a}^{b}$ for any integrand, their difference is
+$$F(b)-F(a)=\int_{-\infty}^{b}f(t)\,dt-\int_{-\infty}^{a}f(t)\,dt=\int_a^b f(t)\,dt.$$
+This proves $P(a<X\le b)=\int_a^b f$. To replace the strict "$a<$" with the inclusive
+"$a\le$", we use the next result, @thm-point-zero, that adding the single endpoint $a$ adds
+probability $0$; hence $P(a\le X\le b)=P(a<X\le b)=\int_a^b f$. $\qquad\blacksquare$
+:::
+
+So the master computation for a continuous variable is always the same: **to find the
+probability of an interval, integrate the density over it.** Probabilities are areas under
+$f$.
+
+## Why each value has probability zero — now rigorous {#sec-point-zero}
+
+We argued informally in @sec-why that single values carry no probability. With
+@thm-interval in hand, it becomes a one-line calculation.
+
+::: {#thm-point-zero}
+**Theorem (point probabilities vanish).** If $X$ is continuous with density $f$, then for
+every value $c$,
+$$P(X=c)=0.$$
+:::
+
+::: {.proof}
+The event $\{X=c\}$ is the interval $[c,c]$. By @thm-interval (the same area formula, with
+$a=b=c$),
+$$P(X=c)=P(c\le X\le c)=\int_c^c f(x)\,dx = 0,$$
+because the integral of any function over an interval of zero width is zero (the area of a
+region with no horizontal extent is zero). $\qquad\blacksquare$
+:::
+
+This is the wire-mass picture made exact: a single point has zero width, so the area above
+it — the probability it catches — is zero, no matter how tall $f$ is there.
+
+::: {.callout-tip title="You might be asked"}
+*"For a continuous variable, does it matter whether an inequality is strict or not — is
+$P(X<a)$ different from $P(X\le a)$?"* No. The two differ only by the endpoint event
+$\{X=a\}$, which by @thm-point-zero has probability $0$. So for a continuous variable all
+four of $P(a<X<b)$, $P(a\le X<b)$, $P(a<X\le b)$, $P(a\le X\le b)$ are *equal*. (This is
+emphatically **false** for discrete variables, where the endpoints carry real mass — a
+favorite trap. Whenever you see endpoints treated casually, check first that the variable is
+continuous.)
+:::
+
+## The two laws every density obeys {#sec-density-laws}
+
+A function does not get to be a density just because we call it one. Exactly two conditions
+qualify it, and both come straight from the axioms via the picture above.
+
+::: {#thm-valid-density}
+**Theorem (the density conditions).** A function $f$ is the density of some continuous
+random variable if and only if
+$$\text{(non-negativity)}\quad f(x)\ge 0 \text{ for all } x,
+\qquad\text{and}\qquad
+\text{(normalization)}\quad \int_{-\infty}^{\infty} f(x)\,dx = 1.$$
+:::
+
+::: {.proof}
+*Non-negativity is necessary.* The density is the slope of the CDF, $f=F'$, and $F$ is
+non-decreasing (a probability $P(X\le x)$ cannot shrink as $x$ grows, by monotonicity in
+[PROB-2]). The slope of a non-decreasing function is $\ge 0$ everywhere it exists, so
+$f\ge 0$.
+
+*Normalization is necessary.* The total area under $f$ is the probability that $X$ lands
+*somewhere*, which is the probability of the whole line — a certain event. Concretely,
+taking the limit $b\to\infty$, $a\to-\infty$ in @thm-interval and using the CDF's limits
+from @def-cdf,
+$$\int_{-\infty}^{\infty} f(x)\,dx=\lim_{b\to\infty}F(b)-\lim_{a\to-\infty}F(a)=1-0=1.$$
+
+*The two conditions are sufficient.* Conversely, given any $f\ge 0$ with
+$\int_{-\infty}^{\infty}f=1$, define $F(x)=\int_{-\infty}^x f(t)\,dt$. We check the three
+CDF properties of @def-cdf one at a time. (i) $F$ is **non-decreasing**: for $x_1\le x_2$,
+$F(x_2)-F(x_1)=\int_{x_1}^{x_2} f(t)\,dt\ge 0$ because we are integrating a non-negative
+function over an interval, so adding the extra slice of area can only raise the running
+total. (ii) The **limits** are right: as $x\to-\infty$ the region of integration shrinks to
+nothing, so $F(x)\to 0$; as $x\to+\infty$ the integral fills out to the full area, which is
+$1$ by normalization. (iii) $F$ is **continuous** (indeed more than the right-continuity the
+axioms demand): nudging the upper limit from $x$ to $x+h$ changes $F$ by
+$\int_x^{x+h} f(t)\,dt$, the area of a sliver of width $h$, which shrinks to $0$ as $h\to 0$
+— so $F$ has no jumps. All three properties hold, so $F$ is a valid CDF, and since
+$F(x)=\int_{-\infty}^x f$ it is (absolutely) continuous with density $f$ by
+@def-continuous-rv. $\qquad\blacksquare$
+:::
+
+These are the *only* two requirements. Notice what is conspicuously **absent**: there is no
+requirement that $f(x)\le 1$. We make this its own headline because it is the single most
+common misconception about densities.
+
+::: {.callout-warning title="Pitfall"}
+**A density is not a probability, and may exceed 1.** Probabilities live in $[0,1]$;
+densities do not. A density is *probability per unit length*, a rate. Squeeze the same total
+probability of $1$ into a narrow interval and the density must rise high to keep the area at
+$1$ — exactly as a fixed mass squeezed into a short wire forces a high mass-per-centimeter.
+For the uniform distribution on $[0,\tfrac12]$ (next section), the density is constant at
+$f(x)=2$ — twice the forbidden ceiling, and perfectly legal, because the area is
+$2\times\tfrac12=1$. If you ever find yourself "worried" that a density came out bigger than
+$1$, you have confused the rate with the quantity. Only after integrating do you get a number
+that must sit in $[0,1]$.
+:::
+
+This pitfall *is* the why of the article restated: every property of $f$ follows from "$f$ is
+a rate, not an amount." Non-negativity (you cannot accumulate negative probability), area one
+(the total amount is certain), and the freedom to exceed $1$ (a rate has no ceiling) are all
+the same idea seen three ways.
+
+## A note on the "infinitesimal probability" reading {#sec-infinitesimal}
+
+There is one more reading of $f$ that practitioners use constantly and that makes the
+density tangible. From @thm-interval, the probability in a *tiny* interval of width $dx$
+around a point $x$ is approximately the density times the width:
+$$P\!\left(x\le X\le x+dx\right)=\int_x^{x+dx} f(t)\,dt \approx f(x)\,dx,$$
+because over a sliver so thin that $f$ barely changes, the area under the curve is just
+height $\times$ width, $f(x)\,dx$. (Formally this is the Calc-1 statement that
+$\lim_{dx\to0}\frac{1}{dx}\int_x^{x+dx}f = f(x)$, the same fundamental theorem again.) So
+the density answers the question "**roughly how much probability sits in a small window
+here, per unit of window width?**" That is the operational meaning of $f(x)$, and it is why
+$f(x)$ is the right thing to compare across points: $f(x_1)=2f(x_2)$ says a small window at
+$x_1$ is about twice as likely to catch $X$ as an equally small window at $x_2$.
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on three real, honest distributions, building in difficulty.
+
+## Example 1 — the uniform: the bus you have no information about {#sec-uniform}
+
+You arrive at a stop served by a shuttle that comes *exactly* every $30$ minutes, but you
+have no idea where you are in its cycle — you might have just missed one, or one might be
+pulling in. With no information favoring any moment over another, the time $X$ (in minutes)
+until the next shuttle is **uniform** on $[0,30]$: every sub-interval of equal length is
+equally likely. This is the honest habitat of the uniform — *maximal ignorance over a
+bounded range* — and it is the simplest density there is.
+
+"Equally likely over $[0,30]$" forces a *constant* density on that interval and zero
+outside. Call the constant $c$. Normalization (@thm-valid-density) fixes it: the area is the
+constant times the width,
+$$\int_{-\infty}^{\infty} f = \int_0^{30} c\,dx = c\cdot 30 = 1
+\;\Longrightarrow\; c=\frac{1}{30}.$$
+So the density is
+$$f(x)=\begin{cases}\dfrac{1}{30}, & 0\le x\le 30,\\[4pt] 0,&\text{otherwise.}\end{cases}$$
+In general, $\mathrm{Uniform}(\alpha,\beta)$ has density $f(x)=\tfrac{1}{\beta-\alpha}$ on
+$[\alpha,\beta]$. Note $\tfrac{1}{30}$ is below $1$ here only because the interval is wide;
+on $[0,\tfrac12]$ the same logic gives $f=2$, the legal "density above one" from the pitfall.
+
+Now everything else is areas of rectangles. The CDF accumulates the constant density:
+$$F(x)=\int_0^x \frac{1}{30}\,dt = \frac{x}{30}\quad\text{for } 0\le x\le 30,$$
+a straight ramp from $0$ to $1$. The probability you wait *between $5$ and $15$ minutes* is
+the area of a rectangle of height $\tfrac1{30}$ and width $10$:
+$$P(5\le X\le 15)=\int_5^{15}\frac{1}{30}\,dx = \frac{15-5}{30}=\frac{10}{30}=\frac13.$$
+@fig-uniform draws the density, the CDF, and this probability as an area.
+
+```{python}
+#| label: fig-uniform
+#| fig-cap: "The uniform shuttle-wait on $[0,30]$. **Left:** the density is a flat plateau at height $1/30\\approx0.033$; the shaded rectangle is $P(5\\le X\\le 15)=10/30=1/3$ — area = height $\\times$ width. **Right:** the CDF is the straight ramp $F(x)=x/30$, and the same probability is its rise $F(15)-F(5)=1/3$ (bracket). The dots show $n=2000$ simulated waits binned into a histogram *scaled to a density* (probability per unit width); it hugs the flat line, confirming the density is the right per-width object to compare against."
+alpha, beta = 0.0, 30.0
+c = 1.0 / (beta - alpha)
+x = np.linspace(-3, 33, 600)
+f = np.where((x >= alpha) & (x <= beta), c, 0.0)
+F = np.clip((x - alpha) / (beta - alpha), 0, 1)
+
+rng = np.random.default_rng(0)
+sample = rng.uniform(alpha, beta, size=2000)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.hist(sample, bins=20, range=(0, 30), density=True, color=FILL, alpha=0.55,
+         edgecolor="white", label="simulated (density-scaled)")
+axL.plot(x, f, color=LINE, label="density $f$")
+m = (x >= 5) & (x <= 15)
+axL.fill_between(x[m], f[m], color=ACCENT, alpha=0.35)
+axL.text(10, 0.016, r"$P(5\le X\le 15)=\frac13$", ha="center", fontsize=9)
+axL.set_xlabel("wait $x$ (min)"); axL.set_ylabel("density"); axL.set_title("Uniform density")
+axL.legend(fontsize=8, framealpha=0.9, loc="upper right")
+
+axR.plot(x, F, color=POINT, label="CDF $F(x)=x/30$")
+F5, F15 = 5 / 30, 15 / 30
+axR.plot([5, 5], [0, F5], ":", color=GREY); axR.plot([15, 15], [0, F15], ":", color=GREY)
+axR.annotate("", xy=(16.5, F15), xytext=(16.5, F5),
+             arrowprops=dict(arrowstyle="<->", color=ACCENT, lw=1.6))
+axR.text(17.5, 0.5 * (F5 + F15), r"$\frac13$", color=ACCENT, fontsize=10, va="center")
+axR.set_xlabel("wait $x$ (min)"); axR.set_ylabel("$F(x)$"); axR.set_title("Uniform CDF")
+axR.set_ylim(0, 1.05); axR.legend(fontsize=8, framealpha=0.9, loc="lower right")
+plt.tight_layout()
+```
+
+The histogram in @fig-uniform is the single most important habit for *reading* a density off
+data: you must scale the histogram to a **density** (`density=True`: bar height = fraction of
+data in the bar $\div$ bar width), not to raw counts, before it is comparable to $f$.
+A count histogram changes height when you change the number of bars; a density histogram does
+not, because — exactly like $f$ — it measures probability *per unit width*.
+
+## Example 2 — a triangular density: when extremes are less likely {#sec-triangular}
+
+The uniform says "all values equally likely," which is rarely true. A small but honest step
+up is the **triangular** distribution, the standard tool when you have a plausible *minimum*,
+*maximum*, and *most-likely* value but little else — the classic case being a project-time or
+cost estimate elicited from an expert ("at best 2 weeks, at worst 8, most likely 4"). The
+density rises linearly to a peak at the mode, then falls linearly to the max, making
+middling values likeliest and extremes rare. We build it from scratch to exercise the density
+laws on a non-constant $f$.
+
+Take a task whose duration $X$ (weeks) has minimum $a=2$, mode $m=4$, maximum $b=8$. The
+density is two line segments meeting at the peak $(m, h)$ and hitting zero at $a$ and $b$:
+$$f(x)=\begin{cases}
+\text{a line from } (a,0) \text{ to } (m,h), & a\le x\le m,\\
+\text{a line from } (m,h) \text{ to } (b,0), & m\le x\le b,\\
+0,&\text{otherwise.}
+\end{cases}$$
+The peak height $h$ is *not* free — normalization fixes it. The region under the density is a
+triangle with base $b-a$ and height $h$, and the area of a triangle is
+$\tfrac12\,\text{base}\times\text{height}$:
+$$\int_{-\infty}^{\infty} f = \tfrac12 (b-a)\,h = 1
+\;\Longrightarrow\; h=\frac{2}{b-a}=\frac{2}{8-2}=\frac13.$$
+Writing the two line segments explicitly (each is "height $h$ scaled by how far $x$ has
+travelled along its segment"):
+$$f(x)=\begin{cases}
+\dfrac{2(x-a)}{(b-a)(m-a)}, & a\le x\le m,\\[8pt]
+\dfrac{2(b-x)}{(b-a)(b-m)}, & m< x\le b.
+\end{cases}$$
+You can confirm $f(m)=\tfrac{2(m-a)}{(b-a)(m-a)}=\tfrac{2}{b-a}=h$, the peak we found, so the
+pieces meet. Let us compute a probability that needs a real integral, not a rectangle:
+$P(X\le 3)$, the chance the task finishes within three weeks. Since $3$ is on the rising
+segment ($a=2\le3\le m=4$), we integrate the first piece from $a=2$ to $3$:
+$$P(X\le 3)=\int_2^3 \frac{2(x-2)}{(8-2)(4-2)}\,dx
+=\frac{2}{6\cdot 2}\int_2^3 (x-2)\,dx
+=\frac{1}{6}\left[\frac{(x-2)^2}{2}\right]_2^3
+=\frac{1}{6}\cdot\frac{1}{2}=\frac{1}{12}\approx 0.083.$$
+Step by step: we pulled the constant $\tfrac{2}{12}=\tfrac16$ out of the integral; the
+antiderivative of $(x-2)$ is $\tfrac{(x-2)^2}{2}$ (a Calc-1 power rule on the shifted
+variable); evaluating from $2$ to $3$ gives $\tfrac{1^2}{2}-\tfrac{0^2}{2}=\tfrac12$; times
+$\tfrac16$ is $\tfrac1{12}$. So there is only about an $8.3\%$ chance the task finishes in
+three weeks — the rising edge of the triangle is short and low. @fig-triangular shows the
+density, this area, and the resulting CDF (now a *curve*, because the density is not
+constant).
+
+```{python}
+#| label: fig-triangular
+#| fig-cap: "A triangular duration model with min $2$, mode $4$, max $8$ weeks. **Left:** the density peaks at the mode (height $h=1/3$) and falls to zero at the endpoints; the shaded sliver is $P(X\\le 3)=1/12\\approx0.083$. The density now varies with $x$, so probabilities are genuine integrals (areas of triangles/trapezoids), not just rectangles. **Right:** the CDF is now *curved* — concave up on the rising density, concave down on the falling density — because the rate of probability accumulation itself changes. Simulated draws (density-scaled histogram) track the triangle."
+a, m, b = 2.0, 4.0, 8.0
+h = 2.0 / (b - a)
+
+def tri_pdf(x):
+    x = np.asarray(x, float)
+    up = 2 * (x - a) / ((b - a) * (m - a))
+    dn = 2 * (b - x) / ((b - a) * (b - m))
+    return np.where((x >= a) & (x <= m), up,
+           np.where((x > m) & (x <= b), dn, 0.0))
+
+def tri_cdf(x):
+    x = np.asarray(x, float)
+    left = (x - a) ** 2 / ((b - a) * (m - a))
+    right = 1 - (b - x) ** 2 / ((b - a) * (b - m))
+    return np.where(x < a, 0.0,
+           np.where(x <= m, left,
+           np.where(x <= b, right, 1.0)))
+
+xs = np.linspace(0, 10, 700)
+rng = np.random.default_rng(3)
+sample = rng.triangular(a, m, b, size=4000)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.hist(sample, bins=28, range=(2, 8), density=True, color=FILL, alpha=0.55,
+         edgecolor="white", label="simulated")
+axL.plot(xs, tri_pdf(xs), color=LINE, label="density $f$")
+mm = (xs >= a) & (xs <= 3)
+axL.fill_between(xs[mm], tri_pdf(xs[mm]), color=ACCENT, alpha=0.4)
+axL.text(2.9, 0.02, r"$P(X\le 3)$", fontsize=9)
+axL.set_xlabel("duration $x$ (weeks)"); axL.set_ylabel("density")
+axL.set_title("Triangular density"); axL.legend(fontsize=8, framealpha=0.9)
+
+axR.plot(xs, tri_cdf(xs), color=POINT, label="CDF $F$")
+axR.scatter([3], [tri_cdf(3)], color=ACCENT, zorder=4, s=40)
+axR.annotate(r"$F(3)=\frac{1}{12}$", (3, tri_cdf(3)), textcoords="offset points",
+             xytext=(12, -4), fontsize=9, color=ACCENT)
+axR.set_xlabel("duration $x$ (weeks)"); axR.set_ylabel("$F(x)$")
+axR.set_title("Triangular CDF (curved)"); axR.set_ylim(0, 1.05)
+axR.legend(fontsize=8, framealpha=0.9, loc="lower right")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Given a density, how do you get the CDF, and given the CDF, how do you get the density?"*
+The two are inverse operations and you should be fluent in both directions. **Density
+$\to$ CDF: integrate** (accumulate from the left), $F(x)=\int_{-\infty}^x f$. **CDF $\to$
+density: differentiate**, $f=F'$ (@thm-pdf-is-derivative). The triangular shows the round
+trip: we integrated the line $f$ to get the parabola-arc $F$, and differentiating $F$ would
+return the line. *Probabilities of intervals always come from the CDF differences
+$F(b)-F(a)$* — which is why having $F$ in closed form, as here, is so convenient.
+:::
+
+## Example 3 — the exponential: memoryless waiting at the edge of this article {#sec-exponential}
+
+The third example is the **exponential** distribution, the natural model for the *waiting
+time until a random event* — a radioactive decay, a server request, a customer arrival —
+when the event's "hazard" is constant in time. It is also our deliberate **edge case**: it
+is the first density with *unbounded* support (it stretches to $+\infty$), it requires an
+*improper* integral to normalize, and it has a famous, slightly unsettling property
+(memorylessness) that exposes both the power and the honest limits of the continuous model.
+The exponential gets its full treatment in [PROB-14]; here we use it to stress-test
+everything above.
+
+The exponential with **rate** $\lambda>0$ has density
+$$f(x)=\begin{cases}\lambda e^{-\lambda x}, & x\ge 0,\\ 0,& x<0,\end{cases}$$
+defined only for non-negative times (you cannot wait a negative amount). First, **does it
+even normalize?** The support is infinite, so this is an *improper integral*, handled the
+Calc-1 way — as a limit of proper integrals:
+$$\int_0^{\infty}\lambda e^{-\lambda x}\,dx
+=\lim_{T\to\infty}\int_0^{T}\lambda e^{-\lambda x}\,dx
+=\lim_{T\to\infty}\Bigl[-e^{-\lambda x}\Bigr]_0^{T}
+=\lim_{T\to\infty}\bigl(-e^{-\lambda T}+e^{0}\bigr)
+=0+1=1.$$
+Walking it: the antiderivative of $\lambda e^{-\lambda x}$ is $-e^{-\lambda x}$ (check by
+differentiating: $\frac{d}{dx}(-e^{-\lambda x})=-(-\lambda)e^{-\lambda x}=\lambda
+e^{-\lambda x}$, using the chain rule on the exponent); evaluating from $0$ to $T$ gives
+$-e^{-\lambda T}+1$; and as $T\to\infty$ the term $e^{-\lambda T}\to 0$ because the exponent
+$-\lambda T\to-\infty$. The area is exactly $1$, so $f$ is a valid density. The CDF is the
+same integral with a variable upper limit:
+$$F(x)=\int_0^x \lambda e^{-\lambda t}\,dt = \bigl[-e^{-\lambda t}\bigr]_0^x
+=1-e^{-\lambda x}\quad(x\ge0).$$
+
+Make it concrete. Customer-support calls arrive at a small desk at a rate of $\lambda=0.5$
+per minute on average, so inter-arrival times are (modeled as) exponential with
+$\lambda=0.5$. The probability the next call comes **within 2 minutes** is
+$$P(X\le 2)=F(2)=1-e^{-0.5\cdot 2}=1-e^{-1}\approx 1-0.368=0.632.$$
+And the probability you wait **more than 4 minutes** is the tail
+$$P(X>4)=1-F(4)=e^{-0.5\cdot 4}=e^{-2}\approx 0.135.$$
+@fig-exponential draws the density, this tail, and the way the distribution stretches to
+infinity while still enclosing total area $1$.
+
+```{python}
+#| label: fig-exponential
+#| fig-cap: "The exponential inter-arrival model, rate $\\lambda=0.5$/min. **Left:** the density $\\lambda e^{-\\lambda x}$ starts at its highest value $f(0)=\\lambda=0.5$ and decays; the shaded right tail is $P(X>4)=e^{-2}\\approx0.135$. The support runs to $+\\infty$, yet the total area is exactly 1 — an *improper* integral that converges. **Right:** the CDF $1-e^{-\\lambda x}$ rises fast then levels off toward (never reaching) 1, the signature of an unbounded-support distribution. Density-scaled histogram of $n=5000$ simulated waits overlaid."
+lam = 0.5
+xs = np.linspace(0, 14, 700)
+f = lam * np.exp(-lam * xs)
+F = 1 - np.exp(-lam * xs)
+rng = np.random.default_rng(11)
+sample = rng.exponential(scale=1 / lam, size=5000)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.hist(sample, bins=40, range=(0, 14), density=True, color=FILL, alpha=0.55,
+         edgecolor="white", label="simulated")
+axL.plot(xs, f, color=LINE, label=r"density $\lambda e^{-\lambda x}$")
+tail = xs >= 4
+axL.fill_between(xs[tail], f[tail], color=ACCENT, alpha=0.4)
+axL.text(5.4, 0.05, r"$P(X>4)=e^{-2}$", fontsize=9)
+axL.set_xlabel("wait $x$ (min)"); axL.set_ylabel("density")
+axL.set_title("Exponential density"); axL.legend(fontsize=8, framealpha=0.9)
+
+axR.plot(xs, F, color=POINT, label=r"CDF $1-e^{-\lambda x}$")
+axR.axhline(1, color=GREY, ls=":", lw=1.0)
+axR.set_xlabel("wait $x$ (min)"); axR.set_ylabel("$F(x)$")
+axR.set_title("Exponential CDF"); axR.set_ylim(0, 1.05)
+axR.legend(fontsize=8, framealpha=0.9, loc="lower right")
+plt.tight_layout()
+```
+
+Why is this the *edge*? Because the exponential's defining feature is **memorylessness**:
+given that you have already waited $s$ minutes with no call, the probability of waiting at
+least $t$ more is the *same* as the original probability of waiting at least $t$ — the
+process "forgets" how long you have been waiting. We can show it directly from $F$, using the
+conditional-probability definition from [PROB-1], $P(A\mid B)=P(A\cap B)/P(B)$:
+$$P(X>s+t \mid X>s)=\frac{P(X>s+t \text{ and } X>s)}{P(X>s)}
+=\frac{P(X>s+t)}{P(X>s)}
+=\frac{e^{-\lambda(s+t)}}{e^{-\lambda s}}
+=e^{-\lambda t}=P(X>t).$$
+The middle step uses $\{X>s+t\}\subseteq\{X>s\}$, so their intersection is just
+$\{X>s+t\}$; the rest is the tail formula $P(X>x)=e^{-\lambda x}$ and the exponent law
+$e^{-\lambda(s+t)}/e^{-\lambda s}=e^{-\lambda t}$. This is mathematically beautiful and
+physically *suspicious*: it says a component that has run for $1000$ hours is exactly as
+likely to fail in the next hour as a brand-new one. For many real systems (machines that
+wear, customers who get impatient) that is plainly false — which is precisely why the
+exponential is an edge case and the more flexible **gamma/Weibull** families ([PROB-14])
+exist to relax it. The honesty rule of this series: the exponential is a superb model
+*exactly when* the constant-hazard assumption holds (radioactive decay, idealized Poisson
+arrivals) and a misleading one when it does not.
+
+# Transforming a continuous variable: change of variables {#sec-change-of-vars}
+
+A question that arises constantly: we know the density of $X$, and we form a new variable
+$Y=g(X)$ — converting Celsius to Fahrenheit, seconds to a rate, a measurement to its
+logarithm. **What is the density of $Y$?** The naive guess "just substitute" is wrong, and
+seeing *why* it is wrong is the entire content of the change-of-variables rule. This is the
+scalar, Calc-1 shadow of the multivariate Jacobian formula in [PROB-18]; we build it here
+with single-variable substitution only.
+
+## Deriving the rule through the CDF {#sec-cov-derivation}
+
+The reliable method — the one that never lies — is to **transform the CDF, then
+differentiate**, never to transform the density directly. We do the increasing case in full,
+then the decreasing case, then unify.
+
+Let $X$ have density $f_X$ and CDF $F_X$, and suppose $g$ is **strictly increasing** and
+differentiable (so it has a differentiable inverse $g^{-1}$). Define $Y=g(X)$. We want
+$f_Y$. Start, as always, from the CDF of the new variable — the one universal object — and
+unwind the transform:
+$$F_Y(y)=P(Y\le y)=P\bigl(g(X)\le y\bigr).$$
+Because $g$ is strictly increasing, applying its inverse to both sides of "$g(X)\le y$"
+preserves the inequality (increasing functions keep order): $g(X)\le y$ exactly when
+$X\le g^{-1}(y)$. So
+$$F_Y(y)=P\bigl(X\le g^{-1}(y)\bigr)=F_X\bigl(g^{-1}(y)\bigr).$$
+Now differentiate with respect to $y$ to get the density, $f_Y=F_Y'$. The right-hand side is
+a composition, so we use the **chain rule** (the Calc-1 tool, stated:
+$\frac{d}{dy}H(u(y))=H'(u(y))\,u'(y)$) with $H=F_X$ and $u=g^{-1}$. Since $F_X'=f_X$,
+$$f_Y(y)=\frac{d}{dy}F_X\bigl(g^{-1}(y)\bigr)
+=f_X\bigl(g^{-1}(y)\bigr)\cdot \frac{d}{dy}g^{-1}(y).$$
+The factor $\frac{d}{dy}g^{-1}(y)$ is the derivative of the inverse — the *stretch factor* of
+the transform — and for an increasing $g$ it is positive. That is the rule, for increasing
+$g$.
+
+Now the **strictly decreasing** case, because it carries a crucial sign. If $g$ is
+decreasing, applying its inverse to "$g(X)\le y$" *flips* the inequality (decreasing
+functions reverse order): $g(X)\le y$ exactly when $X\ge g^{-1}(y)$. So now
+$$F_Y(y)=P\bigl(X\ge g^{-1}(y)\bigr)=1-F_X\bigl(g^{-1}(y)\bigr),$$
+using $P(X\ge c)=1-P(X<c)=1-F_X(c)$ (the last equality because the single point $c$ has
+probability zero, @thm-point-zero). Differentiating, the leading $1$ dies and the chain rule
+gives a minus sign:
+$$f_Y(y)=-\,f_X\bigl(g^{-1}(y)\bigr)\cdot\frac{d}{dy}g^{-1}(y).$$
+But for a decreasing $g$, the inverse $g^{-1}$ is also decreasing, so its derivative
+$\frac{d}{dy}g^{-1}(y)$ is *negative* — and the leading minus sign makes the whole product
+positive, as a density must be. The increasing and decreasing cases differ only by which
+sign keeps $f_Y\ge0$, so we can fold them into one formula using absolute value, which is
+exactly what packages "take whichever sign makes the stretch factor positive."
+
+::: {#thm-change-of-vars}
+**Theorem (change of variables, monotone scalar transform).** Let $X$ be continuous with
+density $f_X$, and let $g$ be a strictly monotone, differentiable function on the range of
+$X$, with inverse $x=g^{-1}(y)$. Then $Y=g(X)$ has density
+$$f_Y(y)=f_X\bigl(g^{-1}(y)\bigr)\,\left|\frac{d}{dy}g^{-1}(y)\right|
+= \frac{f_X\bigl(g^{-1}(y)\bigr)}{\bigl|g'\!\bigl(g^{-1}(y)\bigr)\bigr|},$$
+for $y$ in the range of $g$ (and $f_Y(y)=0$ elsewhere).
+:::
+
+::: {.proof}
+The increasing and decreasing derivations above each produced
+$f_Y(y)=f_X(g^{-1}(y))\cdot(\pm)\frac{d}{dy}g^{-1}(y)$ with the sign chosen so the result is
+non-negative; that is exactly $f_X(g^{-1}(y))\,\bigl|\frac{d}{dy}g^{-1}(y)\bigr|$. The second
+form uses the **inverse-function derivative rule** from Calc 1,
+$\frac{d}{dy}g^{-1}(y)=\dfrac{1}{g'\!\bigl(g^{-1}(y)\bigr)}$ (which holds because
+differentiating the identity $g(g^{-1}(y))=y$ by the chain rule gives
+$g'(g^{-1}(y))\cdot\frac{d}{dy}g^{-1}(y)=1$). Taking absolute values gives the stated form.
+$\qquad\blacksquare$
+:::
+
+The factor $\bigl|\frac{d}{dy}g^{-1}(y)\bigr|$ — the **Jacobian** of the one-variable
+transform — is the heart of the matter and the reason "just substitute" fails. It accounts
+for how $g$ *stretches or compresses* the axis. If $g$ spreads a small interval of $x$ into a
+wide interval of $y$, the same probability is smeared over more width, so the density must
+*drop* there — and indeed the stretch factor is large, dividing the density down. Density is
+probability per unit width, so when the width changes, the density must change to keep the
+*area* (the actual probability) invariant. This is the "$f$ is a rate" principle once more,
+now governing transforms.
+
+::: {.callout-warning title="Pitfall"}
+**Never get $f_Y$ by just plugging $g^{-1}(y)$ into $f_X$ and stopping.** The substitution
+$f_X(g^{-1}(y))$ is only *half* the answer; without the Jacobian factor
+$\bigl|\frac{d}{dy}g^{-1}(y)\bigr|$ the result will not even integrate to $1$. The way to
+never make this mistake is to never transform the density directly — always transform the
+*CDF* (a probability, which substitution *does* respect) and differentiate at the end, as in
+the derivation above. The Jacobian then appears automatically from the chain rule.
+:::
+
+## Worked transform: a linear rescaling, and a log {#sec-cov-example}
+
+Two quick applications make the rule concrete.
+
+**Linear rescaling** (units change). Let $X$ be the customer-wait $\mathrm{Exponential}(0.5)$
+in *minutes* from @sec-exponential, and let $Y=60X$ be the same wait in *seconds*. Here
+$g(x)=60x$, increasing, with inverse $g^{-1}(y)=y/60$ and
+$\frac{d}{dy}g^{-1}(y)=\tfrac1{60}$. By @thm-change-of-vars,
+$$f_Y(y)=f_X\!\left(\frac{y}{60}\right)\cdot\frac{1}{60}
+=0.5\,e^{-0.5\,(y/60)}\cdot\frac{1}{60}
+=\frac{0.5}{60}\,e^{-(0.5/60)\,y}.$$
+This is again exponential, now with rate $\lambda/60=0.5/60$ per *second* — exactly right,
+since calls arriving at $0.5$/min arrive at $0.5/60$/sec. The Jacobian $\tfrac1{60}$ scaled
+the density down by $60$ because seconds spread the same probability over $60\times$ the
+width. *Without* the $\tfrac1{60}$ we would have a curve that integrates to $60$, not $1$.
+
+**A logarithm** (the lognormal seed). Suppose a positive quantity is modeled by
+$Y=e^{X}$ where $X$ is some continuous variable — the standard way multiplicative,
+always-positive quantities (incomes, biological concentrations) are built. Here $g(x)=e^x$,
+increasing, inverse $g^{-1}(y)=\ln y$ for $y>0$, with $\frac{d}{dy}\ln y=\tfrac1y$. So
+$$f_Y(y)=f_X(\ln y)\cdot\frac{1}{y},\qquad y>0.$$
+The Jacobian $\tfrac1y$ is doing visible work: it tilts the density to pile up near small
+$y$ and stretch out the large-$y$ tail, which is exactly the right-skewed shape such
+quantities have. When $X$ is normal this produces the **lognormal** distribution ([PROB-13],
+[PROB-14]). @fig-cov visualizes the log transform turning a symmetric density into a skewed
+one, the stretch factor made visible.
+
+```{python}
+#| label: fig-cov
+#| fig-cap: "Change of variables, $Y=e^{X}$, visualized. **Left:** the density of $X$ (a symmetric normal, for illustration). **Right:** the density of $Y=e^X$ obtained two ways that agree — the formula $f_Y(y)=f_X(\\ln y)/y$ (red curve) and a density-scaled histogram of $Y$ values from transformed simulated $X$ (bars). The exponential map stretches the right side of the $x$-axis enormously and compresses the left, so the Jacobian $1/y$ pulls the density down for large $y$ (smeared over more width) and up for small $y$ — turning symmetry into right skew. This is why you cannot just substitute: the *shape* changes, governed by the stretch factor."
+from scipy import stats
+muX, sdX = 0.0, 0.6
+X = stats.norm(muX, sdX)
+xs = np.linspace(-2.2, 2.2, 600)
+
+rng = np.random.default_rng(7)
+xsamp = rng.normal(muX, sdX, size=6000)
+ysamp = np.exp(xsamp)
+
+ys = np.linspace(0.05, 6, 600)
+fY = X.pdf(np.log(ys)) / ys   # the change-of-variables formula
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.plot(xs, X.pdf(xs), color=POINT, label="$f_X$ (symmetric)")
+axL.fill_between(xs, X.pdf(xs), color=FILL, alpha=0.4)
+axL.set_xlabel("$x$"); axL.set_ylabel("density"); axL.set_title("Density of $X$")
+axL.legend(fontsize=8, framealpha=0.9)
+
+axR.hist(ysamp, bins=60, range=(0, 6), density=True, color=FILL, alpha=0.55,
+         edgecolor="white", label="simulated $Y=e^X$")
+axR.plot(ys, fY, color=LINE, label=r"$f_Y(y)=f_X(\ln y)/y$")
+axR.set_xlabel("$y$"); axR.set_ylabel("density"); axR.set_title("Density of $Y=e^X$ (skewed)")
+axR.set_xlim(0, 6); axR.legend(fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What if the transform $g$ is not monotone — say $Y=X^2$?"* Then the clean one-to-one
+inverse fails: a given $y>0$ has **two** preimages, $x=+\sqrt{y}$ and $x=-\sqrt{y}$, so the
+event $\{Y\le y\}$ is $\{-\sqrt y\le X\le\sqrt y\}$. You still win by going through the CDF.
+For $y>0$,
+$$F_Y(y)=P(-\sqrt y\le X\le\sqrt y)=F_X(\sqrt y)-F_X(-\sqrt y).$$
+Now differentiate with respect to $y$, term by term, with the chain rule (recall
+$F_X'=f_X$). The first term: $\frac{d}{dy}F_X(\sqrt y)=f_X(\sqrt y)\cdot\frac{d}{dy}\sqrt y
+=f_X(\sqrt y)\cdot\frac{1}{2\sqrt y}$, using $\frac{d}{dy}y^{1/2}=\tfrac12 y^{-1/2}$. The
+second term carries a minus sign and an inner derivative
+$\frac{d}{dy}(-\sqrt y)=-\frac{1}{2\sqrt y}$, so
+$-\frac{d}{dy}F_X(-\sqrt y)=-f_X(-\sqrt y)\cdot\bigl(-\tfrac{1}{2\sqrt y}\bigr)
+=+f_X(-\sqrt y)\cdot\frac{1}{2\sqrt y}$ — the two minus signs cancel, leaving a positive
+contribution. Adding them,
+$$f_Y(y)=\frac{1}{2\sqrt y}\bigl[f_X(\sqrt y)+f_X(-\sqrt y)\bigr],\qquad y>0,$$
+a *sum* of two Jacobian terms, one per branch, each of the same $\tfrac{1}{2\sqrt y}$
+stretch factor (here $\tfrac{1}{2\sqrt y}$ is $\bigl|\frac{d}{dy}g^{-1}\bigr|$ for each
+branch $g^{-1}(y)=\pm\sqrt y$). The general rule for
+many-to-one $g$ is "**sum the monotone formula over all branches**." (This is exactly the
+construction that turns a standard normal into a chi-square in [PROB-15].) The lesson:
+@thm-change-of-vars is the monotone special case; the CDF method handles everything, which is
+why we always anchor on the CDF.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+A density is a powerful object, but several honest caveats decide whether the continuous
+model is the right tool. This is the section that separates "can integrate a density" from
+"knows when a density is the wrong description."
+
+## The model is continuous; the world is often not {#sec-quantization}
+
+The deepest caveat is conceptual: **no real measurement is truly continuous.** A voltmeter
+reports to the millivolt; a stopwatch to the centisecond; money to the cent. Strictly,
+every dataset is discrete (it has finitely many representable values), so $P(X=x)=0$ is
+literally false for recorded data — the value $4.13$ may well appear twice. The continuous
+density is an *idealization*: a smooth stand-in for a finely-quantized discrete reality,
+adopted because integrals are far more tractable than sums over thousands of bins and
+because the idealization is excellent when the quantization step is tiny relative to the
+spread. @fig-quantize shows when the idealization is honest and when it frays.
+
+```{python}
+#| label: fig-quantize
+#| fig-cap: "When the continuous idealization holds, and when it breaks. A true continuous wait is rounded to a recording grid. **Left (fine grid, 0.1 min):** the rounded data's density-scaled histogram is indistinguishable from the continuous density — the idealization is excellent. **Right (coarse grid, 2 min):** rounding has collapsed the data onto a few spikes; it is now genuinely discrete and a continuous density misrepresents it. The continuous model is honest only when the measurement resolution is fine relative to the distribution's spread."
+from scipy import stats
+lam = 0.5
+true = stats.expon(scale=1 / lam)
+xs = np.linspace(0, 12, 500)
+rng = np.random.default_rng(1)
+raw = rng.exponential(scale=1 / lam, size=8000)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7), sharey=True)
+for ax, step, title in ((axL, 0.1, "Fine grid (0.1 min): idealization holds"),
+                         (axR, 2.0, "Coarse grid (2 min): now discrete")):
+    rounded = np.round(raw / step) * step
+    ax.hist(rounded, bins=np.arange(0, 12 + step, max(step, 0.3)), density=True,
+            color=FILL, alpha=0.6, edgecolor="white", label="recorded data")
+    ax.plot(xs, true.pdf(xs), color=LINE, label="continuous density")
+    ax.set_title(title, fontsize=9.5); ax.set_xlabel("wait (min)")
+    ax.legend(fontsize=8, framealpha=0.9)
+axL.set_ylabel("density")
+plt.tight_layout()
+```
+
+## Mixed variables: when a point *does* carry mass {#sec-mixed}
+
+The continuous framework assumes *all* the probability is spread as density. Real variables
+often violate this with a single atom. Insurance claims are the canonical case: a policy's
+annual payout $X$ is **zero with substantial probability** (most years, no claim) and
+*continuous and positive* otherwise. Such an $X$ is neither discrete nor continuous but
+**mixed**: its CDF has a jump (at $0$) *and* a smooth rising part. There is no ordinary
+density — $P(X=0)>0$ contradicts @thm-point-zero — so the pure-density machinery of this
+article does not apply as-is. The honest fix is to model the atom and the continuous part
+separately (a "zero-inflated" or two-part model), or to use the CDF directly, which always
+exists ([PROB-2]). @fig-mixed shows such a CDF, with its tell-tale jump.
+
+```{python}
+#| label: fig-mixed
+#| fig-cap: "A mixed variable that no density can describe: annual insurance payout. With probability 0.7 the payout is exactly 0 (no claim); otherwise it is exponential. **Left:** the CDF jumps by 0.7 at $x=0$ (the atom — violating the continuity that gives a density) and then rises smoothly (the continuous part). **Right:** the corresponding 'density picture' must mix a spike (an arrow, carrying probability mass 0.7) with a genuine density curve (carrying the remaining 0.3). This is the boundary of this article: when a point carries mass, fall back to the CDF or a two-part model."
+from scipy import stats
+p0 = 0.7
+lam = 0.4
+xs = np.linspace(-1, 12, 700)
+# CDF: 0 for x<0; jump of p0 at 0; then p0 + (1-p0)*expon CDF.
+cdf = np.where(xs < 0, 0.0, p0 + (1 - p0) * (1 - np.exp(-lam * np.maximum(xs, 0))))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.plot(xs[xs < 0], cdf[xs < 0], color=POINT)
+axL.plot(xs[xs >= 0], cdf[xs >= 0], color=POINT)
+axL.plot([0, 0], [0, p0], color=POINT, ls=":")
+axL.scatter([0], [p0], color=LINE, zorder=4, s=35)
+axL.scatter([0], [0], facecolors="white", edgecolors=POINT, zorder=4, s=35)
+axL.annotate("jump = 0.7\n(atom at 0)", (0, p0), textcoords="offset points",
+             xytext=(18, -6), fontsize=8.5, color=LINE)
+axL.set_xlabel("payout $x$"); axL.set_ylabel("$F(x)$"); axL.set_title("Mixed CDF: a jump + a curve")
+axL.set_ylim(0, 1.05)
+
+cont = (1 - p0) * lam * np.exp(-lam * np.maximum(xs, 0))
+axR.plot(xs[xs >= 0], cont[xs >= 0], color=LINE, label="continuous part (mass 0.3)")
+axR.annotate("", xy=(0, 0.62), xytext=(0, 0),
+             arrowprops=dict(arrowstyle="->", color=ACCENT, lw=2.5))
+axR.text(0.2, 0.6, "point mass 0.7\nat $x=0$", fontsize=8.5, color=ACCENT)
+axR.set_xlabel("payout $x$"); axR.set_ylabel("density / mass")
+axR.set_title("No ordinary density exists"); axR.set_xlim(-0.6, 12)
+axR.legend(fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Heavy tails: the density exists, but its summaries may not {#sec-heavy-tails}
+
+A subtler edge: a perfectly valid density can have a tail so heavy that quantities we will
+soon want — like the mean $\int x f(x)\,dx$ — *do not exist* (the integral diverges). The
+**Cauchy** density $f(x)=\tfrac{1}{\pi(1+x^2)}$ is the standard example: it integrates to
+$1$ (a legitimate density), but $\int |x| f(x)\,dx$ diverges, so it has no mean. Nothing in
+*this* article breaks — every interval still has a well-defined probability via
+@thm-interval — but it is an honest flag that "has a density" does not guarantee "has a
+mean." That boundary is exactly where [PROB-5 *Expectation*] picks up, and we hand it off
+there.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the continuous-density model the right tool, and when is it the wrong one?"* The
+summary you should be able to recite:
+
+- **Use a density** when the quantity is genuinely a measurement on a continuum (time,
+  length, mass, concentration, error), recorded at a resolution *fine* relative to its
+  spread, with no value carrying special mass.
+- **Do not use it** when the variable is intrinsically discrete (counts, categories — use a
+  pmf, [PROB-3]); when a single value carries real probability (use a mixed/two-part model,
+  @sec-mixed); or when the recording grid is coarse relative to the spread (the histogram
+  is a few spikes — treat it as discrete).
+- **And remember the rate principle:** $f$ is probability *per unit width*, so it can
+  exceed $1$, only its integral over a set is meaningful, and any change of variable must
+  carry its Jacobian. The number you can interpret as a probability is always an
+  *integral* of $f$, never a value of $f$.
+:::
+
+# How you would actually compute with densities {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You almost never integrate a
+named density by hand in practice. Every numerical stack ships the CDF and its inverse:
+`scipy.stats.expon.cdf(2, scale=2)` returns $P(X\le2)$ for the rate-$0.5$ exponential
+($0.632$ above), `expon.pdf` returns the density value $f(x)$, `expon.ppf(0.9)` inverts the
+CDF to find the $90$th-percentile wait, and `expon.rvs` draws samples. Probabilities of
+intervals are always computed as **CDF differences** $F(b)-F(a)$ — never by re-integrating —
+because the CDF is the numerically stable, tabulated object (this is why the normal's CDF
+$\Phi$ is the function statistics tables were built around). For a *custom* density with no
+closed-form CDF, you integrate numerically (`scipy.integrate.quad`) and, if you need samples,
+use inverse-transform sampling (feed uniforms through `ppf`) — which is itself the
+change-of-variables theorem of @sec-change-of-vars run in reverse, and the seed of the
+probability integral transform in [PROB-23]. You now know what every one of these calls is
+doing and why the CDF, not the density, is the object they hang everything on.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-2 *Random Variables*]**, which built the CDF as the universal
+descriptor of any random number and split the world into discrete and continuous. Its
+sibling **[PROB-3 *Discrete RVs: the pmf*]** handled the countable case with probability
+*mass*; this article handled the continuum with probability *density*, the two meeting at
+the same CDF. From here the trunk continues:
+
+- **[PROB-5 *Expectation: The Long-Run Average*]** — now that we can integrate against a
+  density, the mean of a continuous variable is $E[X]=\int x f(x)\,dx$, the direct analogue
+  of the discrete weighted sum. The Cauchy edge case of @sec-heavy-tails is exactly the
+  divergence it must confront.
+- **[PROB-13 *The Normal Distribution*]** and **[PROB-14 *Gamma, Exponential & Beta*]** —
+  the named continuous distributions, each a specific density whose normalization
+  (@thm-valid-density) and properties we will derive; the exponential of @sec-exponential
+  gets its full memoryless/Poisson-process story in [PROB-14].
+- **[PROB-18 *Linear Transforms of Random Vectors*]** — the change-of-variables rule of
+  @sec-change-of-vars, lifted from one variable to many, where the scalar stretch factor
+  $\bigl|\frac{d}{dy}g^{-1}\bigr|$ becomes the *determinant* of a Jacobian matrix.
+- **[PROB-23 *Order Statistics & the Probability Integral Transform*]** — the inverse-CDF
+  sampling sketched in @sec-implementation becomes the theorem that $F(X)\sim
+  \mathrm{Uniform}(0,1)$, the reason a correctly computed $p$-value is uniform under the
+  null.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The historical roots.** The leap from probability-on-points to probability-as-area runs
+  through the geometric probability of Buffon's needle (1777) and was given its rigorous
+  modern footing by Kolmogorov's 1933 *Grundbegriffe der Wahrscheinlichkeitsrechnung*, where
+  the density appears as a Radon–Nikodym derivative of the probability measure with respect
+  to length — the measure-theoretic form of "$f=F'$" that our absolutely-continuous
+  qualifier in @def-continuous-rv was quietly pointing at.
+- **The subtlety we flagged.** That there exist continuous CDFs with *no* density (the
+  Cantor distribution) is the honest reason "continuous" and "absolutely continuous" are
+  different words; the Lebesgue decomposition theorem (every distribution = discrete +
+  absolutely continuous + singular) is the full statement, built in any measure-theoretic
+  probability course.
+- **Open threads this article deferred.** *What single number summarizes where a density
+  sits, and when does it fail to exist?* — expectation and the Cauchy counterexample,
+  [PROB-5]. *How do densities of two variables combine?* — joint densities and the
+  double-integral version of @thm-interval, [PROB-7]. *Why is the bell curve's
+  normalizing constant $1/\sqrt{2\pi}$?* — the Gaussian integral, the one place this track
+  spends a genuine double integral, [PROB-13].

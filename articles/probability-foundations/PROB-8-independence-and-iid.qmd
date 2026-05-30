@@ -1,0 +1,1188 @@
+---
+title: "Independence and the i.i.d. Sample"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the curve / theoretical value
+ACCENT = "#0a7d4d"     # highlights / the mean
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas
+```
+
+> **Where this sits in the track.** This article is the immediate sequel to
+> [PROB-7 *Joint Distributions, Covariance & Correlation*], which put two random variables
+> in the same room: it built the **joint distribution** (their pmf/pdf taken together),
+> recovered each one's **marginal** by summing or integrating the other out, and measured
+> their tendency to move together with the **covariance**. [PROB-7] left one loose thread
+> dangling on purpose — *zero covariance does not mean the variables are unrelated.* That
+> thread is where this article begins. We define **independence** of random variables —
+> the strongest possible statement that two quantities carry no information about each
+> other — show how it factors the joint distribution into a product of marginals, prove
+> that it *forces* covariance to zero (while the converse fails), and then collect the
+> single most consequential assumption in all of applied statistics: that a dataset is
+> **i.i.d.**, independent and identically distributed. Along the way we derive the rule
+> that powers every limit theorem downstream — that **variances of independent variables
+> add** — and watch the standard deviation of a sample mean shrink like $1/\sqrt{n}$. It
+> assumes [PROB-7] (joint distributions, covariance), and beneath that [PROB-5]
+> (expectation and its linearity) and [PROB-6] (variance). It sets up the i.i.d. backbone
+> that [PROB-19 *Chebyshev's Inequality*] and [PROB-21 *Modes of Convergence*] need for the
+> law of large numbers, that [PROB-22 *The Empirical CDF*] resamples from, and that the
+> Statistical Inference, Regression, and Classification tracks open almost every analysis
+> by assuming.
+
+## Abstract {.unnumbered}
+
+Two random variables are **independent** when learning the value of one tells you nothing
+about the distribution of the other. This article makes that idea precise — independence
+means the joint distribution **factors** into the product of the marginals,
+$f_{X,Y}(x,y) = f_X(x)\,f_Y(y)$ — and follows the factorization to its three most useful
+consequences, every step on the page. First, **the expectation of a product factors**,
+$\mathbb{E}[XY] = \mathbb{E}[X]\,\mathbb{E}[Y]$, from which **independence forces zero
+covariance**; we then exhibit the famous counterexample showing the converse is false.
+Second, while $\mathbb{E}\!\left[\sum_i X_i\right] = \sum_i \mathbb{E}[X_i]$ holds *always*
+(linearity needs no independence), the variance of a sum collapses to a clean sum,
+$\operatorname{Var}\!\left(\sum_i X_i\right) = \sum_i \operatorname{Var}(X_i)$, **only**
+when the cross-covariances vanish — which independence guarantees. Third, applying this to
+$n$ copies of one distribution gives the result the whole edifice rests on: the sample
+mean has variance $\sigma^2/n$, so its standard deviation shrinks like $1/\sqrt{n}$. The
+single claim the article defends is that **"i.i.d." is not a throwaway phrase but a precise,
+load-bearing, and frequently violated assumption** — and that knowing exactly what it buys
+you (and where real data breaks it) is the difference between using statistics and being
+used by it.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Random variables are **independent** when their joint distribution factors into the
+product of their marginals — knowing one changes nothing about the other:
+$$
+f_{X,Y}(x,y) = f_X(x)\,f_Y(y) \quad\text{for all } x,y.
+$$
+Two consequences run the rest of statistics. **(1) Independence makes products factor**,
+$\mathbb{E}[XY] = \mathbb{E}[X]\,\mathbb{E}[Y]$, which forces $\operatorname{Cov}(X,Y)=0$
+(though zero covariance does *not* run the other way). **(2) Variances of independent
+variables add**: $\operatorname{Var}\!\left(\sum_i X_i\right) = \sum_i
+\operatorname{Var}(X_i)$. When the $X_i$ are also **identically distributed** — the
+"**i.i.d.**" assumption — the sample mean $\bar X_n$ centers on the true mean with variance
+$\sigma^2/n$, so its spread shrinks like $1/\sqrt{n}$. That single fact is why more data
+helps, and why it helps *exactly that fast*.
+:::
+
+Everything below orbits that box. The factorization $f_{X,Y} = f_X f_Y$ will look like a
+definition we simply *declare*, but by the end you should read it as the only honest way to
+write "these two quantities share no information." The variance-adds rule will look like a
+happy cancellation, but it is the precise algebraic shadow of the covariances being zero —
+and the moment the data are *not* independent, those covariances come back and the
+$1/\sqrt{n}$ promise is broken. Holding that in view is what separates the slogan "assume
+i.i.d." from understanding what you have actually assumed.
+
+# Why we are here: the assumption hiding under every formula {#sec-why}
+
+Keep one question in view for the whole article: **what, exactly, are we promising when we
+say a dataset is i.i.d., and what does that promise buy us?** Every derivation below is an
+answer to part of that question. If a step ever feels like bookkeeping, return here.
+
+## The problem independence was invented to solve
+
+Probability began, in the seventeenth-century correspondence between Blaise Pascal and
+Pierre de Fermat over gambling problems, with a quiet assumption nobody bothered to name:
+that one roll of the dice does not remember the last. When they computed the chance of a
+run of outcomes by *multiplying* the chances of each, they were using independence —
+without a definition for it. The dice have no memory, so the probabilities multiply. That
+multiplication, used on faith for a century, is the thing this article makes into a precise,
+checkable property of random variables.
+
+The need to *name* it sharpened when probability stopped being about dice and started being
+about **data**. By the time Jacob Bernoulli proved his law of large numbers (1713) — the
+statement that the average of many trials closes in on the true probability — and Abraham de
+Moivre and later Laplace and Gauss developed the normal approximation to sums, every result
+rested on the same hypothesis: that the trials were *separate draws from the same mechanism*,
+each blind to the others. Bernoulli's trials were independent **and** identically
+distributed; that is precisely why their average behaved. Strip either word away and the
+theorems fail.
+
+The modern phrasing — "let $X_1,\dots,X_n$ be i.i.d." — is the compressed inheritance of
+all of this. It is the first line of nearly every proof in mathematical statistics, the
+default model for a random sample, and the silent premise behind the formula
+$\text{standard error} = \sigma/\sqrt{n}$ that appears on every polling crosstab and every
+A/B-test dashboard. It is also, in real data, **frequently false** — and the gap between
+the assumption and the reality is where careful practitioners earn their keep. So we are
+going to take the phrase apart word by word.
+
+::: {.callout-tip title="You might be asked"}
+*"What does the abbreviation i.i.d. stand for, and which of the two 'i's is doing the
+work?"* It stands for **independent and identically distributed**. *Both* words matter, and
+they do different jobs:
+
+- **Identically distributed** means every $X_i$ has the *same* distribution — the same pmf
+  or pdf, hence the same mean $\mu$ and the same variance $\sigma^2$. This is what lets us
+  speak of *the* population mean we are estimating.
+- **Independent** means the $X_i$ carry no information about each other — knowing $X_3$
+  tells you nothing about $X_7$. This is what makes the variances add and the sample mean
+  concentrate.
+
+A common trap answer is to treat them as one idea. They are separable: a time series can be
+identically distributed but *not* independent (today's temperature and tomorrow's share a
+distribution but are correlated); a dataset can be independent but *not* identically
+distributed (heights of independently sampled adults and infants). Both halves are needed
+for the clean $\sigma^2/n$ result.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any factorization, hold the picture. Independence is a statement about a *joint
+distribution* — the cloud of $(X,Y)$ pairs from [PROB-7]. Two variables are independent
+when **slicing the cloud at any value of $X$ leaves the shape of $Y$ unchanged.** Walk
+along the $x$-axis from one vertical slice to another; if the conditional spread and center
+of $Y$ never budge — same shape, just possibly fewer points — the variables are
+independent. If the slices tilt, shift, or change shape as you move, they are dependent.
+
+@fig-slices makes this concrete with two scatterplots that share *identical* marginal
+histograms — the same spread of $X$-values and the same spread of $Y$-values — but tell
+opposite stories about the joint behaviour.
+
+```{python}
+#| label: fig-slices
+#| fig-cap: "Independence is about the *joint* shape, not the marginals. **Left:** independent $X$ and $Y$ — the vertical slices (grey bands) all have the same centred, equal-width spread of $Y$; learning $X$ tells you nothing about $Y$. **Right:** dependent $X$ and $Y$ with the *same marginal histograms* (top and right) — yet the slices drift upward as $X$ grows. The marginals cannot see the difference; the joint cloud can."
+rng = np.random.default_rng(20)
+n = 1200
+
+# Left: independent
+x_ind = rng.normal(0, 1, n)
+y_ind = rng.normal(0, 1, n)
+
+# Right: dependent but with (approximately) the same marginals as the left.
+# Build a correlated pair via a shared latent, then it is not independent.
+z = rng.normal(0, 1, n)
+x_dep = z
+y_dep = 0.8 * z + np.sqrt(1 - 0.8**2) * rng.normal(0, 1, n)
+
+fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.2))
+for ax, (xx, yy, ttl) in zip(
+    axes,
+    [(x_ind, y_ind, "Independent: slices look identical"),
+     (x_dep, y_dep, "Dependent: slices drift")],
+):
+    ax.scatter(xx, yy, s=8, color=POINT, alpha=0.35, zorder=2)
+    for c in (-1.5, -0.5, 0.5, 1.5):
+        ax.axvspan(c - 0.18, c + 0.18, color=ACCENT, alpha=0.10, zorder=1)
+    ax.set_xlim(-3.4, 3.4); ax.set_ylim(-3.4, 3.4)
+    ax.set_xlabel("$x$"); ax.set_ylabel("$y$")
+    ax.set_title(ttl, fontsize=10.5)
+plt.tight_layout()
+```
+
+Notice the punchline already visible in the figure: the *marginal* histograms (the spreads
+of $X$ alone and $Y$ alone) are essentially the same on both sides — yet the left is
+independent and the right is not. **Independence is invisible to the marginals.** It lives
+entirely in how the two fit together, which is exactly why we need the joint distribution of
+[PROB-7] to define it, and why a single correlation number (also from [PROB-7]) can miss it.
+
+::: {.callout-tip title="You might be asked"}
+*"Intuitively, what is the difference between independence and being uncorrelated?"*
+**Uncorrelated** means the *straight-line* association is zero — no linear tilt to the cloud
+(@fig-slices, slices don't drift on average). **Independent** is far stronger: it means the
+slices are identical in *every* respect — center, spread, skew, shape — not just on average.
+Independence implies uncorrelated; the reverse fails because a cloud can have a perfectly
+symmetric curve (a $\cap$ or a ring) with no net tilt yet obvious dependence. We prove the
+forward implication in @sec-cov-zero and exhibit the famous counterexample to the converse
+in @sec-converse-fails.
+:::
+
+# Formal development {#sec-formal}
+
+## Defining independence by factorization {#sec-def}
+
+We start from the definition of independence for **events**, established in [PROB-1]: two
+events $A$ and $B$ are independent when $P(A\cap B) = P(A)\,P(B)$ — the probability of both
+is the product of the probabilities, which is the formal way to say "$B$ happening does not
+shift the chance of $A$." Random variables are functions on the sample space ([PROB-2]), so
+the natural definition of independence for random variables is: *every* event built from $X$
+is independent of *every* event built from $Y$.
+
+::: {#def-independence}
+**Definition (independent random variables).** Random variables $X$ and $Y$ are
+**independent** if, for every pair of values $x$ and $y$,
+$$
+P(X \le x,\ Y \le y) = P(X \le x)\,P(Y \le y),
+$$ {#eq-indep-cdf}
+i.e. the **joint CDF factors** into the product of the marginal CDFs,
+$F_{X,Y}(x,y) = F_X(x)\,F_Y(y)$. Equivalently — and this is the form we will use constantly
+— the **joint pmf/pdf factors** into the product of the marginals,
+$$
+\underbrace{p_{X,Y}(x,y)}_{\text{discrete}} = p_X(x)\,p_Y(y),
+\qquad
+\underbrace{f_{X,Y}(x,y)}_{\text{continuous}} = f_X(x)\,f_Y(y),
+\qquad\text{for all } x,y.
+$$ {#eq-indep-factor}
+:::
+
+Every symbol here was built earlier: $F_{X,Y}$ is the joint CDF, $p_{X,Y}$ and $f_{X,Y}$ the
+joint pmf and pdf from [PROB-7], and $F_X, p_X, f_X$ the *marginals* obtained there by
+summing or integrating the other variable out. The single new content of @def-independence is
+the word **factors**: the two-dimensional object on the left is the product of two
+one-dimensional objects on the right.
+
+Why is "factors" the right formalization of "carries no information"? Recall the conditional
+density from [PROB-1]/[PROB-9], $f_{Y\mid X}(y\mid x) = f_{X,Y}(x,y)/f_X(x)$ — the
+distribution of $Y$ *once you know* $X=x$. Substitute the factored form @eq-indep-factor:
+$$
+f_{Y\mid X}(y \mid x) = \frac{f_{X,Y}(x,y)}{f_X(x)} = \frac{f_X(x)\,f_Y(y)}{f_X(x)} = f_Y(y).
+$$
+The conditional distribution of $Y$ given $X=x$ is just $f_Y(y)$ — **it does not depend on
+$x$ at all.** Conditioning on $X$ changed nothing. That is precisely the slices-don't-move
+picture of @fig-slices, now in symbols: independence is exactly the statement that the
+conditional distribution equals the marginal. (We are borrowing the conditional-density
+*formula* from [PROB-9] here only to interpret the definition; nothing below depends on it.)
+
+::: {.callout-tip title="You might be asked"}
+*"Is checking the factorization at every $(x,y)$ really necessary — can't I just check the
+means or the covariance?"* No, and this is the heart of the topic. Independence is a
+statement about the **entire** joint distribution: it must hold for *all* $x$ and *all* $y$
+simultaneously. Matching means, or even matching covariance, is necessary but nowhere near
+sufficient — that is exactly the gap that makes "uncorrelated $\ne$ independent." To
+*establish* independence you verify the factorization (or argue it from the data-generating
+mechanism: "these were collected by separate, unrelated draws"). To *refute* it, a single
+$(x,y)$ where the product fails is enough.
+:::
+
+## Mutual independence of many variables {#sec-mutual}
+
+We rarely have just two variables; a dataset has $n$ of them. The definition extends in the
+obvious way, but with one subtlety worth stating because interviewers love it.
+
+::: {#def-mutual}
+**Definition (mutual independence).** Random variables $X_1, X_2, \dots, X_n$ are
+**mutually independent** if their joint pmf/pdf factors into the product of *all* the
+marginals,
+$$
+f_{X_1,\dots,X_n}(x_1,\dots,x_n) = \prod_{i=1}^{n} f_{X_i}(x_i)
+\qquad\text{for all } x_1,\dots,x_n.
+$$ {#eq-mutual}
+:::
+
+The subtlety: **mutual independence is strictly stronger than pairwise independence.** It is
+possible for every *pair* $(X_i, X_j)$ to be independent while the *whole collection* is not
+— the triple can carry joint information that no pair reveals. The classic example: let
+$X_1, X_2$ be independent fair coin flips coded as $0/1$, and define $X_3 = X_1 \oplus X_2$
+(their XOR — i.e. $X_3 = 1$ exactly when the two flips differ). Then each pair is independent
+(knowing one flip tells you nothing about the XOR), yet the three together are deterministic:
+$X_3$ is fixed once you know $X_1$ and $X_2$. So $f_{X_1,X_2,X_3} \ne f_{X_1}f_{X_2}f_{X_3}$.
+When we write "i.i.d." we always mean **mutual** independence, the full factorization
+@eq-mutual — anything weaker would not make the variance computations below go through.
+
+## Independence makes the expectation of a product factor {#sec-product}
+
+The first payoff of factorization is the workhorse identity behind everything that follows.
+
+::: {#thm-product}
+**Theorem (product rule for expectation under independence).** If $X$ and $Y$ are
+independent and have finite means, then
+$$
+\mathbb{E}[XY] = \mathbb{E}[X]\,\mathbb{E}[Y].
+$$ {#eq-product}
+More generally, for independent $X$ and $Y$ and any functions $g,h$,
+$\mathbb{E}[g(X)h(Y)] = \mathbb{E}[g(X)]\,\mathbb{E}[h(Y)]$.
+:::
+
+::: {.proof}
+We prove the continuous case; the discrete case is identical with sums replacing integrals.
+Start from the **law of the unconscious statistician** for two variables, established in
+[PROB-5]/[PROB-7]: for any function $u(x,y)$, its expectation is the integral against the
+joint density,
+$$
+\mathbb{E}[u(X,Y)] = \int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty} u(x,y)\,f_{X,Y}(x,y)\,dx\,dy.
+$$
+Apply this with $u(x,y) = xy$:
+$$
+\mathbb{E}[XY] = \int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty} xy\,f_{X,Y}(x,y)\,dx\,dy.
+$$
+Now use independence, @eq-indep-factor, to replace the joint density by the product
+$f_X(x)f_Y(y)$:
+$$
+\mathbb{E}[XY] = \int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty} xy\,f_X(x)\,f_Y(y)\,dx\,dy.
+$$
+The integrand now *separates* — it is a function of $x$ times a function of $y$. Group the
+$x$-pieces and the $y$-pieces:
+$$
+\mathbb{E}[XY] = \int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty}
+\bigl[x\,f_X(x)\bigr]\bigl[y\,f_Y(y)\bigr]\,dx\,dy.
+$$
+The inner integral is over $x$, and the entire $y$-factor $y\,f_Y(y)$ is a *constant* as far
+as the $dx$ integral is concerned, so it pulls outside the inner integral:
+$$
+\mathbb{E}[XY] = \int_{-\infty}^{\infty} y\,f_Y(y)
+\left[\int_{-\infty}^{\infty} x\,f_X(x)\,dx\right] dy.
+$$
+The bracketed inner integral is just $\mathbb{E}[X]$ — it is a number, not a function of
+$y$ — so it too pulls outside the remaining integral:
+$$
+\mathbb{E}[XY] = \mathbb{E}[X]\int_{-\infty}^{\infty} y\,f_Y(y)\,dy = \mathbb{E}[X]\,\mathbb{E}[Y],
+$$
+because the last integral is the definition of $\mathbb{E}[Y]$. The general $g,h$ version is
+identical: replace $x$ by $g(x)$ and $y$ by $h(y)$ throughout, and use
+$\mathbb{E}[g(X)] = \int g(x)f_X(x)\,dx$ (LOTUS again) at the final step. $\qquad\blacksquare$
+:::
+
+The one move that made this work was independence letting us **separate the integrand into
+an $x$-part and a $y$-part**. Without factorization, $f_{X,Y}(x,y)$ does not split, the
+double integral does not decouple, and $\mathbb{E}[XY]$ is generally *not*
+$\mathbb{E}[X]\mathbb{E}[Y]$. Hold onto that — it is the entire reason covariance is about to
+vanish.
+
+## Independence forces zero covariance {#sec-cov-zero}
+
+We can now settle the first half of the loose thread [PROB-7] left dangling.
+
+::: {#cor-cov-zero}
+**Corollary (independence $\Rightarrow$ uncorrelated).** If $X$ and $Y$ are independent (and
+have finite variances), then $\operatorname{Cov}(X,Y) = 0$, and hence their correlation is
+zero.
+:::
+
+::: {.proof}
+Recall the **computational form of covariance** derived in [PROB-7]:
+$$
+\operatorname{Cov}(X,Y) = \mathbb{E}[XY] - \mathbb{E}[X]\,\mathbb{E}[Y].
+$$
+(This itself comes from expanding the definition $\operatorname{Cov}(X,Y) =
+\mathbb{E}[(X-\mu_X)(Y-\mu_Y)]$ and using linearity of expectation — [PROB-7] does it in
+full.) By @thm-product, independence gives $\mathbb{E}[XY] = \mathbb{E}[X]\,\mathbb{E}[Y]$.
+Substitute:
+$$
+\operatorname{Cov}(X,Y) = \mathbb{E}[X]\,\mathbb{E}[Y] - \mathbb{E}[X]\,\mathbb{E}[Y] = 0.
+$$
+Correlation is covariance divided by the (positive) product of standard deviations, so it is
+zero whenever the covariance is. $\qquad\blacksquare$
+:::
+
+So independence is a *sufficient* condition for zero covariance. The next section shows it is
+not *necessary* — the converse is false, and understanding why is one of the most reliable
+ways to separate a fluent answer from a memorized one.
+
+## The converse fails: uncorrelated need not mean independent {#sec-converse-fails}
+
+::: {.callout-warning title="Pitfall"}
+**Zero covariance does not imply independence.** Covariance measures only the *linear*
+co-movement of two variables. A pair can be locked together by a perfectly deterministic
+*nonlinear* relationship — so dependent that one determines the other exactly — and still
+have covariance zero, because the relationship has no net linear tilt. Treating
+"uncorrelated" as "independent" is one of the most common and most punished errors in
+applied statistics.
+:::
+
+Here is the cleanest counterexample, the one to keep in your pocket. Let $X$ be any
+**symmetric** continuous random variable — meaning its density satisfies $f_X(-x) = f_X(x)$
+for all $x$ (the graph is a mirror image across the vertical axis) — for instance $X$ uniform
+on $[-1,1]$, where $f_X = \tfrac12$ on the whole interval, or $X$ standard normal, whose
+density $e^{-x^2/2}/\sqrt{2\pi}$ depends on $x$ only through $x^2$. Define
+$$
+Y = X^2.
+$$
+Then $Y$ is *completely determined* by $X$ — they could not be more dependent. Yet their
+covariance is zero. To see it, we first establish the one fact the example leans on: **every
+odd moment of a symmetric variable is zero.**
+
+Claim: if $f_X(-x)=f_X(x)$, then $\mathbb{E}[X^k] = 0$ for every *odd* power $k$. By LOTUS
+([PROB-5]), $\mathbb{E}[X^k] = \int_{-\infty}^{\infty} x^k f_X(x)\,dx$. Split the integral at
+$0$ into its negative and positive halves:
+$$
+\mathbb{E}[X^k] = \int_{-\infty}^{0} x^k f_X(x)\,dx + \int_{0}^{\infty} x^k f_X(x)\,dx.
+$$
+In the first integral substitute $u = -x$ (so $x = -u$, $dx = -du$; as $x$ runs from
+$-\infty$ to $0$, $u$ runs from $+\infty$ to $0$). Then $x^k = (-u)^k = -u^k$ because $k$ is
+odd, and $f_X(x) = f_X(-u) = f_X(u)$ by symmetry. The flip of the limits absorbs the minus
+sign from $dx$:
+$$
+\int_{-\infty}^{0} x^k f_X(x)\,dx
+= \int_{+\infty}^{0} (-u^k)\,f_X(u)\,(-du)
+= -\int_{0}^{\infty} u^k f_X(u)\,du.
+$$
+That is the *negative* of the second integral (just with $u$ as the dummy name instead of
+$x$). Adding the two halves, they cancel exactly:
+$$
+\mathbb{E}[X^k] = -\int_{0}^{\infty} u^k f_X(u)\,du + \int_{0}^{\infty} x^k f_X(x)\,dx = 0.
+$$
+Taking $k=1$ gives $\mathbb{E}[X] = 0$, and $k=3$ gives $\mathbb{E}[X^3] = 0$ — the two facts
+we need. (For a *discrete* symmetric $X$ the same argument runs with $p_X(-x)=p_X(x)$ and the
+sum split into negative and positive values; the term at $x$ and the term at $-x$ are
+negatives of each other for odd $k$ and cancel pairwise.)
+
+Now compute the covariance directly, using the computational form from [PROB-7] and
+$XY = X\cdot X^2 = X^3$:
+$$
+\operatorname{Cov}(X,Y) = \mathbb{E}[XY] - \mathbb{E}[X]\,\mathbb{E}[Y]
+= \mathbb{E}[X^3] - \underbrace{\mathbb{E}[X]}_{=\,0}\,\mathbb{E}[Y]
+= \underbrace{\mathbb{E}[X^3]}_{=\,0} - 0 = 0,
+$$
+where both $\mathbb{E}[X^3]=0$ and $\mathbb{E}[X]=0$ are exactly the odd-moment fact just
+proved. So $\operatorname{Cov}(X,Y)=0$ while $Y=X^2$ is a deterministic function of $X$. They
+are uncorrelated and maximally dependent at the same time. @fig-converse draws it.
+
+```{python}
+#| label: fig-converse
+#| fig-cap: "Uncorrelated but utterly dependent. With $X$ uniform on $[-1,1]$ and $Y=X^2$, every point lies *exactly* on the parabola (left) — knowing $X$ pins down $Y$ completely. Yet the cloud has no net linear tilt: the least-squares line (red) is flat, and the sample covariance is essentially zero (right, shown across many samples, scattering around $0$). Covariance is blind to the curve."
+rng = np.random.default_rng(3)
+x = rng.uniform(-1, 1, 400)
+y = x**2
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.9))
+
+axL.scatter(x, y, s=14, color=POINT, alpha=0.6, zorder=3)
+# least-squares line through the cloud, to show it is flat
+b1 = np.cov(x, y, bias=True)[0, 1] / np.var(x)
+b0 = y.mean() - b1 * x.mean()
+xs = np.linspace(-1, 1, 100)
+axL.plot(xs, b0 + b1 * xs, color=LINE, label=f"OLS line (slope {b1:.3f} $\\approx 0$)")
+axL.set_xlabel("$X$"); axL.set_ylabel("$Y = X^2$")
+axL.set_title("Deterministic, yet flat on average")
+axL.legend(loc="upper center", fontsize=9, framealpha=0.9)
+
+# sampling distribution of the covariance estimate
+covs = []
+for _ in range(2000):
+    xs2 = rng.uniform(-1, 1, 200)
+    ys2 = xs2**2
+    covs.append(np.cov(xs2, ys2, bias=True)[0, 1])
+axR.hist(covs, bins=40, color=FILL, edgecolor="white")
+axR.axvline(0, color=LINE, lw=2)
+axR.set_xlabel("sample covariance of $(X, X^2)$")
+axR.set_ylabel("frequency")
+axR.set_title("Centered at zero across 2000 samples")
+plt.tight_layout()
+print(f"population Cov(X, X^2) = E[X^3] - E[X]E[X^2] = 0 (X symmetric)")
+print(f"mean sample covariance over 2000 draws = {np.mean(covs): .4f}")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Give me a case where two variables are uncorrelated but dependent."* The $Y = X^2$ example
+above is the canonical answer — state it in one breath: *"Take $X$ symmetric about zero and
+$Y=X^2$; then $\operatorname{Cov}(X,Y)=\mathbb{E}[X^3]=0$ because every odd moment of a
+symmetric variable vanishes (the derivation just above), yet $Y$ is a deterministic function
+of $X$."* A second good answer: a point uniformly distributed on the unit circle, written as
+$X=\cos\theta,\ Y=\sin\theta$ with the angle $\theta$ uniform on $[0,2\pi)$ (density
+$\tfrac{1}{2\pi}$). All three required integrals vanish over a full period: $\mathbb{E}[X] =
+\tfrac{1}{2\pi}\int_0^{2\pi}\cos\theta\,d\theta = 0$, likewise $\mathbb{E}[Y]=0$, and using
+$\cos\theta\sin\theta = \tfrac12\sin 2\theta$,
+$$
+\mathbb{E}[XY] = \tfrac{1}{2\pi}\int_0^{2\pi}\cos\theta\,\sin\theta\,d\theta
+= \tfrac{1}{2\pi}\int_0^{2\pi}\tfrac12\sin 2\theta\,d\theta
+= \tfrac{1}{2\pi}\Bigl[-\tfrac14\cos 2\theta\Bigr]_0^{2\pi} = 0,
+$$
+so $\operatorname{Cov}(X,Y) = \mathbb{E}[XY]-\mathbb{E}[X]\mathbb{E}[Y] = 0$ — yet $X$ and $Y$
+are locked together by $X^2+Y^2=1$, so knowing one narrows the other to two values. **The one
+exception worth naming:** for the
+*jointly normal* distribution (and only there among the common cases), zero covariance
+*does* imply independence — which is exactly why people who live in Gaussian-world slip into
+conflating the two. That special case is proved in [PROB-17] when the multivariate normal is
+built.
+:::
+
+# Sums of random variables: where independence pays off {#sec-sums}
+
+The reason independence is *the* assumption of statistics is that data come in sums and
+averages — the sample mean, the sample total, the count of successes — and independence is
+what makes the spread of those sums computable. We build the two rules now.
+
+## The mean of a sum: linearity needs nothing {#sec-mean-sum}
+
+First, the easy and underappreciated half: **the expectation of a sum is always the sum of
+the expectations**, independence or not.
+
+::: {#thm-mean-sum}
+**Theorem (expectation of a sum).** For *any* random variables $X_1,\dots,X_n$ with finite
+means — independent or not, identically distributed or not —
+$$
+\mathbb{E}\!\left[\sum_{i=1}^n X_i\right] = \sum_{i=1}^n \mathbb{E}[X_i].
+$$ {#eq-mean-sum}
+:::
+
+::: {.proof}
+This is precisely the **linearity of expectation** proved in [PROB-5]: for two variables,
+$\mathbb{E}[X+Y] = \mathbb{E}[X] + \mathbb{E}[Y]$, with no assumption on how $X$ and $Y$
+relate. We extend to $n$ variables by induction. The base case $n=1$ is the bare identity
+$\mathbb{E}\!\left[\sum_{i=1}^{1} X_i\right] = \mathbb{E}[X_1] = \sum_{i=1}^{1}\mathbb{E}[X_i]$
+— a single term on each side, so there is nothing to combine. Assume the
+result for $n-1$ variables; then, writing $S_{n-1} = \sum_{i=1}^{n-1} X_i$ and applying
+two-variable linearity to $S_{n-1}$ and $X_n$,
+$$
+\mathbb{E}\!\left[\sum_{i=1}^n X_i\right]
+= \mathbb{E}[S_{n-1} + X_n]
+= \mathbb{E}[S_{n-1}] + \mathbb{E}[X_n]
+= \sum_{i=1}^{n-1}\mathbb{E}[X_i] + \mathbb{E}[X_n]
+= \sum_{i=1}^n \mathbb{E}[X_i],
+$$
+using the inductive hypothesis in the third step. The chain used linearity only, never
+independence. $\qquad\blacksquare$
+:::
+
+It is worth pausing on *why* this needs no independence, because it surprises people. The
+expectation of a sum is computed from the **joint** distribution, but it only ever touches
+the *marginals*: $\mathbb{E}[X+Y] = \int\!\int (x+y) f_{X,Y}\,dx\,dy$ splits into
+$\int\!\int x f_{X,Y} + \int\!\int y f_{X,Y}$, and integrating out the unused variable in
+each piece collapses $f_{X,Y}$ to a marginal — *regardless of whether it factored.* Adding
+is a linear operation, and linear operations never see the dependence structure. That is the
+intuition for why means add unconditionally while — as we are about to see — variances do
+not.
+
+## The variance of a sum: the general identity {#sec-var-sum-general}
+
+Now the variance. We first derive the *fully general* formula — no independence assumed —
+because it shows exactly where independence will earn its keep.
+
+::: {#thm-var-sum}
+**Theorem (variance of a sum, general).** For any random variables $X_1,\dots,X_n$ with
+finite variances,
+$$
+\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right)
+= \sum_{i=1}^n \operatorname{Var}(X_i)
+\;+\; \sum_{i\ne j} \operatorname{Cov}(X_i, X_j)
+= \sum_{i=1}^n \operatorname{Var}(X_i)
+\;+\; 2\sum_{i<j} \operatorname{Cov}(X_i, X_j).
+$$ {#eq-var-sum-general}
+:::
+
+::: {.proof}
+Write $S = \sum_{i=1}^n X_i$ and let $\mu_i = \mathbb{E}[X_i]$, so by @thm-mean-sum
+$\mathbb{E}[S] = \sum_i \mu_i$ and the centred sum is $S - \mathbb{E}[S] = \sum_i (X_i -
+\mu_i)$. By the definition of variance ([PROB-6]),
+$$
+\operatorname{Var}(S) = \mathbb{E}\!\left[\bigl(S - \mathbb{E}[S]\bigr)^2\right]
+= \mathbb{E}\!\left[\left(\sum_{i=1}^n (X_i - \mu_i)\right)^{\!2}\,\right].
+$$
+Expand the square of a sum. The square of $\sum_i a_i$ is the double sum $\sum_i \sum_j a_i
+a_j$ over *all* ordered pairs $(i,j)$ — this is just the distributive law,
+$(a_1+\dots+a_n)(a_1+\dots+a_n)$ multiplied out. With $a_i = X_i - \mu_i$:
+$$
+\operatorname{Var}(S) = \mathbb{E}\!\left[\sum_{i=1}^n \sum_{j=1}^n (X_i - \mu_i)(X_j - \mu_j)\right].
+$$
+Push the expectation through the (finite) double sum by linearity:
+$$
+\operatorname{Var}(S) = \sum_{i=1}^n \sum_{j=1}^n \mathbb{E}\bigl[(X_i - \mu_i)(X_j - \mu_j)\bigr].
+$$
+Now split the double sum into the **diagonal** terms ($i=j$) and the **off-diagonal** terms
+($i \ne j$). On the diagonal, $\mathbb{E}[(X_i-\mu_i)(X_i-\mu_i)] =
+\mathbb{E}[(X_i-\mu_i)^2] = \operatorname{Var}(X_i)$ by definition. Off the diagonal,
+$\mathbb{E}[(X_i-\mu_i)(X_j-\mu_j)] = \operatorname{Cov}(X_i, X_j)$ by the definition of
+covariance ([PROB-7]). Therefore
+$$
+\operatorname{Var}(S) = \sum_{i=1}^n \operatorname{Var}(X_i) + \sum_{i \ne j} \operatorname{Cov}(X_i, X_j).
+$$
+Finally, covariance is symmetric — $\operatorname{Cov}(X_i, X_j) = \operatorname{Cov}(X_j,
+X_i)$ — so each unordered pair $\{i,j\}$ appears twice in the off-diagonal sum, once as
+$(i,j)$ and once as $(j,i)$. Collecting them gives $2\sum_{i<j}\operatorname{Cov}(X_i,X_j)$,
+the second form. $\qquad\blacksquare$
+:::
+
+For two variables, @eq-var-sum-general is the identity $\operatorname{Var}(X+Y) =
+\operatorname{Var}(X) + \operatorname{Var}(Y) + 2\operatorname{Cov}(X,Y)$ that [PROB-7]
+derived — this is its $n$-variable generalization. The crucial structural fact is now in
+plain view: **the variance of a sum is the sum of the variances *plus a correction made
+entirely of covariances*.** The correction is the price of dependence.
+
+## The variance of a sum under independence: the covariances vanish {#sec-var-sum-indep}
+
+::: {#cor-var-sum-indep}
+**Corollary (variances add under independence).** If $X_1,\dots,X_n$ are **(pairwise)
+independent** — or merely **uncorrelated** — with finite variances, then
+$$
+\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right) = \sum_{i=1}^n \operatorname{Var}(X_i).
+$$ {#eq-var-sum-indep}
+:::
+
+::: {.proof}
+By @cor-cov-zero, independence forces $\operatorname{Cov}(X_i, X_j) = 0$ for every $i \ne j$.
+(Uncorrelatedness gives the same thing by definition, which is why it is all we actually
+need here.) Drop the now-zero covariance correction in @eq-var-sum-general:
+$$
+\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right)
+= \sum_{i=1}^n \operatorname{Var}(X_i) + \underbrace{\sum_{i\ne j}\operatorname{Cov}(X_i,X_j)}_{=\,0}
+= \sum_{i=1}^n \operatorname{Var}(X_i). \qquad\blacksquare
+$$
+:::
+
+Two things are worth making explicit, because both are exam-bait.
+
+**First**, the corollary needs only *uncorrelatedness*, not full independence — the proof
+used nothing but $\operatorname{Cov}=0$. Independence is the most common *reason* the
+covariances are zero, but it is more than the variance rule strictly requires. State this
+precisely and you signal you understand the dependency chain rather than a slogan.
+
+**Second**, contrast it sharply with the mean. The mean of a sum **always** adds
+(@thm-mean-sum); the variance of a sum adds **only** when the cross-covariances vanish.
+Variance is a *quadratic* quantity — it comes from squaring — and squaring a sum produces
+cross terms that a linear operation never would. This is the same "$a^2$ versus $a$"
+fingerprint of the square that [PROB-6] flagged in $\operatorname{Var}(aX+b) =
+a^2\operatorname{Var}(X)$: linearity is blind to dependence, but anything quadratic is not.
+
+::: {.callout-warning title="Pitfall"}
+**Do not assume variances add.** The single most common error in applied variance
+calculations is writing $\operatorname{Var}(\sum X_i) = \sum \operatorname{Var}(X_i)$ when
+the $X_i$ are correlated. If the variables move together ($\operatorname{Cov} > 0$), the true
+variance is *larger* than the sum of variances — risk compounds, as anyone who has watched a
+"diversified" portfolio of correlated assets crash in unison can attest. If they move
+oppositely ($\operatorname{Cov} < 0$), the true variance is *smaller* — the basis of hedging
+and of variance-reduction tricks. The covariance correction in @eq-var-sum-general is not a
+nuisance term to ignore; it is often the most important term in the problem.
+:::
+
+# The i.i.d. sample and the $1/\sqrt{n}$ law {#sec-iid}
+
+We now assemble the pieces into the object the rest of statistics is built from.
+
+## What "i.i.d." means precisely {#sec-iid-def}
+
+::: {#def-iid}
+**Definition (i.i.d. sample).** Random variables $X_1, X_2, \dots, X_n$ are
+**independent and identically distributed (i.i.d.)** if
+
+1. **(identically distributed)** they all have the same distribution — the same CDF $F$,
+   hence the same mean $\mu = \mathbb{E}[X_i]$ and same variance $\sigma^2 =
+   \operatorname{Var}(X_i)$ for every $i$; and
+2. **(independent)** they are mutually independent in the sense of @def-mutual, so the joint
+   density factors as $\prod_{i=1}^n f(x_i)$ — *the same* one-variable density $f$ in every
+   factor.
+
+We call such a collection a **random sample of size $n$** from the distribution $F$.
+:::
+
+This is the formal model of "draw $n$ separate observations from the same population, each
+draw blind to the others." The identical-distribution clause is what lets us speak of the
+*single* population mean $\mu$ that all $n$ observations share and that we are usually trying
+to estimate; the independence clause is what makes the next computation collapse so cleanly.
+
+## The mean and variance of the sample mean {#sec-sample-mean}
+
+The single most-used statistic is the **sample mean**,
+$$
+\bar X_n = \frac{1}{n}\sum_{i=1}^n X_i.
+$$ {#eq-sample-mean}
+We compute its expectation and its variance from the rules just proved. Both calculations
+are short, and both are worth doing by hand once so the famous results stop being magic.
+
+::: {#thm-sample-mean}
+**Theorem (mean and variance of $\bar X_n$).** For an i.i.d. sample of size $n$ from a
+distribution with mean $\mu$ and variance $\sigma^2$,
+$$
+\mathbb{E}[\bar X_n] = \mu,
+\qquad
+\operatorname{Var}(\bar X_n) = \frac{\sigma^2}{n},
+\qquad
+\operatorname{SD}(\bar X_n) = \frac{\sigma}{\sqrt{n}}.
+$$ {#eq-sample-mean-moments}
+:::
+
+::: {.proof}
+**The expectation.** Apply @thm-mean-sum (which needs no independence) and then pull the
+constant $1/n$ out of the expectation, which linearity ([PROB-5]) permits:
+$$
+\mathbb{E}[\bar X_n]
+= \mathbb{E}\!\left[\frac{1}{n}\sum_{i=1}^n X_i\right]
+= \frac{1}{n}\sum_{i=1}^n \mathbb{E}[X_i]
+= \frac{1}{n}\sum_{i=1}^n \mu
+= \frac{1}{n}\cdot n\mu
+= \mu.
+$$
+The third equality uses *identically distributed*: every $\mathbb{E}[X_i]$ equals the same
+$\mu$. So the sample mean is **centered on the true mean** — on average it is exactly right.
+(In the vocabulary of the Inference track, $\bar X_n$ is an *unbiased* estimator of $\mu$.)
+
+**The variance.** Here independence finally earns its place. First handle the constant
+$1/n$. By the scaling rule $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$ from [PROB-6],
+pulling the $1/n$ out of the variance squares it:
+$$
+\operatorname{Var}(\bar X_n)
+= \operatorname{Var}\!\left(\frac{1}{n}\sum_{i=1}^n X_i\right)
+= \frac{1}{n^2}\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right).
+$$
+Now use independence via @cor-var-sum-indep to turn the variance of the sum into the sum of
+the variances:
+$$
+\operatorname{Var}(\bar X_n)
+= \frac{1}{n^2}\sum_{i=1}^n \operatorname{Var}(X_i)
+= \frac{1}{n^2}\sum_{i=1}^n \sigma^2
+= \frac{1}{n^2}\cdot n\sigma^2
+= \frac{\sigma^2}{n}.
+$$
+The penultimate equality uses *identically distributed* again: every
+$\operatorname{Var}(X_i)$ equals the same $\sigma^2$. Finally, the standard deviation is the
+square root of the variance ([PROB-6]):
+$$
+\operatorname{SD}(\bar X_n) = \sqrt{\operatorname{Var}(\bar X_n)} = \sqrt{\frac{\sigma^2}{n}}
+= \frac{\sigma}{\sqrt{n}}. \qquad\blacksquare
+$$
+:::
+
+Trace exactly which assumption did which job, because this is the most interview-relevant
+sentence in the article. **Identically distributed** gave us the single $\mu$ and single
+$\sigma^2$ to sum. **Independence** is what let us drop the covariance correction and write
+$\operatorname{Var}(\sum X_i) = n\sigma^2$ instead of $n\sigma^2 + (\text{covariances})$.
+Take away independence and the $\sigma^2/n$ becomes $\sigma^2/n + (\text{correlation
+term})$, and — as we will see in @sec-edge — that term can dwarf the $\sigma^2/n$ and make a
+huge sample worth almost nothing.
+
+## What $\sigma/\sqrt{n}$ means, and why it is the engine of statistics {#sec-root-n}
+
+Read @eq-sample-mean-moments as a statement about *information*. The variance of the sample
+mean is $\sigma^2/n$: it **shrinks toward zero as $n$ grows**. So as you collect more data,
+the sample mean clusters ever more tightly around the truth $\mu$. This is the precise,
+quantitative reason that "more data helps" — and the formula tells you it helps at an exact
+rate.
+
+That rate is the subtle part. The *standard deviation* of $\bar X_n$ — the spread in the
+original units — is $\sigma/\sqrt{n}$, not $\sigma/n$. To **halve** the standard error of
+your estimate you must **quadruple** the sample size. Diminishing returns are baked into the
+square root: the first hundred observations buy you a lot of precision; going from ten
+thousand to ten thousand and one buys almost nothing. @fig-root-n shows both the shrinking
+spread and the brutal $1/\sqrt{n}$ curve.
+
+```{python}
+#| label: fig-root-n
+#| fig-cap: "The $1/\\sqrt{n}$ law in action. **Left:** the sampling distribution of $\\bar X_n$ for an exponential population ($\\mu=1,\\ \\sigma=1$) tightens around the true mean (dashed) as $n$ grows from 5 to 500 — its spread is $\\sigma/\\sqrt{n}$. **Right:** the standard error $\\sigma/\\sqrt{n}$ (red) against $n$, with the simulated standard deviations of $\\bar X_n$ (dots) landing exactly on it. The curve is steep early and nearly flat late: quadrupling $n$ only halves the error."
+rng = np.random.default_rng(11)
+mu, sigma = 1.0, 1.0      # Exp(1): mean 1, sd 1
+ns = [5, 20, 100, 500]
+reps = 6000
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.9))
+
+colors = plt.cm.viridis(np.linspace(0.15, 0.85, len(ns)))
+for nval, col in zip(ns, colors):
+    means = rng.exponential(scale=1.0, size=(reps, nval)).mean(axis=1)
+    axL.hist(means, bins=60, density=True, histtype="step",
+             color=col, lw=2, label=f"$n={nval}$")
+axL.axvline(mu, color=GREY, ls="--", lw=1.5, label=r"true mean $\mu=1$")
+axL.set_xlim(0, 2.2)
+axL.set_xlabel(r"$\bar X_n$"); axL.set_ylabel("density")
+axL.set_title("Sampling distribution tightens with $n$")
+axL.legend(fontsize=8.5, framealpha=0.9)
+
+n_grid = np.arange(2, 501)
+se = sigma / np.sqrt(n_grid)
+axR.plot(n_grid, se, color=LINE, label=r"$\sigma/\sqrt{n}$ (theory)")
+emp_n = [5, 20, 50, 100, 200, 400, 500]
+emp_sd = []
+for nval in emp_n:
+    means = rng.exponential(scale=1.0, size=(8000, nval)).mean(axis=1)
+    emp_sd.append(means.std())
+axR.scatter(emp_n, emp_sd, color=POINT, s=45, zorder=3, label="simulated SD of $\\bar X_n$")
+axR.set_xlabel("sample size $n$"); axR.set_ylabel(r"standard error of $\bar X_n$")
+axR.set_title(r"Standard error follows $\sigma/\sqrt{n}$")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The figure also previews a second miracle this article deliberately does *not* prove: the
+left histograms are not just tightening, they are turning into the **bell curve** even
+though the underlying population is a lopsided exponential. That is the **Central Limit
+Theorem**, and per the track's ownership decisions it belongs to the Statistical Inference
+track (its proof needs the convergence machinery of [PROB-20] and [PROB-21]). What *this*
+article owns is the prerequisite: the i.i.d. structure and the exact $\sigma^2/n$ variance
+that the CLT then describes the *shape* of. We supply the variance; Inference supplies the
+limiting law.
+
+::: {.callout-tip title="You might be asked"}
+*"If I double my sample, how much more precise is my estimate of the mean?"* Not twice as
+precise. The **variance** of $\bar X_n$ halves (variance is $\sigma^2/n$), but the **standard
+error** — the thing reported as $\pm$ on an estimate — only drops by a factor of
+$\sqrt 2 \approx 1.41$, because the standard error is $\sigma/\sqrt n$. To cut the standard
+error in *half* you need *four times* the data. This $\sqrt n$ scaling is why surveys hit a
+wall of diminishing returns and why "just collect more data" is a real but expensive lever.
+A sharp follow-up: *"and what if the observations are positively correlated?"* — then the
+covariance term in @eq-var-sum-general is positive, the effective sample size is *smaller*
+than $n$, and the standard error shrinks even more slowly than $\sigma/\sqrt n$. We make that
+quantitative in @sec-edge.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the machinery on honest, real-flavored problems — including one at the edge where the
+i.i.d. assumption breaks and the formulas mislead.
+
+## Example 1 — combining two independent measurements {#sec-ex-measure}
+
+A laboratory weighs a sample on two independent scales. Scale A has measurement noise with
+standard deviation $\sigma_A = 0.40$ g; scale B is older, with $\sigma_B = 0.70$ g. Each
+scale reports the true weight $w$ plus independent zero-mean noise, so the two readings are
+$X_A = w + \varepsilon_A$ and $X_B = w + \varepsilon_B$ with $\varepsilon_A, \varepsilon_B$
+independent. How should we combine them, and how much does combining help?
+
+The naive combination is the simple average $\tfrac12(X_A + X_B)$. Both readings are
+unbiased ($\mathbb{E}[X_A] = \mathbb{E}[X_B] = w$), so by @thm-mean-sum the average is
+unbiased too. Its variance, using $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$
+([PROB-6]) and then independence (@cor-var-sum-indep) to add the variances:
+$$
+\operatorname{Var}\!\left(\tfrac12 X_A + \tfrac12 X_B\right)
+= \tfrac14\operatorname{Var}(X_A) + \tfrac14\operatorname{Var}(X_B)
+= \tfrac14(\sigma_A^2 + \sigma_B^2).
+$$
+But the simple average is *not* the best linear combination, because it trusts the noisy
+scale as much as the precise one. Consider the general weighted average $\hat w = \alpha X_A
++ (1-\alpha) X_B$ (weights summing to one keep it unbiased). Its variance, again by scaling
+and independence, is
+$$
+\operatorname{Var}(\hat w) = \alpha^2 \sigma_A^2 + (1-\alpha)^2 \sigma_B^2,
+$$
+a function of the single knob $\alpha$. Minimize it the Calc-1 way — differentiate and set to
+zero:
+$$
+\frac{d}{d\alpha}\Bigl[\alpha^2\sigma_A^2 + (1-\alpha)^2\sigma_B^2\Bigr]
+= 2\alpha\sigma_A^2 - 2(1-\alpha)\sigma_B^2 = 0
+\;\Longrightarrow\;
+\alpha\sigma_A^2 = (1-\alpha)\sigma_B^2.
+$$
+Solving for $\alpha$:
+$$
+\alpha\sigma_A^2 + \alpha\sigma_B^2 = \sigma_B^2
+\;\Longrightarrow\;
+\alpha = \frac{\sigma_B^2}{\sigma_A^2 + \sigma_B^2}.
+$$
+The optimal weight on a scale is proportional to the *other* scale's variance — equivalently,
+to its **own inverse variance** $1/\sigma_A^2$. This is **inverse-variance weighting**: trust
+each measurement in proportion to its precision. @fig-measure plots the variance against
+$\alpha$ and marks both the optimum and the inferior simple average.
+
+```{python}
+#| label: fig-measure
+#| fig-cap: "Combining two independent measurements with noise SDs $0.40$ g and $0.70$ g. The variance of the weighted estimate $\\alpha X_A + (1-\\alpha)X_B$ (red curve) is a parabola in the weight $\\alpha$. The simple average $\\alpha=0.5$ (grey) is beaten by the inverse-variance optimum (green), which leans on the more precise scale A. Independence is what let the two variances simply add to form this parabola."
+sA, sB = 0.40, 0.70
+alpha = np.linspace(0, 1, 200)
+var = alpha**2 * sA**2 + (1 - alpha)**2 * sB**2
+a_star = sB**2 / (sA**2 + sB**2)
+var_star = a_star**2 * sA**2 + (1 - a_star)**2 * sB**2
+var_simple = 0.25 * (sA**2 + sB**2)
+
+fig, ax = plt.subplots()
+ax.plot(alpha, var, color=LINE, label=r"$\operatorname{Var}(\hat w)=\alpha^2\sigma_A^2+(1-\alpha)^2\sigma_B^2$")
+ax.scatter([a_star], [var_star], color=ACCENT, s=90, zorder=4, edgecolor="white",
+           label=fr"optimum $\alpha^*={a_star:.2f}$, var $={var_star:.4f}$")
+ax.scatter([0.5], [var_simple], color=GREY, s=70, zorder=4,
+           label=fr"simple average, var $={var_simple:.4f}$")
+ax.set_xlabel(r"weight $\alpha$ on scale A")
+ax.set_ylabel(r"variance of combined estimate")
+ax.set_title("Inverse-variance weighting beats the simple average")
+ax.legend(loc="upper center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"optimal alpha* = sigma_B^2/(sigma_A^2+sigma_B^2) = {a_star:.4f}")
+print(f"variance at optimum       = {var_star:.5f}  (SD = {np.sqrt(var_star):.4f} g)")
+print(f"variance at simple average= {var_simple:.5f}  (SD = {np.sqrt(var_simple):.4f} g)")
+print(f"variance of scale A alone = {sA**2:.5f}  (SD = {sA:.4f} g)")
+```
+
+The payoff: combining two independent readings — even one mediocre one — beats either reading
+alone, and weighting by precision beats weighting them equally. This is exactly the logic
+behind meta-analysis (pooling independent studies), sensor fusion, and the Kalman filter.
+Every step relied on independence to add the variances; if the two scales shared a systematic
+error (a miscalibrated reference weight), $\operatorname{Cov}(\varepsilon_A,\varepsilon_B) >
+0$ and the combination would help far less — the boundary we hit head-on in @sec-edge.
+
+## Example 2 — the standard error of a poll {#sec-ex-poll}
+
+A pollster samples $n$ voters independently and records $X_i = 1$ if voter $i$ supports a
+measure, $0$ otherwise. Each $X_i$ is a Bernoulli variable: it equals $1$ with the true
+population support $p$ and $0$ with probability $1-p$. (The Bernoulli is catalogued in
+[PROB-11]; here we need only its mean and variance, which we derive inline.) For a single
+$X_i$,
+$$
+\mathbb{E}[X_i] = 1\cdot p + 0\cdot(1-p) = p,
+$$
+$$
+\operatorname{Var}(X_i) = \mathbb{E}[X_i^2] - (\mathbb{E}[X_i])^2 = p - p^2 = p(1-p),
+$$
+where $\mathbb{E}[X_i^2] = 1^2\cdot p + 0^2\cdot(1-p) = p$ because $X_i^2 = X_i$ for a $0/1$
+variable. The poll's estimate of support is the sample mean $\hat p = \bar X_n =
+\tfrac1n\sum X_i$, which is just the fraction of "yes" responses. By @thm-sample-mean, with
+$\mu = p$ and $\sigma^2 = p(1-p)$,
+$$
+\mathbb{E}[\hat p] = p,
+\qquad
+\operatorname{Var}(\hat p) = \frac{p(1-p)}{n},
+\qquad
+\operatorname{SE}(\hat p) = \sqrt{\frac{p(1-p)}{n}}.
+$$
+That last expression is the **standard error of a proportion** — the $\pm$ on every poll. Two
+honest readings of it. First, the worst-case spread is at $p = 0.5$, where $p(1-p) = 0.25$ is
+largest; this is why "margin of error" tables are computed at $50\%$ — the conservative case.
+At $p=0.5$ and $n=1000$, $\operatorname{SE} = \sqrt{0.25/1000} \approx 0.0158$, and the
+familiar "$\pm 3$ points" margin is roughly $2\,\operatorname{SE} \approx 0.032$. Second, the
+$\sqrt n$ wall: @fig-poll shows the margin of error against $n$.
+
+```{python}
+#| label: fig-poll
+#| fig-cap: "The standard error of a poll at the conservative $p=0.5$. **Left:** margin of error ($\\approx 2\\sqrt{p(1-p)/n}$) collapses fast for small samples, then crawls — going from 1000 to 4000 respondents only halves it (from $\\pm 3.2$ to $\\pm 1.6$ points). **Right:** simulated $\\hat p$ for $n=1000$ over 5000 polls, centred at the truth $p=0.5$ with SD matching $\\sqrt{p(1-p)/n}$ (dashed band at $\\pm 2$ SE). The $1/\\sqrt n$ law is why a national poll of a few thousand suffices, and why ten times the budget barely sharpens it."
+p = 0.5
+n_grid = np.arange(100, 4001, 10)
+moe = 2 * np.sqrt(p * (1 - p) / n_grid) * 100  # in percentage points
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.9))
+axL.plot(n_grid, moe, color=LINE)
+for nn in (1000, 4000):
+    m = 2 * np.sqrt(p*(1-p)/nn) * 100
+    axL.scatter([nn], [m], color=ACCENT, s=60, zorder=4, edgecolor="white")
+    axL.annotate(f"$n={nn}$\n$\\pm{m:.1f}$ pts", (nn, m),
+                 textcoords="offset points", xytext=(8, 10), fontsize=9)
+axL.set_xlabel("sample size $n$"); axL.set_ylabel("margin of error (pct points)")
+axL.set_title(r"Margin of error $\approx 2\sqrt{p(1-p)/n}$")
+
+rng = np.random.default_rng(7)
+nn = 1000
+phats = rng.binomial(nn, p, size=5000) / nn
+se = np.sqrt(p*(1-p)/nn)
+axR.hist(phats, bins=45, density=True, color=FILL, edgecolor="white")
+axR.axvline(p, color=GREY, ls="--", lw=1.5, label=r"truth $p=0.5$")
+axR.axvspan(p - 2*se, p + 2*se, color=ACCENT, alpha=0.15, label=r"$\pm 2\,$SE")
+axR.set_xlabel(r"$\hat p$ (poll estimate)"); axR.set_ylabel("density")
+axR.set_title(f"Sampling distribution of $\\hat p$, $n={nn}$")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"SE at p=0.5, n=1000: {np.sqrt(p*(1-p)/1000):.4f}  -> MOE ~ {2*np.sqrt(p*(1-p)/1000)*100:.2f} pts")
+print(f"simulated SD of phat: {phats.std():.4f}  (theory {se:.4f})")
+```
+
+Notice this whole calculation is just @thm-sample-mean with a Bernoulli population, and it
+silently assumes the voters were sampled **independently and identically** — the same
+population $p$, each draw blind to the others. That assumption is exactly what the next
+example violates.
+
+## Example 3 (edge of applicability) — when "i.i.d." is a lie {#sec-edge}
+
+Here is the honest boundary every applied track eventually slams into: **real data is often
+not i.i.d., and pretending it is makes you overconfident — sometimes catastrophically.** We
+make the failure quantitative.
+
+Suppose we are estimating a daily mean — say, average page-load latency — from $n$ consecutive
+days. The identical-distribution part might be fine (no trend over the window), but
+consecutive days are **correlated**: a slow server today tends to be slow tomorrow. Model the
+observations as having common variance $\sigma^2$ and a constant pairwise correlation $\rho$
+between *every* pair, $\operatorname{Cov}(X_i, X_j) = \rho\sigma^2$ for $i\ne j$ (this is the
+"equicorrelation" model; real autocorrelation decays with distance, but constant $\rho$ makes
+the arithmetic clean and the lesson identical). Now compute the *true* variance of the sample
+mean using the **general** formula @eq-var-sum-general, which keeps the covariances:
+$$
+\operatorname{Var}(\bar X_n)
+= \frac{1}{n^2}\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right)
+= \frac{1}{n^2}\left[\sum_{i=1}^n \sigma^2 + \sum_{i\ne j}\rho\sigma^2\right].
+$$
+There are $n$ diagonal terms and $n(n-1)$ off-diagonal ordered pairs, so
+$$
+\operatorname{Var}(\bar X_n)
+= \frac{1}{n^2}\Bigl[n\sigma^2 + n(n-1)\rho\sigma^2\Bigr]
+= \frac{\sigma^2}{n}\Bigl[1 + (n-1)\rho\Bigr].
+$$ {#eq-corr-var}
+Read @eq-corr-var against the i.i.d. answer $\sigma^2/n$. The correction factor is $1 +
+(n-1)\rho$. When $\rho = 0$ it is $1$ and we recover @thm-sample-mean. But when $\rho > 0$,
+the factor *grows with $n$* — and for large $n$ the variance behaves like $\sigma^2\rho$,
+which **does not go to zero at all.** No matter how many correlated days you collect, your
+estimate of the mean stops improving. The naive standard error $\sigma/\sqrt n$ understates
+the true uncertainty by a factor of $\sqrt{1+(n-1)\rho}$, and you build confidence intervals
+that are far too narrow. @fig-edge shows the gap blowing open.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability: i.i.d. assumed, dependence real. With equicorrelation $\\rho$ between observations, the *true* variance of $\\bar X_n$ (solid) is $\\frac{\\sigma^2}{n}[1+(n-1)\\rho]$, while the naive i.i.d. formula $\\sigma^2/n$ (dashed) keeps shrinking. **Left:** for $\\rho=0.3$ the true variance flattens out near $\\sigma^2\\rho$ — more data buys almost nothing past a point. **Right:** simulated $\\bar X_n$ for $n=200$ correlated observations is far more spread out than the i.i.d. theory (red band) predicts; reporting $\\sigma/\\sqrt n$ here would badly overstate one's certainty."
+sigma2 = 1.0
+n_grid = np.arange(2, 401)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.9))
+
+for rho, col in zip([0.0, 0.1, 0.3], [ACCENT, "#b8860b", LINE]):
+    true_var = sigma2 / n_grid * (1 + (n_grid - 1) * rho)
+    axL.plot(n_grid, true_var, color=col, label=fr"true, $\rho={rho}$")
+axL.plot(n_grid, sigma2 / n_grid, color=GREY, ls="--", lw=1.6, label=r"naive i.i.d. $\sigma^2/n$")
+axL.set_xlabel("sample size $n$"); axL.set_ylabel(r"$\operatorname{Var}(\bar X_n)$")
+axL.set_ylim(0, 0.35)
+axL.set_title("Correlation defeats the $1/n$ shrink")
+axL.legend(fontsize=8.5, framealpha=0.9)
+
+# Simulate equicorrelated data: X_i = sqrt(rho)*Z + sqrt(1-rho)*eps_i (shared latent Z)
+rng = np.random.default_rng(99)
+rho, nn, reps = 0.3, 200, 5000
+Z = rng.normal(0, 1, reps)[:, None]
+eps = rng.normal(0, 1, (reps, nn))
+X = np.sqrt(rho) * Z + np.sqrt(1 - rho) * eps   # Var=1, pairwise corr=rho
+means = X.mean(axis=1)
+se_naive = np.sqrt(sigma2 / nn)
+se_true = np.sqrt(sigma2 / nn * (1 + (nn - 1) * rho))
+axR.hist(means, bins=50, density=True, color=FILL, edgecolor="white")
+axR.axvspan(-2*se_naive, 2*se_naive, color=LINE, alpha=0.18,
+            label=fr"naive $\pm2\sigma/\sqrt n={2*se_naive:.3f}$")
+axR.axvline(0, color=GREY, ls="--", lw=1.3)
+axR.set_xlabel(r"$\bar X_n$ ($n=200$, $\rho=0.3$)"); axR.set_ylabel("density")
+axR.set_title("Reality (histogram) far wider than i.i.d. theory")
+axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"naive i.i.d. SD of mean : {se_naive:.4f}")
+print(f"true SD (eq. 9) of mean : {se_true:.4f}")
+print(f"simulated SD of mean    : {means.std():.4f}")
+print(f"understatement factor   : {se_true/se_naive:.2f}x")
+```
+
+The simulation makes it visceral: with $\rho = 0.3$ and $n = 200$, the true standard error is
+roughly $`{python} f"{np.sqrt(1*(1+(200-1)*0.3)/200):.2f}"`$ versus the naive
+$`{python} f"{np.sqrt(1/200):.2f}"`$ — an understatement of about
+$`{python} f"{np.sqrt((1+(200-1)*0.3)):.1f}"`$-fold. Build a 95% confidence interval with the
+naive formula and it will miss the truth far more than 5% of the time.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me a real-world example where the i.i.d. assumption fails, and say which half breaks."*
+Have several ready and name the failing half each time:
+
+- **Time series** (stock returns, server metrics, weather): **independence** fails —
+  consecutive observations are autocorrelated. Identical distribution may also fail if there
+  is a trend or regime change (then it is *non-stationary*).
+- **Clustered/grouped data** (students within classrooms, patients within hospitals,
+  repeated measurements on the same person): **independence** fails within clusters; the
+  *effective* sample size is closer to the number of clusters than the number of rows. This
+  is why "we have a million rows" can be statistically weak if they come from a hundred
+  users.
+- **Spatial data** (soil samples, disease incidence by region): **independence** fails —
+  nearby locations resemble each other.
+- **Survivorship / selection** (only funds that survived appear in the dataset): **identical
+  distribution** fails — the sample is not from the population you think.
+
+**What you reach for instead:** for time series, models that build the dependence in (AR/ARMA,
+GARCH) or robust standard errors (Newey–West / HAC); for clustered data, mixed-effects
+models or cluster-robust standard errors; for spatial data, spatial-correlation models. The
+common theme — voice this and you sound senior — is *"i.i.d. is the assumption that lets
+variances simply add; when it fails, you must put the covariances back, either by modeling
+them or by inflating your standard errors to account for them."* That sentence is the entire
+article in one line.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Collecting the boundaries, so the applicability call is clean.
+
+- **Dependence (the big one).** The $1/\sqrt n$ shrinkage and the variances-add rule both
+  require the cross-covariances to vanish. Positive dependence inflates the true variance
+  (@sec-edge) and makes naive standard errors overconfident; negative dependence deflates it
+  (the basis of antithetic-variate variance reduction and of hedging). **Never report
+  $\sigma/\sqrt n$ without asking whether the observations were really independent.**
+
+- **Not identically distributed.** If the $X_i$ have different means or variances, "the"
+  population mean $\mu$ is not well defined and @thm-sample-mean does not apply as stated.
+  The variances still add under independence (@cor-var-sum-indep with distinct
+  $\operatorname{Var}(X_i)$), but the clean $\sigma^2/n$ collapse needs the common $\sigma^2$.
+  Heterogeneous data calls for weighting (Example 1's inverse-variance idea), stratification,
+  or an explicit model of how the distribution changes.
+
+- **Uncorrelated mistaken for independent.** The variance rule @cor-var-sum-indep needs only
+  zero covariance, so uncorrelatedness is *enough for variance arithmetic*. But many
+  arguments downstream — the factorization of a likelihood into a product, the independence
+  of a numerator and denominator in [PROB-15]'s $t$ and $F$ constructions — genuinely require
+  full independence, and there uncorrelated is **not** enough (@sec-converse-fails). Know
+  which one your argument actually uses.
+
+- **Heavy tails / no finite variance.** Every variance result here silently assumes
+  $\sigma^2 < \infty$. For heavy-tailed populations (the Cauchy distribution, some financial
+  returns) the variance is infinite and $\operatorname{Var}(\bar X_n) = \sigma^2/n$ is
+  meaningless — the sample mean does *not* concentrate. [PROB-5] flagged this boundary when it
+  showed expectations can fail to exist; it bites again here.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the i.i.d. model the right one, and when is it the wrong one?"* The honest summary
+to recite:
+
+- **Use it** when observations are genuinely *separate draws from one stable mechanism*:
+  independently sampled survey respondents, repeated independent trials of an experiment,
+  rows of a cross-section with no shared structure. In that regime the machinery is exact and
+  powerful — unbiased sample means, variances that add, the $\sigma^2/n$ law, and (via
+  Inference) the CLT.
+- **Do not use it** when there is *memory* (time series), *grouping* (clusters, repeated
+  measures), *geography* (spatial), *selection* (survivorship), or *drift* (non-stationarity).
+  Model the dependence or inflate the uncertainty; do not assume it away.
+- **The deepest caveat:** i.i.d. is an assumption about how the data were *generated*, and no
+  amount of staring at the numbers can fully confirm it — it is a claim about the world and
+  the sampling process. The most expensive statistical mistakes are made by people who
+  treated dependent data as i.i.d. because the formula was convenient.
+:::
+
+# How you would actually check and use this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. In practice you rarely verify the
+full factorization @eq-indep-factor directly — it is a statement about an entire joint
+distribution. Instead:
+
+- **Argue independence from the data-generating process**, not from the numbers. "These were
+  separate respondents contacted at random" is a stronger warrant than any test. Independence
+  is a design property first.
+- **Look for dependence you can see.** A scatter of consecutive observations (a *lag plot*),
+  an autocorrelation function, or residuals plotted in collection order will expose
+  time-dependence; grouping variables (user ID, site, region) flag clustering. A flat,
+  patternless lag plot is consistent with independence; structure in it refutes it.
+- **When dependence is present, put the covariances back.** Either model them (AR/ARMA, mixed
+  models) or use a robust standard-error estimator (cluster-robust, HAC/Newey–West) that
+  estimates the covariance correction in @eq-var-sum-general rather than assuming it away.
+  Libraries (`statsmodels`, `scipy.stats`, the survey packages) expose these directly; what
+  they are computing is exactly the inflated variance of @sec-edge.
+
+The single operational habit: **before you divide by $\sqrt n$, ask what made the
+observations independent.** If you cannot answer, your standard error is a guess.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-7 *Joint Distributions, Covariance & Correlation*]**, which built
+the joint distribution and the covariance and left the "zero covariance $\ne$ independence"
+thread hanging. This article tied it off: independence is factorization, it forces zero
+covariance, the converse fails, and — applied to a sample — it makes variances add and the
+sample mean concentrate at rate $1/\sqrt n$. From here:
+
+- **[PROB-9 *Conditional Distributions & Conditional Expectation*]** — the sibling of this
+  article. Independence is the case where conditioning on $X$ changes nothing; PROB-9 handles
+  the general case where it changes everything, building $\mathbb{E}[Y\mid X]$ as the best
+  predictor.
+- **[PROB-11 *Bernoulli, Binomial & Negative-Binomial*]** — the binomial *is* a sum of
+  i.i.d. Bernoullis; its mean $np$ and variance $np(1-p)$ are @thm-mean-sum and
+  @cor-var-sum-indep applied to Example 2's setup. The catalog (PROB-11–PROB-16) leans on the
+  sum rules derived here.
+- **[PROB-19 *Chebyshev's Inequality*]** — turns the $\sigma^2/n$ variance into a probability
+  bound, delivering the *weak law of large numbers*: the sample mean converges in probability
+  to $\mu$. The i.i.d. structure built here is exactly what Chebyshev needs.
+- **[PROB-21 *Modes of Convergence*]** and **[PROB-22 *The Empirical CDF*]** — limit theorems
+  are theorems about i.i.d. sums; the empirical CDF (and the bootstrap that resamples it) is
+  built from an i.i.d. sample. The CLT itself — the bell shape glimpsed in @fig-root-n — lives
+  in the **Statistical Inference** track (A2), which by design owns the limit theorems while
+  this track owns their raw material.
+
+**Cross-track:** the i.i.d. assumption opens Statistical Inference (A1), and is the standing
+hypothesis of Regression (the errors are i.i.d.) and Classification (training examples are
+i.i.d. draws). Every one of those tracks links *here* for what the phrase means.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The historical seed.** Jacob Bernoulli's *Ars Conjectandi* (1713) contains the first law
+  of large numbers — the original demonstration that an average of independent identical
+  trials closes in on the truth, the result that made "i.i.d." worth naming.
+- **The dependence that i.i.d. ignores.** For how correlation re-enters and is tamed: the
+  theory of stationary processes and the autocovariance function (time-series texts, e.g.
+  Brockwell & Davis), and the *effective sample size* $n/(1+(n-1)\rho)$ that @eq-corr-var
+  implicitly defines — the number of *independent* observations your correlated sample is
+  really worth.
+- **Open threads this article deliberately deferred.** *Why does the sample mean of an
+  i.i.d. sample become bell-shaped?* — the Central Limit Theorem, owned by Statistical
+  Inference A2, built on [PROB-20]/[PROB-21]. *When does zero covariance actually imply
+  independence?* — for the jointly normal distribution, proved in [PROB-17]. *What replaces
+  the variance-adds rule for vectors of random variables?* — the covariance-matrix identity
+  $\operatorname{Cov}(AX) = A\Sigma A^\top$, built in [PROB-17]–[PROB-18], of which
+  @cor-var-sum-indep is the diagonal special case.

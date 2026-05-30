@@ -1,0 +1,1078 @@
+---
+title: "What Is Probability? Sample Spaces and the Axioms"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the truth / theoretical value
+ACCENT = "#0a7d4d"     # highlights
+GREY   = "#6c757d"
+SETA   = "#3a7ca5"     # set A in Venn-style figures
+SETB   = "#d98b2b"     # set B
+```
+
+> **Where this sits in the track.** This is the **true entry point of the entire Core
+> Sample series** — the ground floor of the Probability Foundations track, beneath
+> Inference, Regression, Classification, and everything else. It assumes nothing above the
+> Calculus-I floor: sets, functions, fractions, and the idea of a limit. It builds the
+> objects every later article silently stands on — the **sample space**, the **event**,
+> and the **axioms** that keep our probability assignments from contradicting one another.
+> It sets up [PROB-1 *Conditional Probability, Independence & Bayes' Rule*] (how a
+> probability changes when we learn something) and [PROB-2 *Random Variables*] (where a
+> random variable becomes a *function on the sample space we build here*).
+
+## Abstract {.unnumbered}
+
+Before any formula for a mean, a variance, or a $p$-value, there is a prior question that
+those formulas quietly assume an answer to: **what is the object we are assigning
+probabilities to, and what rules must those assignments obey to never contradict
+themselves?** This article answers it from scratch. We build the **sample space** $\Omega$
+(the set of all outcomes) and the **events** (the subsets we bet on), develop the small
+algebra of unions, intersections, and complements that combines them, and then state
+**Kolmogorov's three axioms** — non-negativity, total mass one, and countable additivity.
+From those three lines alone we *derive*, with every step shown, the rules every
+practitioner uses on reflex: $P(\varnothing)=0$, the complement rule, monotonicity, and
+inclusion–exclusion. The single claim this article defends is that **probability is not a
+collection of formulas to memorize but the forced consequence of three axioms about
+measuring sets** — and that the same three axioms hold whether you read probability as
+counting equally likely cases, as a long-run frequency, or as a degree of belief.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Fix a set $\Omega$ of all possible **outcomes** of an experiment. The things we assign
+probabilities to are **events** — subsets of $\Omega$. A **probability** is a function $P$
+that takes an event and returns a number, obeying just **three rules**: every event gets a
+number that is at least $0$; the whole space $\Omega$ gets exactly $1$; and the
+probability of a union of *disjoint* events is the *sum* of their probabilities. Every
+identity in elementary probability — the complement rule, inclusion–exclusion, all of it —
+is squeezed out of those three rules and nothing more.
+:::
+
+Everything below orbits that box. The three rules look almost too modest to carry the
+weight of a whole field, but by the end you should see them as inevitable: they are exactly
+the conditions a *consistent way of measuring the size of sets* must satisfy, scaled so
+that the biggest set measures $1$. The phrase "probability is a measure on sets" will stop
+sounding like jargon and start sounding like a definition you could have written yourself.
+
+# Why we are doing this: the problem that forced the axioms {#sec-why}
+
+Keep one question in view for the entire article: **why does probability need axioms at all
+— why not just compute?** Every move below is an answer to a piece of that question. If a
+step ever feels like bureaucracy, return here.
+
+## The original problem: gamblers, and a paradox of computing
+
+Probability did not begin in a classroom. It began at a gambling table. In 1654 the French
+writer and gambler Antoine Gombaud, the Chevalier de Méré, posed a puzzle to Blaise Pascal
+about the fair division of stakes in an interrupted game of chance. Pascal's
+correspondence with Pierre de Fermat that summer is usually marked as the birth of the
+subject. Their method was concrete and unselfconscious: **count the equally likely
+outcomes, and take the fraction that are favorable.** For dice and cards that recipe works
+beautifully, and for two centuries probability was essentially the art of clever counting.
+
+But "count the favorable fraction" carries a hidden assumption — that the outcomes really
+are *equally likely* — and it has nothing to say the moment the outcomes are not equally
+likely, or worse, when there are infinitely many of them. Ask for the probability that a
+dart lands in the left half of a dartboard and the recipe stalls: there are infinitely many
+landing points, each individually impossible to hit exactly, so "favorable outcomes over
+total outcomes" is $\tfrac{\infty}{\infty}$, which is nonsense. By the late nineteenth
+century the subject was riddled with paradoxes (Bertrand's, most famously) where two
+"obviously correct" ways of counting gave two different answers to the same question. The
+problem was not arithmetic. The problem was that **nobody had said what probability *is*** —
+only how to compute it in the lucky finite case.
+
+## Kolmogorov's move: stop computing, start axiomatizing
+
+The fix, delivered by the Russian mathematician Andrey Kolmogorov in his 1933 monograph
+*Grundbegriffe der Wahrscheinlichkeitsrechnung* ("Foundations of the Theory of
+Probability"), was the same move Euclid made for geometry two thousand years earlier:
+**stop arguing about what the objects "really" are, and instead write down the handful of
+rules they must obey.** Kolmogorov declared that a probability is *any* assignment of
+numbers to events that satisfies three axioms — and then everything else, including the
+old counting recipe, becomes a *theorem* you derive, not an assumption you smuggle in.
+
+This is the why we will hold onto for the rest of the article. The axioms exist to make
+probability **consistent** — to guarantee that no two correct calculations can ever
+disagree — and **general** — to cover the infinite, the unequal, and the continuous, not
+just the dice table. Every axiom earns its place by ruling out a specific way the old
+recipe could contradict itself. When we derive the complement rule or inclusion–exclusion
+below, we are really checking that the three rules are rich enough to recover everything
+the gamblers knew, and disciplined enough never to produce the paradoxes.
+
+::: {.callout-tip title="You might be asked"}
+*"Why axiomatize probability instead of just defining it as favorable-over-total?"* Because
+favorable-over-total is not a definition — it is a *computation that only works under an
+assumption* (equally likely outcomes) and *only in finite spaces*. It cannot price a
+loaded die, a continuous measurement, or a subjective belief, and historically it produced
+outright contradictions (Bertrand's paradox). Kolmogorov's axioms keep what works — they
+*imply* favorable-over-total whenever outcomes are equally likely (we prove this in
+@sec-classical) — while extending cleanly to every case the recipe could not touch, and
+guaranteeing internal consistency throughout. The interviewer is checking whether you know
+that the axioms are the *foundation* and the counting recipe is a *special-case theorem*,
+not the other way around.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any axiom, hold one picture in mind: **probability is the measurement of area, with
+the total area normalized to $1$.**
+
+Imagine the set of all possible outcomes as a region — a rectangle of total area exactly
+$1$. An event is a sub-region inside it. The probability of the event is *the fraction of
+the total area it covers*. This single image makes all three axioms obvious before we even
+state them:
+
+- **No region has negative area.** (Non-negativity.)
+- **The whole rectangle has area $1$** by construction. (Total mass.)
+- **The area of two non-overlapping regions, taken together, is the sum of their two
+  areas** — you do not double-count, and you do not lose anything in the gap, because
+  there is no gap and no overlap. (Additivity for disjoint events.)
+
+@fig-area draws this. Everything technical below is just making "area" precise enough to
+survive infinite and continuous spaces — but the area picture is never wrong, and when a
+formula confuses you, redraw it as areas.
+
+```{python}
+#| label: fig-area
+#| fig-cap: "Probability as normalized area. The full square is the sample space $\\Omega$, with total area $1$. Two events $A$ (blue) and $B$ (orange) are sub-regions. The disjoint case (left): $A$ and $B$ do not touch, so the area of $A\\cup B$ is just $P(A)+P(B)$ — the additivity axiom. The overlapping case (right): they share a region (hatched), which gets counted once in $A$ and once in $B$, so naively adding double-counts it. Subtracting the overlap once is exactly inclusion–exclusion, derived in @sec-incexc."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 4.0))
+
+for ax in (axL, axR):
+    ax.add_patch(plt.Rectangle((0, 0), 1, 1, fill=False, edgecolor="black", lw=1.5))
+    ax.set_xlim(-0.05, 1.05); ax.set_ylim(-0.05, 1.15)
+    ax.set_aspect("equal"); ax.axis("off")
+    ax.text(0.5, 1.08, r"$\Omega$", ha="center", fontsize=13)
+
+# Disjoint
+axL.add_patch(plt.Rectangle((0.08, 0.2), 0.30, 0.45, color=SETA, alpha=0.55))
+axL.add_patch(plt.Rectangle((0.58, 0.3), 0.30, 0.45, color=SETB, alpha=0.55))
+axL.text(0.23, 0.42, "$A$", ha="center", fontsize=13)
+axL.text(0.73, 0.52, "$B$", ha="center", fontsize=13)
+axL.set_title("Disjoint: $P(A\\cup B)=P(A)+P(B)$", fontsize=11)
+
+# Overlapping
+from matplotlib.patches import Circle
+cA = Circle((0.40, 0.45), 0.27, color=SETA, alpha=0.45)
+cB = Circle((0.62, 0.45), 0.27, color=SETB, alpha=0.45)
+axR.add_patch(cA); axR.add_patch(cB)
+# hatch the overlap region approximately
+axR.add_patch(Circle((0.40, 0.45), 0.27, fill=False, edgecolor=SETA, lw=1.2))
+axR.add_patch(Circle((0.62, 0.45), 0.27, fill=False, edgecolor=SETB, lw=1.2))
+axR.text(0.27, 0.45, "$A$", ha="center", fontsize=13)
+axR.text(0.75, 0.45, "$B$", ha="center", fontsize=13)
+axR.text(0.51, 0.45, r"$A\cap B$", ha="center", fontsize=8.5)
+axR.set_title("Overlapping: subtract $P(A\\cap B)$ once", fontsize=11)
+
+plt.tight_layout()
+```
+
+# The formal development {#sec-formal}
+
+We build three layers, in order: the **sample space** (the outcomes), the **event algebra**
+(combining outcomes into the things we measure), and finally the **axioms** (the
+measurement itself). Nothing in a later layer is used before it is defined.
+
+## Layer 1 — the sample space and outcomes {#sec-samplespace}
+
+::: {#def-samplespace}
+**Definition (sample space, outcome).** An **experiment** is any procedure whose result is
+uncertain in advance. The **sample space** $\Omega$ (capital Greek omega) is the set of all
+possible results of one run of the experiment. A single element $\omega \in \Omega$
+(lowercase omega) is an **outcome** — one complete, indivisible result. The sample space
+must be **exhaustive** (every possible result is in $\Omega$) and its outcomes
+**mutually exclusive** (one run produces exactly one $\omega$).
+:::
+
+Read the definition through three experiments, so the abstraction has something to hold:
+
+- **One coin flip.** A run yields heads or tails and nothing else, so
+  $\Omega = \{\text{H}, \text{T}\}$. Two outcomes.
+- **One roll of a six-sided die.** $\Omega = \{1,2,3,4,5,6\}$. Six outcomes.
+- **A dart thrown at the interval $[0,1]$.** The landing point can be *any* real number
+  between $0$ and $1$, so $\Omega = [0,1]$. Infinitely many outcomes, uncountably many —
+  this is the case that broke the counting recipe, and we return to it in @sec-dart.
+
+The symbol $\in$ means "is an element of"; $\omega \in \Omega$ reads "the outcome $\omega$
+belongs to the sample space." The two requirements — exhaustive and mutually exclusive —
+are not red tape. *Exhaustive* guarantees the experiment always lands somewhere in
+$\Omega$, which is what lets us insist later that $\Omega$ has probability $1$. *Mutually
+exclusive* guarantees a single run cannot be two outcomes at once, which is what lets us
+*add* probabilities of distinct outcomes without double-counting.
+
+::: {.callout-tip title="You might be asked"}
+*"How do you choose the sample space — isn't it ambiguous?"* It is a **modeling choice**,
+and the same experiment admits several valid $\Omega$'s depending on what you want to
+track. Flip a coin twice: if you only care about the number of heads,
+$\Omega=\{0,1,2\}$ suffices; if you care about the *order*,
+$\Omega=\{\text{HH},\text{HT},\text{TH},\text{TT}\}$ is the right space. Neither is "wrong"
+— but they answer different questions, and a subtle error in many probability problems is
+silently switching between them. The rule of thumb: make $\Omega$ fine enough to express
+every event you will ask about, and no finer.
+:::
+
+## Layer 2 — events and the algebra that combines them {#sec-events}
+
+An outcome is one result. But we rarely bet on a single outcome; we bet on *collections* of
+them — "the die shows an even number," "the dart lands left of center." Each such
+collection is a subset of $\Omega$, and that is exactly what an event is.
+
+::: {#def-event}
+**Definition (event).** An **event** is a subset $A \subseteq \Omega$. We say the event
+$A$ **occurs** on a given run if the outcome $\omega$ produced by that run lies in $A$
+(that is, $\omega \in A$). Special cases: the **certain event** is $\Omega$ itself (always
+occurs); the **impossible event** is the empty set $\varnothing$ (never occurs); a
+**simple event** $\{\omega\}$ is a single-outcome subset.
+:::
+
+The symbol $A \subseteq \Omega$ ("$A$ is a subset of $\Omega$") means every element of $A$
+is also in $\Omega$ — every outcome in the event is a genuine possible result. For the die,
+"even" is the event $A = \{2,4,6\}$; it occurs precisely when the roll is $2$, $4$, or $6$.
+
+Now the crucial bridge, and the reason set theory is the native language of probability:
+**every English phrase joining events corresponds to a set operation, and vice versa.** We
+build the three operations from scratch, then read each one back in plain words.
+
+::: {#def-setops}
+**Definition (the event algebra).** For events $A, B \subseteq \Omega$:
+
+- The **complement** $A^c = \{\omega \in \Omega : \omega \notin A\}$ — all outcomes *not*
+  in $A$. In words: "$A$ does **not** occur."
+- The **union** $A \cup B = \{\omega : \omega \in A \ \text{or}\ \omega \in B\}$ — outcomes
+  in $A$, in $B$, or in both. In words: "$A$ **or** $B$ occurs" (inclusive or).
+- The **intersection** $A \cap B = \{\omega : \omega \in A \ \text{and}\ \omega \in B\}$ —
+  outcomes in both at once. In words: "$A$ **and** $B$ both occur."
+
+Two events are **disjoint** (or **mutually exclusive**) if $A \cap B = \varnothing$ — they
+share no outcome, so they cannot both occur on the same run.
+:::
+
+The symbol $\notin$ is "is not an element of"; the $c$ superscript reads "complement." The
+dictionary between logic and sets is worth tabulating once, because every probability
+manipulation is secretly a translation across it:
+
+| English (event language)      | Set operation     |
+| ----------------------------- | ----------------- |
+| $A$ does not happen           | $A^c$             |
+| $A$ or $B$ (or both)          | $A \cup B$        |
+| $A$ and $B$                   | $A \cap B$        |
+| $A$ and $B$ cannot co-occur   | $A \cap B = \varnothing$ |
+| if $A$ happens then $B$ does  | $A \subseteq B$   |
+
+Two identities relating complement to union and intersection — **De Morgan's laws** — will
+be used when we derive inclusion–exclusion, so we prove them now rather than assert them.
+
+::: {#lem-demorgan}
+**Lemma (De Morgan's laws).** For events $A, B \subseteq \Omega$,
+$$
+(A \cup B)^c = A^c \cap B^c, \qquad (A \cap B)^c = A^c \cup B^c .
+$$
+:::
+
+::: {.proof}
+We prove the first; the second is identical with "and"/"or" swapped. Two sets are equal
+exactly when each is a subset of the other, so we show both inclusions by chasing a generic
+outcome $\omega$ through the definitions.
+
+*($\subseteq$)* Suppose $\omega \in (A\cup B)^c$. By the definition of complement,
+$\omega \notin A \cup B$. By the definition of union, $\omega \in A \cup B$ would mean
+$\omega$ is in $A$ or in $B$; since it is in neither, $\omega \notin A$ **and**
+$\omega \notin B$. That is exactly $\omega \in A^c$ and $\omega \in B^c$, i.e.
+$\omega \in A^c \cap B^c$.
+
+*($\supseteq$)* Conversely suppose $\omega \in A^c \cap B^c$. Then $\omega \notin A$ and
+$\omega \notin B$, so $\omega$ is in neither set, so it is not in their union:
+$\omega \notin A \cup B$, i.e. $\omega \in (A\cup B)^c$.
+
+Each set contains the other, so they are equal. $\qquad\blacksquare$
+:::
+
+In words, De Morgan's first law says: *"not ($A$ or $B$)" is the same as "(not $A$) and
+(not $B$)."* If neither rain nor snow falls, then it did not rain **and** it did not snow.
+That plain-English reading is the law; the set-chase above is only its careful proof.
+
+## Layer 3 — the axioms {#sec-axioms}
+
+We can now state what a probability *is*. Kolmogorov's three axioms assign to each event a
+number, subject to the three constraints the area picture made intuitive.
+
+::: {#def-axioms}
+**Definition (Kolmogorov's axioms).** A **probability** is a function $P$ that assigns to
+each event $A \subseteq \Omega$ a real number $P(A)$, called the probability of $A$,
+satisfying:
+
+- **(A1) Non-negativity.** $P(A) \ge 0$ for every event $A$.
+- **(A2) Normalization.** $P(\Omega) = 1$.
+- **(A3) Countable additivity.** For any sequence of events
+  $A_1, A_2, A_3, \dots$ that are **pairwise disjoint**
+  ($A_i \cap A_j = \varnothing$ whenever $i \ne j$),
+  $$
+  P\!\left(\bigcup_{i=1}^{\infty} A_i\right) = \sum_{i=1}^{\infty} P(A_i) .
+  $$
+:::
+
+Three remarks before we put the axioms to work.
+
+**On (A1) and (A2): probabilities live in $[0,1]$.** Axiom (A1) forbids negative
+probability — you cannot be *less than impossible*. Axiom (A2) fixes the total budget: the
+certain event gets exactly $1$, so probabilities are *fractions of a fixed total*, the
+normalized-area picture made literal. We will prove $P(A) \le 1$ for every event in
+@sec-monotone; it is not assumed, it follows.
+
+**On (A3): why *countable* additivity, and why disjoint?** The *disjoint* requirement is
+the no-double-counting rule from the area picture: if two regions overlap, you cannot just
+add their areas. The *countable* part — allowing infinitely many events $A_1, A_2, \dots$
+indexed by the counting numbers — is the single feature that lets probability handle
+limits, infinite series, and continuous spaces, which is precisely where the old counting
+recipe failed. Finite additivity (just two, or any finite number, of disjoint events)
+follows from (A3) as a special case; we extract it next.
+
+**The pairwise-disjoint symbol.** "$A_i \cap A_j = \varnothing$ whenever $i \ne j$" means
+*every distinct pair* shares no outcome — not merely that no single outcome is in *all* of
+them, but that no outcome is in *any two* of them. This is what licenses summing without
+overlap.
+
+::: {.callout-note title="What we are flagging, and where it is built"}
+Two technical points sit just above our Calc-1 floor, and honesty requires naming them
+rather than hiding them.
+
+*First:* for an infinite or continuous $\Omega$ (like the dart's $[0,1]$), one cannot
+always assign a sensible probability to *literally every* subset — some subsets are too
+pathological to measure consistently. The full theory restricts $P$ to a well-behaved
+collection of events called a **$\sigma$-algebra**, and the study of which sets are
+"measurable" is **measure theory**. For everything in this track we will only ever need
+intervals, their countable unions, and ordinary combinations of those, all of which are
+measurable — so we proceed safely and flag the subtlety here. We treat the line "$P$ is
+defined on events" as covering exactly the events we actually use.
+
+*Second:* the infinite sum $\sum_{i=1}^\infty P(A_i)$ in (A3) is the Calc-1 limit of
+partial sums, $\lim_{N\to\infty}\sum_{i=1}^N P(A_i)$ — the same infinite series you met in
+first-year calculus. No new machinery, just that limit.
+:::
+
+# Deriving the elementary rules from the three axioms {#sec-derived}
+
+This is the payoff of axiomatizing: the rules every practitioner uses on reflex are not
+extra assumptions. They are **theorems**, each squeezed out of (A1)–(A3) with nothing else.
+We derive them in dependency order, every step on the page.
+
+## Finite additivity {#sec-finite-add}
+
+::: {#lem-finite-add}
+**Lemma (finite additivity).** If $A$ and $B$ are disjoint events ($A \cap B = \varnothing$),
+then $P(A \cup B) = P(A) + P(B)$. More generally, for finitely many pairwise-disjoint
+events $A_1, \dots, A_n$, $P(\bigcup_{i=1}^n A_i) = \sum_{i=1}^n P(A_i)$.
+:::
+
+::: {.proof}
+Axiom (A3) is stated for an *infinite* sequence; we recover the finite case by padding with
+empty sets. Take the two disjoint events $A, B$ and form the infinite sequence
+$$
+A_1 = A, \quad A_2 = B, \quad A_3 = \varnothing, \quad A_4 = \varnothing, \quad \dots
+$$
+These are pairwise disjoint: $A_1 \cap A_2 = A \cap B = \varnothing$ by assumption, and any
+intersection involving an $\varnothing$ is $\varnothing$. Their union is
+$A \cup B \cup \varnothing \cup \varnothing \cup \dots = A \cup B$, since unioning with the
+empty set adds nothing. Apply (A3):
+$$
+P(A \cup B) = P\!\left(\bigcup_{i=1}^\infty A_i\right) = \sum_{i=1}^\infty P(A_i)
+= P(A) + P(B) + P(\varnothing) + P(\varnothing) + \cdots .
+$$
+We have not yet shown $P(\varnothing) = 0$ — that comes next, in @lem-empty. There is no
+circularity, because @lem-empty's proof does **not** use this lemma: it applies axiom (A3)
+*directly* to the all-empty sequence $\varnothing, \varnothing, \dots$ together with the
+non-negativity axiom (A1), and nothing else. Both ingredients are axioms, available before
+any lemma. Granting $P(\varnothing)=0$ for the moment, every tail term above vanishes and we
+are left with $P(A\cup B) = P(A) + P(B)$. The general finite case pads $A_1, \dots, A_n$
+with empty sets from index $n+1$ onward and repeats the argument verbatim. $\qquad\blacksquare$
+:::
+
+## The impossible event has probability zero {#sec-empty}
+
+::: {#lem-empty}
+**Lemma.** $P(\varnothing) = 0$.
+:::
+
+::: {.proof}
+The empty set is disjoint from itself: $\varnothing \cap \varnothing = \varnothing$, since
+there is no outcome in $\varnothing$ at all, let alone in the intersection. So we may apply
+the *disjoint* additivity of (A3) to the sequence $\varnothing, \varnothing, \varnothing,
+\dots$, whose union is $\varnothing$:
+$$
+P(\varnothing) = \sum_{i=1}^\infty P(\varnothing)
+= P(\varnothing) + P(\varnothing) + P(\varnothing) + \cdots .
+$$
+Let $p = P(\varnothing)$. By (A1), $p \ge 0$. The equation says $p = p + p + p + \cdots$.
+If $p > 0$, the right-hand side is an infinite sum of a fixed positive number, which
+diverges to $+\infty$, while the left-hand side $p$ is finite — a contradiction. The only
+non-negative value of $p$ making $p = p + p + \cdots$ hold is $p = 0$. Hence
+$P(\varnothing) = 0$. $\qquad\blacksquare$
+:::
+
+Notice this proof used only the *disjoint* additivity from (A3) and the non-negativity (A1)
+— both raw axioms, with no appeal to @lem-finite-add. So the dependency runs one way only:
+@lem-empty stands on the axioms alone, and @lem-finite-add then borrows its result. There is
+no circle. With $P(\varnothing)=0$ now established, the tail terms in the finite-additivity
+proof above genuinely vanish, completing it.
+
+## The complement rule {#sec-complement}
+
+::: {#thm-complement}
+**Theorem (complement rule).** For any event $A$, $\;P(A^c) = 1 - P(A)$.
+:::
+
+::: {.proof}
+The point of the complement is that an event and its complement *partition* the whole
+space: every outcome is either in $A$ or not in $A$, never both. Formally, two facts.
+
+First, they are **disjoint**: $A \cap A^c = \varnothing$, because no outcome can both be in
+$A$ and (by definition of $A^c$) not be in $A$.
+
+Second, they **cover** $\Omega$: $A \cup A^c = \Omega$, because every outcome
+$\omega \in \Omega$ is either in $A$ or in $A^c$ — those are the only two options, and the
+definition of $A^c$ puts every non-member of $A$ into it.
+
+Apply finite additivity (@lem-finite-add) to the disjoint pair $A, A^c$ and then normalization
+(A2):
+$$
+P(A) + P(A^c) = P(A \cup A^c) = P(\Omega) = 1 .
+$$
+Subtract $P(A)$ from both sides: $P(A^c) = 1 - P(A)$. $\qquad\blacksquare$
+:::
+
+This is the most-used rule in all of applied probability — "the chance it does *not* happen
+is one minus the chance it does" — and it took three lines from the axioms. As an immediate
+corollary, setting $A = \Omega$ gives $P(\Omega^c) = P(\varnothing) = 1 - P(\Omega) = 0$,
+re-confirming @lem-empty from the other direction.
+
+## Monotonicity and the upper bound $P(A) \le 1$ {#sec-monotone}
+
+::: {#thm-monotone}
+**Theorem (monotonicity).** If $A \subseteq B$ then $P(A) \le P(B)$. Consequently
+$0 \le P(A) \le 1$ for every event $A$.
+:::
+
+::: {.proof}
+The intuition is pure area: if region $A$ sits inside region $B$, its area cannot exceed
+$B$'s. To make it exact, **carve $B$ into two disjoint pieces** — the part inside $A$, and
+the part of $B$ outside $A$. The outside part is $B \cap A^c$ (in $B$, not in $A$). Claim:
+$$
+B = A \cup (B \cap A^c), \qquad \text{and these two pieces are disjoint.}
+$$
+*Disjoint:* $A \cap (B \cap A^c) \subseteq A \cap A^c = \varnothing$, since an outcome in
+the second piece is in $A^c$, hence not in $A$. *Covering $B$:* take any
+$\omega \in B$. Either $\omega \in A$ (first piece) or $\omega \notin A$, in which case
+$\omega \in B$ and $\omega \in A^c$, so $\omega \in B \cap A^c$ (second piece). And we used
+$A \subseteq B$ to know the first piece $A$ lies inside $B$, so the union does not overshoot
+$B$. Now apply finite additivity:
+$$
+P(B) = P(A) + P(B \cap A^c) .
+$$
+By non-negativity (A1), $P(B \cap A^c) \ge 0$, so $P(B) = P(A) + (\text{something} \ge 0)
+\ge P(A)$. That is monotonicity.
+
+For the bound: every event satisfies $A \subseteq \Omega$, so monotonicity gives
+$P(A) \le P(\Omega) = 1$. Combined with (A1)'s $P(A) \ge 0$, we get
+$0 \le P(A) \le 1$. $\qquad\blacksquare$
+:::
+
+So the familiar fact that *probabilities live between $0$ and $1$* was never an axiom — the
+axioms gave us $\ge 0$ and $P(\Omega)=1$, and the rest is a theorem. This is the kind of
+economy axiomatization buys: assume the minimum, derive the rest.
+
+## Inclusion–exclusion: the overlap correction {#sec-incexc}
+
+Finite additivity handles *disjoint* events. But events usually overlap, and the area
+picture in @fig-area already warned us: adding $P(A) + P(B)$ when $A$ and $B$ overlap
+counts the shared region $A \cap B$ *twice*. We now prove the correction exactly.
+
+::: {#thm-incexc}
+**Theorem (inclusion–exclusion, two events).** For any events $A, B$,
+$$
+P(A \cup B) = P(A) + P(B) - P(A \cap B) .
+$$ {#eq-incexc2}
+:::
+
+::: {.proof}
+The strategy is to express each of $A \cup B$, $A$, and $B$ as unions of **disjoint** pieces
+so that finite additivity (@lem-finite-add) applies cleanly, then combine. Split the plane
+into three disjoint regions using $A$, $B$, and their overlap:
+
+- $A \cap B^c$ — in $A$ only,
+- $A^c \cap B$ — in $B$ only,
+- $A \cap B$ — in both.
+
+These three are pairwise disjoint (each forces a different membership pattern, so no outcome
+lies in two of them), and we now write the events we care about in terms of them.
+
+*Decompose $A$.* Every outcome of $A$ is either also in $B$ or not:
+$$
+A = (A \cap B^c) \cup (A \cap B), \qquad \text{disjoint},
+$$
+so finite additivity gives
+$$
+P(A) = P(A \cap B^c) + P(A \cap B). \tag{i}
+$$
+*Decompose $B$* the same way:
+$$
+B = (A^c \cap B) \cup (A \cap B), \quad\text{disjoint}, \quad\Longrightarrow\quad
+P(B) = P(A^c \cap B) + P(A \cap B). \tag{ii}
+$$
+*Decompose $A \cup B$* into the three disjoint regions (an outcome in $A \cup B$ is in $A$
+only, in $B$ only, or in both):
+$$
+A \cup B = (A \cap B^c) \cup (A^c \cap B) \cup (A \cap B), \quad\text{pairwise disjoint},
+$$
+so
+$$
+P(A \cup B) = P(A \cap B^c) + P(A^c \cap B) + P(A \cap B). \tag{iii}
+$$
+Now combine. From (i), $P(A \cap B^c) = P(A) - P(A \cap B)$; from (ii),
+$P(A^c \cap B) = P(B) - P(A \cap B)$. Substitute both into (iii):
+$$
+P(A \cup B) = \bigl[P(A) - P(A \cap B)\bigr] + \bigl[P(B) - P(A \cap B)\bigr] + P(A \cap B).
+$$
+Collect the three copies of $P(A \cap B)$ — there are $-1 -1 +1 = -1$ of them:
+$$
+P(A \cup B) = P(A) + P(B) - P(A \cap B),
+$$
+which is @eq-incexc2. The overlap, double-counted by $P(A)+P(B)$, is subtracted off exactly
+once. $\qquad\blacksquare$
+:::
+
+The pattern generalizes: for three events you add the singles, subtract the pairwise
+overlaps, and add back the triple overlap (which got over-subtracted), and so on with
+alternating signs. Rather than assert the three-event form, we **derive it in full** — and
+the only tool we need is the two-event identity @eq-incexc2 we just proved, applied twice.
+
+::: {#thm-incexc3}
+**Theorem (inclusion–exclusion, three events).** For any events $A, B, C$,
+$$
+P(A \cup B \cup C) = P(A)+P(B)+P(C) - P(A\cap B) - P(A\cap C) - P(B\cap C) + P(A\cap B\cap C).
+$$ {#eq-incexc3}
+:::
+
+::: {.proof}
+The trick is to **group** the three-fold union as a two-fold union and reuse @eq-incexc2.
+Write $A \cup B \cup C = (A \cup B) \cup C$ and treat $A \cup B$ as a single event. Applying
+the two-event rule @eq-incexc2 to the pair $(A\cup B)$ and $C$,
+$$
+P(A \cup B \cup C) = P(A \cup B) + P(C) - P\bigl((A \cup B) \cap C\bigr). \tag{1}
+$$
+We attack the two non-trivial terms in turn.
+
+*The first term* expands by @eq-incexc2 applied to $A$ and $B$:
+$$
+P(A \cup B) = P(A) + P(B) - P(A \cap B). \tag{2}
+$$
+
+*The third term* needs the intersection $(A \cup B) \cap C$ rewritten. Set theory gives the
+**distributive law** $(A \cup B) \cap C = (A \cap C) \cup (B \cap C)$ — an outcome is in the
+left side exactly when it is in $C$ and in ($A$ or $B$), which is exactly when it is in
+($A$ and $C$) or in ($B$ and $C$), the right side. (We verify it by the same
+outcome-chasing as @lem-demorgan: $\omega \in (A\cup B)\cap C$ iff $\omega\in C$ and
+$\omega\in A\cup B$, iff $\omega\in C$ and ($\omega\in A$ or $\omega\in B$), iff
+($\omega\in A\cap C$) or ($\omega\in B\cap C$), iff $\omega \in (A\cap C)\cup(B\cap C)$.)
+Now apply @eq-incexc2 *again*, this time to the pair $A\cap C$ and $B\cap C$:
+$$
+P\bigl((A \cup B) \cap C\bigr)
+= P(A \cap C) + P(B \cap C) - P\bigl((A \cap C) \cap (B \cap C)\bigr). \tag{3}
+$$
+The last intersection collapses: $(A \cap C) \cap (B \cap C) = A \cap B \cap C$, because an
+outcome in both $A\cap C$ and $B\cap C$ is in $A$, $B$, **and** $C$ (the repeated $C$ is
+absorbed). So (3) becomes
+$$
+P\bigl((A \cup B) \cap C\bigr) = P(A \cap C) + P(B \cap C) - P(A \cap B \cap C). \tag{3$'$}
+$$
+Substitute (2) and (3$'$) back into (1):
+$$
+P(A \cup B \cup C)
+= \underbrace{\bigl[P(A) + P(B) - P(A \cap B)\bigr]}_{(2)} + P(C)
+- \underbrace{\bigl[P(A \cap C) + P(B \cap C) - P(A \cap B \cap C)\bigr]}_{(3')}.
+$$
+Distribute the leading minus sign across the bracketed third term — it flips each of its
+three signs — and collect:
+$$
+P(A \cup B \cup C) = P(A)+P(B)+P(C) - P(A\cap B) - P(A\cap C) - P(B\cap C) + P(A\cap B\cap C),
+$$
+which is @eq-incexc3. Every overlap is now corrected exactly: the three pairwise
+intersections are each subtracted once, and the triple intersection — over-subtracted by
+those three pairwise terms — is added back once. $\qquad\blacksquare$
+:::
+
+@fig-incexc shows why each sign is what it is: the triple-overlap region is added three
+times by the singles, removed three times by the pairs, and so must be added back once to
+be counted correctly. This is the bookkeeping the algebra above made exact.
+
+```{python}
+#| label: fig-incexc
+#| fig-cap: "Inclusion–exclusion for three events, by counting how many times each region is tallied. With three overlapping circles, the central region (in all three) is added $+3$ by the single terms $P(A),P(B),P(C)$, then removed $-3$ by the three pairwise terms, leaving it at $0$ — so it must be added back once by $+P(A\\cap B\\cap C)$ to be counted exactly once. Each pairwise-only lens is added $+2$ and removed $-1$, netting the correct $+1$. The alternating signs of @eq-incexc3 are exactly this bookkeeping."
+from matplotlib.patches import Circle
+fig, ax = plt.subplots(figsize=(5.6, 5.2))
+r = 0.62
+centers = {"A": (0.40, 0.62), "B": (0.60, 0.62), "C": (0.50, 0.42)}
+colors = {"A": SETA, "B": SETB, "C": ACCENT}
+for name, (cx, cy) in centers.items():
+    ax.add_patch(Circle((cx, cy), r, color=colors[name], alpha=0.30,
+                        edgecolor=colors[name], lw=1.5))
+ax.text(0.10, 0.92, "$A$", fontsize=14, color=SETA)
+ax.text(0.90, 0.92, "$B$", fontsize=14, color=SETB)
+ax.text(0.50, 0.05, "$C$", fontsize=14, color=ACCENT)
+ax.text(0.50, 0.55, "+1", ha="center", fontsize=10, fontweight="bold")
+ax.text(0.50, 0.55 - 0.0, "", ha="center")
+ax.set_xlim(-0.3, 1.3); ax.set_ylim(-0.2, 1.5)
+ax.set_aspect("equal"); ax.axis("off")
+ax.set_title("Each region counted exactly once", fontsize=12)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"When does $P(A \cup B) = P(A) + P(B)$ hold exactly?"* Precisely when $P(A \cap B) = 0$ —
+which includes the disjoint case $A \cap B = \varnothing$ but is slightly more general (the
+overlap can be nonempty yet have zero probability, as happens with single points in a
+continuous space, @sec-dart). The classic interview trap is assuming
+$P(A \cup B) = P(A)+P(B)$ for *any* two events; it over-counts the overlap and can even
+produce a "probability" exceeding $1$. The fix is always @eq-incexc2.
+:::
+
+# The three interpretations — and why the axioms hold for all of them {#sec-interp}
+
+Here is something the axioms quietly accomplish that is easy to miss: they let probability
+*mean* whatever your problem needs it to mean, while the mathematics stays identical. There
+are three honest interpretations of the number $P(A)$, and the entire field rests on the
+fact that **all three satisfy (A1)–(A3)** — so every theorem we derived applies no matter
+which you hold. This is what lets the Probability track stay neutral and the downstream
+tracks each pick the interpretation their subject demands.
+
+## Classical (equally likely outcomes) {#sec-classical}
+
+When $\Omega$ is finite with $N$ equally likely outcomes, the classical definition is the
+gamblers' recipe:
+$$
+P(A) = \frac{|A|}{|\Omega|} = \frac{\text{number of outcomes in } A}{\text{total number of outcomes}},
+$$ {#eq-classical}
+where $|A|$ denotes the count of outcomes in $A$. We promised in @sec-why that this is now a
+*theorem*, not an assumption — let us see it fall out of the axioms.
+
+"Equally likely" means each of the $N$ simple events $\{\omega_1\}, \dots, \{\omega_N\}$ has
+the same probability, call it $q$. They are disjoint (distinct outcomes) and their union is
+all of $\Omega$, so finite additivity and normalization give
+$$
+1 = P(\Omega) = \sum_{i=1}^{N} P(\{\omega_i\}) = \sum_{i=1}^N q = Nq
+\quad\Longrightarrow\quad q = \frac{1}{N}.
+$$
+Now any event $A$ with $|A| = k$ outcomes is the disjoint union of its $k$ simple events, so
+additivity again gives $P(A) = k \cdot q = k/N = |A|/|\Omega|$, which is exactly
+@eq-classical. The recipe is recovered — but *only* under the equally-likely assumption,
+made explicit, and *only* for finite $\Omega$.
+
+## Frequentist (long-run relative frequency) {#sec-frequentist}
+
+The frequentist reads $P(A)$ as the limiting fraction of runs in which $A$ occurs, over
+indefinitely many independent repetitions:
+$$
+P(A) = \lim_{n \to \infty} \frac{n_A}{n},
+$$
+where $n_A$ is the number of the first $n$ runs on which $A$ occurred. A relative frequency
+$n_A/n$ is automatically $\ge 0$ (A1), equals $1$ when $A=\Omega$ since $\Omega$ occurs
+every run (A2), and adds across disjoint events because the counts $n_A$ do — if $A$ and
+$B$ cannot co-occur, then $n_{A\cup B} = n_A + n_B$ on every run, so the limiting fractions
+add (A3). Whether that limit actually exists is the content of the **Law of Large Numbers**,
+a *theorem* about samples that the Statistical Inference track owns (it is built from the
+Chebyshev inequality of [PROB-19]) — here we only note that *if* probabilities behave like
+long-run frequencies, they obey the axioms. @fig-freq shows frequencies settling toward the
+classical value.
+
+```{python}
+#| label: fig-freq
+#| fig-cap: "The frequentist picture, simulated. We repeatedly roll a fair die and track the running relative frequency of the event $A=\\{$even$\\}$. Three independent runs (colored) each wander early but converge to the classical value $P(A)=3/6=0.5$ (red line). The axioms hold for the frequency $n_A/n$ at every $n$ — it is always in $[0,1]$ and adds over disjoint events — and the Law of Large Numbers (owned by Inference) is what guarantees the limit exists. This is *why* the classical and frequentist numbers agree for a fair die."
+rng = np.random.default_rng(0)
+n_max = 2000
+fig, ax = plt.subplots()
+for c in (POINT, ACCENT, SETB):
+    rolls = rng.integers(1, 7, size=n_max)
+    is_even = (rolls % 2 == 0).astype(float)
+    running = np.cumsum(is_even) / np.arange(1, n_max + 1)
+    ax.plot(np.arange(1, n_max + 1), running, color=c, lw=1.3, alpha=0.85)
+ax.axhline(0.5, color=LINE, lw=1.8, label="classical $P(A)=0.5$")
+ax.set_xscale("log")
+ax.set_xlabel("number of rolls $n$ (log scale)")
+ax.set_ylabel("relative frequency of 'even'")
+ax.set_title("Frequencies converge to the axiomatic probability")
+ax.set_ylim(0, 1)
+ax.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+```
+
+## Subjective (degree of belief) {#sec-subjective}
+
+The subjectivist (Bayesian) reads $P(A)$ as a personal *degree of belief* that $A$ will
+occur — the fair price you would pay for a ticket that returns \$1 if $A$ happens. Why must
+a coherent belief obey the axioms? Because if it did not, you could be made to lose for
+certain. This is the **Dutch book** argument: if your stated probabilities violated, say,
+the complement rule (you priced $A$ and $A^c$ to sum to more than $1$), a bookmaker could
+sell you bets on both and pocket the difference no matter what happens. Avoiding a
+guaranteed loss *forces* your degrees of belief to satisfy (A1)–(A3). So even a number that
+lives entirely in your head must obey Kolmogorov, on pain of incoherence.
+
+::: {.callout-important title="Why this matters for the whole series"}
+The axioms are the **neutral ground** the entire Core Sample series stands on. Because all
+three interpretations satisfy (A1)–(A3), every theorem in this track — expectation,
+variance, the named distributions, the limit machinery — is true under *all* of them, and
+no downstream track has to commit to one before it must. Regression and classical Inference
+lean frequentist; Bayesian Inference and the Causal track lean subjective; the gambler's
+classical view seeds the combinatorics of [PROB-10]. They differ on *what the number means*,
+never on *how the numbers combine*. That separation is exactly what Kolmogorov bought us.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on concrete experiments — finite and equally likely, finite and
+*not* equally likely, and finally the continuous case that broke the old recipe and forced
+the leap to measuring sets.
+
+## Example 1 — two dice, by hand and by axiom {#sec-twodice}
+
+Roll two fair six-sided dice. We want $P(\text{sum} \ge 10)$ and, to exercise
+inclusion–exclusion, $P(\text{sum} \ge 10 \ \text{or a double})$, where a "double" is two
+matching faces.
+
+The sample space tracks the ordered pair of faces, so
+$\Omega = \{(i,j) : i, j \in \{1,\dots,6\}\}$, with $|\Omega| = 6 \times 6 = 36$ equally
+likely outcomes (each die is fair and the two are physically independent, so every ordered
+pair is as likely as any other). We build the events as sets and count.
+
+```{python}
+#| label: tbl-dice
+#| echo: false
+import itertools
+import numpy as np
+
+omega = list(itertools.product(range(1, 7), range(1, 7)))
+N = len(omega)
+
+A = [(i, j) for (i, j) in omega if i + j >= 10]      # sum >= 10
+B = [(i, j) for (i, j) in omega if i == j]           # a double
+AorB = [(i, j) for (i, j) in omega if (i + j >= 10) or (i == j)]
+AandB = [(i, j) for (i, j) in omega if (i + j >= 10) and (i == j)]
+
+print(f"|Omega|            = {N}")
+print(f"|A| (sum >= 10)    = {len(A)}   ->  P(A)        = {len(A)}/36 = {len(A)/N:.4f}")
+print(f"|B| (a double)     = {len(B)}   ->  P(B)        = {len(B)}/36 = {len(B)/N:.4f}")
+print(f"|A and B|          = {len(AandB)}   ->  P(A cap B)  = {len(AandB)}/36 = {len(AandB)/N:.4f}")
+print(f"|A or B|  (direct count)         =  {len(AorB)}")
+incexc = len(A) + len(B) - len(AandB)
+print(f"inclusion-exclusion |A|+|B|-|AcapB| = {len(A)}+{len(B)}-{len(AandB)} = {incexc}")
+print(f"P(A or B) = {len(AorB)}/36 = {len(AorB)/N:.4f}")
+```
+
+Read the counts the code printed straight through the rules:
+
+- $A = \{\text{sum} \ge 10\}$ contains the pairs summing to $10, 11, 12$: that is
+  $\{(4,6),(5,5),(6,4)\}$, $\{(5,6),(6,5)\}$, $\{(6,6)\}$ — six outcomes, so by the
+  classical formula @eq-classical, $P(A) = 6/36 = 1/6$.
+- $B = \{\text{double}\}$ is $\{(1,1),\dots,(6,6)\}$, six outcomes, $P(B) = 6/36 = 1/6$.
+- Their overlap $A \cap B$ is the doubles that also sum to $\ge 10$: only $(5,5)$ and
+  $(6,6)$, so $P(A \cap B) = 2/36$.
+- Inclusion–exclusion @eq-incexc2 then gives
+  $P(A \cup B) = \tfrac{6}{36} + \tfrac{6}{36} - \tfrac{2}{36} = \tfrac{10}{36}$, which
+  matches the direct count of $|A \cup B| = 10$ exactly. Had we naively added $6+6=12$ we
+  would have double-counted $(5,5)$ and $(6,6)$.
+
+The point is not the arithmetic but the *agreement*: the derived rule @eq-incexc2 and a
+brute-force count of the union give the identical answer, as a correct axiom system
+guarantees they must. @fig-dice shows the $6\times 6$ grid with the events shaded.
+
+```{python}
+#| label: fig-dice
+#| fig-cap: "The sample space of two dice as a $6\\times 6$ grid of $36$ equally likely outcomes. Shaded: the event 'sum $\\ge 10$' (blue) and 'a double' (orange diagonal). The two cells where they overlap — $(5,5)$ and $(6,6)$ — are the hatched squares counted twice if you naively add, and subtracted once by inclusion–exclusion. Probability here is literally *fraction of shaded cells*."
+fig, ax = plt.subplots(figsize=(5.4, 5.4))
+for i in range(1, 7):
+    for j in range(1, 7):
+        face = "white"
+        if i + j >= 10 and i == j:
+            face = "#9b5de5"          # overlap
+        elif i + j >= 10:
+            face = SETA
+        elif i == j:
+            face = SETB
+        ax.add_patch(plt.Rectangle((i - 0.5, j - 0.5), 1, 1,
+                     facecolor=face, edgecolor="white", lw=1.2, alpha=0.7))
+ax.set_xlim(0.5, 6.5); ax.set_ylim(0.5, 6.5)
+ax.set_xticks(range(1, 7)); ax.set_yticks(range(1, 7))
+ax.set_xlabel("die 1"); ax.set_ylabel("die 2")
+ax.set_aspect("equal")
+ax.set_title("Blue: sum $\\geq 10$ · Orange: double · Purple: both")
+ax.grid(False)
+plt.tight_layout()
+```
+
+## Example 2 — a loaded die, where counting fails but the axioms do not {#sec-loaded}
+
+Now the honest case that the classical recipe *cannot* touch: a **loaded** die, where the
+six faces are not equally likely. Suppose a casino-grade weighted die has face
+probabilities
+$$
+p_1 = 0.10,\ p_2 = 0.10,\ p_3 = 0.15,\ p_4 = 0.15,\ p_5 = 0.20,\ p_6 = 0.30.
+$$
+The counting formula @eq-classical is simply *wrong* here — there is no "favorable over
+total," because the faces are not interchangeable. But the axioms are untouched: any
+assignment of non-negative numbers to the simple events that sums to $1$ is a legitimate
+probability, and event probabilities are sums over their outcomes by finite additivity.
+
+```{python}
+#| label: fig-loaded
+#| fig-cap: "A loaded die. **Left:** the probability mass on each face — non-equal, but non-negative and summing to $1$, so a valid probability by the axioms. **Right:** the event 'roll $\\ge 5$' has probability $p_5+p_6=0.50$ by finite additivity (@lem-finite-add), shaded. The classical recipe $|A|/|\\Omega| = 2/6 \\approx 0.33$ would be the *wrong* answer (red dashed). The axioms handle the unequal case the counting recipe cannot."
+faces = np.arange(1, 7)
+p = np.array([0.10, 0.10, 0.15, 0.15, 0.20, 0.30])
+assert abs(p.sum() - 1.0) < 1e-12   # axiom A2 check
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.bar(faces, p, color=POINT, alpha=0.85)
+axL.set_xlabel("face"); axL.set_ylabel("probability $p_i$")
+axL.set_title(f"Loaded die (sums to {p.sum():.2f})")
+axL.set_ylim(0, 0.35)
+
+colors = [SETA if f >= 5 else GREY for f in faces]
+axR.bar(faces, p, color=colors, alpha=0.85)
+P_ge5 = p[faces >= 5].sum()
+axR.axhline(0, color="black", lw=0.8)
+axR.set_xlabel("face"); axR.set_ylabel("probability")
+axR.set_title(f"$P(\\geq 5) = p_5+p_6 = {P_ge5:.2f}$")
+axR.text(3.5, 0.27, f"classical (wrong):\n2/6 = {2/6:.2f}", color=LINE, fontsize=9)
+axR.axhline(2/6, color=LINE, ls="--", lw=1.4)
+plt.tight_layout()
+print(f"P(roll >= 5) = p5 + p6 = {p[4]:.2f} + {p[5]:.2f} = {P_ge5:.2f}")
+print(f"P(roll is even) = p2+p4+p6 = {p[1]+p[3]+p[5]:.2f}")
+print(f"check A2: sum of all face probabilities = {p.sum():.4f}")
+```
+
+This is the everyday reality of applied probability: outcomes are almost never equally
+likely. A customer either converts or does not — but not with probability $1/2$. A packet
+either drops or arrives — but not fifty-fifty. The axiomatic definition is what lets us
+assign *whatever* the data say the probabilities are, and still combine them with the
+complement rule and inclusion–exclusion exactly as before. The counting recipe was a
+special case all along.
+
+## Example 3 — a dart on $[0,1]$: the leap to measuring sets {#sec-dart}
+
+Now the experiment that forced the whole edifice: throw a dart that lands uniformly at
+random somewhere in the interval $[0,1]$. The sample space is *uncountable*,
+$\Omega = [0,1]$, and the old recipe collapses — "favorable outcomes over total outcomes"
+is $\tfrac{\infty}{\infty}$.
+
+The axioms rescue us by shifting attention from outcomes to **sets**. "Uniform" means the
+probability of landing in a sub-interval is proportional to its *length*, and since the
+whole interval $[0,1]$ has length $1$ and must get probability $1$ (A2), the proportionality
+constant is $1$:
+$$
+P([a,b]) = b - a, \qquad 0 \le a \le b \le 1 .
+$$ {#eq-uniform}
+Length is exactly the "area" of the intuition section, now in one dimension. Length is
+non-negative (A1), the whole interval has length $1$ (A2), and the lengths of disjoint
+sub-intervals add (A3) — so @eq-uniform *is* a probability in Kolmogorov's sense.
+
+Here is the famous consequence, and it is not a paradox once you have the axioms. **The
+probability of hitting any single exact point is zero.** Fix a point $c \in [0,1]$. The
+singleton $\{c\}$ is contained in the interval $[c, c+\varepsilon]$ for every
+$\varepsilon > 0$, so by monotonicity (@thm-monotone) and @eq-uniform,
+$$
+0 \le P(\{c\}) \le P([c, c+\varepsilon]) = (c+\varepsilon) - c = \varepsilon .
+$$
+This holds for *every* $\varepsilon > 0$, however tiny. The only number that is squeezed
+between $0$ and every positive $\varepsilon$ is $0$ itself, so $P(\{c\}) = 0$. (This is the
+Calc-1 squeeze, applied to a constant: a non-negative quantity below every positive number
+must be zero.)
+
+This dissolves the apparent contradiction — "the dart lands *somewhere*, yet every single
+landing point has probability $0$" — that troubled pre-Kolmogorov probability. There is no
+contradiction: an *uncountable* union of zero-probability points is **not** governed by
+additivity, because (A3) only sums over *countable* sequences. You cannot add up
+uncountably many zeros to recover the length. The probability lives in the *sets* (intervals
+have length), not in the individual points (which have none). @fig-dart makes the squeeze
+visible.
+
+```{python}
+#| label: fig-dart
+#| fig-cap: "The continuous leap. A dart lands uniformly on $[0,1]$, so $P([a,b]) = b-a$ (length). **Top:** the event $[0.30,0.55]$ has probability $0.25$ — its shaded length. **Bottom:** a single point $c=0.4$ is trapped inside intervals $[c, c+\\varepsilon]$ of shrinking length $\\varepsilon$; since $P(\\{c\\}) \\le \\varepsilon$ for *every* $\\varepsilon>0$, the squeeze forces $P(\\{c\\})=0$. Probability is carried by sets of positive length, not by points."
+fig, (axT, axB) = plt.subplots(2, 1, figsize=(7.2, 4.2))
+
+# Top: interval event
+axT.add_patch(plt.Rectangle((0, 0), 1, 1, facecolor="none", edgecolor="black", lw=1.3))
+axT.add_patch(plt.Rectangle((0.30, 0), 0.25, 1, facecolor=SETA, alpha=0.55))
+axT.text(0.425, 0.5, "$P([0.30,0.55])=0.25$", ha="center", va="center", fontsize=10)
+axT.set_xlim(-0.02, 1.02); axT.set_ylim(0, 1)
+axT.set_yticks([]); axT.set_title("An interval has probability = its length")
+
+# Bottom: shrinking intervals around a point
+axB.add_patch(plt.Rectangle((0, 0), 1, 1, facecolor="none", edgecolor="black", lw=1.3))
+c = 0.40
+for k, eps in enumerate([0.20, 0.10, 0.04]):
+    axB.add_patch(plt.Rectangle((c, 0.15 + 0.25 * k), eps, 0.18,
+                  facecolor=SETB, alpha=0.5 + 0.15 * k))
+    axB.text(c + eps + 0.02, 0.24 + 0.25 * k, fr"$\varepsilon={eps}$", fontsize=8.5, va="center")
+axB.axvline(c, color=LINE, lw=1.6)
+axB.text(c, -0.12, "$c=0.4$", ha="center", color=LINE, fontsize=10)
+axB.set_xlim(-0.02, 1.02); axB.set_ylim(0, 1)
+axB.set_yticks([]); axB.set_title(r"A point is squeezed: $P(\{c\})\leq\varepsilon$ for all $\varepsilon>0$, so $=0$")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"If every individual outcome has probability zero, how can the dart land anywhere at
+all?"* Because **probability-zero is not the same as impossible** in a continuous space.
+Each point is a possible outcome (the dart does land on exactly one), yet each carries
+probability $0$; the probability mass is spread across the continuum so thinly that no
+single point holds any of it, but every interval of positive length holds its share. The
+resolution hinges on (A3) summing only *countably* — you cannot rebuild the length by
+adding up uncountably many point-probabilities. This distinction (the difference between
+$P(\cdot)=0$ and $\varnothing$) is the conceptual price of continuous probability, and it
+is exactly why [PROB-4] describes continuous variables by a *density* over sets rather than
+a mass on points.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The axioms are airtight, so "failure" here means the ways people *misuse* them, and the one
+genuine boundary where the framework itself needs care.
+
+## Misuse 1 — confusing "disjoint" with "independent" {#sec-disjoint-indep}
+
+The single most common error built on this foundation is conflating two unrelated ideas.
+**Disjoint** ($A \cap B = \varnothing$) means the events *cannot both occur*; **independent**
+(defined in [PROB-1]) means *one occurring tells you nothing about the other*. They are
+nearly opposites: if $A$ and $B$ are disjoint and both have positive probability, then
+knowing $A$ occurred tells you $B$ definitely did *not* — the strongest possible
+dependence. Disjointness is a fact about the *sets*; independence is a fact about the
+*probabilities*. We flag it here, settle it in [PROB-1].
+
+## Misuse 2 — adding probabilities of overlapping events {#sec-misuse-add}
+
+Writing $P(A \cup B) = P(A) + P(B)$ when $A$ and $B$ overlap double-counts the intersection
+and can yield a "probability" above $1$. The fix is inclusion–exclusion @eq-incexc2 every
+time the events are not known to be disjoint. @fig-area and @fig-dice are the permanent
+reminders: shaded regions, counted once.
+
+::: {.callout-warning title="Pitfall"}
+**Probabilities only add over *disjoint* events, and additivity is only *countable*.** Two
+failures hide here. First, adding $P(A)+P(B)$ for overlapping events over-counts — always
+check disjointness or use inclusion–exclusion. Second, never try to sum probabilities over
+an *uncountable* collection: in a continuous space each point has probability $0$, yet
+"summing" the uncountably many zeros to recover the total is not licensed by (A3), which
+sums only over sequences $A_1, A_2, \dots$. Mistaking pointwise-zero for total-zero is the
+continuous analogue of the disjoint-vs-overlap error.
+:::
+
+## The genuine boundary — non-measurable sets {#sec-nonmeasurable}
+
+The one place the *framework itself* strains is the technical fine print we flagged in
+@sec-axioms. In an uncountable $\Omega$ like $[0,1]$, one can construct (using the axiom of
+choice) bizarre subsets — **Vitali sets** are the classic example — to which *no*
+assignment of probability can be consistent with (A1)–(A3) simultaneously with
+translation-invariance. The resolution is not to patch the axioms but to **restrict their
+domain**: $P$ is defined only on a $\sigma$-algebra of "measurable" events, and the
+pathological sets are simply excluded. For all of statistics and data science this costs us
+nothing — intervals, their countable unions, and everything built from them are measurable,
+and you will never knowingly meet a non-measurable event in practice. But honesty requires
+naming the boundary: "assign a probability to *every* subset" is too much to ask of an
+infinite space, and **measure theory** is the discipline that says precisely which subsets
+are fair game. That theory is above this track's floor; we use only its safe conclusion.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the equally-likely (classical) model the right tool, and when is it wrong?"* The
+honest summary you should be able to recite:
+
+- **Use the classical model** only when there is a genuine, defensible symmetry making the
+  finitely many outcomes interchangeable — fair dice, well-shuffled cards, a balanced
+  spinner with equal sectors. Then @eq-classical is exact and counting (the combinatorics of
+  [PROB-10]) does all the work.
+- **Do not use it** when outcomes are not symmetric (a loaded die, a biased coin, real-world
+  events like conversions or failures — @sec-loaded), where you assign the actual masses and
+  combine them by the axioms; or when $\Omega$ is infinite/continuous (the dart —
+  @sec-dart), where probability is carried by lengths/areas/volumes (densities, [PROB-4])
+  and "favorable over total" is meaningless.
+- **The deepest caveat:** the model is a *choice*. Picking the sample space and the
+  probability assignment is where the modeling judgment lives; the axioms only guarantee
+  that *once chosen*, your calculations cannot contradict each other. They make you
+  consistent, not correct.
+:::
+
+# How you would actually compute with this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. For a finite $\Omega$, the
+entire apparatus is just dictionaries and set operations: represent $\Omega$ as a list or
+set of outcomes, an event as a Python `set`, and read the operations straight off
+@def-setops — `A | B` is the union, `A & B` the intersection, `Omega - A` the complement.
+Probability of an event under equal weights is `len(A) / len(Omega)`; under arbitrary
+weights it is `sum(p[w] for w in A)`. We used exactly this in @sec-twodice and @sec-loaded,
+and it is how you would sanity-check any hand derivation: enumerate, count, and confirm the
+closed-form rule (complement, inclusion–exclusion) agrees with the brute-force count. For
+continuous $\Omega$ you switch from counting to integrating lengths/areas — the subject of
+[PROB-4]. The library you will eventually reach for (`scipy.stats`, `numpy.random`) is built
+on exactly these axioms; knowing them is knowing what those tools are *allowed* to do.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+This is the ground floor — there is nothing before it. From here the Probability
+Foundations track builds upward, and every other track in the series eventually draws on
+what we established:
+
+- **[PROB-1 *Conditional Probability, Independence & Bayes' Rule*]** — the immediate next
+  step: how $P(A)$ changes when we learn that $B$ occurred. It is built by *restricting the
+  sample space* to $B$, so it stands directly on the $\Omega$/event machinery here, and it
+  settles the disjoint-vs-independent confusion we flagged in @sec-disjoint-indep.
+- **[PROB-2 *Random Variables*]** — the conceptual leap: a random variable is a *function*
+  $X : \Omega \to \mathbb{R}$ on the very sample space we just built, turning outcomes into
+  numbers so calculus can touch them. The whole rest of probability is functions on
+  $\Omega$.
+- **[PROB-4 *Continuous Random Variables*]** — picks up the dart of @sec-dart, replacing
+  "probability per point" (which is $0$) with a *density* integrated over sets, the
+  continuous heir to @eq-uniform.
+- **[PROB-10 *Counting: Permutations & Combinations*]** — develops the combinatorics that
+  the classical model @eq-classical reduces probability to, in the equally-likely case.
+
+Cross-track, this article is what lets every downstream track honor the Calc-1 floor: the
+sample space, events, and axioms are silently assumed by Inference, Regression,
+Classification, and the rest, and they all point back here rather than rebuilding them.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding source.** A. N. Kolmogorov, *Grundbegriffe der
+  Wahrscheinlichkeitsrechnung* (1933), translated as *Foundations of the Theory of
+  Probability* — the monograph that gave probability its axioms. Remarkably short and
+  readable; §1 is essentially @sec-axioms above.
+- **The historical seed.** The 1654 Pascal–Fermat correspondence on the problem of points,
+  reprinted in many collections (e.g. F. N. David, *Games, Gods and Gambling*, 1962), where
+  the favorable-over-total recipe is born — and where you can see, in hindsight, the
+  assumptions it never made explicit.
+- **The paradoxes that forced rigor.** Joseph Bertrand's 1889 *Calcul des probabilités*
+  posed the "chord of a circle" paradox, where three reasonable ways of choosing a random
+  chord give three different answers — the clearest demonstration that "random" and
+  "equally likely" need a *defined* sample space before they mean anything.
+- **Open threads this article deliberately deferred.** *Which subsets are measurable, and
+  what is a $\sigma$-algebra?* — the measure-theoretic foundation (@sec-nonmeasurable),
+  above this track's floor. *How does conditioning rebuild the sample space?* — [PROB-1].
+  *Why does the long-run frequency in @fig-freq actually converge?* — the Law of Large
+  Numbers, an Inference-track theorem built from the Chebyshev inequality of [PROB-19]. We
+  supplied the inequality-free *interpretation* here; the limit theorem is owned downstream.

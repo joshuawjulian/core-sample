@@ -1,0 +1,1103 @@
+---
+title: "Expectation: The Long-Run Average"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples / running average
+LINE   = "#c1121f"     # the theoretical value / limit
+ACCENT = "#0a7d4d"     # highlights / the mean / balance point
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded mass / area
+```
+
+> **Where this sits in the track.** The two preceding articles built the objects this one
+> summarizes. [PROB-3 *Discrete Random Variables: The Probability Mass Function*] gave us a
+> random variable that takes countably many values, described by a **pmf** $p(x)=P(X=x)$
+> with $\sum_x p(x)=1$. [PROB-4 *Continuous Random Variables: The Probability Density
+> Function*] gave us the continuum case, described by a **pdf** $f(x)$ with
+> $\int f(x)\,dx=1$ and $P(a\le X\le b)=\int_a^b f(x)\,dx$. A whole distribution is a lot of
+> information; very often we want **one number** that says where the variable lands on
+> average. That number is the **expectation** $E[X]$. This article defines it for both kinds
+> of variable, derives the **law of the unconscious statistician** for $E[g(X)]$, proves
+> **linearity of expectation** — the workhorse identity that holds with or without
+> independence — and shows an honest case (the Cauchy distribution) where the expectation
+> *fails to exist*. It assumes [PROB-3] and [PROB-4], and floor-level summation and
+> integration. It sets up [PROB-6 *Variance*] (variance is an expectation), [PROB-7
+> *Covariance*] (covariance is an expectation), every distribution's mean in the catalog
+> [PROB-11]–[PROB-16], and the concentration inequalities of [PROB-19 *Chebyshev*].
+
+## Abstract {.unnumbered}
+
+A distribution carries more information than we usually want to hold at once. The single
+most useful summary of a random variable $X$ is its **expectation** $E[X]$ — the value $X$
+lands on *on average* in the long run. This article builds that number from scratch as a
+**probability-weighted average** of $X$'s possible values: $E[X]=\sum_x x\,p(x)$ when $X$
+is discrete and $E[X]=\int x f(x)\,dx$ when it is continuous, the two formulas being one
+idea written in the two languages of [PROB-3] and [PROB-4]. We motivate it as the limit of
+the sample average — the literal long-run average of repeated draws — and we make that
+limit visible. We then derive the **law of the unconscious statistician**, which computes
+$E[g(X)]$ by weighting $g(x)$ instead of $x$ without ever finding the distribution of
+$g(X)$, and **linearity of expectation**, $E[aX+bY+c]=aE[X]+bE[Y]+c$, whose stunning
+feature is that it needs **no assumption of independence**. The single claim this article
+defends is that **expectation is just a weighted average, and almost everything you will
+ever do with it follows from that one fact plus linearity** — including the honest boundary
+where the weighted average diverges and the expectation simply does not exist.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **expectation** of a random variable is its **probability-weighted average** — each
+possible value, multiplied by how much probability it carries, all added up:
+$$
+E[X]=\sum_x x\,p(x)\quad(\text{discrete}),\qquad E[X]=\int_{-\infty}^{\infty} x\,f(x)\,dx\quad(\text{continuous}).
+$$
+It is the value the **sample average converges to** as you repeat the experiment forever —
+the long-run average made into a single number. Two properties carry the whole subject:
+**the law of the unconscious statistician**, $E[g(X)]=\sum_x g(x)p(x)$ (or
+$\int g(x)f(x)\,dx$), which lets you average a *function* of $X$ by reweighting the same
+masses; and **linearity**, $E[aX+bY]=aE[X]+bE[Y]$, which holds **always — even when $X$ and
+$Y$ are dependent.** That last clause is the most powerful single fact in elementary
+probability.
+:::
+
+Everything below orbits that box. The formula $E[X]=\sum x\,p(x)$ will look at first like
+an arbitrary definition, but it is forced: it is the *only* number the average of repeated
+draws can settle on. Hold onto the picture of a **balance point** — the place where the
+probability mass would balance on a fingertip — because it makes every property in this
+article visible, and it is exactly why the Cauchy distribution at the end has *no*
+expectation: its mass is so spread out that there is no place it balances.
+
+# Why we are here: from a whole distribution to a single number {#sec-why}
+
+Keep one question in view for the whole article: **what single number best stands in for an
+entire random variable, and how do we compute and manipulate it?** Every move below answers
+a piece of that. If a step feels arbitrary, return here.
+
+## The problem: a distribution is too much to hold
+
+The previous two articles handed us complete descriptions of a random variable. For a die,
+the pmf is a list of six numbers; for a waiting time, the pdf is a whole curve. That is
+*everything there is to know* — and that is the problem. You cannot compare two slot
+machines, two investment strategies, or two manufacturing processes by squinting at two
+entire distributions. You want to collapse each one to a number you can rank, add, and
+reason about.
+
+The oldest version of this need is a gambling question, and it is where expectation was
+born. In 1654 the Chevalier de Méré, a French nobleman and gambler, put a problem to Blaise
+Pascal: if a game of chance is interrupted before it finishes, how should the stakes be
+divided *fairly* between the players, given the chances each had of eventually winning?
+Pascal and Pierre de Fermat solved it in a famous exchange of letters, and the principle
+they reached is the seed of this entire article: **a fair share is the probability-weighted
+average of the outcomes** — each possible winning amount, weighted by the chance of getting
+it. A few years later, in 1657, Christiaan Huygens wrote the first probability textbook,
+*De ratiociniis in ludo aleae* ("On Reasoning in Games of Chance"), and made this the very
+first concept: the *value* of a gamble is
+
+$$
+\text{value} = (\text{prize}_1)\cdot P(\text{outcome}_1) + (\text{prize}_2)\cdot P(\text{outcome}_2) + \cdots
+$$
+
+That is $E[X]$, three and a half centuries before we wrote it that way. The whole of this
+article is the careful unpacking of that one line and the rules for working with it.
+
+::: {.callout-tip title="You might be asked"}
+*"What is a fair price for a gamble, and why?"* A gamble that pays \$10 with probability
+$0.3$ and \$0 otherwise has expected payoff $10(0.3)+0(0.7)=\$3$. The honest, complete
+answer an interviewer wants: \$3 is the price at which, **if you played the gamble many
+times**, your average cost would exactly match your average payoff, so in the long run you
+neither gain nor lose. It is *not* a claim about any single play — you will never actually
+win \$3 on one play; you win \$10 or \$0. Expectation is a statement about the **long run**,
+and confusing it with a single-trial guarantee is the classic error this article exists to
+prevent.
+:::
+
+## Why "the average" is the right summary
+
+The word "average" already lives in two places, and seeing they are the same is the start
+of expectation. Suppose you flip a biased coin that lands heads with probability $p=0.7$,
+scoring $X=1$ for heads and $X=0$ for tails. Flip it $n$ times and record the outcomes
+$x_1,\dots,x_n$. The **sample average** is
+
+$$
+\bar x_n = \frac{1}{n}\sum_{i=1}^n x_i = \frac{(\text{number of heads})}{n}.
+$$
+
+As $n$ grows, the *fraction of heads* settles toward $0.7$ — that is what "the coin lands
+heads $70\%$ of the time" means operationally. So $\bar x_n \to 0.7$. Now look at what
+$0.7$ *is* in terms of the distribution:
+
+$$
+0.7 = 1\cdot(0.7) + 0\cdot(0.3) = \sum_{x\in\{0,1\}} x\,p(x).
+$$
+
+The number the sample average converges to is exactly the probability-weighted average of
+the possible values. That is not a coincidence of this example; it is the general fact, and
+it is *the* reason the weighted-average formula deserves the name "expected value." We make
+this convergence visible in @fig-lln-convergence.
+
+```{python}
+#| label: fig-lln-convergence
+#| fig-cap: "Why the weighted average is the *long-run* average. We simulate repeated rolls of a fair six-sided die and plot the running sample average $\\bar x_n = \\frac1n\\sum_{i\\le n} x_i$ against the number of rolls $n$ (three independent runs, in muted blues). Early on the average lurches around; as $n$ grows every run is drawn toward the same horizontal line — the expectation $E[X]=\\sum x\\,p(x) = 3.5$ (red). The expectation is *defined* to be the value the sample average is converging to. The full theorem that guarantees this convergence is the Law of Large Numbers, owned by the Inference track; here we only need the picture."
+rng = np.random.default_rng(0)
+faces = np.arange(1, 7)
+EX = faces.mean()            # = sum x * (1/6) = 3.5
+
+fig, ax = plt.subplots()
+n_max = 2000
+for k, shade in enumerate(["#2b3a67", "#5a6fa0", "#9fb3d1"]):
+    rolls = rng.integers(1, 7, size=n_max)
+    running = np.cumsum(rolls) / np.arange(1, n_max + 1)
+    ax.plot(np.arange(1, n_max + 1), running, color=shade, lw=1.3,
+            label=f"run {k+1}")
+ax.axhline(EX, color=LINE, lw=2.0, label=f"$E[X] = 3.5$")
+ax.set_xscale("log")
+ax.set_xlabel("number of rolls $n$ (log scale)")
+ax.set_ylabel(r"running average $\bar x_n$")
+ax.set_title("The sample average converges to the expectation")
+ax.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-note title="What we are borrowing, and where it is built"}
+That the sample average $\bar x_n$ *provably* converges to $E[X]$ is the **Law of Large
+Numbers**. We are using it here only as motivation — the picture that makes the definition
+feel inevitable — not as a tool in any derivation. The LLN is a *theorem about samples*, and
+in this series it lives in the Statistical Inference track (its raw material, Chebyshev's
+inequality, is built here in [PROB-19]). So we may lean on it for intuition while keeping
+this article self-contained: nothing below *depends* on the LLN; everything is derived from
+the weighted-average definition directly.
+:::
+
+# Intuition before symbols: the balance point {#sec-intuition}
+
+Before any formula does work, fix the mental image that makes expectation obvious. Picture
+the probability of a random variable as **physical mass** laid out along a number line: a
+discrete variable puts a lump of mass $p(x)$ at each value $x$; a continuous one smears mass
+along the line at density $f(x)$ (this is precisely why $p$ is called a probability *mass*
+function and $f$ a *density* — [PROB-3], [PROB-4] named them for exactly this picture).
+
+Now ask a physics question: **where does this mass balance?** Put the number line on a
+fulcrum and slide the fulcrum until the line sits level, neither tipping left nor right.
+That balance point — the **center of mass** — is the expectation. @fig-balance shows it.
+
+```{python}
+#| label: fig-balance
+#| fig-cap: "Expectation is the balance point of the probability mass. **Left:** a discrete variable with masses $p(x)$ as bars at four values; the triangle marks where the line balances, $E[X]=\\sum x\\,p(x)$. **Right:** a continuous variable; the shaded area is the density $f(x)$, and the triangle marks $E[X]=\\int x f(x)\\,dx$. In both cases the expectation is the fulcrum at which the mass to the left exactly counterbalances the mass to the right — note it is pulled toward the heavy side, not the side with more *values*."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.8))
+
+# Discrete: a skewed little distribution
+xs_d = np.array([1, 2, 3, 7], dtype=float)
+ps_d = np.array([0.4, 0.3, 0.2, 0.1])
+EX_d = np.sum(xs_d * ps_d)
+axL.bar(xs_d, ps_d, width=0.18, color=FILL, edgecolor=POINT, zorder=3)
+axL.axhline(0, color=GREY, lw=1.0)
+axL.plot([EX_d], [0], marker="^", color=ACCENT, markersize=16, zorder=5)
+axL.annotate(f"$E[X]={EX_d:.1f}$", (EX_d, 0.02), color=ACCENT,
+             ha="center", fontsize=10)
+axL.set_xlim(0, 8); axL.set_ylim(-0.02, 0.45)
+axL.set_xlabel("$x$"); axL.set_ylabel("$p(x)$")
+axL.set_title("Discrete: masses balance")
+
+# Continuous: a right-skewed density (a gamma-ish shape, hand-built)
+xs_c = np.linspace(0, 10, 400)
+fc = (xs_c ** 2) * np.exp(-xs_c) / 2.0     # this is a Gamma(3,1) density, area 1
+# trapezoidal integral of x*f(x), written by hand so it runs on any numpy version
+_integrand = xs_c * fc
+EX_c = np.sum((_integrand[1:] + _integrand[:-1]) / 2.0 * np.diff(xs_c))
+axR.fill_between(xs_c, fc, color=FILL, alpha=0.8, zorder=2)
+axR.plot(xs_c, fc, color=POINT, zorder=3)
+axR.axhline(0, color=GREY, lw=1.0)
+axR.plot([EX_c], [0], marker="^", color=ACCENT, markersize=16, zorder=5)
+axR.annotate(f"$E[X]={EX_c:.1f}$", (EX_c, 0.012), color=ACCENT,
+             ha="center", fontsize=10)
+axR.set_xlim(0, 10)
+axR.set_xlabel("$x$"); axR.set_ylabel("$f(x)$")
+axR.set_title("Continuous: density balances")
+plt.tight_layout()
+```
+
+This single picture pays for itself many times over:
+
+- **It explains the formula.** The torque a mass exerts about the origin is (position)
+  $\times$ (mass). The balance point is where total torque is zero, which is the
+  weighted-average position $\sum x\,p(x)$ — the formula *is* the center-of-mass formula
+  from physics.
+- **It explains skew.** The fulcrum sits toward the *heavy* side, not the side with more
+  distinct values. In @fig-balance (left) most of the mass is at small values, so the mean
+  is pulled left of the lone far point at $7$, but the far point still drags it rightward.
+  This is exactly why the mean of a right-skewed income distribution exceeds its median.
+- **It will explain when expectation does not exist.** If you smear mass far enough out
+  along the line — heavily enough that the far tails never let the torque settle — there is
+  *no* balance point. That is the Cauchy distribution of @sec-cauchy, previewed now so it
+  does not feel like a trick later.
+
+::: {.callout-tip title="You might be asked"}
+*"What's the difference between the mean, the median, and the mode?"* All three are
+"centers," but they answer different questions. The **mode** is the most probable value (the
+tallest bar / highest density). The **median** is the value that splits the mass in half —
+$50\%$ of probability on each side. The **mean** ($E[X]$) is the balance point. For a
+symmetric distribution all three coincide. For a skewed one they separate, and the mean is
+the one a long tail drags furthest, because a far-out value contributes its full distance to
+the torque even if it is improbable. When a single huge value can move your summary a lot
+and you do not want that, the median is more robust — but the mean is the one that adds
+linearly (@sec-linearity), which is why it dominates theory.
+:::
+
+# The formal development {#sec-formal}
+
+## Defining expectation for a discrete variable {#sec-def-discrete}
+
+We start where the simplest objects live: a discrete random variable, whose machinery
+([PROB-3]) is a pmf $p(x)=P(X=x)$ supported on a countable set of values.
+
+::: {#def-exp-discrete}
+**Definition (expectation, discrete case).** Let $X$ be a discrete random variable with pmf
+$p(x)=P(X=x)$, taking values in a countable set (its *support*) $\mathcal{X}$. The
+**expectation** (or **expected value**, or **mean**) of $X$ is
+
+$$
+E[X] \;=\; \sum_{x\in\mathcal{X}} x\,p(x),
+$$ {#eq-exp-discrete}
+
+**provided the sum converges absolutely**, i.e. $\sum_{x} |x|\,p(x) < \infty$. If that
+series diverges, we say $E[X]$ **does not exist**.
+:::
+
+Every symbol earns its place. The sum runs over the support $\mathcal{X}$ — the values $X$
+can actually take. Each term $x\,p(x)$ is a *value* multiplied by *its probability*: the
+contribution of that value to the average, weighted by how often it occurs. Add them all up
+and you have the weighted average. The mean is written $\mu$ (the Greek letter "mu") as
+often as $E[X]$; the two are interchangeable, and we will use $\mu_X = E[X]$ when we need to
+name the mean of a particular variable.
+
+The "absolutely convergent" clause is not bureaucratic fine print; it is the precise
+statement of the balance-point caveat from @sec-intuition. For a finite support it is
+automatic — a finite sum always converges. For an infinite support (a count that can be any
+non-negative integer, say), the values can run off to infinity, and whether they "balance"
+depends on whether $\sum |x| p(x)$ stays finite. We require *absolute* convergence so that
+the value of the sum does not depend on the order in which we add the terms — a subtlety
+that becomes the whole story in @sec-cauchy. For now, hold the headline: **the mean is a
+weighted average, and it exists exactly when that weighted average is finite.**
+
+### A first worked computation by hand
+
+Let $X$ be the result of one roll of a fair six-sided die, so $p(x)=\tfrac16$ for
+$x\in\{1,2,3,4,5,6\}$. By @eq-exp-discrete,
+
+$$
+E[X] = \sum_{x=1}^{6} x\cdot\frac16
+= \frac16(1+2+3+4+5+6)
+= \frac16\cdot 21 = 3.5 .
+$$
+
+Notice $3.5$ is **not a value the die can ever show** — you never roll a $3.5$. That is the
+point of @fig-balance and the interview note above: the expectation is the long-run average,
+the balance point, *not* a prediction of any single roll. It is the number the running
+average in @fig-lln-convergence converged to.
+
+## Defining expectation for a continuous variable {#sec-def-continuous}
+
+The continuous case ([PROB-4]) replaces the pmf by a pdf $f(x)$ and, following the universal
+recipe of that article, replaces the sum by an integral. The intuition is identical: we are
+still adding up (value) $\times$ (probability), but probability now lives in a *density*
+spread over the line, so an infinitesimal slice of width $dx$ at position $x$ carries
+probability $f(x)\,dx$, and its contribution to the average is $x\cdot f(x)\,dx$. Summing
+those contributions across the whole line *is* the integral.
+
+::: {#def-exp-continuous}
+**Definition (expectation, continuous case).** Let $X$ be a continuous random variable with
+pdf $f(x)$. The **expectation** of $X$ is
+
+$$
+E[X] \;=\; \int_{-\infty}^{\infty} x\,f(x)\,dx,
+$$ {#eq-exp-continuous}
+
+**provided the integral converges absolutely**, i.e. $\int_{-\infty}^{\infty} |x|\,f(x)\,dx < \infty$.
+If it does not, $E[X]$ does not exist.
+:::
+
+The parallel with @eq-exp-discrete is exact and deliberate: $\sum_x x\,p(x)$ becomes
+$\int x\,f(x)\,dx$, point masses become a density, the sum becomes an integral. This is the
+same translation between [PROB-3] and [PROB-4] that turned $\sum_x p(x)=1$ into
+$\int f(x)\,dx = 1$. If you can read one definition you can read the other; they are one
+idea in two notations. We will frequently state results once and note that they hold "in
+both cases," doing the algebra in whichever language is clearer.
+
+### A first continuous computation by hand
+
+Let $X$ be uniform on $[0,1]$ — the canonical continuous variable, with density $f(x)=1$
+for $0\le x\le 1$ and $f(x)=0$ elsewhere ([PROB-4] built this). Then
+
+$$
+E[X] = \int_{-\infty}^{\infty} x\,f(x)\,dx
+= \int_{0}^{1} x\cdot 1\,dx
+= \left[\frac{x^2}{2}\right]_0^1
+= \frac{1}{2}.
+$$
+
+The mean of a uniform on $[0,1]$ is its midpoint $\tfrac12$ — exactly the balance point of a
+rod of uniform density, as physics demands. (We integrate only over $[0,1]$ because $f=0$
+outside it, so those parts contribute nothing — a habit worth keeping: the integral in
+@eq-exp-continuous is over the whole line, but only the support carries mass.)
+
+::: {.callout-tip title="You might be asked"}
+*"Is expectation defined the same way for discrete and continuous variables?"* Yes — it is
+*one* concept: the probability-weighted average of the values. The only difference is
+bookkeeping: a sum over point masses for discrete variables, an integral over a density for
+continuous ones. (There is a single unifying definition, the **Lebesgue–Stieltjes integral**
+$E[X]=\int x\,dF(x)$ against the CDF $F$ of [PROB-2], which handles discrete, continuous, and
+even mixed variables in one stroke; we flag it as the grown-up version but do not need its
+machinery here, since absolutely everything we do follows from the two elementary forms
+above.)
+:::
+
+## A function of a random variable: the law of the unconscious statistician {#sec-lotus}
+
+We rarely care only about $X$ itself. We care about *functions* of it: a gambler cares about
+the payoff $g(X)$, not the card $X$; an engineer cares about the power $X^2$ dissipated, not
+the current $X$. So we need $E[g(X)]$ — the expected value of a transformed variable.
+
+There is an obvious-looking way and a clever way, and they turn out to agree. The obvious
+way: $Y=g(X)$ is itself a random variable, so find *its* distribution and apply
+@eq-exp-discrete to $Y$. Finding the distribution of $g(X)$ is genuine work — it is the
+change-of-variables machinery of [PROB-4]. The clever way avoids it entirely.
+
+::: {#thm-lotus}
+**Theorem (Law of the Unconscious Statistician, LOTUS).** Let $X$ be a random variable and
+$g$ a (measurable) real function. Then the expectation of $g(X)$ can be computed by
+weighting the values of $g$ with the distribution of $X$ — *without* finding the
+distribution of $g(X)$:
+
+$$
+E[g(X)] = \sum_{x} g(x)\,p(x) \quad(\text{discrete}),
+\qquad
+E[g(X)] = \int_{-\infty}^{\infty} g(x)\,f(x)\,dx \quad(\text{continuous}),
+$$ {#eq-lotus}
+
+provided the sum/integral converges absolutely.
+:::
+
+The name is a gentle joke: the formula is so natural that statisticians use it *without
+realizing it needs proof* — they unconsciously write $E[g(X)]=\sum g(x)p(x)$ as if it were
+the definition, when in fact the definition (@eq-exp-discrete) is about $\sum y\,P(Y=y)$ for
+$Y=g(X)$. We prove the discrete case in full; the continuous case is the same argument with
+sums replaced by integrals, and we say exactly where.
+
+::: {.proof}
+**Discrete case.** Let $Y=g(X)$. By the *definition* of expectation applied to $Y$
+(@eq-exp-discrete), we must average $Y$'s values weighted by $Y$'s pmf:
+
+$$
+E[Y] = \sum_{y\in\mathcal{Y}} y\,P(Y=y),
+$$
+
+where $\mathcal{Y}$ is the set of values $Y$ can take. The work is to compute $P(Y=y)$ and
+then untangle it. Fix a value $y$. The event $\{Y=y\}$ is the event $\{g(X)=y\}$, which
+happens exactly when $X$ lands on *some* value $x$ that $g$ maps to $y$. Collect those
+values into the set $A_y=\{x\in\mathcal{X} : g(x)=y\}$ (the *preimage* of $y$). These $x$'s
+give disjoint outcomes (a single roll of $X$ is one value), so by the additivity of
+probability ([PROB-0]),
+
+$$
+P(Y=y) = P\bigl(X\in A_y\bigr) = \sum_{x\in A_y} p(x).
+$$
+
+Substitute this into $E[Y]$:
+
+$$
+E[Y] = \sum_{y\in\mathcal{Y}} y \left(\sum_{x\in A_y} p(x)\right)
+     = \sum_{y\in\mathcal{Y}} \ \sum_{x\in A_y} y\,p(x).
+$$
+
+Now the key move. Inside the inner sum, $x$ ranges over $A_y$, which is *defined* by
+$g(x)=y$ — so on every term of the inner sum we may replace $y$ by $g(x)$, because they are
+equal there:
+
+$$
+E[Y] = \sum_{y\in\mathcal{Y}} \ \sum_{x\in A_y} g(x)\,p(x).
+$$
+
+Finally, look at what the double sum is doing. The sets $A_y$, as $y$ ranges over
+$\mathcal{Y}$, are **disjoint** (each $x$ has exactly one image $g(x)$, so it lands in
+exactly one $A_y$) and **together they cover all of $\mathcal{X}$** (every $x$ has *some*
+image). So summing over $y$ and then over $x\in A_y$ visits every $x\in\mathcal{X}$ exactly
+once. The double sum collapses to a single sum over all $x$:
+
+$$
+E[Y] = \sum_{x\in\mathcal{X}} g(x)\,p(x),
+$$
+
+which is @eq-lotus. (The absolute-convergence hypothesis is what licenses the
+rearrangement of terms in that final collapse — without it, reordering an infinite sum can
+change its value, the very pathology of @sec-cauchy.)
+
+**Continuous case.** We give the argument in full for the case that matters in practice and
+covers every example in this article: $g$ continuous and *piecewise monotone* — that is, the
+line splits into finitely many intervals on each of which $g$ is strictly increasing or
+strictly decreasing (any $g$ you will integrate by hand — $x^2$, $e^{tx}$, $|x|$, a payoff
+schedule — is of this kind). We do the cleanly monotone piece first and then add the pieces.
+
+*Step 1 — one monotone piece.* Suppose $g$ is strictly increasing and differentiable on an
+interval, with inverse $x=g^{-1}(y)$. Let $Y=g(X)$. We first find the density $f_Y$ of $Y$,
+then integrate $y\,f_Y(y)$, and watch the substitution turn it back into $\int g(x)f(x)\,dx$.
+The CDF of $Y$ is
+$$
+F_Y(y) = P(Y\le y) = P\bigl(g(X)\le y\bigr) = P\bigl(X\le g^{-1}(y)\bigr) = F\bigl(g^{-1}(y)\bigr),
+$$
+where the third equality is allowed because $g$ is increasing, so "$g(X)\le y$" is the same
+event as "$X\le g^{-1}(y)$". Differentiate in $y$ to get the density of $Y$, using the
+chain rule (a Calc-1 move) and $F'=f$:
+$$
+f_Y(y) = \frac{d}{dy}F\bigl(g^{-1}(y)\bigr) = f\bigl(g^{-1}(y)\bigr)\cdot \frac{d}{dy}g^{-1}(y).
+$$
+Now apply the *definition* @eq-exp-continuous to $Y$ and substitute $x=g^{-1}(y)$, i.e.
+$y=g(x)$ and $dy = g'(x)\,dx$ (this is ordinary Calc-1 substitution running in reverse):
+$$
+E[Y] = \int y\,f_Y(y)\,dy
+     = \int g(x)\,f(x)\,\underbrace{\frac{d}{dy}g^{-1}(y)\cdot g'(x)}_{=\,1}\,dx
+     = \int g(x)\,f(x)\,dx,
+$$
+where the bracketed product is $1$ because $\tfrac{d}{dy}g^{-1}(y)$ and $g'(x)$ are
+reciprocal derivatives of inverse functions ($\tfrac{dx}{dy}\cdot\tfrac{dy}{dx}=1$, again
+Calc-1). The substitution's limits also flip back to cover the same interval. For a strictly
+*decreasing* $g$ the only change is that the inequality reverses ($P(g(X)\le y)=P(X\ge
+g^{-1}(y))=1-F(g^{-1}(y))$) and $\tfrac{d}{dy}g^{-1}(y)<0$; the two sign flips cancel and the
+same identity $\int g(x)f(x)\,dx$ results.
+
+*Step 2 — add the pieces.* If $g$ is monotone on each of finitely many intervals
+$I_1,\dots,I_m$ that partition the support, run Step 1 on each interval and add. Because the
+integral is additive over a partition of the domain,
+$$
+E[g(X)] = \sum_{k=1}^m \int_{I_k} g(x)\,f(x)\,dx = \int_{-\infty}^{\infty} g(x)\,f(x)\,dx,
+$$
+which is @eq-lotus. (The general measurable $g$ needs the Lebesgue machinery flagged after
+@thm-lotus's twin in the discrete proof, but no example in this series escapes the
+piecewise-monotone case just handled.) $\qquad\blacksquare$
+:::
+
+The payoff is enormous. To get $E[X^2]$ you do **not** find the distribution of $X^2$; you
+just integrate $x^2 f(x)$. To get the expected payoff of a gamble you weight the payoffs by
+the original outcome probabilities. LOTUS is the tool that makes variance ([PROB-6],
+$\mathrm{Var}(X)=E[(X-\mu)^2]$ via $g(x)=(x-\mu)^2$), covariance ([PROB-7]), and moment
+generating functions ([PROB-20], $g(x)=e^{tx}$) computable at all.
+
+::: {.callout-tip title="You might be asked"}
+*"Is $E[g(X)]$ equal to $g(E[X])$?"* **Almost never.** This is one of the most common and
+most punished mistakes in the subject. Take $g(x)=x^2$ and a variable that is $-1$ or $+1$
+each with probability $\tfrac12$. Then $E[X]=0$, so $g(E[X])=0^2=0$; but
+$E[X^2]=(-1)^2\tfrac12+(1)^2\tfrac12=1$. So $E[g(X)]=1\neq 0=g(E[X])$. The gap is real and
+has a name: **Jensen's inequality** says that for a *convex* $g$ (one that curves upward,
+like $x^2$ or $e^x$), $E[g(X)]\ge g(E[X])$, with equality only if $X$ is constant. The
+one-line reason: convexity means $g$ lies above each of its tangent lines, so at the point
+$\mu=E[X]$ we have $g(x)\ge g(\mu)+g'(\mu)(x-\mu)$ for all $x$. Take expectations of both
+sides; by the linearity we are about to prove (@sec-linearity) the right side becomes
+$g(\mu)+g'(\mu)\,(E[X]-\mu)=g(\mu)$, since $E[X]-\mu=0$. Hence $E[g(X)]\ge g(\mu)=g(E[X])$.
+The convex function "sees" the spread of $X$ and is pulled up by it. The only functions for
+which $E[g(X)]=g(E[X])$ holds for *every* $X$ are the affine ones, $g(x)=ax+b$ — which is
+precisely linearity of expectation, the subject of @sec-linearity.
+:::
+
+## Linearity of expectation: the workhorse {#sec-linearity}
+
+We now prove the single most useful property of expectation, the one you will reach for more
+than any other. It says expectation *passes through* sums and scalar multiples, and — the
+remarkable part — it does so with **no assumption whatsoever about how the variables relate
+to each other.**
+
+::: {#thm-linearity}
+**Theorem (Linearity of expectation).** Let $X$ and $Y$ be random variables with finite
+expectations, and let $a,b,c$ be constants. Then
+
+$$
+E[aX + bY + c] = a\,E[X] + b\,E[Y] + c.
+$$ {#eq-linearity}
+
+No independence between $X$ and $Y$ is required.
+:::
+
+We build it from two simpler pieces — scaling-and-shifting a single variable, then adding
+two variables — because each piece is illuminating on its own. We do the discrete case; the
+continuous case replaces every sum by the corresponding integral, line for line, with no
+change in logic.
+
+### Piece 1: pulling out a constant and adding a constant
+
+::: {#lem-affine-one}
+**Lemma (affine rule, one variable).** For constants $a,c$ and a random variable $X$ with
+finite mean, $E[aX+c]=aE[X]+c$.
+:::
+
+::: {.proof}
+Apply LOTUS (@thm-lotus) with the function $g(x)=ax+c$:
+
+$$
+E[aX+c] = \sum_{x} (a x + c)\,p(x)
+= \sum_x a x\,p(x) + \sum_x c\,p(x).
+$$
+
+We split the single sum into two using the fact that a sum of sums is the sum of the sums
+(finite or absolutely convergent series may be split this way — and our means are finite by
+hypothesis). Pull the constants $a$ and $c$ out of their sums, since a constant factor
+multiplies every term identically:
+
+$$
+E[aX+c] = a\sum_x x\,p(x) + c\sum_x p(x).
+$$
+
+Now read the two remaining sums. The first is exactly $E[X]$ by @eq-exp-discrete. The second
+is $\sum_x p(x)$, the total probability over all values, which equals $1$ — that is the
+normalization axiom of a pmf, built in [PROB-3]. Therefore
+
+$$
+E[aX+c] = a\,E[X] + c\cdot 1 = a\,E[X] + c. \qquad\blacksquare
+$$
+:::
+
+Two special cases are worth saying out loud because they recur constantly. Setting $c=0$
+gives $E[aX]=aE[X]$: **scaling a variable scales its mean.** Setting $a=0$ gives $E[c]=c$:
+**the expectation of a constant is the constant itself** — sensible, since a "random"
+variable that is always $c$ has its entire mass at $c$, which balances at $c$.
+
+### Piece 2: the expectation of a sum
+
+The heart of the theorem is that the mean of a sum is the sum of the means. To prove it
+cleanly we need the **joint distribution** of $X$ and $Y$ — the function
+$p(x,y)=P(X=x,\,Y=y)$ giving the probability of each *pair* of values. This object is the
+full subject of [PROB-7]; here we need only two facts about it, both of which are just
+"probability adds up":
+
+1. **Marginalization.** Summing the joint over all values of one variable recovers the other
+   variable's pmf: $\sum_{y} p(x,y) = p_X(x)$, because the events $\{X=x,\,Y=y\}$ over all
+   $y$ are disjoint and their union is $\{X=x\}$ (whatever $X=x$ is, $Y$ took *some* value).
+   Likewise $\sum_x p(x,y)=p_Y(y)$.
+2. **LOTUS for two variables.** The same preimage argument that proved @thm-lotus, run on
+   the pair $(X,Y)$, gives $E[h(X,Y)] = \sum_x\sum_y h(x,y)\,p(x,y)$ for a function $h$ of
+   two arguments. (The proof is identical: partition by the value of $h$, replace, collapse.)
+
+::: {#lem-sum}
+**Lemma (mean of a sum).** For random variables $X,Y$ with finite means,
+$E[X+Y]=E[X]+E[Y]$, with **no** independence assumption.
+:::
+
+::: {.proof}
+Apply two-variable LOTUS with $h(x,y)=x+y$:
+
+$$
+E[X+Y] = \sum_x\sum_y (x+y)\,p(x,y).
+$$
+
+Split the $(x+y)$ across the double sum into two double sums:
+
+$$
+E[X+Y] = \sum_x\sum_y x\,p(x,y) \;+\; \sum_x\sum_y y\,p(x,y).
+$$
+
+Work on the first double sum. In its inner sum (over $y$), the factor $x$ does not depend on
+$y$, so pull it out of the inner sum:
+
+$$
+\sum_x\sum_y x\,p(x,y) = \sum_x x\left(\sum_y p(x,y)\right) = \sum_x x\,p_X(x) = E[X],
+$$
+
+where we used marginalization (fact 1) to turn $\sum_y p(x,y)$ into $p_X(x)$, and then the
+definition of $E[X]$. By the mirror-image manipulation — pull the $y$ out of the *outer*
+sum after swapping the order — the second double sum is
+
+$$
+\sum_x\sum_y y\,p(x,y) = \sum_y y\left(\sum_x p(x,y)\right) = \sum_y y\,p_Y(y) = E[Y].
+$$
+
+Adding the two results gives $E[X+Y]=E[X]+E[Y]$. **Nowhere did we assume $X$ and $Y$ were
+independent** — we only used that the joint $p(x,y)$ marginalizes to the right pieces, which
+is true for *any* pair of variables. $\qquad\blacksquare$
+:::
+
+### Assembling the theorem
+
+@thm-linearity now follows by stacking the two lemmas. Start from the left side and apply
+@lem-sum to the two summands $aX$ and $bY+c$:
+
+$$
+E[aX + bY + c] = E[aX] + E[bY + c].
+$$
+
+Apply @lem-affine-one to each piece — $E[aX]=aE[X]$ (with $c=0$) and $E[bY+c]=bE[Y]+c$:
+
+$$
+E[aX+bY+c] = a\,E[X] + b\,E[Y] + c,
+$$
+
+which is @eq-linearity. By induction the same holds for any finite number of variables:
+$E\!\left[\sum_{i=1}^n a_i X_i\right]=\sum_{i=1}^n a_i E[X_i]$. $\qquad\blacksquare$
+
+::: {.callout-important title="Why 'no independence required' is a superpower"}
+Take a moment to appreciate how strange and strong @lem-sum is. The *distribution* of $X+Y$
+depends intimately on how $X$ and $Y$ relate — whether they reinforce or cancel each other.
+Its *variance* will require an independence assumption (or a covariance correction —
+[PROB-6], [PROB-7]). But its **mean does not care at all.** You can add up the means of
+wildly entangled variables and the answer is exactly the mean of the sum. This is what makes
+expectation the tool of first resort for hard counting problems: you decompose a complicated
+random total into a sum of simple indicators and add up their (easy) means, never once
+worrying about the dependence between them. @sec-hats shows this trick in full force.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"$E[X+Y]=E[X]+E[Y]$ always, but $E[XY]=E[X]E[Y]$ only sometimes — why the asymmetry?"*
+Because addition and multiplication interact differently with the joint distribution. In the
+proof of @lem-sum, splitting $(x+y)$ let each term keep only *one* of the two variables, so
+each collapsed to a clean marginal sum — the cross-structure $p(x,y)$ never had to factor.
+For a *product* $xy$ you cannot separate the variables that way; you are stuck with
+$\sum_x\sum_y xy\,p(x,y)$, and to break it into $(\sum_x x p_X(x))(\sum_y y p_Y(y))$ you need
+$p(x,y)=p_X(x)p_Y(y)$ — exactly the definition of **independence** ([PROB-8]). So
+$E[XY]=E[X]E[Y]$ is a theorem *only under independence*; the gap $E[XY]-E[X]E[Y]$ is the
+**covariance**, the entire subject of [PROB-7]. Linearity is free; the product rule is
+earned.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the definitions and linearity on real problems — including one where the
+expectation honestly does not exist. Math leads; the code only computes sums, draws the
+pictures, and checks the hand algebra by simulation.
+
+## Example 1 — A real insurance/lottery decision, computed by hand {#sec-lottery}
+
+Expectation was born at the gambling table, so we start there, but with a question that is
+genuinely a *decision*. A state lottery sells a scratch ticket for \$2. The prize structure,
+printed on the back, is the honest data:
+
+| Prize | Probability |
+|------:|:-----------:|
+| \$10{,}000 | $1/50{,}000$ |
+| \$500 | $1/5{,}000$ |
+| \$20 | $1/500$ |
+| \$2 (your money back) | $1/50$ |
+| \$0 | the rest |
+
+Let $X$ be the prize. We want $E[X]$ — the average prize — to decide whether the \$2 ticket
+is worth it.
+
+```{python}
+#| label: tbl-lottery
+#| echo: false
+prizes = np.array([10000, 500, 20, 2, 0], dtype=float)
+probs  = np.array([1/50000, 1/5000, 1/500, 1/50, 0.0])
+probs[-1] = 1 - probs[:-1].sum()         # the "rest" gets the leftover probability
+EX = np.sum(prizes * probs)
+print("prize        probability      contribution  x*p(x)")
+for x, p in zip(prizes, probs):
+    print(f"${x:>8.0f}   {p:>12.6f}     {x*p:>10.4f}")
+print(f"{'':>13}{'sum p(x) =':>12} {probs.sum():.6f}")
+print(f"{'':>13}{'E[X] =':>12} ${EX:.4f}   (expected prize)")
+print(f"{'':>13}{'ticket cost':>12}  $2.00")
+print(f"{'':>13}{'net E':>12}    ${EX - 2:.4f}   (expected profit per ticket)")
+```
+
+Walk the arithmetic the code printed, straight from @eq-exp-discrete. First the leftover
+probability: the listed prizes account for
+$\tfrac{1}{50000}+\tfrac{1}{5000}+\tfrac{1}{500}+\tfrac{1}{50}$, so the chance of \$0 is one
+minus that. Then the weighted sum:
+
+$$
+E[X] = 10000\cdot\tfrac{1}{50000} + 500\cdot\tfrac{1}{5000} + 20\cdot\tfrac{1}{500}
+     + 2\cdot\tfrac{1}{50} + 0
+     = 0.20 + 0.10 + 0.04 + 0.04 = \$0.38 .
+$$
+
+The expected prize is \$$`{python} f"{EX:.2f}"`$, against a ticket price of \$2. Using
+linearity (@lem-affine-one) the expected *profit* is $E[X-2]=E[X]-2=\$`{python} f"{EX-2:.2f}"`$
+per ticket. **On average you lose about \$1.62 every time you buy one.** That negative
+expectation is exactly how the lottery funds itself: over millions of tickets, the *long-run
+average* loss per player is guaranteed by the convergence in @fig-lln-convergence. The same
+calculation, with the sign flipped, is how an insurer prices a policy — the premium must
+exceed the expected payout. @fig-lottery shows where the \$0.38 comes from: almost all of it
+is the rare jackpot.
+
+```{python}
+#| label: fig-lottery
+#| fig-cap: "Where the expected prize comes from. Each bar is one prize's *contribution* $x\\cdot p(x)$ to $E[X]=\\$0.38$. Note the jackpot ($\\$10{,}000$, probability $1/50{,}000$) and the tiny \\$2 refund contribute almost equally to the mean despite differing in probability by a factor of $1000$ — the expectation weights *value times probability*, so a rare huge prize and a common tiny one can matter the same amount. The expectation is the height of the whole stack, well below the \\$2 ticket price (red)."
+contrib = prizes * probs
+labels = ["$10,000", "$500", "$20", "$2 refund", "$0"]
+fig, ax = plt.subplots()
+bars = ax.bar(labels, contrib, color=FILL, edgecolor=POINT, zorder=3)
+ax.axhline(EX, color=ACCENT, lw=1.6, ls="--", label=f"$E[X]=\\${EX:.2f}$ (sum of bars)")
+ax.axhline(2.0, color=LINE, lw=1.8, label="ticket cost \\$2.00")
+ax.set_ylabel(r"contribution to mean  $x\,p(x)$  (dollars)")
+ax.set_title("Each prize's pull on the expected value")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+```
+
+## Example 2 — Expected waiting time (continuous, by hand) {#sec-exponential}
+
+A continuous example with a real decision behind it. Calls arrive at a support desk, and the
+time $X$ (in minutes) until the next call is well modeled by an **exponential** distribution
+with rate $\lambda$ — the memoryless waiting time built in [PROB-4] and catalogued in
+[PROB-14]. Its density is
+
+$$
+f(x) = \lambda e^{-\lambda x}, \qquad x\ge 0,
+$$
+
+and $f(x)=0$ for $x<0$ (a waiting time cannot be negative). If on average $\lambda=2$ calls
+arrive per minute, what is the expected wait $E[X]$ for the next call? We compute it for
+general $\lambda$ by @eq-exp-continuous, integrating only over the support $[0,\infty)$:
+
+$$
+E[X] = \int_0^{\infty} x\,\lambda e^{-\lambda x}\,dx.
+$$
+
+This is the standard integration-by-parts integral from Calculus I, $\int u\,dv = uv - \int
+v\,du$. Choose $u = x$ (so $du = dx$) and $dv = \lambda e^{-\lambda x}\,dx$ (so
+$v = -e^{-\lambda x}$, since $\frac{d}{dx}(-e^{-\lambda x}) = \lambda e^{-\lambda x}$). Then
+
+$$
+E[X] = \Bigl[\,x\cdot(-e^{-\lambda x})\,\Bigr]_0^{\infty}
+     - \int_0^{\infty} (-e^{-\lambda x})\,dx
+     = \Bigl[-x e^{-\lambda x}\Bigr]_0^{\infty} + \int_0^{\infty} e^{-\lambda x}\,dx.
+$$
+
+Evaluate the boundary term. At $x=0$, $-x e^{-\lambda x} = 0$. As $x\to\infty$, the
+exponential $e^{-\lambda x}$ decays to zero far faster than $x$ grows, so $x e^{-\lambda x}
+\to 0$ (the exponential always wins against any power — a Calc-1 fact). The boundary term is
+$0-0=0$. The remaining integral is elementary:
+
+$$
+\int_0^{\infty} e^{-\lambda x}\,dx
+= \left[-\frac{1}{\lambda}e^{-\lambda x}\right]_0^{\infty}
+= 0 - \left(-\frac{1}{\lambda}\right) = \frac{1}{\lambda}.
+$$
+
+Therefore
+
+$$
+\boxed{\,E[X] = \frac{1}{\lambda}.\,}
+$$
+
+The expected waiting time is the **reciprocal of the rate**, which is exactly the right kind
+of sensible: if calls arrive at $\lambda=2$ per minute, you wait on average
+$E[X]=\tfrac12$ minute $=30$ seconds. Doubling the arrival rate halves the expected wait.
+@fig-exponential draws the density and marks the mean — and shows the honest fact that for a
+skewed distribution the mean is *not* the most likely value and sits to the right of the
+bulk of the mass.
+
+```{python}
+#| label: fig-exponential
+#| fig-cap: "Expected waiting time for an exponential with rate $\\lambda=2$ (calls per minute). The density $f(x)=\\lambda e^{-\\lambda x}$ piles probability near $0$ — short waits are most common — but its long right tail drags the balance point out to $E[X]=1/\\lambda = 0.5$ min (green triangle/line), well to the right of the most likely value (which is $0$). The dashed line marks the median ($\\ln 2/\\lambda \\approx 0.347$): for this skewed distribution mean $>$ median $>$ mode, the textbook signature of right skew. A Monte-Carlo average of $200{,}000$ simulated waits (printed) lands on $1/\\lambda$, confirming the hand integral."
+lam = 2.0
+xs = np.linspace(0, 3, 400)
+fx = lam * np.exp(-lam * xs)
+EX = 1 / lam
+median = np.log(2) / lam
+
+fig, ax = plt.subplots()
+ax.fill_between(xs, fx, color=FILL, alpha=0.8, zorder=2)
+ax.plot(xs, fx, color=POINT, zorder=3)
+ax.axvline(EX, color=ACCENT, lw=2.0, label=f"$E[X]=1/\\lambda={EX:.2f}$")
+ax.axvline(median, color=GREY, lw=1.6, ls="--", label=f"median $\\approx{median:.3f}$")
+ax.plot([EX], [0], marker="^", color=ACCENT, markersize=15, zorder=5, clip_on=False)
+ax.set_xlim(0, 3); ax.set_ylim(0, lam * 1.05)
+ax.set_xlabel("waiting time $x$ (min)"); ax.set_ylabel("density $f(x)$")
+ax.set_title("Mean of an exponential is $1/\\lambda$")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+
+rng = np.random.default_rng(3)
+sim = rng.exponential(scale=1/lam, size=200_000)   # numpy's 'scale' is 1/lambda
+print(f"hand-computed E[X] = 1/lambda = {EX:.4f}")
+print(f"Monte-Carlo average of 200,000 waits = {sim.mean():.4f}")
+```
+
+## Example 3 — Linearity does the impossible: the matched-hats problem {#sec-hats}
+
+Here is the example that converts people into believers in linearity. It is a classic
+because the direct distributional approach is a nightmare and linearity makes it a
+two-liner.
+
+**The problem.** $n$ people check their hats at a party. A careless attendant returns the
+hats **at random** — a uniformly random permutation. Let $X$ be the number of people who get
+their *own* hat back. What is $E[X]$?
+
+The brute-force route is brutal: you would need $P(X=k)$ for each $k$, which involves
+counting permutations with exactly $k$ fixed points (derangement combinatorics, [PROB-10]),
+then summing $\sum_k k\,P(X=k)$. Linearity sidesteps all of it.
+
+**The decomposition.** Write $X$ as a sum of **indicator variables**, one per person. Define
+
+$$
+X_i = \begin{cases} 1 & \text{if person } i \text{ gets their own hat},\\[2pt] 0 & \text{otherwise.}\end{cases}
+$$
+
+Then $X = X_1 + X_2 + \cdots + X_n$, because adding up these $0$/$1$ flags counts exactly how
+many people got their own hat. By linearity (@thm-linearity, extended to $n$ terms — and
+note we do **not** need the $X_i$ to be independent, which is fortunate, because they are
+*not*: if person $1$ has their hat, it is slightly more likely person $2$ does too):
+
+$$
+E[X] = E[X_1 + \cdots + X_n] = \sum_{i=1}^n E[X_i].
+$$
+
+**The easy piece.** Each $E[X_i]$ is a one-line computation. An indicator's expectation is just the
+probability that its event happens, because $E[X_i] = 1\cdot P(X_i=1) + 0\cdot P(X_i=0) =
+P(X_i=1)$. (This identity, $E[\mathbf{1}_A]=P(A)$, is worth memorizing — it is the bridge
+between expectation and probability, and it is why indicators are the secret weapon of this
+whole technique.) The probability that person $i$ gets their *own* hat back, when hats are
+shuffled uniformly, is $1/n$ — their hat is equally likely to land in any of the $n$
+positions. So $E[X_i]=1/n$ for every $i$.
+
+**The answer.** Adding $n$ copies of $1/n$:
+
+$$
+E[X] = \sum_{i=1}^n \frac{1}{n} = n\cdot\frac{1}{n} = 1.
+$$
+
+On average **exactly one person** gets their own hat back, *no matter how many people are at
+the party.* Ten people or ten thousand — the expected number of matches is $1$. That is a
+genuinely surprising, genuinely useful result, and linearity delivered it in three lines
+while the brute-force sum would have taken a page. @fig-hats confirms it by simulation across
+party sizes.
+
+```{python}
+#| label: fig-hats
+#| fig-cap: "Linearity's payoff: the matched-hats problem. For each party size $n$ we simulate $20{,}000$ uniformly random hat-returns and record the average number of people who get their own hat back (blue dots). The average hugs the theoretical $E[X]=1$ (red) for *every* $n$ — the expected number of matches does not depend on the party size at all. This is the result linearity of expectation hands us in three lines despite the strong dependence among the indicator variables."
+rng = np.random.default_rng(11)
+ns = [2, 3, 5, 8, 13, 21, 34, 55, 100]
+means = []
+for n in ns:
+    trials = 20_000
+    matches = np.empty(trials)
+    for t in range(trials):
+        perm = rng.permutation(n)          # where each hat goes
+        matches[t] = np.sum(perm == np.arange(n))
+    means.append(matches.mean())
+
+fig, ax = plt.subplots()
+ax.axhline(1.0, color=LINE, lw=2.0, label="$E[X]=1$ (theory, any $n$)")
+ax.scatter(ns, means, color=POINT, s=55, zorder=3, label="simulated average")
+ax.set_xscale("log")
+ax.set_ylim(0.6, 1.4)
+ax.set_xlabel("party size $n$ (log scale)")
+ax.set_ylabel("average number of matched hats")
+ax.set_title("Expected matches is $1$ regardless of party size")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Compute the expected number of [some count] using indicators."* This is a staple
+interview pattern, and the recipe is always the same three steps you just saw: **(1)** write
+the count as a sum of indicators $X=\sum_i X_i$, one per thing that might happen; **(2)**
+note $E[X_i]=P(\text{event } i)$; **(3)** sum the probabilities by linearity, *ignoring all
+dependence*. It computes the expected number of fixed points of a permutation (above), the
+expected number of empty bins when throwing balls, the expected number of records in a
+random sequence, the expected number of edges in a random graph — the same move every time.
+If an interviewer gives you an "expected number of $\ldots$" problem and you reach for the
+distribution of the total, you have already lost; reach for indicators.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The Core's promise — a single number that summarizes a distribution — has an honest limit,
+and a graduate-level command of expectation means knowing exactly where it bites.
+
+## When the expectation does not exist: the Cauchy distribution {#sec-cauchy}
+
+The definitions @eq-exp-discrete and @eq-exp-continuous both carried a clause we have not
+yet cashed in: the sum/integral must **converge absolutely**, or the expectation *does not
+exist*. This is not a technicality invented to be safe; there are real, important
+distributions where it fails, and pretending otherwise produces nonsense. The cleanest
+example is the **Cauchy distribution**, with density
+
+$$
+f(x) = \frac{1}{\pi(1+x^2)}, \qquad -\infty < x < \infty.
+$$ {#eq-cauchy}
+
+This is a legitimate, perfectly normalized distribution — it is the bell-shaped-looking
+density you get as the ratio of two independent standard normals, and it describes real
+phenomena (the horizontal position where a uniformly-rotating spotlight hits a wall;
+resonance widths in physics). It is symmetric about $0$, so you would *guess* its mean is
+$0$. Watch what the definition actually says. We must check absolute convergence
+(@eq-exp-continuous):
+
+$$
+\int_{-\infty}^{\infty} |x|\,f(x)\,dx
+= \int_{-\infty}^{\infty} \frac{|x|}{\pi(1+x^2)}\,dx
+= \frac{2}{\pi}\int_{0}^{\infty} \frac{x}{1+x^2}\,dx,
+$$
+
+where the factor $2$ comes from the integrand being even (symmetric). The remaining integral
+is a standard substitution: let $u = 1+x^2$, so $du = 2x\,dx$, i.e. $x\,dx = \tfrac12 du$.
+As $x$ runs $0\to\infty$, $u$ runs $1\to\infty$:
+
+$$
+\int_{0}^{\infty} \frac{x}{1+x^2}\,dx
+= \frac12\int_{1}^{\infty}\frac{du}{u}
+= \frac12\Bigl[\ln u\Bigr]_1^{\infty}
+= \frac12\bigl(\lim_{u\to\infty}\ln u - \ln 1\bigr) = +\infty.
+$$
+
+The integral **diverges**. So $\int |x| f(x)\,dx = \infty$: the absolute-convergence
+requirement *fails*, and by @def-exp-continuous the Cauchy distribution **has no
+expectation.** Not "$E[X]=0$" — *no expectation at all.*
+
+Why does symmetry not save it? Here is the subtle, important point. If you naively compute
+the "symmetric" version, pairing $+x$ with $-x$, you get $0$. But the honest two-sided
+integral $\int_{-\infty}^{\infty} x f(x)\,dx$ is the difference of two pieces that each
+diverge to $+\infty$ — the right tail contributes $+\infty$, the left tail $-\infty$ — and
+$\infty - \infty$ is **undefined.** Its value depends entirely on *how* you let the two
+limits run: take the right limit to $2T$ and the left to $-T$ and you get a different
+"answer" than the symmetric $\pm T$. A quantity whose value depends on the bookkeeping order
+is not a well-defined number, which is *exactly* why the definition demands absolute
+convergence (where order cannot matter). The balance-point picture from @sec-intuition is
+the intuition: the Cauchy's tails are so heavy that there is no point at which the line
+balances — push the fulcrum anywhere and the infinite tails tip it.
+
+The practical consequence is sharp and is the reason this matters to a data scientist, not
+just a measure theorist: **the sample average of Cauchy data does not converge to anything.**
+The Law of Large Numbers (which we used for intuition in @sec-why) *requires* a finite mean;
+strip that away and it fails completely. @fig-cauchy shows it.
+
+```{python}
+#| label: fig-cauchy
+#| fig-cap: "The edge of applicability: a distribution with no mean. **Left:** the Cauchy density (red) overlaid on a standard normal (grey); they look deceptively similar near the center, but the Cauchy's tails are far heavier — that heaviness is what makes $\\int|x|f(x)\\,dx$ diverge. **Right:** the running sample average of Cauchy draws (three runs) *refuses to settle* — every so often a single enormous draw from the heavy tail yanks the average to a new place, forever. Contrast this with @fig-lln-convergence, where a finite mean pulled every run to one line. For Cauchy data, the sample mean is a meaningless statistic; you must summarize with the median (which *does* exist) instead."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.9))
+
+xs = np.linspace(-6, 6, 400)
+cauchy = 1 / (np.pi * (1 + xs**2))
+normal = np.exp(-xs**2 / 2) / np.sqrt(2 * np.pi)
+axL.plot(xs, cauchy, color=LINE, label="Cauchy (no mean)")
+axL.plot(xs, normal, color=GREY, ls="--", label="standard normal")
+axL.fill_between(xs, cauchy, color=FILL, alpha=0.4)
+axL.set_xlabel("$x$"); axL.set_ylabel("density")
+axL.set_title("Heavy tails: Cauchy vs. normal")
+axL.legend(framealpha=0.9, fontsize=9)
+
+rng = np.random.default_rng(7)
+n_max = 4000
+for shade in ["#2b3a67", "#5a6fa0", "#9fb3d1"]:
+    draws = rng.standard_cauchy(size=n_max)
+    running = np.cumsum(draws) / np.arange(1, n_max + 1)
+    axR.plot(np.arange(1, n_max + 1), running, color=shade, lw=1.1)
+axR.axhline(0, color=GREY, lw=1.0)
+axR.set_xlabel("number of draws $n$")
+axR.set_ylabel(r"running average $\bar x_n$")
+axR.set_title("Sample average never settles")
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**Never assume a mean exists just because you can write down $\sum x\,p(x)$ or
+$\int x f(x)\,dx$.** The formula is meaningful only when it converges absolutely. Heavy-tailed
+distributions — Cauchy, the Student's $t$ with $1$ degree of freedom ([PROB-15]), the Pareto
+with a small shape parameter, the St. Petersburg lottery payout — can have an *infinite* or
+*undefined* mean, and these are not exotic curiosities: financial returns, file sizes,
+city populations, and insurance losses are routinely heavy-tailed enough that the sample mean
+is unstable and untrustworthy. When you see a sample average that lurches around and refuses
+to settle as you add data (the right panel of @fig-cauchy), suspect a heavy tail and reach
+for the **median** or a **trimmed mean**, both of which exist and behave even when $E[X]$
+does not. Knowing this boundary is the difference between using expectation and being burned
+by it.
+:::
+
+## The other limit: a mean that exists but lies {#sec-mean-lies}
+
+Even when $E[X]$ exists, it can be a *misleading* summary — the honest caveat that pairs
+with the lottery example. The expectation is a single number, and like any single number it
+throws away the shape of the distribution. Two informative failure modes:
+
+- **Skew makes the mean unrepresentative.** For the right-skewed exponential of @fig-exponential
+  or a real income distribution, the mean sits well above the typical (median) value, dragged
+  up by a heavy upper tail. "The average household earns \$X" can describe a community where
+  *most* households earn far less than \$X, with a few very rich ones pulling the mean up.
+  The mean is correct; it is just not "typical."
+- **The mean can be a value the variable never takes.** The die's $E[X]=3.5$, the
+  matched-hats $E[X]=1$ in a setting where the count is often $0$ — the expectation is a
+  long-run average, not a forecast of any single trial. Reporting "expected value $=3.5$" to
+  someone who will see one roll is technically true and practically useless.
+
+The fix is not to abandon the mean but to **report it alongside a measure of spread** — the
+variance and standard deviation of [PROB-6], which quantify how far individual outcomes
+typically stray from $E[X]$. A mean without a spread is half a summary. That is precisely why
+the next article exists, and why $E[X]$ is the foundation it builds on rather than the whole
+story.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the expected value the right thing to optimize, and when is it not?"* Optimize the
+expectation when you face the situation **many times** and care about the aggregate — an
+insurer writing millions of policies, a casino, a high-volume trading desk, a recommender
+system serving billions of impressions. There, the LLN guarantees your realized average
+converges to the expectation, so maximizing $E[\cdot]$ maximizes what you actually get. Do
+**not** blindly optimize the expectation for a **one-shot, high-stakes** decision where a
+bad tail outcome is catastrophic and unrecoverable — betting your whole net worth on a
+positive-expectation gamble can still ruin you, because you do not get the long run if you
+go bankrupt on the first trial. That gap between "maximize expected wealth" and "maximize
+expected *utility* of wealth" is the resolution of the **St. Petersburg paradox** and the
+foundation of decision theory and the **Kelly criterion**. Expectation is the right tool
+when you have a long run to average over; risk-sensitive criteria take over when you do not.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the two articles that built the objects this one summarizes — [PROB-3
+*Discrete RVs (pmf)*] and [PROB-4 *Continuous RVs (pdf)*] — and you now hold the single
+number that stands in for a whole distribution, plus the two properties (LOTUS and
+linearity) that make it computable. From here the track builds *directly* on expectation:
+
+- **[PROB-6 *Variance, Standard Deviation & Variance as a Sum of Squares*]** — the very next
+  step. Variance is *itself an expectation*, $\mathrm{Var}(X)=E[(X-\mu)^2]$, computed by
+  LOTUS with $g(x)=(x-\mu)^2$. It is the "spread" that @sec-mean-lies showed the mean
+  desperately needs, and it is where the affine rule $E[aX+c]=aE[X]+c$ gets its quadratic
+  cousin $\mathrm{Var}(aX+b)=a^2\mathrm{Var}(X)$.
+- **[PROB-7 *Joint Distributions, Covariance & Correlation*]** — covariance is also an
+  expectation, $\mathrm{Cov}(X,Y)=E[(X-\mu_X)(Y-\mu_Y)]$, and it is exactly the gap
+  $E[XY]-E[X]E[Y]$ that the interview note in @sec-linearity flagged. The two-variable LOTUS
+  we proved here is its engine.
+- **The distribution catalog [PROB-11]–[PROB-16]** — every named distribution's mean is now
+  a one-integral or one-sum exercise in @eq-exp-discrete / @eq-exp-continuous: Bernoulli's
+  $p$, binomial's $np$, Poisson's $\lambda$, normal's $\mu$, gamma's $\alpha/\beta$. We
+  computed the exponential's $1/\lambda$ here as a preview.
+- **[PROB-19 *Chebyshev's Inequality*]** — bounds how much probability can sit far from
+  $E[X]$ using the mean and variance, and is the raw material the Inference track turns into
+  the Law of Large Numbers we leaned on for intuition in @sec-why.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Christiaan Huygens, *De ratiociniis in ludo aleae* (1657) — the first
+  printed treatment of probability, which opens with expected value as its founding concept.
+  The Pascal–Fermat correspondence of 1654 on the *problem of points* is where the
+  probability-weighted-average idea was first reasoned out.
+- **The non-existence boundary, taken seriously.** Nassim Taleb's writing on heavy tails, and
+  more formally the theory of **stable distributions** (of which Cauchy and normal are the
+  two analytically tractable members), develop @sec-cauchy into a whole worldview about when
+  averages are and are not meaningful. The Student's $t$ family ([PROB-15]) interpolates: $t$
+  with $1$ df *is* Cauchy (no mean), $t$ with $2$ df has a mean but no variance.
+- **Open threads this article deliberately deferred.** *Why does the sample average provably
+  converge to $E[X]$?* — the Law of Large Numbers, built from Chebyshev ([PROB-19]) in the
+  Inference track. *How spread out are the outcomes around $E[X]$?* — variance, [PROB-6].
+  *What if we want the average of $Y$ given that we have already observed $X$?* — conditional
+  expectation $E[Y\mid X]$, the hinge result of [PROB-9] and the object that all of regression
+  is built to estimate. *Is there a single transform that packages all the moments
+  $E[X],E[X^2],E[X^3],\dots$ at once?* — the moment generating function $E[e^{tX}]$, computed
+  by LOTUS with $g(x)=e^{tx}$, in [PROB-20].
+

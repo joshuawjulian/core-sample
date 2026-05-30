@@ -1,0 +1,1147 @@
+---
+title: "Bernoulli, Binomial, and Negative-Binomial"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the curve / theoretical value
+ACCENT = "#0a7d4d"     # highlights / the mean
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas / pmf stems
+```
+
+> **Where this sits in the track.** This is the first *named distribution* in the
+> distribution catalog. It assumes [PROB-10 *Counting: Permutations & Combinations*] for
+> the binomial coefficient $\binom{n}{k}$ and the binomial theorem; [PROB-5 *Expectation*]
+> for $\mathbb{E}[X]$ and the law of the unconscious statistician; [PROB-6 *Variance*] for
+> $\operatorname{Var}(X)=\mathbb{E}[X^2]-(\mathbb{E}[X])^2$; and [PROB-8 *Independence and
+> the i.i.d. Sample*] for the two rules that the expectation of a sum always adds and the
+> variance of a sum of *independent* variables adds. Those four articles are the entire
+> toolkit; everything else is built here. We start from the smallest possible random
+> experiment — a single yes/no trial, the **Bernoulli** — stack $n$ independent copies of
+> it to get the **Binomial**, then turn the question around ("how many trials until
+> success?") to get the **Geometric** and its generalization the **Negative-Binomial**.
+> The four are one family seen from different angles, and we keep the family resemblance in
+> view the whole way. It sets up [PROB-12 *The Poisson Distribution*] (the binomial's
+> rare-event limit), [PROB-13 *The Normal Distribution*] (the binomial's large-$n$ limit),
+> and is consumed across the series: Regression's logistic ([REGR-17]) and
+> negative-binomial ([REGR-19]) regressions, Inference's Bernoulli/binomial likelihoods
+> (Inference B1) and Beta-Binomial conjugacy (Inference E4), and every classifier that
+> outputs a probability.
+
+## Abstract {.unnumbered}
+
+Three of the most-used discrete distributions in all of statistics are one idea told three
+ways. Fix a single trial that succeeds with probability $p$ — that is the **Bernoulli**.
+Add up $n$ independent Bernoullis and you count successes: the **Binomial**, with mean $np$
+and variance $np(1-p)$. Hold the *number of successes* fixed instead and ask how many
+trials it took: the **Geometric** (one success) and its generalization the
+**Negative-Binomial** ($r$ successes). This article derives all four from a single coin —
+every pmf, mean, and variance built from the ground up, the binomial's moments computed
+*twice* (once by brute summation, once in a single line from the i.i.d. structure) so you
+see why the structural argument is the one worth keeping. The single claim it defends:
+**these are not four formula sheets to memorize but one mechanism — independent yes/no
+trials — read off in two directions**, and knowing which direction your problem points in
+tells you which distribution to reach for, and when none of them honestly fits.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Everything here is built from **one object**: a single trial that comes up "success" with
+probability $p$ and "failure" with probability $1-p$ — a **Bernoulli($p$)** trial. From
+it, two questions:
+
+- **Fix the number of trials $n$, count the successes** $\Rightarrow$ **Binomial($n,p$)**.
+  It is literally a *sum* of $n$ independent Bernoullis, which is why its mean is $np$ and
+  its variance is $np(1-p)$ — the single-trial mean and variance, multiplied by $n$.
+- **Fix the number of successes $r$, count the trials (or failures)** $\Rightarrow$
+  **Negative-Binomial($r,p$)** (with the **Geometric** being $r=1$). It is a *sum* of $r$
+  independent geometric waiting times.
+
+The same coin, summed in two different directions. Get the direction right and the
+distribution chooses itself.
+:::
+
+Everything below orbits that box. The binomial and the negative-binomial will look like two
+unrelated lumps of factorials, but each is a sum of independent identical pieces, and that
+fact — not the factorials — is what hands you the mean and the variance almost for free. We
+will compute the binomial mean both the hard way (grinding the sum $\sum k\binom{n}{k}p^k(1-p)^{n-k}$)
+and the easy way (linearity of expectation on the sum of Bernoullis) precisely so you feel
+the difference and never reach for the hard way again.
+
+# Why we are doing this: the problem that forced these distributions {#sec-why}
+
+Keep one question in view for the whole article: **what is the simplest random experiment,
+and what can we build by repeating it?** Every distribution below is an answer to "we did
+the simplest thing $n$ times — now what?"
+
+## The original problem
+
+Games of chance came first. The earliest probability — Cardano in the 1500s, then the 1654
+correspondence between Blaise Pascal and Pierre de Fermat over a gambling problem (the
+"problem of points": how to split the stakes if a game of repeated fair rounds is
+interrupted) — was *exactly* the question of counting successes in repeated identical
+trials. Jacob Bernoulli's *Ars Conjectandi*, published posthumously in 1713, is where the
+single-trial atom and the count of successes in $n$ trials first get treated as objects in
+their own right; the distribution of that count is named for him.
+
+The reason this matters far beyond dice is that an enormous fraction of real measurement
+*is* a sequence of yes/no trials. Did the email get clicked? Did the patient survive five
+years? Did the part come off the line defective? Did the visitor convert? Each is a single
+Bernoulli trial. The moment you have *many* such trials and you care about the **count** of
+yeses — clicks, deaths, defects, conversions — you are in binomial territory whether you
+named it or not. And the moment you flip the question to **"how long until the first
+yes?"** — how many sales calls until a sale, how many wells drilled until oil — you are in
+geometric / negative-binomial territory. These three distributions are the vocabulary for
+counting in a world made of independent yes/no events.
+
+::: {.callout-tip title="You might be asked"}
+*"Why bother naming the Bernoulli at all? Isn't it trivial — just a coin flip?"* Precisely
+because it is the atom. Naming it lets us say the binomial **is a sum of $n$ Bernoullis**
+and the geometric **is a count of Bernoullis until the first success** — and those two
+sentences, not any factorial, are what make the means and variances fall out in one line
+(@sec-binom-moments-easy, @sec-geom). The interviewer wants to hear that you see the
+binomial and negative-binomial as *built from* the Bernoulli, not as standalone formulas. A
+trivial atom assembled two ways is the entire content of the topic.
+:::
+
+## What we are committing to
+
+Throughout, a **success** is whichever of the two outcomes we have chosen to count, with
+probability $p\in[0,1]$; the other outcome is **failure**, with probability $1-p$, which we
+abbreviate $q = 1-p$ when it tidies the algebra. "Success" carries no value judgment — a
+defect is a "success" if defects are what we are counting. The single standing assumption
+that makes all of this work, and the one real data most often violates, is that the trials
+are **independent and identically distributed** (i.i.d.): each trial has the same $p$, and
+the outcome of one tells you nothing about any other. We lean on that assumption constantly;
+@sec-failure is where we make it pay its honest price.
+
+# Intuition before symbols {#sec-intuition}
+
+Picture a single biased coin with $\mathbb{P}(\text{heads}) = p$. That is the whole
+generator. Now three pictures:
+
+- **Bernoulli.** Flip it once. Record $1$ for heads, $0$ for tails. That number — a random
+  $0$ or $1$ — *is* the Bernoulli random variable.
+- **Binomial.** Flip it $n$ times and count the heads. The count can be $0, 1, \dots, n$.
+  Some counts are more likely than others: getting *exactly* $k$ heads can happen in many
+  different orders (HHT, HTH, THH all give $2$ heads in $3$ flips), and the binomial pmf is
+  bookkeeping for "probability of one such order" times "how many orders there are." That
+  second factor is the combination $\binom{n}{k}$ from [PROB-10] — the whole reason the
+  binomial coefficient appears.
+- **Negative-Binomial.** Keep flipping until you have collected $r$ heads, and count how
+  many *tails* piled up along the way. Now the *number of flips is random* and the number
+  of successes is fixed — the binomial run backward.
+
+@fig-three-views shows all three as histograms of simulated coins, so the shapes are on the
+table before any algebra.
+
+```{python}
+#| label: fig-three-views
+#| fig-cap: "One coin ($p=0.35$), three questions. **Left:** a single Bernoulli trial — all the mass sits on $0$ and $1$. **Center:** the Binomial — flip $n=20$ times and count successes; the count clusters near $np=7$. **Right:** the Negative-Binomial — flip until $r=5$ successes and count the failures collected; the long right tail reflects unlucky long waits. Bars are $10^6$ simulated experiments; red dots are the exact pmf derived later. The three differ only in *which quantity we hold fixed and which we count*."
+rng = np.random.default_rng(0)
+p = 0.35
+N = 1_000_000
+
+fig, (a0, a1, a2) = plt.subplots(1, 3, figsize=(9.2, 3.3))
+
+# Bernoulli
+bern = (rng.random(N) < p).astype(int)
+vals, cnts = np.unique(bern, return_counts=True)
+a0.bar(vals, cnts / N, width=0.5, color=FILL, edgecolor=POINT)
+a0.plot([0, 1], [1 - p, p], "o", color=LINE, ms=7)
+a0.set_xticks([0, 1]); a0.set_title(f"Bernoulli($p={p}$)")
+a0.set_xlabel("outcome"); a0.set_ylabel("probability")
+
+# Binomial n = 20
+n = 20
+binom = rng.binomial(n, p, size=N)
+vals, cnts = np.unique(binom, return_counts=True)
+a1.bar(vals, cnts / N, width=0.85, color=FILL, edgecolor=POINT)
+ks = np.arange(0, n + 1)
+a1.plot(ks, stats.binom.pmf(ks, n, p), "o", color=LINE, ms=4)
+a1.axvline(n * p, color=ACCENT, lw=1.5, ls="--")
+a1.set_title(f"Binomial($n={n}, p={p}$)"); a1.set_xlabel("number of successes")
+
+# Negative-binomial: failures before r-th success
+r = 5
+nb = rng.negative_binomial(r, p, size=N)
+vals, cnts = np.unique(nb, return_counts=True)
+a2.bar(vals, cnts / N, width=0.95, color=FILL, edgecolor=POINT)
+ks = np.arange(0, vals.max() + 1)
+a2.plot(ks, stats.nbinom.pmf(ks, r, p), "o", color=LINE, ms=3)
+a2.set_title(f"Neg-Binomial($r={r}, p={p}$)"); a2.set_xlabel("failures before $r$-th success")
+a2.set_xlim(-1, 40)
+
+plt.tight_layout()
+```
+
+# The Bernoulli distribution {#sec-bernoulli}
+
+We start at the atom and build out. Everything that follows is this one definition,
+repeated.
+
+::: {#def-bernoulli}
+**Definition (Bernoulli).** A random variable $X$ has the **Bernoulli($p$)** distribution,
+written $X \sim \text{Bernoulli}(p)$, if it takes the value $1$ ("success") with probability
+$p$ and $0$ ("failure") with probability $1-p$, where $p\in[0,1]$. Its probability mass
+function (the pmf, from [PROB-3] — the function giving $\mathbb{P}(X=x)$ for each value $x$
+the variable can take) is
+
+$$
+p_X(x) \;=\; \mathbb{P}(X = x) \;=\;
+\begin{cases}
+p & x = 1,\\
+1-p & x = 0,\\
+0 & \text{otherwise.}
+\end{cases}
+$$ {#eq-bern-pmf}
+:::
+
+A single compact formula captures both cases at once, and it is worth carrying because it
+makes the algebra below mechanical:
+
+$$
+p_X(x) = p^{x}(1-p)^{1-x}, \qquad x \in \{0, 1\}.
+$$ {#eq-bern-compact}
+
+Check it against @eq-bern-pmf: at $x=1$ this is $p^{1}(1-p)^{0} = p$ (since anything to the
+zero power is $1$), and at $x=0$ it is $p^{0}(1-p)^{1} = 1-p$. The exponents $x$ and $1-x$
+act as on/off switches, selecting $p$ or $1-p$ depending on the outcome. It is a valid pmf
+because the two probabilities are nonnegative and sum to one: $p + (1-p) = 1$, exactly the
+normalization $\sum_x p_X(x)=1$ that [PROB-3] requires of any pmf.
+
+## The mean and variance of a Bernoulli {#sec-bern-moments}
+
+These are the most important two numbers in the article, because every other mean and
+variance below is built by multiplying or summing copies of them. Recall from [PROB-5] the
+definition of expectation for a discrete variable, $\mathbb{E}[X] = \sum_x x\,p_X(x)$ — the
+sum of each value weighted by its probability. With only two values, the sum has two terms:
+
+$$
+\mathbb{E}[X]
+= \underbrace{0 \cdot (1-p)}_{x=0\text{ term}} + \underbrace{1 \cdot p}_{x=1\text{ term}}
+= p.
+$$ {#eq-bern-mean}
+
+The mean of a Bernoulli is just $p$ — the long-run fraction of successes, which is exactly
+what an average of $0$s and $1$s should be.
+
+For the variance we use the computational identity from [PROB-6],
+$\operatorname{Var}(X) = \mathbb{E}[X^2] - (\mathbb{E}[X])^2$. We need $\mathbb{E}[X^2]$.
+By the law of the unconscious statistician ([PROB-5]), $\mathbb{E}[X^2] = \sum_x x^2 p_X(x)$,
+again two terms:
+
+$$
+\mathbb{E}[X^2] = 0^2\cdot(1-p) + 1^2\cdot p = p.
+$$
+
+Here is a small fact special to $0/1$ variables: since $0^2 = 0$ and $1^2 = 1$, squaring
+does nothing — $X^2 = X$ for a Bernoulli — so $\mathbb{E}[X^2] = \mathbb{E}[X] = p$.
+Substituting into the variance identity,
+
+$$
+\operatorname{Var}(X) = \mathbb{E}[X^2] - (\mathbb{E}[X])^2 = p - p^2 = p(1-p).
+$$ {#eq-bern-var}
+
+::: {#thm-bernoulli}
+**Theorem (Bernoulli moments).** If $X \sim \text{Bernoulli}(p)$ then
+$\mathbb{E}[X] = p$ and $\operatorname{Var}(X) = p(1-p)$.
+:::
+
+The variance $p(1-p)$ is a parabola in $p$, zero at the ends and largest in the middle.
+
+```{python}
+#| label: fig-bern-var
+#| fig-cap: "The Bernoulli variance $p(1-p)$ as a function of $p$. It is zero at $p=0$ and $p=1$ (a coin that always lands the same way carries no uncertainty) and peaks at $p=\\tfrac12$, where the outcome is maximally unpredictable. Variance is a measure of surprise, and a fair coin is the most surprising single trial there is."
+p = np.linspace(0, 1, 200)
+fig, ax = plt.subplots()
+ax.plot(p, p * (1 - p), color=LINE)
+ax.axvline(0.5, color=ACCENT, ls="--", lw=1.5)
+ax.scatter([0.5], [0.25], color=ACCENT, zorder=4, s=60,
+           edgecolor="white", linewidth=1.2)
+ax.text(0.5, 0.255, r"  max at $p=\tfrac12$", color=ACCENT, va="bottom")
+ax.set_xlabel("$p$"); ax.set_ylabel(r"$\operatorname{Var}(X) = p(1-p)$")
+ax.set_title("Bernoulli variance: most uncertain at the fair coin")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the variance maximized at $p=\tfrac12$, and what does that buy you in practice?"*
+Two answers. **Conceptually**, variance measures how spread-out (how unpredictable) the
+outcome is, and a fair coin is the hardest single trial to call — at $p=0$ or $p=1$ you know
+the answer in advance, so there is nothing to vary. **Practically**, this is why a
+conservative sample-size calculation for estimating a proportion uses $p=\tfrac12$: it is
+the worst case, so it gives the largest variance, so planning for it guarantees enough data
+regardless of the true $p$. You will meet this exact move in Statistical Inference when
+sizing a survey.
+:::
+
+# The Binomial distribution {#sec-binomial}
+
+Now repeat the trial. Let $X_1, X_2, \dots, X_n$ be $n$ **independent** Bernoulli($p$)
+trials — the same coin flipped $n$ times, each flip ignorant of the others. We count the
+successes:
+
+$$
+Y = X_1 + X_2 + \cdots + X_n = \sum_{i=1}^{n} X_i.
+$$ {#eq-binom-as-sum}
+
+Because each $X_i$ is a $0$ or a $1$, this sum is exactly the number of $1$s — the number of
+successes — and it ranges over $0, 1, \dots, n$. **Hold @eq-binom-as-sum in your mind: the
+binomial is, by construction, a sum of independent Bernoullis.** It is the single most
+useful sentence in the article, and we will cash it in twice.
+
+## Deriving the binomial pmf {#sec-binom-pmf}
+
+We want $\mathbb{P}(Y = k)$ — the probability of exactly $k$ successes in $n$ trials. Build
+it in two pieces.
+
+**Piece 1: the probability of one specific sequence with $k$ successes.** Consider one
+particular outcome of all $n$ trials that happens to contain $k$ successes and $n-k$
+failures — say, the first $k$ are successes and the rest failures: $\underbrace{SS\cdots
+S}_{k}\underbrace{FF\cdots F}_{n-k}$. Because the trials are **independent**, the probability
+of a specific joint sequence is the *product* of the per-trial probabilities (this is the
+factorization rule from [PROB-8]: for independent events, the probability of the
+intersection is the product of the probabilities). Each success contributes a factor $p$ and
+each failure a factor $1-p$:
+
+$$
+\mathbb{P}(\text{this specific sequence}) = \underbrace{p \cdot p \cdots p}_{k} \cdot
+\underbrace{(1-p)\cdots(1-p)}_{n-k} = p^{k}(1-p)^{n-k}.
+$$
+
+Crucially, this value is the *same* for **every** sequence with $k$ successes and $n-k$
+failures — reordering the successes and failures just reorders the factors in the product,
+and multiplication does not care about order. So any arrangement of $k$ successes among $n$
+trials has the identical probability $p^{k}(1-p)^{n-k}$.
+
+**Piece 2: how many such sequences there are.** We need the count of distinct orderings of
+$k$ successes among $n$ trials. That is exactly the question [PROB-10] answered: choosing
+*which* $k$ of the $n$ positions are the successes, where order among the chosen positions
+does not matter, is the combination
+
+$$
+\binom{n}{k} = \frac{n!}{k!\,(n-k)!}.
+$$ {#eq-binom-coef}
+
+(We import this from [PROB-10], where it is derived from the multiplication principle; here
+we only need that $\binom{n}{k}$ counts the unordered ways to pick $k$ items from $n$.)
+
+**Assemble.** The event "$Y = k$" is the union of all these $\binom{n}{k}$ sequences. They
+are *mutually exclusive* (a single run of $n$ trials produces exactly one sequence, so no
+two of these sequences can both occur), so by the addition rule for disjoint events
+([PROB-0]) we add their probabilities — and since each has the same probability
+$p^{k}(1-p)^{n-k}$, adding $\binom{n}{k}$ equal terms is just multiplying:
+
+$$
+\boxed{\;\mathbb{P}(Y = k) = \binom{n}{k} p^{k}(1-p)^{n-k}, \qquad k = 0, 1, \dots, n.\;}
+$$ {#eq-binom-pmf}
+
+::: {#def-binomial}
+**Definition (Binomial).** A random variable $Y$ has the **Binomial($n,p$)** distribution,
+written $Y \sim \text{Binomial}(n,p)$, if its pmf is @eq-binom-pmf, where $n$ is a positive
+integer (the number of trials) and $p\in[0,1]$. Equivalently, by @eq-binom-as-sum, $Y$ is
+the number of successes in $n$ independent Bernoulli($p$) trials.
+:::
+
+## Checking it is a valid pmf — and meeting the binomial theorem {#sec-binom-normalize}
+
+A pmf must be nonnegative and sum to $1$. Nonnegativity holds because each term
+$\binom{n}{k}p^{k}(1-p)^{n-k}$ is a product of nonnegative numbers: $\binom{n}{k}$ is a count
+(so a nonnegative integer), and $p^{k}$ and $(1-p)^{n-k}$ are nonnegative because $p$ and
+$1-p$ both lie in $[0,1]$ and a nonnegative number raised to a nonnegative integer power stays
+nonnegative — so the product cannot be negative. Summing
+@eq-binom-pmf over all possible counts:
+
+$$
+\sum_{k=0}^{n} \binom{n}{k} p^{k}(1-p)^{n-k}.
+$$
+
+This is *exactly* the right-hand side of the **binomial theorem** from [PROB-10], which
+states that for any numbers $a, b$,
+
+$$
+(a + b)^{n} = \sum_{k=0}^{n} \binom{n}{k} a^{k} b^{n-k}.
+$$ {#eq-binom-theorem}
+
+Set $a = p$ and $b = 1-p$. Then the sum equals $(p + (1-p))^{n} = 1^{n} = 1$. So the
+binomial pmf sums to one — and notice the distribution is *named after* the theorem that
+normalizes it, which is the cleanest possible sign that the combinatorics and the algebra
+are the same fact. (If $\binom{n}{k}$ and @eq-binom-theorem are rusty, both are derived in
+full in [PROB-10]; we only invoke their statements here.)
+
+@fig-binom-shapes shows how the binomial's shape moves with $p$.
+
+```{python}
+#| label: fig-binom-shapes
+#| fig-cap: "The Binomial($n=20$) pmf for three values of $p$. The distribution sits centered on its mean $np$ (dashed lines at $4, 10, 16$), is right-skewed for small $p$, left-skewed for large $p$, and symmetric at $p=\\tfrac12$. As $p$ moves toward the middle the spread widens, mirroring the $p(1-p)$ variance of the underlying Bernoulli."
+n = 20
+ks = np.arange(0, n + 1)
+fig, ax = plt.subplots()
+for pp, col in [(0.2, POINT), (0.5, ACCENT), (0.8, LINE)]:
+    ax.plot(ks, stats.binom.pmf(ks, n, pp), "o-", color=col, ms=4,
+            alpha=0.9, label=f"$p={pp}$")
+    ax.axvline(n * pp, color=col, ls="--", lw=1.0, alpha=0.7)
+ax.set_xlabel("number of successes $k$"); ax.set_ylabel(r"$\mathbb{P}(Y=k)$")
+ax.set_title(r"Binomial$(20, p)$ pmf: center at $np$, widest near $p=\tfrac12$")
+ax.legend()
+plt.tight_layout()
+```
+
+## The binomial mean and variance, the hard way {#sec-binom-moments-hard}
+
+We will get the mean and variance two ways. First the brute-force route — summing against
+the pmf — both because it is honest and because feeling its ugliness motivates the clean
+route. We want
+
+$$
+\mathbb{E}[Y] = \sum_{k=0}^{n} k \binom{n}{k} p^{k}(1-p)^{n-k}.
+$$
+
+The $k=0$ term vanishes (it has a factor $k=0$), so start the sum at $k=1$. The key is a
+combinatorial identity that lets us absorb the stray factor of $k$. Write the binomial
+coefficient out and pull $k$ inside:
+
+$$
+k\binom{n}{k} = k\cdot \frac{n!}{k!\,(n-k)!} = \frac{n!}{(k-1)!\,(n-k)!},
+$$
+
+where the $k$ cancelled one factor from $k! = k\cdot(k-1)!$. Now factor an $n$ out of $n! =
+n\,(n-1)!$ and rewrite $(n-k)! = \big((n-1)-(k-1)\big)!$:
+
+$$
+\frac{n!}{(k-1)!\,(n-k)!}
+= n\cdot \frac{(n-1)!}{(k-1)!\,\big((n-1)-(k-1)\big)!}
+= n\binom{n-1}{k-1}.
+$$
+
+So $k\binom{n}{k} = n\binom{n-1}{k-1}$ — a clean identity. Substitute it and pull the
+constant $n$ and one factor of $p$ out front:
+
+$$
+\mathbb{E}[Y] = \sum_{k=1}^{n} n\binom{n-1}{k-1} p^{k}(1-p)^{n-k}
+= np \sum_{k=1}^{n} \binom{n-1}{k-1} p^{k-1}(1-p)^{n-k}.
+$$
+
+Now reindex with $j = k-1$ (so $j$ runs from $0$ to $n-1$, and $n-k = (n-1)-j$):
+
+$$
+\mathbb{E}[Y] = np \sum_{j=0}^{n-1} \binom{n-1}{j} p^{j}(1-p)^{(n-1)-j}.
+$$
+
+The sum is the binomial theorem @eq-binom-theorem again, this time for exponent $n-1$ with
+$a = p, b = 1-p$, so it equals $(p + (1-p))^{n-1} = 1$. Therefore
+
+$$
+\mathbb{E}[Y] = np.
+$$ {#eq-binom-mean}
+
+It works, and it took half a page of factorial gymnastics for an answer we will now get in
+one line. The variance by this route is worse still (you would compute $\mathbb{E}[Y(Y-1)]$
+by a near-identical but longer manipulation). There is a better way, and it is the whole
+reason we wrote the binomial as a sum back in @eq-binom-as-sum.
+
+## The binomial mean and variance, the easy way {#sec-binom-moments-easy}
+
+Recall $Y = \sum_{i=1}^{n} X_i$ with each $X_i \sim \text{Bernoulli}(p)$, independent.
+
+**Mean.** By **linearity of expectation** ([PROB-5]) — the expectation of a sum is the sum
+of the expectations, which holds *always*, independent or not — and using
+$\mathbb{E}[X_i] = p$ from @eq-bern-mean:
+
+$$
+\mathbb{E}[Y] = \mathbb{E}\!\left[\sum_{i=1}^{n} X_i\right]
+= \sum_{i=1}^{n}\mathbb{E}[X_i] = \sum_{i=1}^{n} p = np.
+$$ {#eq-binom-mean-easy}
+
+One line, same answer as @eq-binom-mean, no factorials.
+
+**Variance.** Here independence earns its keep. From [PROB-8], the variance of a sum of
+**independent** variables is the sum of their variances (the cross-covariance terms vanish
+because independent variables have zero covariance). Using $\operatorname{Var}(X_i) = p(1-p)$
+from @eq-bern-var:
+
+$$
+\operatorname{Var}(Y) = \operatorname{Var}\!\left(\sum_{i=1}^{n} X_i\right)
+\overset{\text{indep.}}{=} \sum_{i=1}^{n}\operatorname{Var}(X_i)
+= \sum_{i=1}^{n} p(1-p) = np(1-p).
+$$ {#eq-binom-var-easy}
+
+::: {#thm-binomial}
+**Theorem (Binomial moments).** If $Y \sim \text{Binomial}(n,p)$ then
+$\mathbb{E}[Y] = np$ and $\operatorname{Var}(Y) = np(1-p)$.
+:::
+
+::: {.callout-important title="Why the structural argument wins"}
+The two derivations of the mean give the identical number, but the *easy* one does more
+than save algebra. It tells you **why** the mean is $np$ (each of $n$ trials contributes its
+own mean $p$) and **why independence is the load-bearing assumption for the variance** —
+@eq-binom-var-easy used independence at exactly one step, the step where covariances
+dropped. The factorial derivation hides both insights inside bookkeeping. When you can see a
+random variable as a sum of simple independent pieces, *always* take that view: linearity of
+expectation and the additivity of independent variances do the work, and you learn what the
+formula means as a side effect.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"A variable is the sum of $n$ trials but the trials are NOT independent — what survives?"*
+The mean. Linearity of expectation @eq-binom-mean-easy never used independence, so
+$\mathbb{E}[Y]=np$ regardless of dependence. The **variance** is what breaks:
+@eq-binom-var-easy assumed the covariances were zero, and with dependence
+$\operatorname{Var}(Y) = \sum_i \operatorname{Var}(X_i) + \sum_{i\ne j}\operatorname{Cov}(X_i, X_j)$,
+so positively-correlated trials inflate the variance above $np(1-p)$ (overdispersion) and
+negatively-correlated trials shrink it below. This is precisely the failure mode of
+@sec-failure, and the reason the negative-binomial and quasi-binomial models exist
+downstream.
+:::
+
+# The Geometric and Negative-Binomial distributions {#sec-negbinom}
+
+So far we fixed $n$ and let the success count vary. Now we **flip the question**: fix the
+number of successes we are waiting for and let the number of trials vary. This is the same
+coin run in the other direction, and a word of warning before we start — these
+distributions are plagued by *two* competing conventions, and most confusion about them is
+really confusion about which convention is in force. We will state ours explicitly and
+derive everything from scratch.
+
+## The Geometric: waiting for the first success {#sec-geom}
+
+Flip the coin until the first success appears, and let $W$ be the **number of failures
+before that first success**. So $W=0$ means success on the very first trial, $W=1$ means one
+failure then a success, and so on; $W$ ranges over $0, 1, 2, \dots$ with no upper bound.
+
+For $\{W = k\}$ to happen, the first $k$ trials must all be failures and the $(k+1)$-th must
+be a success. By independence ([PROB-8]) the probability of this specific sequence is the
+product of the per-trial probabilities — $k$ failures at $(1-p)$ each, then one success at
+$p$:
+
+$$
+\mathbb{P}(W = k) = \underbrace{(1-p)(1-p)\cdots(1-p)}_{k}\cdot p = (1-p)^{k}\,p,
+\qquad k = 0, 1, 2, \dots
+$$ {#eq-geom-pmf}
+
+Unlike the binomial there is *no* combinatorial coefficient, because there is exactly **one**
+sequence that produces $\{W=k\}$ (fail $k$ times, then succeed) — order is forced, so nothing
+to count.
+
+::: {#def-geometric}
+**Definition (Geometric).** A random variable $W$ has the **Geometric($p$)** distribution
+(failures-before-first-success convention) if its pmf is @eq-geom-pmf. (The other common
+convention counts the *trial number* of the first success, $T = W+1 \in\{1,2,\dots\}$, with
+pmf $(1-p)^{t-1}p$. Same coin, shifted by one; we will note the shift wherever it matters.)
+:::
+
+**It is a valid pmf** — and this is where the distribution gets its name. Summing
+@eq-geom-pmf over all $k$ uses the **geometric series** $\sum_{k=0}^{\infty} r^{k} =
+\frac{1}{1-r}$ for $|r| < 1$ (a Calc-1 fact; here $r = 1-p$, and $|1-p| < 1$ whenever
+$p>0$):
+
+$$
+\sum_{k=0}^{\infty} (1-p)^{k} p = p \sum_{k=0}^{\infty}(1-p)^{k}
+= p \cdot \frac{1}{1-(1-p)} = p\cdot\frac{1}{p} = 1. \checkmark
+$$
+
+The distribution is named for the geometric series that normalizes it — the same naming
+logic as the binomial.
+
+### Mean of the geometric {#sec-geom-mean}
+
+We want $\mathbb{E}[W] = \sum_{k=0}^{\infty} k (1-p)^{k} p$. This needs one differentiation
+trick, shown in full. Start from the geometric series with $r=1-p$, written as a function of
+$r$:
+
+$$
+\sum_{k=0}^{\infty} r^{k} = \frac{1}{1-r}, \qquad |r| < 1.
+$$
+
+Differentiate **both sides** with respect to $r$. On the right, $\frac{d}{dr}(1-r)^{-1} =
+(1-r)^{-2}$ by the chain rule (a floor-level move). On the left we differentiate the infinite
+sum **term by term**, treating $\frac{d}{dr}\sum_k r^k = \sum_k \frac{d}{dr} r^k = \sum_k k
+r^{k-1}$. One honest flag: swapping a derivative past an *infinite* sum is not free — Calc 1
+only licenses it for *finite* sums. The license here is the theorem that a **power series may
+be differentiated term by term anywhere strictly inside its radius of convergence** (here
+$|r|<1$), and the derived series has the same radius. We import that result from real analysis
+(it is proved in any analysis text via uniform convergence on compact subintervals); for our
+$|r|=1-p<1$ it applies, so the manipulation below is rigorous, not formal. With
+$\frac{d}{dr} r^{k} = k r^{k-1}$ on the left:
+
+$$
+\sum_{k=0}^{\infty} k\, r^{k-1} = \frac{1}{(1-r)^{2}}.
+$$
+
+Multiply both sides by $r$ to match the power in our sum (we want $r^{k}$, not $r^{k-1}$):
+
+$$
+\sum_{k=0}^{\infty} k\, r^{k} = \frac{r}{(1-r)^{2}}.
+$$ {#eq-geom-series-deriv}
+
+Now substitute $r = 1-p$ (so $1-r = p$) and multiply by the leading $p$ from the pmf:
+
+$$
+\mathbb{E}[W] = p\sum_{k=0}^{\infty} k(1-p)^{k}
+= p\cdot \frac{1-p}{p^{2}} = \frac{1-p}{p}.
+$$ {#eq-geom-mean}
+
+A sanity check on the units of meaning: if $p$ is small (rare success), $\frac{1-p}{p}$ is
+large — you wait through many failures, as you should. As $p\to 1$ the mean $\to 0$ — you
+succeed immediately. (In the *trial-number* convention $T=W+1$, the mean is
+$\mathbb{E}[T] = \mathbb{E}[W]+1 = \frac{1-p}{p}+1 = \frac{1}{p}$, the more famous "expect
+$1/p$ trials" form. Both are correct; they describe different counts.)
+
+### Variance of the geometric {#sec-geom-var}
+
+For the variance we need $\mathbb{E}[W^2]$, via one more derivative of the series. Take
+@eq-geom-series-deriv, $\sum k r^k = r(1-r)^{-2}$, and differentiate with respect to $r$
+again — the same term-by-term differentiation, licensed by the same power-series theorem
+flagged in @sec-geom-mean (the once-differentiated series still has radius of convergence $1$,
+so we may differentiate it again inside $|r|<1$). The left side gives $\sum k^2 r^{k-1}$; the
+right side, by the product and chain rules, $\frac{d}{dr}\big[r(1-r)^{-2}\big] = (1-r)^{-2} + r\cdot 2(1-r)^{-3} =
+\frac{1-r + 2r}{(1-r)^3} = \frac{1+r}{(1-r)^3}$:
+
+$$
+\sum_{k=0}^{\infty} k^{2} r^{k-1} = \frac{1+r}{(1-r)^{3}}.
+$$
+
+Multiply by $r$ to get our power, then substitute $r=1-p$, $1-r=p$, and multiply by the pmf's
+$p$:
+
+$$
+\mathbb{E}[W^{2}] = p\sum_{k=0}^{\infty}k^2 (1-p)^{k}
+= p\cdot \frac{(1-p)(1 + (1-p))}{p^{3}}
+= \frac{(1-p)(2-p)}{p^{2}}.
+$$
+
+Now apply $\operatorname{Var}(W) = \mathbb{E}[W^2] - (\mathbb{E}[W])^2$ from [PROB-6], using
+$\mathbb{E}[W] = \frac{1-p}{p}$ so $(\mathbb{E}[W])^2 = \frac{(1-p)^2}{p^2}$:
+
+$$
+\operatorname{Var}(W)
+= \frac{(1-p)(2-p)}{p^{2}} - \frac{(1-p)^{2}}{p^{2}}
+= \frac{(1-p)\big[(2-p) - (1-p)\big]}{p^{2}}
+= \frac{(1-p)\cdot 1}{p^{2}} = \frac{1-p}{p^{2}}.
+$$ {#eq-geom-var}
+
+(The bracket simplified as $(2-p)-(1-p) = 1$.) Note the shift convention does not change the
+variance — $T = W+1$ adds a constant, and adding a constant never changes variance
+($\operatorname{Var}(W+1)=\operatorname{Var}(W)$, from [PROB-6]).
+
+### The memoryless property {#sec-geom-memoryless}
+
+The geometric has one strange and famous feature worth pausing on, because it is the
+discrete shadow of the exponential distribution's memorylessness ([PROB-14]) and a favorite
+exam question. Suppose you have already endured $m$ failures and still no success. What is
+the chance you must endure at least $j$ *more* failures? Intuitively, the coin has no memory
+of past flips — each new flip is fresh — so the answer should not depend on $m$. Let us prove
+it. First, the probability of at least $m$ failures (i.e. the first $m$ trials all fail) is
+
+$$
+\mathbb{P}(W \ge m) = (1-p)^{m},
+$$
+
+since it requires $m$ independent failures in a row. Now the conditional probability, using
+$\mathbb{P}(A\mid B) = \mathbb{P}(A\cap B)/\mathbb{P}(B)$ from [PROB-1]. The event $\{W \ge
+m+j\}$ is a *subset* of $\{W \ge m\}$ (waiting at least $m+j$ certainly means waiting at
+least $m$), so their intersection is just $\{W \ge m+j\}$:
+
+$$
+\mathbb{P}(W \ge m+j \mid W \ge m)
+= \frac{\mathbb{P}(W \ge m+j)}{\mathbb{P}(W \ge m)}
+= \frac{(1-p)^{m+j}}{(1-p)^{m}}
+= (1-p)^{j} = \mathbb{P}(W \ge j).
+$$ {#eq-memoryless}
+
+The $m$ cancelled completely: **the distribution of remaining failures is identical no
+matter how long you have already waited.** The coin does not "owe" you a success for a long
+losing streak.
+
+::: {.callout-warning title="Pitfall"}
+**The gambler's fallacy is exactly the denial of @eq-memoryless.** "Black has come up five
+times, red is due" treats past independent trials as if they constrain the next — but
+memorylessness says they do not. If you ever catch yourself reasoning that a success is
+"overdue," you are contradicting independence. The honest flip side: memorylessness is also
+an *assumption*, and real processes (a machine that wears out, a disease whose risk rises
+with exposure) genuinely are *not* memoryless. When the per-trial probability changes with
+history, the geometric is the wrong model — reach for a hazard-rate / survival model
+instead.
+:::
+
+## The Negative-Binomial: waiting for the $r$-th success {#sec-nb}
+
+Generalize the geometric: instead of stopping at the first success, keep flipping until the
+$r$-th success, and let $Z$ be the **number of failures before the $r$-th success**. The
+geometric is the case $r=1$.
+
+We want $\mathbb{P}(Z = k)$ — exactly $k$ failures accumulate before the $r$-th success
+arrives. For this event, two things must hold simultaneously:
+
+1. The **last** trial is a success (trial number $r+k$, the one that completes the $r$-th
+   success and stops the process). Probability $p$.
+2. Among the **first** $r+k-1$ trials, there are exactly $r-1$ successes and $k$ failures, in
+   *some* order. The number of orderings is $\binom{r+k-1}{k}$ (choose which $k$ of the first
+   $r+k-1$ positions are failures), and each such ordering has probability
+   $p^{r-1}(1-p)^{k}$ by independence.
+
+Why must the last trial be pinned as a success? Because the process *stops* at the $r$-th
+success — if the final trial were a failure, the $r$-th success had already happened earlier
+and we would have stopped before reaching this length. Multiplying the count of arrangements
+of the first $r+k-1$ trials by the probability of one such arrangement, and then by the
+probability $p$ of the final success:
+
+$$
+\mathbb{P}(Z = k) = \binom{r+k-1}{k} p^{r-1}(1-p)^{k}\cdot p
+= \binom{r+k-1}{k} p^{r}(1-p)^{k},
+\qquad k = 0,1,2,\dots
+$$ {#eq-nb-pmf}
+
+::: {#def-negbinom}
+**Definition (Negative-Binomial).** A random variable $Z$ has the
+**Negative-Binomial($r,p$)** distribution (failures-before-$r$-th-success convention) if its
+pmf is @eq-nb-pmf, where $r$ is a positive integer (the target success count) and
+$p\in(0,1]$. Setting $r=1$ recovers the geometric @eq-geom-pmf, since $\binom{k}{k}=1$.
+:::
+
+Check the $r=1$ reduction: @eq-nb-pmf becomes $\binom{k}{k}p^{1}(1-p)^k = p(1-p)^k$, exactly
+the geometric @eq-geom-pmf. Good — the generalization contains its special case.
+
+### Mean and variance, the easy way again {#sec-nb-moments}
+
+We *could* grind @eq-nb-pmf against $\sum k\,\mathbb{P}(Z=k)$ with negative-binomial-series
+identities. We will not, because the structural trick from @sec-binom-moments-easy applies
+again and is far cleaner. Here is the key observation: **waiting for $r$ successes is just
+waiting for the 1st, then the 2nd, then ..., then the $r$-th.** Each leg — the failures
+collected between consecutive successes — is, by the memoryless freshness of the coin, an
+independent Geometric($p$). Formally,
+
+$$
+Z = W_1 + W_2 + \cdots + W_r, \qquad W_i \sim \text{Geometric}(p) \text{ i.i.d.},
+$$ {#eq-nb-as-sum}
+
+where $W_i$ is the number of failures between the $(i-1)$-th and $i$-th success. They are
+independent because, after each success, the coin starts fresh (the memorylessness of
+@eq-memoryless), and identically distributed because $p$ never changes. This is the
+negative-binomial's version of "binomial = sum of Bernoullis."
+
+Now the moments fall out. By **linearity of expectation** ([PROB-5]) and @eq-geom-mean:
+
+$$
+\mathbb{E}[Z] = \sum_{i=1}^{r}\mathbb{E}[W_i] = r\cdot\frac{1-p}{p} = \frac{r(1-p)}{p}.
+$$ {#eq-nb-mean}
+
+By **additivity of variance for independent variables** ([PROB-8]) and @eq-geom-var:
+
+$$
+\operatorname{Var}(Z) = \sum_{i=1}^{r}\operatorname{Var}(W_i) = r\cdot\frac{1-p}{p^{2}}
+= \frac{r(1-p)}{p^{2}}.
+$$ {#eq-nb-var}
+
+::: {#thm-negbinom}
+**Theorem (Negative-Binomial moments).** If $Z \sim \text{Negative-Binomial}(r,p)$ (failures
+before the $r$-th success) then $\mathbb{E}[Z] = \frac{r(1-p)}{p}$ and
+$\operatorname{Var}(Z) = \frac{r(1-p)}{p^{2}}$.
+:::
+
+Both reduce to the geometric at $r=1$, as they must. And here is a fact that will matter
+enormously downstream: compare the mean and variance. Since
+
+$$
+\operatorname{Var}(Z) = \frac{r(1-p)}{p^{2}} = \frac{1}{p}\cdot\frac{r(1-p)}{p}
+= \frac{1}{p}\,\mathbb{E}[Z],
+$$
+
+and $\frac{1}{p} > 1$ whenever $p<1$, the **variance always exceeds the mean** for the
+negative-binomial. Hold that thought — it is exactly why the negative-binomial is the
+go-to fix when count data are "overdispersed" relative to the Poisson (@sec-connections,
+[REGR-19]).
+
+::: {.callout-tip title="You might be asked"}
+*"Why is it called* negative *binomial — there's nothing negative in @eq-nb-pmf?"* The name
+comes from rewriting the coefficient with a **negative upper index**, and it is worth doing
+the rewrite in full because it is the entire justification for the name. We need two
+ingredients, both within reach.
+
+**Ingredient 1 — the generalized binomial coefficient.** For an ordinary nonnegative integer
+$n$, $\binom{n}{k} = \frac{n!}{k!\,(n-k)!}$, but that formula uses factorials and so only makes
+sense for nonnegative integers. The *generalized* binomial coefficient extends it to **any**
+real upper index $\alpha$ by keeping the part of the definition that still makes sense — the
+falling product of $k$ terms in the numerator:
+
+$$
+\binom{\alpha}{k} \;\equiv\; \frac{\alpha(\alpha-1)(\alpha-2)\cdots(\alpha-k+1)}{k!}.
+$$ {#eq-gen-binom}
+
+(For a nonnegative integer $\alpha=n$ this agrees with the factorial form, since
+$n(n-1)\cdots(n-k+1) = \frac{n!}{(n-k)!}$.) Now take $\alpha = -r$ and expand
+@eq-gen-binom term by term. The numerator is the product of $k$ factors
+$(-r),(-r-1),\dots,(-r-k+1)$. Factor a $-1$ out of **each** of the $k$ factors — that pulls
+out $(-1)^{k}$ and flips every sign:
+
+$$
+\binom{-r}{k}
+= \frac{(-r)(-r-1)\cdots(-r-k+1)}{k!}
+= (-1)^{k}\,\frac{r(r+1)\cdots(r+k-1)}{k!}.
+$$
+
+The remaining product $r(r+1)\cdots(r+k-1)$ is a *rising* product of $k$ consecutive integers
+starting at $r$. Multiply top and bottom by $(r-1)!$ to turn it into factorials:
+$r(r+1)\cdots(r+k-1) = \frac{(r+k-1)!}{(r-1)!}$. Hence
+
+$$
+\binom{-r}{k} = (-1)^{k}\,\frac{(r+k-1)!}{(r-1)!\,k!}
+= (-1)^{k}\binom{r+k-1}{k},
+$$
+
+where the last step is the factorial definition of $\binom{r+k-1}{k}$. Solving for our
+coefficient gives the promised identity:
+
+$$
+\binom{r+k-1}{k} = (-1)^{k}\binom{-r}{k}.
+$$ {#eq-neg-index}
+
+**Ingredient 2 — the binomial series with a negative exponent.** Newton's generalized
+binomial series (the analytic extension of the binomial theorem to non-integer exponents — an
+analysis result we flag and import; its convergence proof belongs to a calculus text) states
+that for $|x|<1$ and any real exponent $\alpha$,
+$(1+x)^{\alpha} = \sum_{k=0}^{\infty}\binom{\alpha}{k}x^{k}$. Put $\alpha = -r$ and
+$x = -(1-p)$ (so $|x| = 1-p < 1$ whenever $p>0$):
+
+$$
+\big(1-(1-p)\big)^{-r}
+= \sum_{k=0}^{\infty}\binom{-r}{k}\big(-(1-p)\big)^{k}
+= \sum_{k=0}^{\infty}\binom{-r}{k}(-1)^{k}(1-p)^{k}.
+$$
+
+By @eq-neg-index the factor $\binom{-r}{k}(-1)^{k}$ is exactly $\binom{r+k-1}{k}$, and the
+left side is $\big(1-(1-p)\big)^{-r} = p^{-r}$. So $p^{-r} =
+\sum_{k=0}^{\infty}\binom{r+k-1}{k}(1-p)^{k}$, and multiplying through by $p^{r}$,
+
+$$
+1 = \sum_{k=0}^{\infty}\binom{r+k-1}{k}\,p^{r}(1-p)^{k}.
+$$
+
+The summand on the right is **exactly the negative-binomial pmf** @eq-nb-pmf — so this rewrite
+simultaneously confirms the pmf sums to one *and* shows where the name comes from: the pmf is
+the general term of a **binomial expansion with a *negative* exponent** $-r$. That historical
+observation, not any negative probability, gives the name. (This is also a second, independent
+normalization check on @eq-nb-pmf — the first being the i.i.d.-geometric construction of
+@eq-nb-as-sum.) In an interview you would not be asked to reproduce this whole chain, but
+being able to say *"the coefficient is a negative-index binomial coefficient, so the pmf is a
+binomial series with exponent $-r$"* — and sketch why — is the detail that signals you
+actually understand the object rather than having memorized a formula.
+:::
+
+@fig-nb-shapes shows how the negative-binomial's shape moves with $r$ and $p$.
+
+```{python}
+#| label: fig-nb-shapes
+#| fig-cap: "The Negative-Binomial pmf (failures before the $r$-th success). **Left:** fixing $p=0.4$ and growing $r$ shifts the distribution right and makes it more symmetric — summing more i.i.d. geometric legs piles up mass and (foreshadowing the CLT) smooths the shape. **Right:** fixing $r=4$ and shrinking $p$ stretches the distribution far to the right, since rarer successes mean longer waits. The dot at $r=1$ on the left is exactly the geometric."
+ks = np.arange(0, 45)
+fig, (aL, aR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+
+for rr, col in [(1, POINT), (4, ACCENT), (10, LINE)]:
+    aL.plot(ks, stats.nbinom.pmf(ks, rr, 0.4), "o-", ms=3, color=col,
+            alpha=0.9, label=f"$r={rr}$")
+aL.set_title(r"Vary $r$ (fixed $p=0.4$)")
+aL.set_xlabel("failures $k$"); aL.set_ylabel(r"$\mathbb{P}(Z=k)$"); aL.legend()
+
+for pp, col in [(0.6, POINT), (0.4, ACCENT), (0.2, LINE)]:
+    aR.plot(ks, stats.nbinom.pmf(ks, 4, pp), "o-", ms=3, color=col,
+            alpha=0.9, label=f"$p={pp}$")
+aR.set_title(r"Vary $p$ (fixed $r=4$)")
+aR.set_xlabel("failures $k$"); aR.legend()
+plt.tight_layout()
+```
+
+# Worked examples {#sec-examples}
+
+We now run all of this on real, messy problems — never a toy rigged to flatter the
+distributions. Each example is carried end to end, and the last one is deliberately placed at
+the edge where these models break.
+
+## Example 1 — A/B test conversions: the binomial in its home habitat {#sec-ex-ab}
+
+A product team ships a new checkout button to a slice of traffic. Of $n = 1{,}000$ visitors
+who saw it, $Y = 137$ converted (completed a purchase). If every visitor independently
+converts with the same probability $p$, then $Y \sim \text{Binomial}(1000, p)$ — the textbook
+setting, and an honest one: web visitors in a fixed time window are about as close to
+independent identical trials as applied data gets.
+
+```{python}
+#| label: fig-ab-test
+#| fig-cap: "An A/B test as a binomial. With $n=1000$ and an assumed true rate $p=0.13$, the Binomial pmf (stems) is sharply peaked near its mean $np=130$. The observed count $Y=137$ (red) sits comfortably inside the bulk — not a surprising result under $p=0.13$. The shaded band marks mean $\\pm$ one standard deviation $\\sqrt{np(1-p)}\\approx 10.6$; the binomial concentrates tightly around its mean once $n$ is large, which is exactly what makes estimating a conversion rate from a big sample reliable."
+n, p_true = 1000, 0.13
+mean = n * p_true
+sd = np.sqrt(n * p_true * (1 - p_true))
+ks = np.arange(95, 170)
+pmf = stats.binom.pmf(ks, n, p_true)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+ax.vlines(ks, 0, pmf, color=FILL, lw=2)
+ax.axvspan(mean - sd, mean + sd, color=ACCENT, alpha=0.12,
+           label=fr"mean $\pm$ 1 sd ($\approx {sd:.1f}$)")
+ax.axvline(mean, color=ACCENT, lw=1.5, ls="--", label=f"mean $np={mean:.0f}$")
+ax.axvline(137, color=LINE, lw=2, label="observed $Y=137$")
+ax.set_xlabel("number of conversions"); ax.set_ylabel("probability")
+ax.set_title("A/B test conversions ~ Binomial(1000, 0.13)")
+ax.legend(fontsize=9)
+plt.tight_layout()
+```
+
+The estimated conversion rate is the natural one, $\hat p = Y/n = 137/1000 = 0.137$. The
+binomial machinery immediately tells us how precise that estimate is. The *count* $Y$ has
+standard deviation $\sqrt{np(1-p)}$; the *proportion* $\hat p = Y/n$ therefore has standard
+deviation (using $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$ from [PROB-6] with
+$a = 1/n$):
+
+$$
+\operatorname{SD}(\hat p) = \sqrt{\operatorname{Var}\!\Big(\tfrac{Y}{n}\Big)}
+= \sqrt{\tfrac{1}{n^{2}}\operatorname{Var}(Y)} = \sqrt{\tfrac{np(1-p)}{n^{2}}}
+= \sqrt{\tfrac{p(1-p)}{n}}.
+$$
+
+```{python}
+#| label: tbl-ab-se
+#| echo: false
+n, y = 1000, 137
+phat = y / n
+se = np.sqrt(phat * (1 - phat) / n)
+print(f"observed conversions   Y    = {y}")
+print(f"point estimate         phat = Y/n = {phat:.4f}")
+print(f"standard error         se   = sqrt(phat(1-phat)/n) = {se:.4f}")
+print(f"approx 95% interval         = [{phat - 1.96*se:.4f}, {phat + 1.96*se:.4f}]")
+```
+
+So $\hat p \approx 0.137$ with a standard error of about $\pm 0.011$. That $\sqrt{p(1-p)/n}$
+shrinking like $1/\sqrt{n}$ is the binomial's gift to experimentation: quadruple your traffic
+and you halve your uncertainty. (The full inferential apparatus — confidence intervals,
+hypothesis tests, the normal approximation that justifies the $1.96$ — lives in Statistical
+Inference; here the binomial *supplies the variance* those methods consume.)
+
+## Example 2 — Drilling for oil: the negative-binomial as a waiting time {#sec-ex-oil}
+
+A wildcat exploration firm drills wells one at a time. Each independent well strikes oil
+("success") with probability $p = 0.15$. The firm's plan needs $r = 3$ producing wells before
+it can finance a pipeline. The natural question: **how many dry holes ($Z$) should it budget
+for before hitting the third strike?** That is exactly $Z \sim
+\text{Negative-Binomial}(r=3, p=0.15)$, failures before the $r$-th success.
+
+```{python}
+#| label: fig-oil
+#| fig-cap: "Dry wells before the 3rd oil strike, $Z \\sim$ Neg-Binomial$(r=3, p=0.15)$. The distribution is heavily right-skewed: the most likely single outcome is in the teens, but the long tail means a genuinely unlucky campaign can run far longer. The dashed line is the mean $\\mathbb{E}[Z]=r(1-p)/p=17$ dry holes; the shaded region past the 90th percentile is the budget-busting tail the firm must plan for. A point estimate alone would badly understate the risk."
+r, p = 3, 0.15
+ks = np.arange(0, 70)
+pmf = stats.nbinom.pmf(ks, r, p)
+mean = r * (1 - p) / p
+q90 = stats.nbinom.ppf(0.90, r, p)
+
+fig, ax = plt.subplots(figsize=(6.8, 4.0))
+ax.vlines(ks, 0, pmf, color=FILL, lw=2)
+ax.vlines(ks[ks >= q90], 0, pmf[ks >= q90], color=LINE, lw=2,
+          label=f"upper 10% tail ($Z \\geq {q90:.0f}$)")
+ax.axvline(mean, color=ACCENT, lw=1.5, ls="--", label=f"mean $= {mean:.0f}$ dry holes")
+ax.set_xlabel("dry wells $Z$ before 3rd strike"); ax.set_ylabel("probability")
+ax.set_title("Oil exploration ~ Neg-Binomial(r=3, p=0.15)")
+ax.legend(fontsize=9)
+plt.tight_layout()
+```
+
+```{python}
+#| label: tbl-oil
+#| echo: false
+r, p = 3, 0.15
+mean = r * (1 - p) / p
+var = r * (1 - p) / p**2
+print(f"expected dry holes       E[Z]      = r(1-p)/p   = {mean:.2f}")
+print(f"variance                 Var(Z)    = r(1-p)/p^2 = {var:.2f}")
+print(f"std deviation            SD(Z)     =            = {np.sqrt(var):.2f}")
+print(f"P(at most 20 dry holes)            = {stats.nbinom.cdf(20, r, p):.3f}")
+print(f"90th percentile of dry holes       = {stats.nbinom.ppf(0.90, r, p):.0f}")
+print(f"check Var > mean (overdispersion)? = {var > mean}  (ratio {var/mean:.2f} = 1/p)")
+```
+
+The expected number of dry holes is $\mathbb{E}[Z] = r(1-p)/p = 3(0.85)/0.15 = 17$, but the
+standard deviation is over $10$ and the distribution is sharply right-skewed — there is real
+chance of needing $30$ or more dry holes. Budgeting for the mean alone would bankrupt the
+firm one campaign in ten; the *tail*, which the negative-binomial hands us directly, is the
+thing to plan against. Note the printed check: $\operatorname{Var}(Z)/\mathbb{E}[Z] = 1/p
+\approx 6.7 > 1$ — the overdispersion we flagged in @sec-nb-moments, made concrete.
+
+## Example 3 (edge of applicability) — call-center defects when trials are NOT independent {#sec-ex-edge}
+
+Now the honest boundary. A factory samples $n=200$ items per shift and counts defects,
+modeling the count as $\text{Binomial}(200, p)$. But defects are not independent: a
+miscalibrated machine produces *runs* of bad parts, so one defect makes the next more likely.
+The trials are *positively correlated*, violating the independence assumption that
+@eq-binom-var-easy rests on. The mean is unaffected (linearity of expectation needs no
+independence), but the **variance is badly underestimated** by the binomial $np(1-p)$ — the
+real spread is larger. Let us see the damage in simulation.
+
+```{python}
+#| label: fig-overdispersion
+#| fig-cap: "The edge of applicability. Each shift counts defects in $n=200$ items with marginal defect rate $p=0.05$. **Blue:** a true Binomial$(200, 0.05)$ — independent trials. **Red:** simulated counts when defects come in correlated clusters (the same marginal rate, but a machine that drifts in and out of a bad state). Both have the *same mean* (dashed line, $np=10$), but the clustered process is far more dispersed — frequent very-low and very-high shifts the binomial says should almost never happen. Fitting a binomial here would drastically understate the variability and produce false confidence."
+rng = np.random.default_rng(7)
+n_items, p_marg, n_shifts = 200, 0.05, 4000
+
+# (a) true independent binomial
+indep = rng.binomial(n_items, p_marg, size=n_shifts)
+
+# (b) clustered: a latent "machine state" raises/lowers the per-item rate per shift,
+#     keeping the overall marginal rate at p_marg but injecting between-shift variation.
+# Beta-distributed per-shift rate with mean p_marg -> Beta-Binomial (overdispersed).
+a, b = 0.5, 0.5 * (1 - p_marg) / p_marg   # Beta with mean a/(a+b) = p_marg
+shift_rate = rng.beta(a, b, size=n_shifts)
+clustered = rng.binomial(n_items, shift_rate)
+
+bins = np.arange(0, 40) - 0.5
+fig, ax = plt.subplots(figsize=(6.8, 4.0))
+ax.hist(indep, bins=bins, density=True, color=POINT, alpha=0.55,
+        label=f"independent binomial (var {indep.var():.1f})")
+ax.hist(clustered, bins=bins, density=True, color=LINE, alpha=0.55,
+        label=f"clustered / overdispersed (var {clustered.var():.1f})")
+ax.axvline(n_items * p_marg, color=ACCENT, lw=1.5, ls="--", label="shared mean $np=10$")
+ax.set_xlabel("defects per shift"); ax.set_ylabel("density")
+ax.set_title("Same mean, very different spread: independence broken")
+ax.legend(fontsize=9)
+plt.tight_layout()
+```
+
+```{python}
+#| label: tbl-edge
+#| echo: false
+print(f"binomial (independent) variance      = {indep.var():.2f}   (theory np(1-p) = {n_items*p_marg*(1-p_marg):.2f})")
+print(f"clustered (overdispersed) variance   = {clustered.var():.2f}")
+print(f"variance inflation factor            = {clustered.var()/indep.var():.1f}x")
+```
+
+The clustered process has the same mean but several times the variance. A binomial fit would
+report a tiny standard error and declare shift-to-shift differences "significant" that are
+nothing but the machine's own drift. **This is the single most common way the binomial lies
+in practice: the trials are not independent.** The fixes are exactly the distributions and
+methods this article points toward — model the extra variation with a Beta-Binomial (the
+mechanism in the simulation, Inference E4) or, for count regression, a negative-binomial
+model whose surplus variance ($\operatorname{Var} > \operatorname{mean}$, @sec-nb-moments)
+absorbs the overdispersion ([REGR-19]).
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The three distributions are exact *given their assumptions*. An honest treatment is mostly
+about when those assumptions fail.
+
+- **Trials not independent (the big one).** Everything above the Bernoulli atom assumed
+  i.i.d. trials. Linearity of expectation survives dependence, so the **means stay correct**,
+  but the **variances do not** — @eq-binom-var-easy and @eq-nb-var both used independence at
+  the variance step. Positively correlated trials (clustering, contagion, machine drift —
+  @sec-ex-edge) inflate the variance above the formula (*overdispersion*); negatively
+  correlated trials deflate it (*underdispersion*). The symptom is real-world data far more
+  (or less) spread out than $np(1-p)$ predicts. *Reach for:* Beta-Binomial / negative-binomial
+  models (overdispersion), or explicitly modeling the dependence.
+
+- **$p$ not constant across trials.** The binomial assumes one fixed $p$. If the success
+  probability drifts (different visitors, different machine states, time-of-day effects), you
+  have a *mixture* of binomials, which is again overdispersed. The mean is a weighted average
+  of the per-trial $p$'s, but the variance exceeds $n\bar p(1-\bar p)$. *Reach for:* a
+  hierarchical/Beta-Binomial model or regression with covariates that explain the variation
+  in $p$ ([REGR-17] logistic regression).
+
+- **Sampling without replacement from a small population.** "Draw $k$ defectives from a box
+  of $N$ with $K$ defective" is *not* binomial, because removing an item changes the
+  probability for the next draw — the trials are not identical. The exact answer is the
+  **hypergeometric** distribution. The binomial is the large-population limit (when $N$ is
+  huge, removing one item barely changes $p$, so draws are effectively independent). *Reach
+  for:* the hypergeometric when the sample is a non-trivial fraction of the population.
+
+- **The geometric/exponential mismatch.** The geometric assumes a *constant* per-trial
+  success probability — memorylessness (@sec-geom-memoryless). Many real waiting processes
+  are not memoryless: a component's failure rate rises with age, a patient's risk changes
+  over a treatment course. *Reach for:* survival / hazard-rate models when the per-step risk
+  evolves.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the binomial the right model, and when is it the wrong one?"* The recitation:
+
+- **Use it** when you have a fixed number $n$ of trials, each with the same success
+  probability $p$, and the trials are independent — and you care about the *count* of
+  successes. A/B tests, defect sampling from large lots, polling with replacement, any
+  "$k$-out-of-$n$" question.
+- **Use the negative-binomial / geometric** when you instead fix the number of *successes*
+  and the *number of trials is random* — waiting times, "how many attempts until..." — or, in
+  its regression role, whenever count data are **overdispersed** ($\operatorname{Var} >
+  \operatorname{mean}$), since the negative-binomial's variance structure
+  $\frac{1}{p}\mathbb{E}[Z]$ can absorb the extra spread a Poisson cannot.
+- **Do NOT use either** when trials are dependent or $p$ drifts (overdispersion — Beta-Binomial,
+  hierarchical models), when sampling without replacement from a small population
+  (hypergeometric), or when the per-trial probability changes with history (survival models).
+- **The deepest tell:** compute the sample variance and compare it to $np(1-p)$ (binomial) or
+  to the mean (Poisson). A large mismatch is the data telling you an assumption is broken.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-10 *Counting: Permutations & Combinations*]**, which built the
+$\binom{n}{k}$ and the binomial theorem that the binomial pmf @eq-binom-pmf is made of, and
+from **[PROB-5]**, **[PROB-6]**, **[PROB-8]** — expectation, variance, and the i.i.d. sum
+rules that did all the real work. This article cataloged the first named discrete
+distributions. The catalog continues, and each next step is a *limit* of what you just built:
+
+- **[PROB-12 *The Poisson Distribution*]** — take Binomial($n, \lambda/n$) and let
+  $n\to\infty$ with the mean held fixed at $\lambda$. Rare successes in many trials converge
+  to the Poisson; this article's binomial is its raw material. The Poisson's
+  equidispersion ($\operatorname{Var} = \operatorname{mean}$) is the foil that makes the
+  negative-binomial's overdispersion ($\operatorname{Var} > \operatorname{mean}$, @sec-nb-moments)
+  the natural fix for real count data.
+- **[PROB-13 *The Normal Distribution*]** — take Binomial($n,p$) and let $n\to\infty$ with
+  $p$ fixed; the standardized count converges to the bell curve (the De Moivre–Laplace
+  theorem, the historical seed of the central limit theorem). The $1/\sqrt{n}$ shrinking of
+  $\operatorname{SD}(\hat p)$ in @sec-ex-ab is the binomial feeling the pull of that limit.
+- **[PROB-16 *The Exponential Family*]** — the Bernoulli, binomial, and negative-binomial all
+  fit one canonical algebraic form; that unification is what lets a single regression
+  framework (GLMs) handle all of them.
+
+**Cross-track payoffs.** The logistic regression of **[REGR-17]** models a Bernoulli
+probability as a function of predictors; **[REGR-19]** uses the negative-binomial for
+overdispersed counts exactly as motivated in @sec-ex-edge; Statistical Inference (B1) builds
+likelihoods on the binomial pmf, and (E4) pairs the binomial with a Beta prior — the
+Beta-Binomial that generated the overdispersion in @sec-ex-edge — for conjugate Bayesian
+inference.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary source.** Jacob Bernoulli, *Ars Conjectandi* (1713) — where the single trial and
+  the count of successes in $n$ trials first become named objects, and where the law of large
+  numbers (that $\hat p \to p$) is first proved for exactly this binomial setting.
+- **The naming puzzle, resolved in full.** The "negative" in negative-binomial is the negative
+  exponent in the binomial series $\big(1-(1-p)\big)^{-r}=p^{-r}$ — the callout in @sec-nb
+  derives this end to end, including the negative-index identity
+  $\binom{r+k-1}{k} = (-1)^k\binom{-r}{k}$ (via @eq-neg-index) and Newton's generalized
+  binomial series. The one imported ingredient is the *convergence* of that infinite series
+  for $|1-p|<1$; for the full convergence theory of the generalized binomial series, any
+  real-analysis text (e.g. Rudin, *Principles of Mathematical Analysis*) is the rabbit hole.
+- **Open threads this article deliberately deferred.** *Why does Binomial($n, \lambda/n$)
+  become Poisson?* — the rare-event limit, [PROB-12]. *Why does the standardized binomial
+  become normal?* — the De Moivre–Laplace / central-limit story, [PROB-13] and Inference A2.
+  *How do we actually estimate $p$ and quantify our uncertainty about it?* — maximum
+  likelihood and the Beta-Binomial posterior, Statistical Inference B1 and E4. *What if the
+  number of trials is itself random?* — compound and mixed distributions, a thread the
+  Poisson and exponential-family articles pick up.

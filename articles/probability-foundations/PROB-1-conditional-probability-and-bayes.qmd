@@ -1,0 +1,995 @@
+---
+title: "Conditional Probability, Independence, and Bayes' Rule"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the truth / theoretical value
+ACCENT = "#0a7d4d"     # highlights
+GREY   = "#6c757d"
+SETA   = "#3a7ca5"     # event A
+SETB   = "#d98b2b"     # event B
+```
+
+> **Where this sits in the track.** This is the second article of the **Probability
+> Foundations** track. It assumes only [PROB-0 *What Is Probability? Sample Spaces and the
+> Axioms*] — the sample space $\Omega$, events as subsets, and Kolmogorov's three axioms
+> (non-negativity, $P(\Omega)=1$, countable additivity), from which we derived the
+> complement rule, monotonicity, and inclusion–exclusion. Nothing above the Calculus-I
+> floor is assumed. This article answers the next question every later article needs: **how
+> does a probability change when we learn that something happened, and how do we invert that
+> relationship?** It builds **conditional probability**, **independence**, the **law of
+> total probability**, and **Bayes' rule**. It sets up [PROB-8 *Independence and the i.i.d.
+> Sample*] (independence lifted from events to random variables), [PROB-9 *Conditional
+> Distributions and Conditional Expectation*] (conditioning at the random-variable level),
+> and [PROB-12 *The Poisson Distribution*] (built on independence). Cross-track, naive-Bayes
+> classification, Bayesian inference, and causal reasoning all consume what we build here.
+
+## Abstract {.unnumbered}
+
+Probability as built in [PROB-0] answers questions about an experiment *before* it is run.
+But information arrives: a test comes back positive, a card is revealed, a sensor fires.
+**Conditional probability** is the machine for updating a probability in light of what we
+have learned, and it is the single most leveraged idea in applied probability. This article
+constructs it from one picture — **conditioning is restricting the sample space to the
+event we now know occurred, and renormalizing so the new, smaller world again has total
+mass one.** From that definition we derive the **multiplication rule** and the **chain
+rule**, define **independence** as the precise statement "learning $B$ tells us nothing
+about $A$," and settle the perennial confusion between *independent* and *mutually
+exclusive* — which, far from being the same thing, are nearly opposite. We then partition
+the sample space and derive the **law of total probability**, and from it **Bayes' rule**,
+the formula that inverts a conditional: it turns $P(\text{evidence}\mid\text{cause})$, which
+we can measure, into $P(\text{cause}\mid\text{evidence})$, which we actually want. We carry
+it through the medical-test example every interview asks for — where a 99%-accurate test for
+a rare disease is *wrong most of the time it says "positive"* — and through spam filtering,
+where independence is assumed even though it is false, on purpose. The single claim this
+article defends: **Bayes' rule is not a trick but the only consistent way to reason backward
+from evidence to cause, and the base rate is the term everyone forgets.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+To **condition** on an event $B$ (one we have learned occurred) is to **shrink the sample
+space down to $B$** and rescale every probability so that the new world $B$ has total mass
+$1$ again. That single move is the definition
+$$
+P(A \mid B) = \frac{P(A \cap B)}{P(B)}, \qquad P(B) > 0 .
+$$
+Everything else falls out of it. Rearranged, it is the **multiplication rule**
+$P(A \cap B) = P(A\mid B)\,P(B)$. Two events are **independent** when conditioning changes
+nothing — $P(A\mid B) = P(A)$, equivalently $P(A\cap B)=P(A)P(B)$. And reading the
+multiplication rule from both sides at once and dividing gives **Bayes' rule**,
+$$
+P(A \mid B) = \frac{P(B \mid A)\,P(A)}{P(B)},
+$$
+the formula that flips a conditional probability around so we can reason from evidence back
+to its cause.
+:::
+
+Everything below orbits that box. The definition looks like a one-line fraction, but the
+*why* behind it — that conditioning is literally a change of the universe we are measuring
+in — is what makes Bayes' rule feel inevitable rather than memorized, and what explains the
+single most common error in all of applied probability: confusing $P(A\mid B)$ with
+$P(B\mid A)$.
+
+# Why we are doing this: the problem of learning {#sec-why}
+
+Hold one question in view for the whole article: **probability quantifies uncertainty, but
+uncertainty is not static — we learn things. What is the rule for updating?** Every move
+below answers a piece of that.
+
+## The problem the axioms left open
+
+[PROB-0] gave us a fixed probability $P(A)$ for each event, computed before the experiment
+runs. That is enough to ask "what is the chance this fair die shows a six?" — answer $1/6$,
+settled before the roll. But almost no real question is static. A doctor does not ask "what
+is the chance a random person has this disease?"; she asks "what is the chance *this patient*
+has it, **given** that their test came back positive?" A spam filter does not ask "what
+fraction of all email is spam?"; it asks "what is the chance *this* message is spam, **given**
+that it contains the word *invoice* and a link?" The defining feature of every one of these
+is the word **given**: a piece of information has arrived, and it should move the
+probability.
+
+The pre-conditioning machinery has no slot for "given." It computes $P(A)$ and stops. We
+need a second operation that takes the old probability and a piece of news, and returns the
+*updated* probability. That operation is conditioning, and the entire enterprise of learning
+from data — inference, classification, Bayesian updating, the lot — is built on it.
+
+## Why the historical thread runs through Bayes
+
+The forward direction is usually easy to measure and the backward direction is what we want.
+A lab can tell you $P(\text{test positive}\mid\text{diseased})$ — give the test to known-sick
+patients and count. A botanist can tell you $P(\text{this leaf shape}\mid\text{species }A)$ —
+measure many known specimens. But the patient and the field biologist face the *inverse*: a
+positive test, a leaf in hand — *which cause produced this evidence?* That is
+$P(\text{diseased}\mid\text{positive})$, $P(\text{species }A\mid\text{this leaf})$ — the
+backward conditional.
+
+The Reverend **Thomas Bayes**, in an essay published posthumously in 1763 by his friend
+Richard Price, asked exactly this: given that we have observed an effect, how do we reason
+back to the probability of its cause? **Pierre-Simon Laplace**, working independently around
+1774 and far more generally, turned it into the engine of an entire approach to probability
+and statistics. The formula they arrived at — Bayes' rule — is the *only* consistent way to
+invert a conditional, and we will derive it from nothing but the definition of conditioning.
+That is the *why* we hold onto: conditioning lets us learn, and Bayes' rule is what lets us
+learn in the direction reality forces on us — backward, from evidence to cause.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just define $P(A\mid B)$ directly, instead of as a ratio?"* Because the ratio is
+forced, not chosen — it is the *only* definition that keeps conditioning consistent with the
+[PROB-0] axioms (we show in @sec-defn that $P(\cdot\mid B)$ is itself a genuine probability,
+and the ratio is what makes it so) and that matches the frequentist meaning "among the runs
+where $B$ happened, what fraction also had $A$." Define it any other way and either it stops
+obeying the axioms or it stops matching long-run frequencies. The interviewer is checking
+whether you see conditioning as a *derived, forced* construction, not a fresh axiom.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Carry forward the one picture from [PROB-0]: **probability is normalized area**, with the
+whole sample space $\Omega$ a region of total area $1$ and each event a sub-region whose area
+*is* its probability. Conditioning has an equally simple picture on top of that.
+
+**To condition on $B$ is to throw away everything outside $B$ and zoom in.** We have learned
+$B$ occurred, so outcomes outside $B$ are now impossible — erase them. What remains is the
+region $B$, and the only part of $A$ that can still happen is the part inside $B$, namely
+$A \cap B$. The updated probability of $A$ should be *the fraction of the new world $B$ that
+is taken up by $A$* — that is, the area of $A\cap B$ divided by the area of $B$:
+$$
+P(A\mid B) = \frac{\text{area of } A\cap B}{\text{area of } B}.
+$$
+The division by area-of-$B$ is a **renormalization**: $B$ was only part of the original unit
+square, with area $P(B) < 1$, but now $B$ *is* the whole world and must have total
+probability $1$ again. Dividing by $P(B)$ rescales it back up to $1$. @fig-condition draws
+exactly this zoom.
+
+```{python}
+#| label: fig-condition
+#| fig-cap: "Conditioning as restriction and renormalization. **Left:** the original sample space $\\Omega$ (unit square, area $1$) with events $A$ (blue) and $B$ (orange). The probability of $A$ is its area. **Right:** we learn $B$ occurred, so $B$ becomes the entire world — everything outside it is erased. The only surviving part of $A$ is $A\\cap B$ (purple). The conditional probability $P(A\\mid B)$ is the fraction of $B$'s area occupied by $A\\cap B$; dividing by $P(B)$ renormalizes the shrunken world back to total mass $1$."
+from matplotlib.patches import Circle, Rectangle
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.2))
+
+# Left: full sample space with A and B overlapping
+axL.add_patch(Rectangle((0, 0), 1, 1, fill=False, edgecolor="black", lw=1.5))
+cA = Circle((0.42, 0.55), 0.27, color=SETA, alpha=0.45)
+cB = Circle((0.64, 0.45), 0.30, color=SETB, alpha=0.45)
+axL.add_patch(cA); axL.add_patch(cB)
+axL.text(0.27, 0.62, "$A$", fontsize=13, color=SETA)
+axL.text(0.84, 0.40, "$B$", fontsize=13, color=SETB)
+axL.text(0.55, 0.50, r"$A\cap B$", fontsize=8, ha="center")
+axL.text(0.5, 1.07, r"$\Omega$ (area $=1$)", ha="center", fontsize=12)
+axL.set_xlim(-0.05, 1.05); axL.set_ylim(-0.05, 1.18)
+axL.set_aspect("equal"); axL.axis("off")
+axL.set_title("Before: $P(A)$ is area of $A$", fontsize=11)
+
+# Right: zoom into B, the new universe
+axR.add_patch(Circle((0.5, 0.5), 0.40, color=SETB, alpha=0.30,
+                      edgecolor=SETB, lw=1.8))
+# A cap B as a lens inside B
+axR.add_patch(Circle((0.36, 0.58), 0.22, color="#7b4fa0", alpha=0.55))
+axR.text(0.5, 0.18, "$B$ is now the whole world", ha="center", fontsize=10, color=SETB)
+axR.text(0.34, 0.60, r"$A\cap B$", ha="center", fontsize=9, color="white")
+axR.text(0.5, 1.02, r"After: $P(A\mid B)=\dfrac{P(A\cap B)}{P(B)}$",
+         ha="center", fontsize=12)
+axR.set_xlim(-0.05, 1.05); axR.set_ylim(-0.05, 1.18)
+axR.set_aspect("equal"); axR.axis("off")
+axR.set_title("After: renormalize $B$ to mass $1$", fontsize=11)
+
+plt.tight_layout()
+```
+
+If that picture is solid, the rest of the article is bookkeeping on it. Independence is "the
+fraction of $B$ taken by $A$ equals the fraction of all of $\Omega$ taken by $A$ — zooming
+into $B$ changed nothing." Bayes' rule is "I can measure the fraction one way but need it the
+other way, so I flip the ratio using the multiplication rule." Keep the zoom in mind.
+
+# The formal development {#sec-formal}
+
+We proceed in dependency order: the definition and its first consequence (it is a genuine
+probability), then the multiplication and chain rules, independence, the law of total
+probability, and finally Bayes' rule. Every step rests only on the [PROB-0] axioms and the
+results derived there.
+
+## The definition, and why it is forced {#sec-defn}
+
+::: {#def-conditional}
+**Definition (conditional probability).** Let $A$ and $B$ be events with $P(B) > 0$. The
+**conditional probability of $A$ given $B$**, written $P(A\mid B)$ (read "$P$ of $A$ given
+$B$"), is
+$$
+P(A \mid B) = \frac{P(A \cap B)}{P(B)} .
+$$ {#eq-conditional}
+The vertical bar $\mid$ is read "given"; it is *not* division — the division is the fraction
+on the right. The requirement $P(B) > 0$ is essential: conditioning on something we assigned
+zero probability would divide by zero, and "given an impossible event" has no meaning. (The
+case $P(B)=0$ with continuous variables is handled differently and is built in [PROB-9]; here
+$B$ always has positive probability.)
+:::
+
+The symbol $A\cap B$ is the intersection from [PROB-0]: the event that $A$ **and** $B$ both
+occur. So @eq-conditional says: the updated chance of $A$ is the chance that *both* happened,
+as a fraction of the chance that the thing we conditioned on happened.
+
+Why is this fraction the *right* definition, and not merely *a* definition? Two reasons,
+both promised in @sec-why.
+
+**First — it is the only thing consistent with the axioms.** Once we declare that learning
+$B$ makes $B$ the new sample space, the updated probability $Q(A) := P(A\mid B)$ must itself
+obey Kolmogorov's three axioms ([PROB-0])— otherwise "updating" would produce an incoherent
+probability. Let us verify that @eq-conditional delivers exactly that, treating $B$ as the
+new universe. We check all three axioms.
+
+- **(A1) Non-negativity.** $Q(A) = P(A\cap B)/P(B)$. The numerator $P(A\cap B)\ge 0$ by (A1)
+  for $P$, and the denominator $P(B) > 0$ by assumption, so the ratio is $\ge 0$.
+- **(A2) Normalization.** The new universe is $B$, so we need $Q(B) = 1$. Indeed
+  $Q(B) = P(B\cap B)/P(B) = P(B)/P(B) = 1$, using $B\cap B = B$.
+- **(A3) Countable additivity.** Let $A_1, A_2, \dots$ be pairwise-disjoint events. Then the
+  events $A_1\cap B, A_2\cap B, \dots$ are *also* pairwise disjoint — if $A_i\cap A_j =
+  \varnothing$ then certainly $(A_i\cap B)\cap(A_j\cap B)\subseteq A_i\cap A_j = \varnothing$.
+  Also $\left(\bigcup_i A_i\right)\cap B = \bigcup_i (A_i\cap B)$ by the distributive law of
+  sets (verified by outcome-chasing in [PROB-0]). So
+  $$
+  Q\!\left(\bigcup_i A_i\right)
+  = \frac{P\!\left(\bigcup_i (A_i\cap B)\right)}{P(B)}
+  = \frac{\sum_i P(A_i\cap B)}{P(B)}
+  = \sum_i \frac{P(A_i\cap B)}{P(B)}
+  = \sum_i Q(A_i),
+  $$
+  where the second equality is (A3) for the original $P$ applied to the disjoint events
+  $A_i\cap B$, and the third just distributes the fixed divisor $P(B)$ across the sum.
+
+So $Q(\cdot) = P(\cdot\mid B)$ is a genuine probability on the restricted world $B$. *That*
+is the sense in which the ratio is forced: it is the unique rescaling of $P$ that makes $B$
+into a legitimate sample space of its own. Any other formula would break one of the three
+axioms.
+
+**Second — it matches the frequentist meaning.** Imagine running the experiment $n$ times.
+Let $n_B$ be the number of runs on which $B$ occurred, and $n_{A\cap B}$ the number on which
+both $A$ and $B$ occurred. "Among the runs where $B$ happened, what fraction also had $A$?"
+is $n_{A\cap B}/n_B$. Divide numerator and denominator by the total $n$:
+$$
+\frac{n_{A\cap B}}{n_B} = \frac{n_{A\cap B}/n}{n_B/n}
+\;\xrightarrow[\;n\to\infty\;]{}\; \frac{P(A\cap B)}{P(B)},
+$$
+since each relative frequency tends to its probability (the long-run-frequency reading from
+[PROB-0]; that the limits exist is the Law of Large Numbers, owned by the Inference track and
+built on the Chebyshev inequality of [PROB-19]). The limit is exactly @eq-conditional. So the
+ratio is not an arbitrary choice — it is *both* the unique axiom-consistent rescaling *and*
+the long-run fraction the word "given" plainly means.
+
+## The multiplication rule and the chain rule {#sec-mult}
+
+Clearing the denominator in @eq-conditional gives a rule for the probability that two things
+*both* happen — often far easier to reason about than $P(A\cap B)$ directly.
+
+::: {#thm-mult}
+**Theorem (multiplication rule).** For events with $P(B) > 0$,
+$$
+P(A \cap B) = P(A \mid B)\,P(B).
+$$ {#eq-mult}
+Symmetrically, if $P(A) > 0$, then $P(A\cap B) = P(B\mid A)\,P(A)$.
+:::
+
+::: {.proof}
+Multiply both sides of the definition @eq-conditional, $P(A\mid B) = P(A\cap B)/P(B)$, by
+$P(B)$. Since $P(B)>0$ we may do this without dividing by zero, and the $P(B)$ on the right
+cancels: $P(A\mid B)\,P(B) = P(A\cap B)$. The symmetric form swaps the roles of $A$ and $B$
+in @eq-conditional, which is legitimate because $A\cap B = B\cap A$ (intersection does not
+care about order), and uses $P(A)>0$ instead. $\qquad\blacksquare$
+:::
+
+The intuition: to have *both* $A$ and $B$, first $B$ must happen (probability $P(B)$), and
+then, in that restricted world, $A$ must also happen (probability $P(A\mid B)$). Multiply the
+two stages. This staging extends to any number of events, and the extension is the workhorse
+behind sequential models, decision trees, and the likelihood of a data sequence. Rather than
+assert it, we derive it.
+
+::: {#thm-chain}
+**Theorem (chain rule / general multiplication rule).** For events $A_1, \dots, A_n$ with
+$P(A_1\cap\cdots\cap A_{n-1}) > 0$,
+$$
+P(A_1\cap A_2\cap\cdots\cap A_n)
+= P(A_1)\,P(A_2\mid A_1)\,P(A_3\mid A_1\cap A_2)\cdots
+  P(A_n\mid A_1\cap\cdots\cap A_{n-1}).
+$$ {#eq-chain}
+:::
+
+::: {.proof}
+We use **induction on $n$** — prove it for $n=2$, then show that if it holds for $n-1$ events
+it holds for $n$, which together cover every $n\ge 2$.
+
+*Base case $n=2$.* This is exactly the multiplication rule @eq-mult written as
+$P(A_1\cap A_2) = P(A_1)\,P(A_2\mid A_1)$ (the symmetric form, with $A_1$ playing the role of
+the conditioning event). Already proved.
+
+*Inductive step.* Assume @eq-chain holds for any $n-1$ events. Write
+$C = A_1\cap A_2\cap\cdots\cap A_{n-1}$ for the intersection of the first $n-1$. We are given
+$P(C) > 0$. Apply the two-event multiplication rule @eq-mult to the pair $C$ and $A_n$,
+treating $C$ as a single event:
+$$
+P(A_1\cap\cdots\cap A_n) = P(C \cap A_n) = P(A_n \mid C)\,P(C).
+$$
+Now $A_n\mid C$ is precisely $P(A_n\mid A_1\cap\cdots\cap A_{n-1})$ — the last factor of
+@eq-chain. And $P(C) = P(A_1\cap\cdots\cap A_{n-1})$, to which the inductive hypothesis
+applies (its conditioning intersection $P(A_1\cap\cdots\cap A_{n-2})\ge P(C) > 0$ by
+monotonicity from [PROB-0], so the hypothesis is valid), expanding it into the first $n-1$
+factors of @eq-chain:
+$$
+P(C) = P(A_1)\,P(A_2\mid A_1)\cdots P(A_{n-1}\mid A_1\cap\cdots\cap A_{n-2}).
+$$
+Substituting this for $P(C)$ above stacks the first $n-1$ factors in front of the last one,
+giving exactly @eq-chain for $n$ events. By induction the formula holds for all
+$n\ge 2$. $\qquad\blacksquare$
+:::
+
+## Independence — when learning $B$ tells us nothing about $A$ {#sec-independence}
+
+Sometimes the news that $B$ occurred leaves $A$'s probability completely unchanged. Knowing
+the first coin came up heads tells you nothing about the second coin. That is **independence**,
+and the cleanest way to define it is to say exactly that: conditioning does not move the
+probability.
+
+::: {#def-independence}
+**Definition (independence of two events).** Events $A$ and $B$ are **independent** if
+$$
+P(A \cap B) = P(A)\,P(B).
+$$ {#eq-independence}
+:::
+
+This product form is the definition we use, because it is symmetric in $A$ and $B$ and needs
+no positivity assumption. But its *meaning* is the "learning nothing" statement, which we now
+show is equivalent.
+
+::: {#thm-indep-equiv}
+**Theorem (independence = unchanged conditional).** If $P(B) > 0$, then $A$ and $B$ are
+independent (in the sense of @eq-independence) **if and only if** $P(A\mid B) = P(A)$.
+:::
+
+::: {.proof}
+We prove both directions.
+
+*($\Rightarrow$)* Suppose $P(A\cap B) = P(A)P(B)$. Divide both sides by $P(B)>0$:
+$$
+\frac{P(A\cap B)}{P(B)} = \frac{P(A)P(B)}{P(B)} = P(A).
+$$
+The left side is $P(A\mid B)$ by definition @eq-conditional, so $P(A\mid B)=P(A)$.
+
+*($\Leftarrow$)* Suppose $P(A\mid B) = P(A)$. By definition $P(A\mid B) = P(A\cap B)/P(B)$, so
+$P(A\cap B)/P(B) = P(A)$. Multiply both sides by $P(B)$: $P(A\cap B) = P(A)P(B)$, which is
+@eq-independence. $\qquad\blacksquare$
+:::
+
+So @eq-independence and "$P(A\mid B)=P(A)$" say the same thing: **the fraction of $B$ taken
+up by $A$ is the same as the fraction of all of $\Omega$ taken up by $A$** — zooming into $B$
+did not change $A$'s share. By the symmetric multiplication rule the same algebra gives
+$P(B\mid A)=P(B)$ when $P(A)>0$: independence is mutual, as it must be.
+
+### The classic confusion: independent is *not* mutually exclusive {#sec-disjoint-indep}
+
+This is the single most-tested point in the topic, and the source of endless error. **Mutually
+exclusive** (disjoint, from [PROB-0]) means $A\cap B = \varnothing$: $A$ and $B$ *cannot both
+happen*. **Independent** means $P(A\cap B) = P(A)P(B)$: knowing one happened does not change
+the other's probability. These are not the same — in fact, for events of positive probability
+they are nearly *opposite*.
+
+::: {#thm-disjoint-dependent}
+**Theorem.** If $A$ and $B$ are mutually exclusive ($A\cap B=\varnothing$) and both have
+positive probability ($P(A)>0$ and $P(B)>0$), then they are **not** independent — in fact
+they are maximally dependent.
+:::
+
+::: {.proof}
+Since $A\cap B=\varnothing$, we have $P(A\cap B) = P(\varnothing) = 0$ ($P(\varnothing)=0$ was
+derived in [PROB-0]). For independence we would need $P(A\cap B)=P(A)P(B)$, i.e.
+$0 = P(A)P(B)$. But $P(A)>0$ and $P(B)>0$ make the product strictly positive,
+$P(A)P(B) > 0 \ne 0$. So the independence equation fails, and the events are dependent.
+
+Concretely, $P(A\mid B) = P(A\cap B)/P(B) = 0/P(B) = 0$, whereas $P(A) > 0$. Learning $B$
+occurred drove $A$'s probability all the way to $0$ — the *opposite* of leaving it unchanged.
+That is why disjoint, positive-probability events are maximally *dependent*. $\qquad\blacksquare$
+:::
+
+The intuition resolves the confusion completely: if $A$ and $B$ can never co-occur, then
+learning $B$ happened is the strongest possible evidence *against* $A$ — it rules $A$ out
+entirely. That is the very definition of dependence. The two ideas feel similar only because
+both involve a pair of events and the word "and"; mathematically they pull in opposite
+directions. @fig-disjoint-indep shows the two pictures side by side.
+
+```{python}
+#| label: fig-disjoint-indep
+#| fig-cap: "Mutually exclusive versus independent — opposite pictures. **Left (mutually exclusive):** $A$ and $B$ do not touch, so $P(A\\cap B)=0$. Learning $B$ rules $A$ out: $P(A\\mid B)=0\\ne P(A)$ — maximal *dependence*. **Right (independent):** $A$ and $B$ overlap by exactly $P(A)P(B)$; here $P(A)=0.5$ and $P(B)=0.4$ are realized as a left strip and a bottom strip of the unit square, and their overlap (purple) is the rectangle of area $0.5\\times0.4=0.2=P(A)P(B)$. The fraction of $B$ that lies in $A$ equals the fraction of all of $\\Omega$ that lies in $A$ — learning $B$ changes nothing."
+from matplotlib.patches import Rectangle, Circle
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.4))
+
+# Left: mutually exclusive
+axL.add_patch(Rectangle((0, 0), 1, 1, fill=False, edgecolor="black", lw=1.5))
+axL.add_patch(Circle((0.30, 0.55), 0.20, color=SETA, alpha=0.55))
+axL.add_patch(Circle((0.72, 0.40), 0.20, color=SETB, alpha=0.55))
+axL.text(0.30, 0.55, "$A$", ha="center", va="center", fontsize=13)
+axL.text(0.72, 0.40, "$B$", ha="center", va="center", fontsize=13)
+axL.set_xlim(-0.05, 1.05); axL.set_ylim(-0.05, 1.18)
+axL.set_aspect("equal"); axL.axis("off")
+axL.set_title("Mutually exclusive:\n$P(A\\cap B)=0$, dependent", fontsize=11)
+axL.text(0.5, 1.07, r"$\Omega$", ha="center", fontsize=12)
+
+# Right: independent as orthogonal strips
+axR.add_patch(Rectangle((0, 0), 1, 1, fill=False, edgecolor="black", lw=1.5))
+axR.add_patch(Rectangle((0, 0), 0.5, 1, color=SETA, alpha=0.35))   # A: left strip
+axR.add_patch(Rectangle((0, 0), 1, 0.4, color=SETB, alpha=0.35))   # B: bottom strip
+axR.add_patch(Rectangle((0, 0), 0.5, 0.4, color="#7b4fa0", alpha=0.55))  # overlap
+axR.text(0.25, 0.85, "$A$ ($0.5$)", ha="center", fontsize=11, color=SETA)
+axR.text(0.80, 0.20, "$B$ ($0.4$)", ha="center", fontsize=11, color=SETB)
+axR.text(0.25, 0.20, r"$A\cap B$" + "\n$0.2$", ha="center", va="center",
+         fontsize=9, color="white")
+axR.set_xlim(-0.05, 1.05); axR.set_ylim(-0.05, 1.18)
+axR.set_aspect("equal"); axR.axis("off")
+axR.set_title("Independent:\n$P(A\\cap B)=P(A)P(B)$", fontsize=11)
+axR.text(0.5, 1.07, r"$\Omega$", ha="center", fontsize=12)
+
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Are mutually exclusive events independent?"* No — almost never. If both have positive
+probability, mutual exclusivity makes them *maximally dependent* (@thm-disjoint-dependent):
+learning one occurred drives the other's probability to $0$. The only way disjoint events can
+*also* be independent is the degenerate case where at least one has probability $0$ (then
+both $P(A\cap B)$ and $P(A)P(B)$ are $0$ and the equation holds vacuously). If an interviewer
+offers "they can't both happen, so they're independent," the trap is baited; the correct
+answer is the reverse.
+:::
+
+### Independence of three or more events {#sec-mutual-indep}
+
+For three events, pairwise independence is *not* enough — we need the product rule to hold for
+every sub-collection. This subtlety trips people up, so we state it and give the standard
+counterexample rather than waving it past.
+
+::: {#def-mutual-independence}
+**Definition (mutual independence).** Events $A_1, \dots, A_n$ are **mutually independent** if
+for *every* sub-collection $\{A_{i_1}, \dots, A_{i_k}\}$ (with $2 \le k \le n$),
+$$
+P(A_{i_1}\cap\cdots\cap A_{i_k}) = P(A_{i_1})\cdots P(A_{i_k}).
+$$
+For three events $A,B,C$ this is four equations: the three pairwise products *and*
+$P(A\cap B\cap C)=P(A)P(B)P(C)$.
+:::
+
+That the triple equation does not follow from the three pairwise ones is shown by a concrete
+counterexample, worked in @sec-pairwise below. The takeaway you should carry into an exam:
+**"pairwise independent" and "mutually independent" are different**, and i.i.d. samples
+([PROB-8]) demand the full mutual version.
+
+## The law of total probability {#sec-total}
+
+To get to Bayes' rule we need one more tool: a way to compute the probability of an event by
+splitting it across a set of mutually exclusive scenarios. This is the **law of total
+probability**, and it is just the multiplication rule summed over a partition.
+
+::: {#def-partition}
+**Definition (partition).** A collection of events $B_1, B_2, \dots, B_n$ is a **partition**
+of $\Omega$ if they are pairwise disjoint ($B_i\cap B_j=\varnothing$ for $i\ne j$) and their
+union is everything ($\bigcup_i B_i = \Omega$). Exactly one of them occurs on every run — the
+$B_i$ are an exhaustive list of mutually exclusive scenarios.
+:::
+
+::: {#thm-total}
+**Theorem (law of total probability).** Let $B_1, \dots, B_n$ be a partition of $\Omega$ with
+each $P(B_i) > 0$. Then for any event $A$,
+$$
+P(A) = \sum_{i=1}^{n} P(A\mid B_i)\,P(B_i).
+$$ {#eq-total}
+:::
+
+::: {.proof}
+The idea: slice $A$ into the pieces that fall in each scenario, add the pieces, then rewrite
+each piece with the multiplication rule. Because the $B_i$ partition $\Omega$, we can carve
+$A$ accordingly:
+$$
+A = A\cap\Omega = A\cap\left(\bigcup_{i=1}^n B_i\right) = \bigcup_{i=1}^n (A\cap B_i),
+$$
+where the last step is the distributive law of sets (intersecting $A$ with a union is the
+union of the intersections; verified by outcome-chasing in [PROB-0]). These pieces
+$A\cap B_1, \dots, A\cap B_n$ are pairwise disjoint, inherited from the $B_i$: if
+$B_i\cap B_j=\varnothing$ then $(A\cap B_i)\cap(A\cap B_j)\subseteq B_i\cap B_j=\varnothing$.
+So finite additivity ([PROB-0]) applies:
+$$
+P(A) = P\!\left(\bigcup_{i=1}^n (A\cap B_i)\right) = \sum_{i=1}^n P(A\cap B_i).
+$$
+Now rewrite each term with the multiplication rule @eq-mult, $P(A\cap B_i)=P(A\mid B_i)P(B_i)$
+(valid since $P(B_i)>0$):
+$$
+P(A) = \sum_{i=1}^n P(A\mid B_i)\,P(B_i),
+$$
+which is @eq-total. $\qquad\blacksquare$
+:::
+
+In words: to find the overall probability of $A$, ask "how likely is $A$ *within* each
+scenario?" ($P(A\mid B_i)$), weight each by how likely that scenario is ($P(B_i)$), and add.
+The simplest useful case is the two-scenario partition $\{B, B^c\}$ (an event and its
+complement always partition $\Omega$, from [PROB-0]):
+$$
+P(A) = P(A\mid B)\,P(B) + P(A\mid B^c)\,P(B^c).
+$$ {#eq-total2}
+This two-term version is the denominator of Bayes' rule in almost every application below.
+
+## Bayes' rule — inverting the conditional {#sec-bayes}
+
+Now the destination. We can usually measure $P(B\mid A)$ — the probability of the evidence
+given the cause — but we want $P(A\mid B)$ — the probability of the cause given the evidence.
+Bayes' rule flips one into the other, and it is nothing more than writing the multiplication
+rule two ways and dividing.
+
+::: {#thm-bayes}
+**Theorem (Bayes' rule).** For events $A$ and $B$ with $P(A) > 0$ and $P(B) > 0$,
+$$
+P(A\mid B) = \frac{P(B\mid A)\,P(A)}{P(B)}.
+$$ {#eq-bayes}
+If $B_1, \dots, B_n$ partition $\Omega$, then for each $j$,
+$$
+P(B_j\mid A) = \frac{P(A\mid B_j)\,P(B_j)}{\sum_{i=1}^n P(A\mid B_i)\,P(B_i)}.
+$$ {#eq-bayes-partition}
+:::
+
+::: {.proof}
+The intersection $A\cap B$ is one quantity, and the multiplication rule @eq-mult expresses it
+in *two* ways — conditioning on $B$, or conditioning on $A$:
+$$
+P(A\cap B) = P(A\mid B)\,P(B) \qquad\text{and}\qquad P(A\cap B) = P(B\mid A)\,P(A).
+$$
+Both equal the same $P(A\cap B)$, so they equal each other:
+$$
+P(A\mid B)\,P(B) = P(B\mid A)\,P(A).
+$$
+Divide both sides by $P(B)$ (legitimate, $P(B)>0$):
+$$
+P(A\mid B) = \frac{P(B\mid A)\,P(A)}{P(B)},
+$$
+which is @eq-bayes. That is the entire derivation — Bayes' rule is the multiplication rule,
+read from both ends and divided.
+
+For the partitioned form @eq-bayes-partition, apply @eq-bayes with $B_j$ in the role of $A$
+and the event $A$ in the role of $B$:
+$$
+P(B_j\mid A) = \frac{P(A\mid B_j)\,P(B_j)}{P(A)}.
+$$
+Then expand the denominator $P(A)$ by the law of total probability @eq-total over the
+partition $\{B_i\}$, giving the stated formula. $\qquad\blacksquare$
+:::
+
+The names of the four pieces of @eq-bayes are worth fixing, because the whole Bayesian
+vocabulary is built on them. Think of $A$ as a *hypothesis* (a cause) and $B$ as the
+*evidence* we observed:
+
+- $P(A)$ is the **prior** — the probability of the hypothesis *before* seeing the evidence.
+- $P(B\mid A)$ is the **likelihood** — how probable the evidence is *if* the hypothesis holds.
+- $P(B)$ is the **marginal likelihood** or **evidence** — the overall probability of the
+  observation, typically computed by total probability @eq-total2 across all hypotheses.
+- $P(A\mid B)$ is the **posterior** — the updated probability of the hypothesis *after*
+  folding in the evidence.
+
+So Bayes' rule reads $\text{posterior} = \dfrac{\text{likelihood}\times\text{prior}}{\text{evidence}}$.
+The prior is the term that is forgotten most often, and forgetting it is exactly the error in
+the worked example we turn to next.
+
+::: {.callout-tip title="You might be asked"}
+*"What's the difference between $P(A\mid B)$ and $P(B\mid A)$ — aren't they close?"* They can
+be wildly different, and conflating them is the **prosecutor's fallacy** (@sec-prosecutor).
+$P(\text{evidence}\mid\text{innocent})$ being tiny does *not* make
+$P(\text{innocent}\mid\text{evidence})$ tiny — the two are related by Bayes' rule and differ
+by the ratio of priors $P(A)/P(B)$, which can be enormous when the cause is rare. The
+interviewer wants to see that you reach for @eq-bayes to convert one into the other, and that
+you never assume they are equal.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the machinery on four genuine problems: the rare-disease test (where the base rate
+ambushes everyone), a spam filter (where independence is *assumed though false*, on purpose —
+the edge of applicability), a courtroom (the prosecutor's fallacy), and the
+pairwise-but-not-mutually-independent counterexample promised above.
+
+## Example 1 — the rare-disease test, where the base rate ambushes you {#sec-disease}
+
+A disease affects $1$ in $1000$ people, so the prior is $P(D) = 0.001$. A test is "$99\%$
+accurate" in the usual sense: it correctly flags $99\%$ of sick people (the **sensitivity**,
+$P(+\mid D) = 0.99$) and correctly clears $99\%$ of healthy people (the **specificity**,
+$P(-\mid D^c) = 0.99$, so the false-positive rate is $P(+\mid D^c) = 0.01$). A patient tests
+positive. **What is the probability they actually have the disease?**
+
+The instinct — and the answer most people, including many clinicians, blurt out — is "about
+$99\%$." That confuses $P(+\mid D)$ with $P(D\mid +)$. Bayes' rule, with the denominator
+expanded by total probability @eq-total2 over the partition $\{D, D^c\}$:
+$$
+P(D\mid +) = \frac{P(+\mid D)\,P(D)}{P(+\mid D)\,P(D) + P(+\mid D^c)\,P(D^c)}.
+$$
+Plug in $P(D)=0.001$, $P(D^c)=0.999$, $P(+\mid D)=0.99$, $P(+\mid D^c)=0.01$:
+
+```{python}
+#| label: tbl-disease
+#| echo: true
+P_D     = 0.001        # prior: disease prevalence
+P_Dc    = 1 - P_D
+sens    = 0.99         # P(+ | D)   sensitivity
+fpr     = 0.01         # P(+ | D^c) false-positive rate
+
+# denominator: total probability of a positive test
+P_pos = sens * P_D + fpr * P_Dc
+P_D_given_pos = (sens * P_D) / P_pos
+
+print(f"P(+)         = {sens}*{P_D} + {fpr}*{P_Dc} = {P_pos:.5f}")
+print(f"P(D | +)     = {sens*P_D:.5f} / {P_pos:.5f} = {P_D_given_pos:.4f}")
+print(f"           => about {100*P_D_given_pos:.1f}% chance of disease given a positive test")
+print(f"For comparison, the test's sensitivity P(+|D) = {sens} = {100*sens:.0f}%")
+```
+
+The answer is roughly **$9\%$**, not $99\%$. Despite a "$99\%$ accurate" test, a positive
+result means the patient *probably does not* have the disease. The reason is the **base
+rate**: the disease is so rare ($0.1\%$) that the small false-positive rate ($1\%$) acting on
+the huge healthy population ($99.9\%$) produces *more* false positives than there are true
+positives in the tiny sick population. Concretely, per $100{,}000$ people: about $100$ are
+sick and $99$ test positive (true positives); about $99{,}900$ are healthy and $\approx 999$
+test positive (false positives). Of the $\approx 1098$ positives, only $99$ are real —
+$99/1098 \approx 9\%$. @fig-disease makes this population picture concrete and shows how the
+answer moves as the disease becomes less rare.
+
+```{python}
+#| label: fig-disease
+#| fig-cap: "Why the base rate dominates. **Left:** a population of $100{,}000$ split into true positives (sick *and* positive, green) versus false positives (healthy *but* positive, red). False positives swamp true positives because the healthy pool is enormous — so most positive tests are wrong. **Right:** the posterior $P(D\\mid+)$ as a function of disease prevalence $P(D)$, holding the test at $99\\%$ sensitivity and specificity. At the $0.001$ prevalence (dashed) the posterior is only $\\approx 0.09$; the test becomes trustworthy only once the disease is common. This is the honest reason rare-disease screening needs confirmatory testing."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.2))
+
+# Left: population bar of positives
+N = 100_000
+sick = N * P_D
+healthy = N * P_Dc
+true_pos = sick * sens
+false_pos = healthy * fpr
+axL.bar(["true positives\n(sick & +)", "false positives\n(healthy & +)"],
+        [true_pos, false_pos], color=[ACCENT, LINE], alpha=0.85)
+axL.set_ylabel("count among 100,000 tested")
+axL.set_title("Among all positive tests")
+for i, v in enumerate([true_pos, false_pos]):
+    axL.text(i, v + 15, f"{v:.0f}", ha="center", fontsize=10)
+
+# Right: posterior vs prevalence
+prev = np.logspace(-4, 0, 400)
+post = (sens * prev) / (sens * prev + fpr * (1 - prev))
+axR.plot(prev, post, color=POINT)
+axR.axvline(P_D, color=GREY, ls="--", lw=1.3)
+axR.axhline(P_D_given_pos, color=LINE, ls=":", lw=1.3)
+axR.scatter([P_D], [P_D_given_pos], color=LINE, zorder=5)
+axR.annotate(f"prevalence {P_D},\nposterior {P_D_given_pos:.2f}",
+             xy=(P_D, P_D_given_pos), xytext=(0.004, 0.55), fontsize=9,
+             arrowprops=dict(arrowstyle="->", color=GREY))
+axR.set_xscale("log")
+axR.set_xlabel("disease prevalence $P(D)$ (log scale)")
+axR.set_ylabel("posterior $P(D \\mid +)$")
+axR.set_title("Posterior depends on the base rate")
+axR.set_ylim(0, 1)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall — the base-rate fallacy"}
+The mistake is reading "$99\%$ accurate" as "$P(\text{disease}\mid\text{positive})=0.99$." It
+is not; that figure is the *sensitivity* $P(\text{positive}\mid\text{disease})$, the
+*backward* conditional. The posterior also depends on the **prior** $P(D)$, and when the
+prior is tiny it dominates the answer. This is the base-rate fallacy, and it is why a single
+positive screening test for a rare condition is followed by a confirmatory test rather than
+treatment. Bayes' rule does not let you skip the base rate; the term $P(A)$ in @eq-bayes is
+not optional.
+:::
+
+## Example 2 — a spam filter, and the edge of applicability {#sec-spam}
+
+Now an example deliberately chosen at the **edge of applicability**, where the clean theory
+is applied to data that *violates its assumption* — and works anyway, for reasons worth being
+honest about. A naive-Bayes spam filter classifies an email by the words it contains. Suppose
+across a training corpus we measured, for a small vocabulary of three trigger words:
+
+| word $w$    | $P(w\mid \text{spam})$ | $P(w\mid \text{ham})$ |
+|-------------|------------------------:|----------------------:|
+| *free*      | 0.40 | 0.04 |
+| *invoice*   | 0.20 | 0.10 |
+| *meeting*   | 0.02 | 0.30 |
+
+with a prior $P(\text{spam}) = 0.30$ (so $P(\text{ham}) = 0.70$). An email arrives containing
+*free* and *invoice* but **not** *meeting*. What is $P(\text{spam}\mid\text{this email})$?
+
+The honest difficulty: to apply Bayes' rule we need the *joint* likelihood of the whole word
+pattern, $P(\text{free},\,\text{invoice},\,\overline{\text{meeting}}\mid\text{spam})$. Words
+in real email are emphatically **not** independent — "invoice" and "meeting" co-occur in
+legitimate business mail far more than chance would predict. But modeling the full joint
+distribution of all word combinations is intractable, so the **naive** assumption is made *on
+purpose*: pretend the words are conditionally independent **given the class**. Under that
+assumption the joint likelihood factors into a product (this is exactly mutual independence,
+@def-mutual-independence, applied conditionally):
+$$
+P(w_1, w_2, \overline{w_3}\mid C)
+= P(w_1\mid C)\,P(w_2\mid C)\,\bigl(1 - P(w_3\mid C)\bigr),
+$$
+for class $C\in\{\text{spam},\text{ham}\}$, where $\overline{w_3}$ means *meeting* is absent
+so its contribution is $1 - P(\text{meeting}\mid C)$. Then Bayes' rule @eq-bayes-partition
+gives the posterior.
+
+```{python}
+#| label: fig-spam
+#| fig-cap: "Naive-Bayes spam scoring under a deliberately false independence assumption. **Left:** the per-class likelihood contributions of the observed pattern (*free*, *invoice*, no *meeting*), multiplied under conditional independence, times the prior, give an unnormalized score for each class. **Right:** normalizing those two scores yields the posterior $P(\\text{spam}\\mid\\text{email})\\approx 0.92$. The independence assumption is *wrong* — words correlate — yet the *ranking* of the two classes is usually right, which is all a classifier needs. The calibrated probability, however, is not trustworthy; that is the edge where the method strains."
+words_obs = {"free": True, "invoice": True, "meeting": False}
+lik = {
+    "free":    {"spam": 0.40, "ham": 0.04},
+    "invoice": {"spam": 0.20, "ham": 0.10},
+    "meeting": {"spam": 0.02, "ham": 0.30},
+}
+prior = {"spam": 0.30, "ham": 0.70}
+
+def class_score(c):
+    s = prior[c]
+    for w, present in words_obs.items():
+        p = lik[w][c]
+        s *= p if present else (1 - p)
+    return s
+
+score = {c: class_score(c) for c in ("spam", "ham")}
+Z = score["spam"] + score["ham"]
+post_spam = score["spam"] / Z
+
+print("unnormalized scores (likelihood x prior):")
+for c in ("spam", "ham"):
+    print(f"   {c:4s}: {score[c]:.6f}")
+print(f"P(spam | email) = {score['spam']:.6f} / {Z:.6f} = {post_spam:.4f}")
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.0))
+axL.bar(["spam", "ham"], [score["spam"], score["ham"]],
+        color=[LINE, ACCENT], alpha=0.85)
+axL.set_ylabel("unnormalized score")
+axL.set_title("likelihood $\\times$ prior, per class")
+axR.bar(["spam", "ham"], [post_spam, 1 - post_spam],
+        color=[LINE, ACCENT], alpha=0.85)
+axR.set_ylabel("posterior probability")
+axR.set_ylim(0, 1)
+axR.set_title(f"normalized: $P(\\mathrm{{spam}}\\mid\\mathrm{{email}})={post_spam:.2f}$")
+plt.tight_layout()
+```
+
+The filter is highly confident the email is spam. Now the honest accounting of *where this
+strains*: the independence assumption is false, so the *number* $0.92$ is not a calibrated
+probability — when words are positively correlated, multiplying their likelihoods
+double-counts shared evidence and pushes the posterior toward $0$ or $1$ more aggressively
+than the truth warrants. What survives the bad assumption is the **ordering**: spam still
+scores above ham, so the *classification* is usually correct even though the *probability* is
+overconfident. That is the precise edge of applicability — naive Bayes is a good *classifier*
+and a poor *probability estimator*, and you should reach for a model that respects the
+dependence (logistic regression, or a model with correlated features) when you need
+calibrated probabilities rather than just a label.
+
+::: {.callout-warning title="Pitfall — assuming independence to make the math go"}
+Independence turns an intractable joint probability into a tidy product, which is why it is
+assumed so often. But it is an *assumption about the world*, not a mathematical identity, and
+it is usually at least slightly false. The danger is forgetting you made it: the resulting
+probabilities can be badly miscalibrated even when the classifier's decisions are fine. Always
+name the independence assumption you are leaning on, and ask whether the quantity you report
+(a label, or a calibrated probability) actually survives it.
+:::
+
+## Example 3 — the prosecutor's fallacy {#sec-prosecutor}
+
+A forensic match (DNA, fiber, a rare blood type) is found linking a defendant to a crime
+scene. The expert testifies that the chance of such a match *if the defendant were innocent*
+is one in a million: $P(\text{match}\mid\text{innocent}) = 10^{-6}$. The prosecutor concludes
+the defendant is almost certainly guilty — "only a one-in-a-million chance of innocence." This
+is the **prosecutor's fallacy**, and it is the courtroom face of confusing $P(B\mid A)$ with
+$P(A\mid B)$.
+
+What the jury wants is $P(\text{innocent}\mid\text{match})$, not
+$P(\text{match}\mid\text{innocent})$. Bayes' rule relates them, and the missing ingredient is
+the **prior** — how many people *could* have been the source. Suppose the relevant population
+is a city of $1{,}000{,}000$ potential suspects, so before any evidence the prior on this
+particular person being the culprit is $P(\text{guilty}) = 1/1{,}000{,}000$, and
+$P(\text{innocent}) = 1 - 10^{-6}$. Assume a true culprit certainly matches,
+$P(\text{match}\mid\text{guilty}) = 1$.
+
+```{python}
+#| label: tbl-prosecutor
+#| echo: true
+P_guilty  = 1 / 1_000_000        # prior: one specific person among a million
+P_innoc   = 1 - P_guilty
+P_match_g = 1.0                  # the true culprit matches
+P_match_i = 1e-6                 # random-match probability for an innocent person
+
+# total probability of a match
+P_match = P_match_g * P_guilty + P_match_i * P_innoc
+P_innoc_given_match = (P_match_i * P_innoc) / P_match
+P_guilty_given_match = (P_match_g * P_guilty) / P_match
+
+print(f"Expert's figure  P(match | innocent) = {P_match_i:.1e}")
+print(f"What the jury needs:")
+print(f"   P(guilty  | match) = {P_guilty_given_match:.4f}  ({100*P_guilty_given_match:.0f}%)")
+print(f"   P(innocent| match) = {P_innoc_given_match:.4f}  ({100*P_innoc_given_match:.0f}%)")
+```
+
+The probability of innocence given the match is about **$50\%$**, not one in a million. The
+reason mirrors the disease example exactly: in a city of a million innocent people, a
+one-in-a-million random-match rate produces, on average, about *one* innocent match — roughly
+as many as the single guilty match. The match alone is a coin flip, not proof. The expert's
+number $P(\text{match}\mid\text{innocent}) = 10^{-6}$ was correct; the prosecutor's
+*interpretation* of it as $P(\text{innocent}\mid\text{match})$ was the fallacy, and Bayes'
+rule is what exposes the gap — the two conditionals differ by the ratio of priors, which here
+is a factor of about a million.
+
+## Example 4 — pairwise independent but not mutually independent {#sec-pairwise}
+
+We promised (@sec-mutual-indep) a case where every pair is independent yet the three together
+are not. Take two independent fair coin flips and define three events:
+$$
+A = \{\text{first flip is heads}\},\quad
+B = \{\text{second flip is heads}\},\quad
+C = \{\text{the two flips agree}\}.
+$$
+
+```{python}
+#| label: fig-pairwise
+#| fig-cap: "Pairwise independence does not imply mutual independence. Over the four equally likely outcomes of two fair coins, the events $A$ (first heads), $B$ (second heads), and $C$ (flips agree) are *pairwise* independent — each pairwise product matches — yet $P(A\\cap B\\cap C)=1/4\\ne P(A)P(B)P(C)=1/8$. Knowing any two of $A,B,C$ pins down the third exactly, so the triple is dependent even though no pair is. The bars compare the joint probability against the product of marginals for each collection; equal heights mean independence, unequal means dependence."
+import itertools
+omega = list(itertools.product([0, 1], repeat=2))   # (flip1, flip2), 1=heads
+N = len(omega)
+A = [o for o in omega if o[0] == 1]
+B = [o for o in omega if o[1] == 1]
+C = [o for o in omega if o[0] == o[1]]
+def P(ev): return len(ev) / N
+def inter(*evs):
+    s = set(omega)
+    for e in evs: s &= set(e)
+    return list(s)
+
+pairs = [("A,B", inter(A, B), P(A)*P(B)),
+         ("A,C", inter(A, C), P(A)*P(C)),
+         ("B,C", inter(B, C), P(B)*P(C)),
+         ("A,B,C", inter(A, B, C), P(A)*P(B)*P(C))]
+print(f"P(A)={P(A)}, P(B)={P(B)}, P(C)={P(C)}")
+for name, joint, prod in pairs:
+    tag = "independent" if abs(P(joint)-prod) < 1e-12 else "DEPENDENT"
+    print(f"  {name:6s}: P(joint)={P(joint):.3f}  product={prod:.3f}  -> {tag}")
+
+labels = [p[0] for p in pairs]
+joints = [P(p[1]) for p in pairs]
+prods  = [p[2] for p in pairs]
+x = np.arange(len(labels)); w = 0.38
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+ax.bar(x - w/2, joints, w, label="$P(\\mathrm{joint})$", color=POINT, alpha=0.85)
+ax.bar(x + w/2, prods,  w, label="product of marginals", color=SETB, alpha=0.85)
+ax.set_xticks(x); ax.set_xticklabels(labels)
+ax.set_ylabel("probability")
+ax.set_title("Pairwise independent, jointly dependent")
+ax.legend()
+plt.tight_layout()
+```
+
+Each event has probability $1/2$. Every *pair* is independent: for instance
+$P(A\cap C) = P(\text{first heads and flips agree}) = P(\text{HH}) = 1/4 = P(A)P(C)$, and
+likewise for $A,B$ and $B,C$. But the triple fails:
+$P(A\cap B\cap C) = P(\text{HH}) = 1/4$, while $P(A)P(B)P(C) = (1/2)^3 = 1/8$. They are not
+equal, so $A,B,C$ are **not** mutually independent — and indeed they cannot be, because *any
+two of them determine the third* (if the first is heads and they agree, the second must be
+heads). This is exactly why @def-mutual-independence demands the product rule for *every*
+sub-collection, the full equation set, not just the pairs.
+
+# When to use this — and when not to {#sec-applicability}
+
+Conditioning and Bayes' rule are nearly universal, so the applicability question is less
+"does it apply?" than "are its inputs trustworthy?" The honest boundaries:
+
+- **Use Bayes' rule** whenever you can measure a conditional in the *forward* direction
+  (evidence given cause: test accuracy, match rates, word frequencies) but need it in the
+  *backward* direction (cause given evidence). This is the overwhelming majority of diagnostic,
+  forensic, and classification problems. It is exact and assumption-free *given* its inputs.
+- **The catch is always the prior and the likelihood.** Bayes' rule is a flawless converter of
+  probabilities, but it inherits every flaw in what you feed it. A wrong base rate (the disease
+  example) or an indefensible prior (the courtroom population) produces a confident wrong
+  answer. When the prior is genuinely unknown and contested, the posterior is too — and that is
+  a feature, not a bug, but it means Bayes does not manufacture certainty from nothing.
+- **Independence is the assumption to audit.** Computing joint probabilities by multiplying
+  marginals (the spam filter, i.i.d. samples in [PROB-8]) requires independence that is usually
+  at best approximate. Use it when the dependence is weak or when you only need a *ranking*
+  (classification); reach for a dependence-aware model (joint distributions in [PROB-7],
+  conditional distributions in [PROB-9], logistic regression downstream) when you need
+  calibrated joint probabilities.
+- **When conditioning is the wrong frame entirely.** If you actually want a *causal* effect —
+  "what happens to $Y$ if I *intervene* and set $X$?" — conditioning $P(Y\mid X)$ is **not** the
+  answer; that is the domain of the Causal Inference track, where conditioning on observed data
+  and intervening are formally different operations. Bayes' rule updates beliefs from
+  observation; it does not, by itself, license causal claims.
+
+::: {.callout-tip title="You might be asked"}
+*"Where would conditional probability actually be used in practice, and where would it mislead
+you?"* It is the backbone of medical diagnosis, spam/fraud detection, A/B-test interpretation,
+recommendation systems, and any Bayesian model. It misleads when the base rate is ignored
+(@sec-disease), when independence is assumed and the features correlate (@sec-spam), when
+forward and backward conditionals are swapped (@sec-prosecutor), or when an observational
+conditional is mistaken for a causal effect. The graduate-level answer names both the ubiquity
+*and* these four failure modes, and reaches for Bayes' rule to make the update explicit rather
+than reasoning by gut.
+:::
+
+# How you would actually compute with this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. Every computation above is a few
+lines of arithmetic — conditional probability is `P(A_and_B) / P(B)`, Bayes' rule is
+`likelihood * prior / evidence`, and the evidence is a sum over a partition (the law of total
+probability). The one numerical caution worth stating: when you chain many likelihoods (the
+spam filter with thousands of words, or any sequence model), the product of many small
+probabilities **underflows** to zero in floating point. The standard fix is to work in **log
+space** — replace the product $\prod_i P(w_i\mid C)$ with the sum $\sum_i \log P(w_i\mid C)$,
+add the log-prior, and compare classes by their log-scores, exponentiating only at the end (or
+using a numerically stable normalization). The mathematics is identical because $\log$ is
+monotone, so the *ranking* of classes is preserved; this is purely a floating-point safeguard,
+and it is how every real naive-Bayes and likelihood computation is implemented. The libraries
+you will reach for (`scipy.stats`, scikit-learn's `naive_bayes`) do exactly this internally;
+knowing the derivation is knowing what they compute and why.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+This article sits one step above the ground floor, and conditioning is the hinge the rest of
+the track swings on:
+
+- **It came from [PROB-0 *What Is Probability?*]** — conditioning is *restriction of the
+  sample space* plus *renormalization*, and we proved the conditional is itself a probability
+  on the restricted world using the very axioms [PROB-0] established. It also settles the
+  disjoint-versus-independent confusion [PROB-0] flagged.
+- **[PROB-8 *Independence and the i.i.d. Sample*]** lifts the event-independence of @sec-independence
+  to *random variables* and to the i.i.d. assumption every downstream track leans on; the
+  pairwise-versus-mutual subtlety (@sec-pairwise) becomes the precise content of "i.i.d."
+- **[PROB-9 *Conditional Distributions and Conditional Expectation*]** rebuilds conditioning
+  at the random-variable level — $f(y\mid x)$ and $E[Y\mid X]$ — including the delicate case
+  $P(B)=0$ we set aside in @def-conditional, and is where Bayes' rule becomes Bayesian
+  *updating of distributions*.
+- **[PROB-12 *The Poisson Distribution*]** uses independence of events directly in the
+  law-of-rare-events construction.
+
+Cross-track, this is the article that **naive-Bayes classification** (Classification track),
+**Bayesian inference** (Inference E4 — note: Bayes *for parameters*, posterior $\propto$
+likelihood $\times$ prior, lives there; Bayes *for events* lives here), and **causal
+reasoning** all point back to. The applicability note above marks the seam where conditioning
+ends and causation begins.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding source.** T. Bayes, "An Essay towards Solving a Problem in the Doctrine of
+  Chances," *Philosophical Transactions of the Royal Society* (1763), communicated
+  posthumously by Richard Price. Short, and the inversion problem is stated in its original
+  geometric form (a ball rolled on a table).
+- **The generalizer.** P.-S. Laplace, *Mémoire sur la probabilité des causes par les
+  événements* (1774) and the later *Théorie analytique des probabilités* (1812), where Bayes'
+  rule becomes a general method for reasoning from effects to causes — the true origin of the
+  modern formula.
+- **The base-rate fallacy, documented.** A. Tversky and D. Kahneman, "Evidential impact of
+  base rates" (1982), and the classic finding that even trained clinicians badly misjudge
+  $P(\text{disease}\mid\text{positive})$ — the cognitive shadow of @sec-disease.
+- **The courtroom failure mode.** The literature on the *prosecutor's fallacy* (e.g. the
+  analyses of *R v. Sally Clark*) shows @sec-prosecutor playing out with real consequences;
+  worth reading for how a swapped conditional convicts the innocent.
+- **Open threads this article deliberately deferred.** *Conditioning on a probability-zero
+  event* (continuous $B$) — handled by densities in [PROB-9]. *Independence of random
+  variables and the i.i.d. assumption* — [PROB-8]. *Bayesian updating of an entire
+  distribution* rather than a single event — Inference E4. *When conditioning is not the same
+  as intervening* — the Causal Inference track.

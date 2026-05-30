@@ -1,0 +1,834 @@
+---
+title: "Chebyshev's Inequality and the Concentration Idea"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240519)
+
+DENS   = "#2b3a67"     # densities / data
+BOUND  = "#c1121f"     # the bound / tail region
+ACCENT = "#0a7d4d"     # exact / true values
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This article opens the **tail-and-limit** machinery
+> that closes Movement 4 of the Probability Foundations track. It is the concentration
+> sibling of [PROB-20 *Moment Generating and Characteristic Functions*]: where PROB-20
+> packages **all** of a distribution's moments into one transform, this article asks how
+> much you can already say about a distribution's **tails** knowing only its first two
+> moments — the mean and the variance. It assumes [PROB-5 *Expectation*] (the expectation
+> operator, its linearity, and the law of the unconscious statistician), [PROB-6
+> *Variance, Standard Deviation, and Variance as a Sum of Squares*] (the definition
+> $\operatorname{Var}(X)=E[(X-\mu)^2]$ and the standard deviation), and [PROB-8
+> *Independence and the i.i.d. Sample*] (the variance-of-a-sum rule under independence,
+> which we need for the law-of-large-numbers sketch). Nothing above the Calc-1 floor is
+> assumed; the one integral we lean on is a Calc-1 integral of a nonnegative function over
+> a sub-region, used explicitly. It **sets up** [PROB-21 *Modes of Convergence*] — the
+> notion of *convergence in probability* is precisely what Chebyshev delivers for the
+> sample mean — and it hands the **weak law of large numbers** to [INFR-A2] (Statistical
+> Inference), which *owns* the limit theorems and only borrows the inequality built here.
+
+## Abstract {.unnumbered}
+
+Suppose all you know about a random quantity is its mean and its variance — not its shape,
+not its tails, nothing else. How much probability can possibly be sitting far from the
+mean? This article answers that with two distribution-free bounds. **Markov's inequality**
+says a nonnegative random variable rarely exceeds a large multiple of its average:
+$P(X \ge a) \le E[X]/a$. **Chebyshev's inequality**, obtained from Markov in two lines,
+says no distribution can place much probability many standard deviations from its mean:
+$P(|X-\mu| \ge k\sigma) \le 1/k^2$. The single claim this article defends is that
+**variance controls the tails — universally, with no distributional assumptions** — and
+that this universality is exactly why averages of independent measurements become
+predictable. We pay for the universality with looseness: against a friendly bell curve the
+bound is wildly conservative, and we will see by how much. But against an *adversarial*
+distribution the bound is tight — attained exactly — which is what makes it a theorem and
+not a heuristic. We finish by turning the inequality on the sample mean to derive a clean
+**weak law of large numbers** sketch: average enough independent measurements and the
+average concentrates on the truth, with a rate the variance hands us for free.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+If $X$ is a **nonnegative** random variable, then for any threshold $a>0$,
+$$
+P(X \ge a) \;\le\; \frac{E[X]}{a}
+\qquad\text{(\textbf{Markov}).}
+$$
+Apply this to the nonnegative variable $(X-\mu)^2$, where $\mu = E[X]$, and out drops
+**Chebyshev**: for any $k>0$,
+$$
+P\big(|X-\mu| \ge k\sigma\big) \;\le\; \frac{1}{k^2},
+\qquad \sigma = \sqrt{\operatorname{Var}(X)}.
+$$
+These bounds use **only** the mean (Markov) or the mean and variance (Chebyshev) — *no*
+knowledge of the distribution's shape. That is their power and their price: they hold for
+*every* distribution with the stated moments, so they cannot be improved without knowing
+more, and for the nice distributions you usually meet they are loose. The payoff is
+**concentration**: applied to a sample mean $\bar X_n$, whose variance shrinks like $1/n$,
+Chebyshev forces the probability of $\bar X_n$ landing far from the true mean to zero — a
+distribution-free **law of large numbers**.
+:::
+
+Everything below orbits that box. The two inequalities are almost trivial to prove — the
+work of this article is not the algebra but the *understanding*: why "nonnegative" is the
+hinge Markov turns on, why squaring the deviation is the move that converts Markov into
+Chebyshev, exactly how loose the bound is and when it is instead razor-tight, and how a
+bound about one random variable becomes a statement about the long-run reliability of
+averages. Keep one question in view the whole way: **with only the mean and variance in
+hand, how much probability can the distribution hide far from the center?**
+
+# Why we are here: a guarantee without a distribution {#sec-why}
+
+## The problem the inequality solves {#sec-why-problem}
+
+Almost every probability calculation you have done so far started from a *known*
+distribution. You were told $X$ is normal, or Poisson, or exponential, and from the full
+density or mass function you could compute any tail probability you liked by integrating
+or summing. That is a luxury. In practice you very often **do not know the distribution**.
+You have measured a few summary numbers — an average and a spread — and someone asks a tail
+question: *what is the chance this quantity is wildly off?*
+
+Concretely: a factory line produces parts whose lengths have mean $\mu = 10$ mm and
+standard deviation $\sigma = 0.1$ mm. You have not characterized the full distribution of
+lengths — you only ran enough measurement to estimate the mean and the spread. A customer
+asks: *what fraction of parts can possibly be off by more than $0.3$ mm?* If you knew the
+lengths were normal you would answer "about $0.27\%$" from the bell curve. But you do
+**not** know they are normal — the process could be skewed, bimodal, contaminated by a rare
+miscalibration. Can you say *anything* guaranteed, using only the two numbers you have?
+
+That is the question Chebyshev answers, and the answer is yes: **no more than $1/3^2 \approx
+11\%$ of parts can be off by more than $3\sigma = 0.3$ mm**, whatever the true distribution
+is. It is a far weaker statement than the normal's $0.27\%$ — but it is *unconditional*. You
+did not have to assume a shape you could not justify.
+
+::: {.callout-tip title="You might be asked"}
+*"If the normal-curve answer is so much sharper, why would anyone use the loose Chebyshev
+number?"* Because the sharp answer is only valid **if the normal assumption is true**, and
+in the situation Chebyshev is built for you have no license to assume it. A bound that
+holds for *every* distribution with the given mean and variance cannot be beaten by an
+adversary who picks the worst distribution consistent with your two numbers — and "the
+adversary picks the worst case" is exactly the contract a *guarantee* must honor.
+Chebyshev trades sharpness for safety; you reach for it precisely when you cannot afford
+to be wrong about the shape.
+:::
+
+## What came before, and the historical thread {#sec-why-history}
+
+The intuition that "spread limits how far things stray" is old, but the clean inequality
+has a clear lineage. The French mathematician **Irénée-Jules Bienaymé** stated the
+variance-based bound in 1853, in work on the method of least squares. The Russian
+mathematician **Pafnuty Chebyshev** — and his student **Andrey Markov** — gave it the
+form and the role it has today, around 1867, as the engine of Chebyshev's proof of the
+**law of large numbers**. (For this reason the variance bound is sometimes called the
+Bienaymé–Chebyshev inequality, and the underlying one-sided bound on a nonnegative
+variable carries Markov's name.) The motivation was exactly the *why* above: Chebyshev
+wanted to prove that sample averages converge to expectations **without assuming the
+measurements were normal** — Laplace and Gauss had leaned heavily on the normal
+approximation, and Chebyshev's school wanted a rigorous result that did not. The
+inequality is the tool that made a *distribution-free* law of large numbers possible, and
+that is the thread we hold for the rest of the article: the inequality exists to buy a
+guarantee when you refuse to assume the shape.
+
+This is why the inequality is built the way it is. It uses the variance — the one spread
+summary that is *additive* across independent variables (from [PROB-8]) — because the goal
+was always to control the average of *many* independent things, where additivity makes the
+spread of the average collapse. Markov-then-Chebyshev is not an arbitrary chain; it is the
+shortest path from "a nonnegative thing rarely gets huge" to "the average rarely strays,"
+which is the destination [INFR-A2] builds toward.
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, here is the whole idea in one picture. Variance is the average squared
+distance from the mean: $\operatorname{Var}(X) = E[(X-\mu)^2]$. It is a fixed,
+**finite budget** of squared deviation, paid out across all the outcomes according to how
+likely they are. Now ask: how much probability can sit *far* from the mean, say beyond
+$k$ standard deviations?
+
+Every outcome out there contributes at least $(k\sigma)^2 = k^2\sigma^2$ to that budget —
+its squared distance is at least that large. So if a probability mass $p$ sits beyond
+$k\sigma$, it alone consumes at least $p \cdot k^2\sigma^2$ of the budget. But the *total*
+budget is only $\sigma^2$. Therefore
+$$
+p \cdot k^2 \sigma^2 \;\le\; \sigma^2
+\quad\Longrightarrow\quad
+p \;\le\; \frac{1}{k^2}.
+$$
+That is Chebyshev, and it is nothing more than "you cannot spend more squared deviation
+than you have." Far-out mass is *expensive* — each unit of it costs $k^2\sigma^2$ — so a
+finite variance can only afford a little of it. Squaring is what makes distance expensive:
+it punishes far outcomes quadratically, so a small variance forcibly starves the tails.
+
+```{python}
+#| label: fig-budget
+#| fig-cap: "Variance as a finite budget that starves the tails. The blue density has mean $0$ and standard deviation $1$. The shaded red regions are the tails beyond $k=2$ standard deviations. Every outcome in those tails contributes at least $(2\\sigma)^2 = 4$ to the variance budget, yet the *whole* budget is only $\\sigma^2 = 1$. So at most a fraction $1/k^2 = 1/4$ of probability can live out there — Chebyshev's ceiling (red dashed). The actual tail mass for this particular density is far below the ceiling, which previews how loose the universal bound is for friendly shapes."
+mu, sigma, k = 0.0, 1.0, 2.0
+x = np.linspace(-5, 5, 1000)
+# A concrete friendly density (standard normal) to visualize against the budget.
+f = np.exp(-x**2 / 2) / np.sqrt(2 * np.pi)
+
+fig, ax = plt.subplots()
+ax.plot(x, f, color=DENS, label="a density with $\\mu=0,\\ \\sigma=1$")
+tail = np.abs(x - mu) >= k * sigma
+ax.fill_between(x, 0, f, where=tail, color=BOUND, alpha=0.35,
+                label=f"tails: $|x-\\mu|\\ge {k:.0f}\\sigma$")
+ax.axvline(mu + k * sigma, color=BOUND, lw=1, ls=":")
+ax.axvline(mu - k * sigma, color=BOUND, lw=1, ls=":")
+ax.set_xlabel("$x$")
+ax.set_ylabel("density")
+ax.set_title("Far-out mass is expensive: at most $1/k^2$ can afford to be there")
+ax.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+# Markov's inequality {#sec-markov}
+
+Everything starts from a one-line bound for **nonnegative** random variables. The
+nonnegativity is not decoration — it is the entire engine, as the proof will make
+unmistakable.
+
+::: {#thm-markov}
+**Theorem (Markov's inequality).** Let $X$ be a random variable with $X \ge 0$ (it never
+takes a negative value), and suppose its mean $E[X]$ is finite. Then for every real number
+$a > 0$,
+$$
+P(X \ge a) \;\le\; \frac{E[X]}{a}.
+$$ {#eq-markov}
+:::
+
+::: {.proof}
+We give the argument in full, defining each object as it appears. The key device is an
+**indicator random variable**. For the event $\{X \ge a\}$, define
+$$
+\mathbf 1\{X \ge a\} \;=\;
+\begin{cases}
+1, & \text{if the outcome has } X \ge a,\\
+0, & \text{if the outcome has } X < a.
+\end{cases}
+$$
+This is itself a random variable — a function of the outcome — taking only the values $0$
+and $1$. Its expectation is exactly the probability of the event, because for a
+$\{0,1\}$-valued variable the average *is* the probability of being $1$:
+$$
+E\big[\mathbf 1\{X \ge a\}\big]
+= 1\cdot P(X \ge a) + 0 \cdot P(X < a)
+= P(X \ge a).
+$$ {#eq-indicator}
+That identity — expectation of an indicator equals probability of its event — is the
+bridge we will cross.
+
+Now the one inequality that does all the work. We claim that, **for every outcome**,
+$$
+a \cdot \mathbf 1\{X \ge a\} \;\le\; X.
+$$ {#eq-pointwise}
+Check it outcome by outcome, the only two cases there are:
+
+- If the outcome has $X \ge a$, the indicator is $1$, so the left side is $a$, and the
+  right side is $X \ge a$. So $a \le X$ holds. ✓
+- If the outcome has $X < a$, the indicator is $0$, so the left side is $0$, and the right
+  side is $X$, which is $\ge 0$ **because $X$ is nonnegative**. So $0 \le X$ holds. ✓
+
+This second case is where nonnegativity is spent: without $X \ge 0$, the right side could
+be negative and the inequality $0 \le X$ would fail. That is why Markov is a theorem about
+nonnegative variables and not about all of them.
+
+Since @eq-pointwise holds for every outcome, it holds in expectation — expectation
+preserves inequalities, because averaging a quantity that is always $\le$ another averages
+to something $\le$ (this **monotonicity of expectation** is established in [PROB-5]; it
+follows because $X - a\,\mathbf 1\{X\ge a\} \ge 0$ pointwise and the expectation of a
+nonnegative variable is nonnegative). Taking $E[\cdot]$ of both sides of @eq-pointwise and
+using linearity to pull the constant $a$ out of the left side:
+$$
+a \cdot E\big[\mathbf 1\{X \ge a\}\big] \;\le\; E[X].
+$$
+Substitute @eq-indicator on the left, $E[\mathbf 1\{X\ge a\}] = P(X\ge a)$:
+$$
+a \cdot P(X \ge a) \;\le\; E[X].
+$$
+Divide both sides by $a$, which is allowed and preserves the direction because $a>0$:
+$$
+P(X \ge a) \;\le\; \frac{E[X]}{a}. \qquad\blacksquare
+$$
+:::
+
+A second way to see the same thing, for those who prefer the integral picture, is to write
+the mean of a nonnegative continuous $X$ with density $f$ and *throw away* the part of the
+integral below $a$:
+$$
+E[X] = \int_0^\infty x\, f(x)\,dx
+\;\ge\; \int_a^\infty x\, f(x)\,dx
+\;\ge\; \int_a^\infty a\, f(x)\,dx
+= a\int_a^\infty f(x)\,dx
+= a\,P(X\ge a).
+$$
+The first $\ge$ drops the nonnegative chunk $\int_0^a x f\,dx$ (legal because the
+integrand $xf \ge 0$ there — again nonnegativity); the second $\ge$ replaces $x$ by the
+smaller $a$ throughout the region $x \ge a$. Rearranging gives @eq-markov. Both routes
+spend the same coin: a nonnegative variable cannot hide a lot of mass at large values
+without inflating its own average.
+
+::: {.callout-tip title="You might be asked"}
+*"What's the catch with Markov — when is it useless?"* Two ways. First, it needs $X \ge
+0$; for a variable that can go negative it says nothing directly (you apply it to $|X|$ or
+$X^2$ instead — which is exactly the trick that yields Chebyshev). Second, it only bounds
+the **upper** tail and only for $a > E[X]$: if $a \le E[X]$ the bound $E[X]/a \ge 1$ is
+vacuous, since probabilities never exceed $1$ anyway. Markov is sharpest when $a$ is a
+large multiple of the mean.
+:::
+
+# Chebyshev's inequality {#sec-chebyshev}
+
+Now the headline result. The move is to apply Markov not to $X$ but to the **squared
+deviation** $(X-\mu)^2$, which is automatically nonnegative — manufacturing the
+nonnegative variable Markov demands out of any variable at all.
+
+::: {#thm-chebyshev}
+**Theorem (Chebyshev's inequality).** Let $X$ have finite mean $\mu = E[X]$ and finite
+variance $\sigma^2 = \operatorname{Var}(X) = E[(X-\mu)^2]$, with $\sigma > 0$. Then for
+every $\varepsilon > 0$,
+$$
+P\big(|X - \mu| \ge \varepsilon\big) \;\le\; \frac{\sigma^2}{\varepsilon^2}.
+$$ {#eq-chebyshev-eps}
+Writing the threshold in units of the standard deviation, $\varepsilon = k\sigma$ with
+$k>0$, this is the familiar
+$$
+P\big(|X-\mu| \ge k\sigma\big) \;\le\; \frac{1}{k^2}.
+$$ {#eq-chebyshev-k}
+:::
+
+::: {.proof}
+Define the new random variable $Y = (X-\mu)^2$. It is nonnegative for every outcome,
+because it is a square of a real number — so Markov applies to it. Its mean is, by the
+definition of variance from [PROB-6],
+$$
+E[Y] = E\big[(X-\mu)^2\big] = \operatorname{Var}(X) = \sigma^2.
+$$
+Next, translate the event we care about into an event about $Y$. The two events are
+**identical**, outcome for outcome:
+$$
+|X - \mu| \ge \varepsilon
+\quad\Longleftrightarrow\quad
+(X-\mu)^2 \ge \varepsilon^2
+\quad\Longleftrightarrow\quad
+Y \ge \varepsilon^2 .
+$$
+The first equivalence is just squaring a nonnegative inequality: for nonnegative numbers,
+$u \ge v$ holds exactly when $u^2 \ge v^2$ (the function $u\mapsto u^2$ is strictly
+increasing on $[0,\infty)$). Both $|X-\mu|$ and $\varepsilon$ are nonnegative, so squaring
+both sides is reversible — no information is lost, the events are the same set of outcomes.
+Therefore their probabilities are equal:
+$$
+P\big(|X-\mu| \ge \varepsilon\big) = P\big(Y \ge \varepsilon^2\big).
+$$
+Now apply Markov's inequality @eq-markov to the nonnegative variable $Y$ with the
+threshold $a = \varepsilon^2 > 0$:
+$$
+P\big(Y \ge \varepsilon^2\big) \;\le\; \frac{E[Y]}{\varepsilon^2} = \frac{\sigma^2}{\varepsilon^2}.
+$$
+Chaining the equality and the bound gives @eq-chebyshev-eps. Finally substitute
+$\varepsilon = k\sigma$: the right side becomes $\sigma^2/(k\sigma)^2 =
+\sigma^2/(k^2\sigma^2) = 1/k^2$, which is @eq-chebyshev-k. $\qquad\blacksquare$
+:::
+
+So Chebyshev is *Markov in a costume*: the only idea is that squaring turns any deviation
+into a nonnegative quantity whose mean is the variance, after which Markov does the rest.
+Read @eq-chebyshev-k aloud: **the probability of landing $k$ or more standard deviations
+from the mean is at most $1/k^2$, for any distribution whatsoever.** Two standard
+deviations out: at most $1/4 = 25\%$. Three out: at most $1/9 \approx 11\%$. Ten out: at
+most $1\%$. These are ceilings nobody — no distribution with that mean and variance — can
+exceed.
+
+Note the bound is **vacuous for $k \le 1$**: at one standard deviation, $1/k^2 = 1$, and
+"the probability is at most $1$" says nothing. Chebyshev only bites once you ask about
+deviations strictly larger than one standard deviation, which is exactly the regime "far
+from the mean" you care about.
+
+::: {.callout-tip title="You might be asked"}
+*"Why square the deviation — why not use $|X-\mu|$ directly with Markov?"* You can, and it
+gives a *different*, sometimes worse, bound. Applying Markov to $|X-\mu|$ needs $E|X-\mu|$,
+the **mean absolute deviation**, which is a moment most problems do not hand you and which
+is not additive over independent sums. Squaring buys two things at once: it produces a
+quantity whose mean is the **variance** — the spread summary you usually *do* have and that
+*is* additive (from [PROB-8]) — and it makes far deviations cost quadratically, giving the
+characteristic $1/k^2$ decay instead of $1/k$. The quadratic penalty is also why Chebyshev
+plugs straight into the variance-shrinks-like-$1/n$ argument for the law of large numbers.
+:::
+
+# How loose is it? The honest accounting {#sec-looseness}
+
+A guarantee that holds for *every* distribution must brace for the worst one, so for any
+*particular* nice distribution it will overshoot. Let us measure the overshoot honestly,
+because knowing the size of the gap is what tells you when Chebyshev is a useful working
+number and when it is almost comically conservative.
+
+Take the standard normal $Z \sim \mathcal N(0,1)$, where $\mu = 0$ and $\sigma = 1$.
+Chebyshev says $P(|Z| \ge k) \le 1/k^2$. The *true* tail probability, from the normal CDF,
+is much smaller. The table below puts the ceiling beside the truth.
+
+```{python}
+#| label: fig-looseness
+#| fig-cap: "How loose Chebyshev is for a friendly distribution. For the standard normal, the red curve is Chebyshev's universal ceiling $1/k^2$ on $P(|Z|\\ge k)$; the blue curve is the *actual* normal tail probability $2(1-\\Phi(k))$. On a log scale the gap is enormous — at $k=4$ the bound permits $6.25\\%$ while the true tail is $0.006\\%$, a factor of about a thousand. The looseness is the price of distribution-freeness: the bound also has to cover distributions whose tails really are this heavy."
+from math import erf, sqrt
+
+def normal_two_sided_tail(k):
+    # P(|Z| >= k) = 2 * (1 - Phi(k)); Phi via the error function.
+    Phi = 0.5 * (1 + erf(k / sqrt(2)))
+    return 2 * (1 - Phi)
+
+ks = np.linspace(1.0, 5.0, 400)
+cheb = 1.0 / ks**2
+true_tail = np.array([normal_two_sided_tail(k) for k in ks])
+
+fig, ax = plt.subplots()
+ax.plot(ks, cheb, color=BOUND, label="Chebyshev ceiling $1/k^2$")
+ax.plot(ks, true_tail, color=DENS, label="true normal tail $P(|Z|\\ge k)$")
+ax.set_yscale("log")
+ax.set_xlabel("$k$ (standard deviations from the mean)")
+ax.set_ylabel("tail probability (log scale)")
+ax.set_title("Universal bound vs. the actual normal tail")
+ax.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+So for a Gaussian the bound is loose by **orders of magnitude**, and it gets looser the
+further out you go. Does that make Chebyshev useless? No — it makes it *honest*. The bound
+cannot be sharper, because there genuinely exist distributions with mean $0$ and variance
+$1$ whose tail at $k$ is as heavy as $1/k^2$ allows. The next section exhibits one and
+shows the bound is **attained**.
+
+## The bound is tight: an adversarial distribution {#sec-tightness}
+
+A bound is only worth trusting if it cannot be improved without extra assumptions. We show
+Chebyshev is **tight** by constructing, for any chosen $k>1$, a distribution that *hits*
+the bound exactly: $P(|X-\mu| \ge k\sigma) = 1/k^2$.
+
+::: {#thm-tight}
+**Theorem (tightness of Chebyshev).** For every $k > 1$ there is a random variable $X$
+with finite mean and variance for which @eq-chebyshev-k holds with **equality**.
+:::
+
+::: {.proof}
+Let $X$ be the discrete variable that places its mass at three points: $-c$, $0$, and
+$+c$, where $c>0$ is a number we will choose, with probabilities
+$$
+P(X = -c) = \frac{1}{2k^2}, \qquad
+P(X = 0) = 1 - \frac{1}{k^2}, \qquad
+P(X = +c) = \frac{1}{2k^2}.
+$$
+These are valid probabilities: each is in $[0,1]$ for $k>1$ (so $1/k^2 < 1$), and they sum
+to $\tfrac{1}{2k^2} + (1 - \tfrac1{k^2}) + \tfrac1{2k^2} = 1$. Computing the mean directly
+from the definition $E[X] = \sum_x x\,P(X=x)$, the equal-and-opposite outer masses cancel
+term for term:
+$$
+\mu = E[X] = (-c)\tfrac1{2k^2} + 0\cdot(1-\tfrac1{k^2}) + (c)\tfrac1{2k^2}
+= -\tfrac{c}{2k^2} + \tfrac{c}{2k^2} = 0.
+$$
+The variance is $E[(X-\mu)^2] = E[X^2]$ since $\mu = 0$:
+$$
+\sigma^2 = E[X^2] = c^2\cdot\tfrac1{2k^2} + 0 + c^2\cdot\tfrac1{2k^2} = \frac{c^2}{k^2}.
+$$
+So $\sigma = c/k$, i.e. $c = k\sigma$. The only outcomes that land at distance $\ge
+k\sigma = c$ from the mean are $X = \pm c$, which together carry probability
+$\tfrac1{2k^2} + \tfrac1{2k^2} = \tfrac1{k^2}$. Therefore
+$$
+P\big(|X - \mu| \ge k\sigma\big) = P(X = -c) + P(X = c) = \frac{1}{k^2},
+$$
+exactly the Chebyshev ceiling. Equality holds. $\qquad\blacksquare$
+:::
+
+This is the whole moral of the inequality. The worst case is a distribution that puts a
+sliver of mass *exactly* at $k$ standard deviations and dumps the rest at the mean — a
+"barbell." Real distributions spread their tail mass out *past* $k\sigma$ and so pay more
+variance per unit of tail probability, which is why they fall short of the ceiling. Against
+the barbell, Chebyshev is not loose at all; it is exact. A theorem must survive its worst
+adversary, and the barbell is it.
+
+```{python}
+#| label: fig-tight
+#| fig-cap: "The adversary that makes Chebyshev exact. For $k=2$, the three-point 'barbell' distribution puts mass $1/(2k^2)=1/8$ at each of $\\pm 2\\sigma$ and the remaining $1-1/k^2 = 3/4$ at the mean. Exactly $1/k^2 = 1/4$ of the probability sits at distance $\\ge 2\\sigma$ (red), so Chebyshev's bound (red dashed line at $0.25$) is attained with equality. No distribution with this mean and variance can do worse, which is what makes $1/k^2$ a genuine ceiling and not just a heuristic."
+k = 2.0
+sigma = 1.0
+c = k * sigma
+locs = np.array([-c, 0.0, c])
+probs = np.array([1/(2*k**2), 1 - 1/k**2, 1/(2*k**2)])
+
+fig, ax = plt.subplots()
+colors = [BOUND, DENS, BOUND]
+ax.bar(locs, probs, width=0.18, color=colors, edgecolor="black", linewidth=0.6)
+for x, p in zip(locs, probs):
+    ax.text(x, p + 0.02, f"{p:.3f}", ha="center", fontsize=9)
+ax.axhline(1/k**2, color=BOUND, ls=":", lw=1.2,
+           label="Chebyshev ceiling $1/k^2 = 0.25$ on the tail mass")
+ax.set_xlabel("$x$")
+ax.set_ylabel("probability mass")
+ax.set_title("The three-point barbell attains Chebyshev exactly ($k=2$)")
+ax.set_ylim(0, 0.85)
+ax.legend(loc="upper center", fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+# From one variable to the average: the concentration payoff {#sec-concentration}
+
+Now the reason Chebyshev earns its place at the root of the series. The inequality is mild
+when applied to a single variable, but it becomes powerful the moment we apply it to a
+**sample mean**, because averaging *crushes the variance*, and Chebyshev converts that
+crushed variance directly into a vanishing tail probability.
+
+## The variance of the sample mean {#sec-var-mean}
+
+Let $X_1, X_2, \dots, X_n$ be **independent and identically distributed** (i.i.d.) — the
+setting built in [PROB-8] — each with mean $\mu$ and variance $\sigma^2$. Their **sample
+mean** is the random variable
+$$
+\bar X_n = \frac{1}{n}\sum_{i=1}^n X_i .
+$$
+We need its mean and variance. By linearity of expectation (from [PROB-5], which holds with
+or without independence),
+$$
+E[\bar X_n] = \frac1n \sum_{i=1}^n E[X_i] = \frac1n \cdot n\mu = \mu .
+$$
+So the sample mean is **centered on the truth** — its expectation is the very $\mu$ we are
+trying to pin down. For the variance we use the rule from [PROB-8] that the variance of a
+sum of **independent** variables is the sum of the variances, together with the scaling
+rule $\operatorname{Var}(aY) = a^2\operatorname{Var}(Y)$ from [PROB-6]:
+$$
+\operatorname{Var}(\bar X_n)
+= \operatorname{Var}\!\left(\frac1n \sum_{i=1}^n X_i\right)
+= \frac{1}{n^2}\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right)
+= \frac{1}{n^2}\sum_{i=1}^n \operatorname{Var}(X_i)
+= \frac{1}{n^2}\cdot n\sigma^2
+= \frac{\sigma^2}{n}.
+$$ {#eq-var-mean}
+There it is — the fact that makes everything work: **averaging $n$ independent measurements
+divides the variance by $n$.** The spread of the average shrinks; its standard deviation
+falls like $\sigma/\sqrt n$. Independence is essential here: it is what lets the variance of
+the sum be the sum of the variances, with no covariance cross-terms surviving (the general
+$\operatorname{Var}(\sum X_i)$ with dependence carries $2\sum_{i<j}\operatorname{Cov}(X_i,X_j)$
+terms, from [PROB-7], which need not vanish).
+
+## The weak law of large numbers, from Chebyshev {#sec-wlln}
+
+Apply Chebyshev @eq-chebyshev-eps to $\bar X_n$, whose mean is $\mu$ and whose variance is
+$\sigma^2/n$:
+
+::: {#thm-wlln}
+**Theorem (weak law of large numbers, Chebyshev's version).** Let $X_1,\dots,X_n$ be
+i.i.d. with finite mean $\mu$ and finite variance $\sigma^2$. Then for every fixed
+$\varepsilon > 0$,
+$$
+P\big(|\bar X_n - \mu| \ge \varepsilon\big) \;\le\; \frac{\sigma^2}{n\,\varepsilon^2}
+\;\xrightarrow[n\to\infty]{}\; 0 .
+$$ {#eq-wlln}
+That is, the sample mean **converges in probability** to $\mu$: no matter how small a
+tolerance $\varepsilon$ you demand, the chance the average misses the true mean by more
+than $\varepsilon$ can be driven to zero by taking enough samples.
+:::
+
+::: {.proof}
+Chebyshev @eq-chebyshev-eps applied to the random variable $\bar X_n$ — using
+$E[\bar X_n] = \mu$ from above and $\operatorname{Var}(\bar X_n) = \sigma^2/n$ from
+@eq-var-mean — gives directly
+$$
+P\big(|\bar X_n - \mu| \ge \varepsilon\big)
+\;\le\; \frac{\operatorname{Var}(\bar X_n)}{\varepsilon^2}
+= \frac{\sigma^2/n}{\varepsilon^2}
+= \frac{\sigma^2}{n\,\varepsilon^2}.
+$$
+Now $\varepsilon$ is held fixed and $\sigma^2$ is a fixed finite constant, so the right
+side is a constant divided by $n$; as $n\to\infty$ it tends to $0$. Since a probability is
+nonnegative and bounded above by something going to $0$, it goes to $0$ as well. That is
+exactly the definition of $\bar X_n \to \mu$ **in probability** (the mode of convergence
+made precise in [PROB-21]). $\qquad\blacksquare$
+:::
+
+This is the destination the *why* (@sec-why-history) was driving at. Chebyshev wanted a law
+of large numbers that **did not assume the measurements were normal** — and here it is, for
+*any* distribution with a finite variance, falling straight out of the inequality in three
+lines. The bound even hands you a **rate** and therefore a **sample-size formula**: to be
+within $\varepsilon$ of $\mu$ with confidence at least $1-\delta$, set the right side equal
+to $\delta$ and solve, $n \ge \sigma^2/(\delta\varepsilon^2)$. Distribution-free, no
+Gaussian assumed.
+
+```{python}
+#| label: fig-lln
+#| fig-cap: "Chebyshev driving the law of large numbers. We sample i.i.d. from a heavily skewed Exponential($\\lambda=1$) population ($\\mu=1$, $\\sigma=1$ — emphatically *not* normal) and track the sample mean as $n$ grows, for ten independent runs (thin grey paths). The fan of paths narrows toward the true mean $\\mu=1$ (green). The red envelope is Chebyshev's $\\pm\\,\\varepsilon$ band where $\\varepsilon$ is chosen so the bound $\\sigma^2/(n\\varepsilon^2)$ equals $0.05$ at each $n$ — i.e. the guaranteed-95\\% region. Every path stays inside its envelope far more often than the worst case allows, because the exponential is friendlier than the barbell adversary."
+n_max = 2000
+n_runs = 10
+mu_true, sigma_true = 1.0, 1.0  # Exponential(1)
+
+ns = np.arange(1, n_max + 1)
+fig, ax = plt.subplots()
+for _ in range(n_runs):
+    draws = rng.exponential(scale=1.0, size=n_max)
+    running_mean = np.cumsum(draws) / ns
+    ax.plot(ns, running_mean, color=GREY, alpha=0.6, lw=1.0)
+
+# Chebyshev 95% envelope: sigma^2/(n eps^2) = 0.05  =>  eps = sigma*sqrt(1/(0.05 n)).
+delta = 0.05
+eps_band = sigma_true * np.sqrt(1.0 / (delta * ns))
+ax.plot(ns, mu_true + eps_band, color=BOUND, lw=1.4, ls="--",
+        label="Chebyshev 95% band $\\mu\\pm\\varepsilon$")
+ax.plot(ns, mu_true - eps_band, color=BOUND, lw=1.4, ls="--")
+ax.axhline(mu_true, color=ACCENT, lw=1.6, label="true mean $\\mu=1$")
+ax.set_xscale("log")
+ax.set_ylim(0.0, 2.0)
+ax.set_xlabel("$n$ (sample size, log scale)")
+ax.set_ylabel("$\\bar X_n$")
+ax.set_title("The sample mean concentrates — guaranteed, with no normal assumption")
+ax.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Chebyshev gives a $1/n$ rate for the tail probability — but the central limit theorem
+says the sample mean spreads like $1/\sqrt n$. Which is right?"* Both, and they answer
+different questions. The CLT (owned by [INFR-A2]) describes the *typical* fluctuation:
+$\bar X_n - \mu$ is of order $\sigma/\sqrt n$, the standard deviation from @eq-var-mean.
+Chebyshev bounds the *probability* of an atypical fluctuation: for a **fixed** $\varepsilon$
+that does not shrink with $n$, that probability decays at least like $1/n$. There is no
+contradiction — one is about the scale of normal-sized wiggles, the other about the chance
+of a large, fixed-size miss. Chebyshev is weaker than the CLT (it gives a polynomial $1/n$
+where sharper tools give exponential decay), but it is also far more robust: it needs only
+a finite variance, not the i.i.d.-plus-finite-third-moment machinery the CLT's rate
+refinements lean on.
+:::
+
+# Worked examples, including the edge of applicability {#sec-examples}
+
+We carry three honest examples end to end: one where Chebyshev is exactly the right tool,
+one where it is usable but loose, and one at the **edge of applicability** where it breaks
+because its single assumption — a finite variance — fails.
+
+## Example 1 — A distribution-free quality guarantee (the right tool) {#sec-ex-quality}
+
+Return to the factory from @sec-why-problem. Part lengths have mean $\mu = 10$ mm and
+standard deviation $\sigma = 0.1$ mm; the distribution's *shape* is unknown and possibly
+skewed by occasional miscalibration. A part is "out of spec" if it is off by more than
+$0.3$ mm. We want a guaranteed cap on the out-of-spec fraction.
+
+Here $0.3$ mm $= 3\sigma$, so $k = 3$, and Chebyshev gives
+$$
+P(|X - 10| \ge 0.3) = P(|X-\mu| \ge 3\sigma) \le \frac{1}{3^2} = \frac{1}{9} \approx 0.111 .
+$$
+**At most $11.1\%$** of parts can be out of spec — a contractual guarantee that survives
+any distribution consistent with the two measured numbers. This is exactly the situation
+Chebyshev was built for: you have moments but not a shape, and you need a bound nobody can
+break. If you later *earn* the right to assume near-normality (by actually characterizing
+the process), you would replace $11.1\%$ with the far smaller $0.27\%$ — but only then.
+
+## Example 2 — Polling sample size, distribution-free (usable but loose) {#sec-ex-poll}
+
+You want to estimate the fraction $p$ of voters favoring a measure by sampling $n$ people
+i.i.d. and reporting the sample proportion $\hat p = \bar X_n$, where each $X_i \in
+\{0,1\}$ is a Bernoulli($p$) response. How large must $n$ be so the estimate is within
+$\varepsilon = 0.03$ of the truth with probability at least $95\%$, *without* invoking the
+normal approximation?
+
+Each $X_i$ has variance $\sigma^2 = p(1-p)$, which we do not know — but it is **at most
+$1/4$**, attained at $p = 1/2$ (a one-line calculus check: $p(1-p)$ is a downward parabola
+maximized at $p=1/2$, value $1/4$). Using the worst case $\sigma^2 = 1/4$, the WLLN bound
+@eq-wlln demands
+$$
+\frac{\sigma^2}{n\varepsilon^2} \le 0.05
+\quad\Longrightarrow\quad
+n \ge \frac{\sigma^2}{0.05\,\varepsilon^2}
+= \frac{1/4}{0.05 \cdot (0.03)^2}
+= \frac{0.25}{0.05 \cdot 0.0009}
+= \frac{0.25}{0.000045}
+\approx 5556 .
+$$
+So **$n \approx 5{,}556$** guarantees the bound. This is *correct and distribution-free*,
+but notice it is roughly five times larger than the $n \approx 1{,}068$ the normal
+approximation (CLT) would prescribe for the same target. The looseness from @sec-looseness
+shows up as concrete extra cost: you buy a guarantee that holds against the barbell
+adversary, and you pay for it in sample size. The honest reading: use Chebyshev to get a
+*safe* sample size when you cannot justify the CLT, and tighten with the CLT once $n$ is
+large enough for the normal approximation to be trustworthy.
+
+```{python}
+#| label: fig-poll
+#| fig-cap: "Chebyshev vs. the normal approximation for polling sample size. Both give the $n$ needed so the sample proportion is within $\\varepsilon$ of $p$ with 95% confidence, worst case $p=1/2$. The red Chebyshev curve ($n = \\sigma^2/(0.05\\varepsilon^2)$) sits well above the blue normal-approximation curve ($n = (z_{0.975}\\,\\sigma/\\varepsilon)^2$) at every margin of error: the distribution-free guarantee costs about $5\\times$ the samples. The vertical line marks the $\\varepsilon=0.03$ worked example."
+eps_grid = np.linspace(0.01, 0.06, 200)
+sig2 = 0.25  # worst-case Bernoulli variance
+z = 1.959963985  # 97.5th percentile of the standard normal
+n_cheb = sig2 / (0.05 * eps_grid**2)
+n_clt = (z**2 * sig2) / (eps_grid**2)
+
+fig, ax = plt.subplots()
+ax.plot(eps_grid, n_cheb, color=BOUND, label="Chebyshev (distribution-free)")
+ax.plot(eps_grid, n_clt, color=DENS, label="normal approximation (CLT)")
+ax.axvline(0.03, color=GREY, ls=":", lw=1)
+ax.set_yscale("log")
+ax.set_xlabel("margin of error $\\varepsilon$")
+ax.set_ylabel("required sample size $n$ (log scale)")
+ax.set_title("The price of a distribution-free guarantee")
+ax.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+## Example 3 — The edge of applicability: a heavy tail with no variance {#sec-ex-cauchy}
+
+Chebyshev's one assumption is a **finite variance**. When that fails, the inequality says
+*nothing* — and worse, the conclusion it would have given is *false*. This is the honest
+boundary, and it is not exotic: heavy-tailed data (financial returns, file sizes, insurance
+losses, network traffic) routinely strain or break the finite-variance assumption.
+
+The cleanest break is the **standard Cauchy distribution**, with density
+$$
+f(x) = \frac{1}{\pi(1 + x^2)}, \qquad -\infty < x < \infty .
+$$
+Its tails decay only like $1/x^2$. Already its **mean does not exist** (the defining
+integral $\int x f(x)\,dx$ fails to converge), let alone its variance — so neither Markov
+on $|X|$ nor Chebyshev can even be *stated*: there is no $\mu$ and no $\sigma$ to plug in.
+The consequence is dramatic and worth seeing: the **sample mean of i.i.d. Cauchy variables
+does not concentrate at all.** In fact $\bar X_n$ has the *same* standard Cauchy
+distribution as a single observation, for every $n$ — averaging buys you nothing. The law
+of large numbers, which we derived from Chebyshev, **simply fails** here, because the
+variance that drove @eq-var-mean to $0$ does not exist.
+
+```{python}
+#| label: fig-cauchy
+#| fig-cap: "Where Chebyshev — and the law of large numbers — break. The blue paths are running sample means of i.i.d. Exponential(1) data (finite variance): they converge to the true mean, exactly as @thm-wlln guarantees. The red paths are running sample means of i.i.d. standard Cauchy data (no finite mean or variance): they never settle — fresh extreme observations jolt the average no matter how large $n$ is. Chebyshev cannot be applied to the Cauchy, and the failure is real, not a technicality: the sample mean does not concentrate. When your data looks like the red paths, reach for medians and robust estimators, not the mean."
+n_max = 3000
+ns = np.arange(1, n_max + 1)
+
+fig, ax = plt.subplots()
+for _ in range(4):
+    exp_draws = rng.exponential(scale=1.0, size=n_max)
+    ax.plot(ns, np.cumsum(exp_draws) / ns, color=DENS, alpha=0.7, lw=1.0)
+for _ in range(4):
+    cauchy_draws = rng.standard_cauchy(size=n_max)
+    ax.plot(ns, np.cumsum(cauchy_draws) / ns, color=BOUND, alpha=0.7, lw=1.0)
+
+ax.axhline(1.0, color=ACCENT, lw=1.4, ls="--", label="Exponential true mean $=1$")
+ax.set_ylim(-6, 8)
+ax.set_xscale("log")
+ax.set_xlabel("$n$ (sample size, log scale)")
+ax.set_ylabel("running sample mean $\\bar X_n$")
+ax.set_title("Finite variance (blue) concentrates; no variance (red) does not")
+ax.legend(loc="upper right", fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+The lesson generalizes past the Cauchy. Any distribution with **infinite variance** — a
+power-law tail with exponent $\le 2$ — escapes Chebyshev entirely, and the sample mean is a
+poor, unstable summary. The practitioner's move when you suspect this regime is to (a)
+check the tails (a log-log plot of the empirical survival function, the median-vs-mean
+gap), and (b) switch to estimators that *do* have a guarantee under heavy tails — the
+**median** and other quantiles (which exist for any distribution), or **robust /
+trimmed** means — rather than forcing the mean and a variance-based bound onto data that
+has neither.
+
+# When to reach for Chebyshev — and when not {#sec-applicability}
+
+Pulling the judgment together explicitly, as the goal demands.
+
+**Reach for Markov / Chebyshev when:**
+
+- You have a **mean and a variance but not a distributional shape**, and you need a tail
+  bound you can defend against any shape — quality guarantees, worst-case sample sizes,
+  service-level promises. This is the home turf (@sec-ex-quality).
+- You need a **distribution-free** result on principle — a proof or guarantee that must not
+  smuggle in normality. This is why Chebyshev sits under the weak law of large numbers and
+  under [PROB-21]'s convergence-in-probability statements.
+- You want a quick, conservative **sanity ceiling** on a tail before investing in a sharper
+  analysis (@sec-ex-poll).
+
+**Do not reach for it — use something else — when:**
+
+- You **know (or can justify) the distribution.** If normality is warranted, the normal
+  tail or the CLT gives an answer orders of magnitude sharper (@sec-looseness). Chebyshev's
+  $11\%$ versus the normal's $0.27\%$ is the gap you are leaving on the table.
+- You need the **sharpest possible tail** and you can afford an assumption. For variables
+  with a moment generating function ([PROB-20]), **Chernoff bounds** apply Markov to
+  $e^{tX}$ and deliver *exponential* tail decay $e^{-c k^2}$ instead of the polynomial
+  $1/k^2$ — vastly tighter, at the cost of needing the MGF to exist.
+- The **variance does not exist** (heavy tails, @sec-ex-cauchy). Chebyshev cannot be
+  applied and the mean itself is the wrong summary; switch to medians, quantiles, or robust
+  estimators.
+- Your data is **strongly dependent.** The WLLN derivation leaned on independence to get
+  $\operatorname{Var}(\bar X_n) = \sigma^2/n$ (@sec-var-mean); under heavy dependence the
+  covariance cross-terms ([PROB-7]) keep the variance of the average from shrinking, and
+  the concentration argument stalls.
+
+::: {.callout-warning title="Pitfall"}
+**Chebyshev is a one-way bound, never an estimate of the tail.** It tells you the tail is
+*no larger* than $1/k^2$; it never tells you the tail *is* that large. Reporting "about
+$11\%$ of parts are out of spec" from @sec-ex-quality would be wrong — the true fraction
+could be a tiny fraction of a percent. Use it as a ceiling, not a point estimate. The
+second classic error is **applying it to a variable with no finite variance** (or to a
+non-nonnegative variable in Markov's case) and trusting the output: there is no output, the
+hypothesis failed, and the conclusion can be flatly false (@sec-ex-cauchy).
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You have the first piece of Movement 4's tail-and-limit machinery: a distribution-free grip
+on how much probability can sit far from the mean, built from nothing but the mean and the
+variance, and pushed through to a weak law of large numbers.
+
+- **[PROB-20 *Moment Generating and Characteristic Functions*]** — the concentration
+  sibling. Where Chebyshev used only the first two moments, the MGF packages *all* of them,
+  and applying Markov to $e^{tX}$ (instead of to $(X-\mu)^2$) upgrades Chebyshev's
+  polynomial $1/k^2$ to the exponential **Chernoff** bound. Same engine — Markov on a
+  cleverly chosen nonnegative function — sharper conclusion.
+- **[PROB-21 *Modes of Convergence*]** — the immediate sequel. *Convergence in probability*,
+  which @thm-wlln delivered for the sample mean, is defined and placed in its hierarchy
+  there; Chebyshev is the standard tool for proving it.
+- **[INFR-A2]** (Statistical Inference) — *owns* the **law of large numbers and the central
+  limit theorem**. It consumes the inequality built here exactly as in @sec-wlln: Chebyshev
+  supplies the distribution-free LLN, the CLT supplies the sharp rate. This is the clean
+  ownership seam the track was designed around — Probability builds the inequality and the
+  convergence vocabulary; Inference builds the limit theorems on top.
+- **Backward links honored.** The variance-of-a-sum rule from [PROB-8] and the
+  variance-scaling rule from [PROB-6] are what made $\operatorname{Var}(\bar X_n) =
+  \sigma^2/n$, the single fact the whole concentration payoff rests on.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary thread.** Bienaymé's 1853 memoir on least squares contained the variance bound;
+  Chebyshev's 1867 paper *"Des valeurs moyennes"* used it to prove the law of large numbers
+  without a normality assumption — the historical root of @sec-why-history. Markov's
+  formalization of the nonnegative-variable bound followed in his probability lectures.
+- **Chernoff and concentration inequalities.** Applying Markov to $e^{tX}$ and optimizing
+  over $t$ gives the **Chernoff bound**; refining further for bounded variables gives
+  **Hoeffding's** and **Bernstein's** inequalities, the exponential-tail backbone of
+  modern statistical learning theory (generalization bounds, bandit algorithms). The whole
+  field of *concentration of measure* is the rabbit hole that starts at the box in
+  @sec-core.
+- **One-sided Chebyshev (Cantelli).** A sharper, *asymmetric* version,
+  $P(X - \mu \ge k\sigma) \le 1/(1+k^2)$, bounds a single tail and beats the two-sided
+  $1/k^2$ when you only care about one direction — a clean exercise in re-running the
+  Markov argument on $(X - \mu + t)^2$ and optimizing over $t$.
+- **Open threads deferred.** *How much can you tighten the bound if you also know the third
+  or fourth moment?* (higher-moment Markov: apply Markov to $|X-\mu|^p$). *What replaces
+  Chebyshev when the variance is infinite but a fractional moment exists?* (the
+  Marcinkiewicz–Zygmund laws and stable-law limits, downstream of heavy-tailed modeling).
+  *How does the dependence between observations degrade the rate?* (mixing conditions and
+  the ergodic-theorem version of the LLN).

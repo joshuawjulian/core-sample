@@ -1,0 +1,1079 @@
+---
+title: "Counting: Permutations and Combinations"
+subtitle: "Core Sample · Probability Foundations"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from math import comb, perm, factorial
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / counts
+LINE   = "#c1121f"     # the curve / theoretical value
+ACCENT = "#0a7d4d"     # highlights
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas / bars
+```
+
+> **Where this sits in the track.** This article opens the **distribution catalog** —
+> the stretch of the Probability track (PROB-10 through PROB-16) that names and derives
+> the workhorse distributions every downstream track consumes. Before we can write down
+> the binomial pmf in [PROB-11 *Bernoulli, Binomial & Negative-Binomial*], we need to
+> count: when $n$ coin flips are equally likely, *how many* of the $2^n$ outcome
+> sequences have exactly $k$ heads? That number is a **combination**, and combinations
+> (with their cousins, permutations) are the subject here. The only thing this article
+> assumes is the equally-likely / classical interpretation of probability built in
+> [PROB-0 *What Is Probability?*] — that when an experiment has $N$ equally likely
+> outcomes and an event $A$ contains $|A|$ of them, $P(A) = |A|/N$. Everything probability
+> needs to *count* the numerator and denominator of that ratio is built here from one
+> principle. This article **sets up** [PROB-11] (the binomial coefficient *is* the
+> normalizing count of the binomial pmf, and the binomial theorem is what makes that pmf
+> sum to one), [PROB-23 *Order Statistics*] (whose $k$-th-smallest-value density rests on
+> exactly the multinomial count we build in @sec-multinomial), and — across tracks — the
+> permutation test of Statistical Inference E3, whose null distribution is a uniform
+> draw over the $n!$ relabelings we count in @sec-permutations.
+
+## Abstract {.unnumbered}
+
+When every outcome of an experiment is equally likely, a probability is a *ratio of
+counts* — favorable outcomes over total outcomes — and computing it reduces to counting
+without listing. This article builds the entire machinery from a single seed, the
+**multiplication principle**: if one choice can be made $a$ ways and a second
+(independently) $b$ ways, the pair can be made $ab$ ways. From it we derive, with every
+step shown, the **factorial** $n!$ (arrangements of $n$ distinct objects), the
+**permutation** count $P(n,k) = n!/(n-k)!$ (ordered selections of $k$ from $n$), and the
+**combination** count $\binom{n}{k} = n!/[k!\,(n-k)!]$ (unordered selections). We prove
+the binomial coefficient's symmetry and **Pascal's recurrence**, use them to prove the
+**binomial theorem**, and organize the whole subject into the **2×2 table** of
+sampling — ordered vs. unordered, with vs. without replacement — so that any counting
+problem you meet can be classified and solved. The single claim the article defends is
+that **all of elementary counting is one principle applied carefully**, and that knowing
+*which cell of the 2×2 table you are in* is the entire skill.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Counting is multiplication done carefully. From the **multiplication principle** — $a$
+independent choices times $b$ independent choices give $ab$ outcomes — everything else
+follows. **Order matters** ⟹ you are counting *permutations*, $P(n,k) = n!/(n-k)!$.
+**Order does not matter** ⟹ you are counting *combinations*,
+$\binom{n}{k} = \frac{n!}{k!\,(n-k)!}$, which is the permutation count divided by $k!$ to
+erase the orderings you double-counted. The binomial coefficient $\binom{n}{k}$ is the
+number of equally-likely outcomes a probability will count, and it is the bridge to the
+binomial distribution in [PROB-11].
+:::
+
+Everything below orbits that box. The one formula to carry in your head is
+$\binom{n}{k} = P(n,k)/k!$: *count the ordered selections, then divide out the orderings
+you do not care about.* Permutations and combinations are not two unrelated formulas to
+memorize — combinations are permutations with the order quotiented away, and seeing that
+quotient is the difference between reciting the formula and understanding it.
+
+# Why we are doing this: probability as a ratio of counts {#sec-why}
+
+Keep one question in view for the whole article: **when outcomes are equally likely, a
+probability is a fraction of outcomes — so how do we count the top and the bottom of that
+fraction without writing every outcome down?** Every formula below is an answer to some
+piece of that question. If a step ever feels like an arbitrary rule, return here.
+
+## The original problem
+
+The mathematics of counting was forced into existence by gambling. In the summer of 1654,
+a French nobleman and compulsive gambler, the Chevalier de Méré, posed a puzzle to Blaise
+Pascal about how the stakes of an interrupted game of chance should be divided fairly. The
+correspondence that followed between Pascal and Pierre de Fermat is usually marked as the
+birth of probability theory — and the very first thing they had to do was *count*. To work
+out the chance of an event, they reasoned that all the elementary outcomes of the dice were
+equally likely, so the probability of an event was simply the number of outcomes favorable
+to it divided by the total number of outcomes. The whole problem then collapsed to a
+counting problem: *how many* ways can the game finish, and *how many* of those ways favor
+each player?
+
+That move — **probability = favorable count / total count, when outcomes are equally
+likely** — is exactly the classical interpretation made precise in [PROB-0]. It is the
+oldest and most concrete way to put a number on uncertainty, and it works whenever a
+physical symmetry (a fair die, a well-shuffled deck, a randomly assigned treatment) makes
+all outcomes interchangeable. But it is useless until you can count *large* collections
+without enumerating them. Nobody can list the $\binom{52}{5} = 2{,}598{,}960$ poker hands
+by hand. The science of counting-without-listing — **combinatorics** — is what makes the
+classical definition usable, and that is why a probability track must build it before it
+can build a single distribution.
+
+::: {.callout-tip title="You might be asked"}
+*"When is a probability actually a ratio of counts, and when is that the wrong model?"*
+Only when the outcomes are genuinely **equally likely** — a physical or designed symmetry
+guarantees it (fair dice, a shuffled deck, a simple random sample, a random permutation of
+treatment labels). If the outcomes are *not* equally likely (a loaded die, words in
+English text, customers arriving at a store), counting outcomes gives you the wrong answer;
+you need a probability *model* on the outcomes instead, which is what the rest of the
+catalog (PROB-11 onward) supplies. The counting in this article computes the *size* of
+events; turning sizes into probabilities is honest **only under equal likelihood**. Keep
+that caveat sharp — it is the single most common misuse, and we return to it in
+@sec-failure.
+:::
+
+# Intuition before symbols: the choice tree {#sec-intuition}
+
+Before any factorials, picture how a sequence of choices multiplies. Suppose you are
+building an outcome one decision at a time. The first decision has some number of branches;
+from the end of *each* of those branches, the second decision fans out again; and so on.
+The total number of complete paths through this **choice tree** is the product of the
+branch counts — not their sum — because every first-choice branch carries a full copy of
+the second-choice fan beneath it.
+
+@fig-tree draws this for a tiny case: choosing an outcome in two stages, $3$ ways then $2$
+ways, giving $3 \times 2 = 6$ leaves. The picture is the entire proof of the multiplication
+principle; the formula is just the picture written in symbols.
+
+```{python}
+#| label: fig-tree
+#| fig-cap: "The choice tree behind the multiplication principle. A first choice with $3$ branches, each followed by a second choice with $2$ branches, produces $3 \\times 2 = 6$ complete paths (leaves). The total is a *product* because every one of the $3$ first-stage branches carries its own full copy of the $2$ second-stage branches. Counting is multiplication done carefully."
+fig, ax = plt.subplots(figsize=(6.6, 4.2))
+
+root = (0.0, 0.5)
+first = [(0.33, y) for y in (0.85, 0.5, 0.15)]
+labels1 = ["A", "B", "C"]
+leaf_ys = []
+for (fx, fy), lab in zip(first, labels1):
+    ax.plot([root[0], fx], [root[1], fy], color=GREY, lw=1.4)
+    ax.scatter([fx], [fy], color=POINT, s=70, zorder=3)
+    ax.text(fx - 0.015, fy + 0.045, lab, fontsize=11, ha="center", color=POINT)
+    for dy in (+0.08, -0.08):
+        ly = fy + dy
+        ax.plot([fx, 0.72], [fy, ly], color=GREY, lw=1.2)
+        ax.scatter([0.72], [ly], color=ACCENT, s=55, zorder=3)
+        leaf_ys.append(ly)
+
+ax.scatter([root[0]], [root[1]], color=LINE, s=110, zorder=4)
+ax.text(root[0] - 0.03, root[1], "start", fontsize=11, ha="right", va="center", color=LINE)
+for i, ly in enumerate(sorted(leaf_ys, reverse=True), start=1):
+    ax.text(0.78, ly, f"outcome {i}", fontsize=9.5, va="center", color=ACCENT)
+
+ax.text(0.165, 0.97, "choice 1:  3 ways", fontsize=10.5, ha="center", color=POINT)
+ax.text(0.525, 0.97, "choice 2:  2 ways each", fontsize=10.5, ha="center", color=ACCENT)
+ax.text(0.5, 0.02, r"total $= 3 \times 2 = 6$ outcomes", fontsize=12, ha="center")
+ax.set_xlim(-0.12, 0.98); ax.set_ylim(0.0, 1.02)
+ax.axis("off")
+plt.tight_layout()
+```
+
+The whole of this article is that tree, specialized. When the branch counts shrink by one
+at each stage ($n$, then $n-1$, then $n-2$, …) because we are using up distinct objects, the
+product becomes a factorial and we are counting **arrangements**. When we then decide we do
+not care about the order in which we made the choices, we divide out the redundant paths and
+we are counting **selections**. Hold the tree in mind; the symbols will never feel arbitrary
+if you do.
+
+# The formal development {#sec-formal}
+
+## The multiplication principle {#sec-mult}
+
+Everything starts here. We state it for two stages, prove it, then extend it to any number
+of stages by the same argument.
+
+::: {#thm-mult}
+**Theorem (multiplication principle).** Suppose a procedure consists of two stages. If the
+first stage can occur in $a$ ways, and *for each* of those ways the second stage can occur
+in $b$ ways, then the whole procedure can occur in $a \cdot b$ ways. More generally, if a
+procedure has $r$ stages with $n_1, n_2, \dots, n_r$ ways at each stage (the count at each
+stage not depending on *which* earlier choices were made), the total number of ways is
+$$
+n_1 \cdot n_2 \cdots n_r .
+$$
+:::
+
+::: {.proof}
+We prove the two-stage case directly; the general case then follows by repeating the
+argument. List the possible first-stage choices as $f_1, f_2, \dots, f_a$ — there are $a$
+of them by hypothesis. Fix one of them, say $f_i$. By hypothesis the second stage can then
+occur in $b$ ways, which we list as $s_1, s_2, \dots, s_b$. A complete outcome of the whole
+procedure is a *pair* $(f_i, s_j)$: which first choice, then which second choice. For each
+of the $a$ choices of $f_i$, there are exactly $b$ pairs $(f_i, s_1), \dots, (f_i, s_b)$,
+and no pair is counted under two different first choices (the pair records its own first
+coordinate). So the complete outcomes split into $a$ groups, each of size $b$, with no
+overlaps and nothing left out. Adding the group sizes,
+$$
+\underbrace{b + b + \cdots + b}_{a \text{ groups}} = a \cdot b ,
+$$
+which is the claim. For $r$ stages, group the first $r-1$ stages into a single "super-stage"
+with $n_1 n_2 \cdots n_{r-1}$ ways (true for $r-1 = 2$ by what we just proved, and for larger
+$r-1$ by repeating this same grouping), and pair it with the last stage's $n_r$ ways. The
+two-stage result gives $(n_1 \cdots n_{r-1}) \cdot n_r = n_1 n_2 \cdots n_r$. $\qquad\blacksquare$
+:::
+
+Two cautions, because both are live in real problems and both are interview traps.
+
+First, the phrase *"for each of those ways the second stage can occur in $b$ ways"* is
+load-bearing: the *number* of second-stage options may not depend on which first choice was
+made, even though the *identities* of the options can. Choosing a 2-letter code from the
+alphabet with no repeats allowed: the first letter has $26$ options, and *whichever* you
+pick, the second has $25$ (any letter but the one used) — the count $25$ is the same for
+every first choice, so the principle applies and the answer is $26 \cdot 25$. The specific
+forbidden letter changes; the count does not.
+
+Second, if the count *does* change with the earlier choice, the simple product fails and
+you must sum over cases instead. The multiplication principle is the engine of everything
+below precisely because permutations and combinations are built so that the per-stage count
+is stable.
+
+That "sum over cases" move has a name and a one-line justification, and we will lean on it
+in the Pascal, binomial-theorem, and multinomial proofs below, so we state it explicitly
+now rather than smuggle it in later.
+
+::: {#thm-addition}
+**Theorem (addition principle).** If a finite collection of outcomes is partitioned into
+$m$ *mutually exclusive* cases — no outcome belongs to two cases — with $a_1, a_2, \dots,
+a_m$ outcomes in the respective cases, then the total number of outcomes is
+$$
+a_1 + a_2 + \cdots + a_m .
+$$
+:::
+
+::: {.proof}
+This is nothing more than the statement that the size of a union of *disjoint* finite sets
+is the sum of their sizes. Let $A_1, \dots, A_m$ be the cases, regarded as sets of outcomes,
+pairwise disjoint ($A_i \cap A_j = \varnothing$ for $i \ne j$) by the "mutually exclusive"
+hypothesis. Counting the elements of $A_1 \cup \cdots \cup A_m$, every element lies in
+exactly one $A_i$ (in *some* $A_i$ because the cases are exhaustive of the collection, in
+*only one* because they are disjoint), so tallying the union element-by-element visits each
+element once and lands it in precisely one of the per-case tallies $a_i = |A_i|$. The grand
+tally is therefore $a_1 + \cdots + a_m$. This is exactly the finite, disjoint instance of
+the additivity that [PROB-0] takes as an axiom for *probabilities* of disjoint events; here
+we use it one level down, for the *sizes* of disjoint sets, which is its combinatorial
+shadow. $\qquad\blacksquare$
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Multiplication principle versus addition principle — when do you multiply and when do you
+add?"* You **multiply** when you make a sequence of choices and want *all* of them ("first
+this AND then that"): the stages compound. You **add** when an outcome falls into one of
+several *mutually exclusive* cases and you want the total across cases ("either this OR
+that, and they cannot both happen"): the disjoint cases accumulate. The cleanest tell:
+*AND across stages → multiply; OR across disjoint cases → add.* This is exactly the
+distinction between an intersection of independent stages and a union of disjoint events
+from [PROB-0]'s event algebra — combinatorics is that algebra applied to *sizes* of sets.
+:::
+
+## Counting with and without replacement: ordered selections {#sec-ordered}
+
+Now specialize the principle to the most common setup: drawing $k$ items, one at a time, in
+order, from a pool of $n$ distinct items. There are two regimes, and they differ only in
+whether a drawn item goes back.
+
+**Ordered, with replacement.** After each draw you return the item, so every one of the $k$
+draws faces the same $n$ options. By @thm-mult with $k$ stages each of size $n$,
+$$
+n \cdot n \cdots n \;(k \text{ factors}) \;=\; n^k .
+$$ {#eq-with-repl}
+This counts, e.g., the number of $k$-character strings over an $n$-symbol alphabet, or the
+$6^3 = 216$ ordered outcomes of rolling a die three times.
+
+**Ordered, without replacement.** Now a drawn item is *not* returned, so the pool shrinks by
+one each draw. The first draw has $n$ options; whichever item it took, the second has $n-1$
+remaining; the third has $n-2$; and the $k$-th has $n - (k-1) = n-k+1$. The per-stage count
+drops by exactly one each time and — crucially — does not depend on *which* items were
+removed, only on *how many*, so @thm-mult applies:
+$$
+n \,(n-1)(n-2)\cdots(n-k+1) \;=\; \prod_{j=0}^{k-1}(n-j) .
+$$ {#eq-falling}
+This product of $k$ descending factors is the **falling factorial**; it counts the ordered
+selections without replacement, which is precisely what we will name a permutation in
+@sec-permutations.
+
+::: {.callout-warning title="Pitfall"}
+The single most common counting error is **using the wrong replacement regime**. "Three
+people sit in three of ten chairs" is *without* replacement (a person cannot occupy two
+chairs) → $10 \cdot 9 \cdot 8$. "A three-digit PIN" is *with* replacement (digits may
+repeat) → $10^3$. Read the problem for whether an item, once used, is still available. The
+arithmetic is unforgiving: $10 \cdot 9 \cdot 8 = 720$ versus $10^3 = 1000$ are different
+answers to superficially similar questions.
+:::
+
+## The factorial: arranging all $n$ objects {#sec-factorial}
+
+The most important special case of @eq-falling is $k = n$: arrange *all* $n$ distinct
+objects in a row. Setting $k = n$, the descending product runs all the way down to its last
+factor $n - n + 1 = 1$:
+$$
+n\,(n-1)(n-2)\cdots 2 \cdot 1 .
+$$
+This number has a name and a symbol.
+
+::: {#def-factorial}
+**Definition (factorial).** For a positive integer $n$, the **factorial** $n!$ ("$n$
+factorial") is the product of every integer from $n$ down to $1$:
+$$
+n! \;=\; n\,(n-1)(n-2)\cdots 2 \cdot 1 \;=\; \prod_{j=1}^{n} j .
+$$
+By convention $0! = 1$.
+:::
+
+So $n!$ is exactly the number of distinct orderings (arrangements, **permutations**) of $n$
+distinct objects: $n$ choices for the first slot, $n-1$ for the second, …, $1$ for the last,
+multiplied by @thm-mult. For instance $3! = 6$ counts the six orderings of the letters
+$\{A,B,C\}$: $ABC, ACB, BAC, BCA, CAB, CBA$. @fig-factorial-growth shows how violently $n!$
+grows — faster than any exponential — which is *why* we need formulas rather than
+enumeration the moment $n$ leaves the single digits.
+
+Why define $0! = 1$? It is not arbitrary; it is the choice that makes every formula in this
+article hold without special cases. The cleanest justification is the **empty-product**
+convention: a product of *no* factors is $1$ (just as a sum of no terms is $0$), and
+arranging zero objects can be done in exactly one way — the empty arrangement. We will see
+in @sec-permutations and @sec-combinations that $0! = 1$ is precisely what makes
+$P(n,n) = n!$ and $\binom{n}{0} = \binom{n}{n} = 1$ come out right; any other value would
+break them.
+
+```{python}
+#| label: fig-factorial-growth
+#| fig-cap: "Factorial growth, on a log scale. $n!$ outruns the exponential $2^n$ and even $10^n$ for modest $n$ — by $n=15$ there are over a trillion arrangements. This explosion is the practical reason combinatorics exists: enumeration is hopeless almost immediately, so we count with formulas instead. (Log scale, so straight lines are exponential growth; the factorial curves *upward* even here, growing faster than any fixed exponential.)"
+ns = np.arange(1, 16)
+fact = np.array([factorial(int(n)) for n in ns], dtype=float)
+exp2 = 2.0 ** ns
+exp10 = 10.0 ** ns
+
+fig, ax = plt.subplots()
+ax.plot(ns, fact, color=LINE, marker="o", ms=4, label=r"$n!$")
+ax.plot(ns, exp10, color=ACCENT, marker="s", ms=4, label=r"$10^n$")
+ax.plot(ns, exp2, color=POINT, marker="^", ms=4, label=r"$2^n$")
+ax.set_yscale("log")
+ax.set_xlabel("$n$"); ax.set_ylabel("count (log scale)")
+ax.set_title("Factorial growth outruns any fixed exponential")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+```
+
+## Permutations: ordered selections of $k$ from $n$ {#sec-permutations}
+
+We now name @eq-falling and rewrite it with factorials, which is the form you will use.
+
+::: {#def-permutation}
+**Definition (permutation count).** The number of **permutations of $k$ objects taken from
+$n$ distinct objects** — ordered selections without replacement — is written $P(n,k)$ (also
+$_nP_k$ or $(n)_k$) and equals the falling factorial of @eq-falling:
+$$
+P(n,k) \;=\; n\,(n-1)\cdots(n-k+1) \;=\; \prod_{j=0}^{k-1}(n-j), \qquad 0 \le k \le n .
+$$
+:::
+
+This is already a complete formula, but the factorial form is tidier and reveals structure.
+Take the descending product $n(n-1)\cdots(n-k+1)$ and multiply *and divide* by the missing
+tail $(n-k)(n-k-1)\cdots 1 = (n-k)!$. Multiplying the numerator by that tail completes it
+into $n!$, and we have divided by the same tail to compensate:
+$$
+P(n,k)
+= n(n-1)\cdots(n-k+1)
+= \frac{n(n-1)\cdots(n-k+1)\,\cdot\,(n-k)(n-k-1)\cdots 1}{(n-k)(n-k-1)\cdots 1}
+= \frac{n!}{(n-k)!}.
+$$ {#eq-Pnk}
+
+Every factor is accounted for: the numerator is the full $n!$, and the denominator $(n-k)!$
+cancels exactly the factors from $(n-k)$ down to $1$ that we did *not* want, leaving the top
+$k$ descending factors. Two sanity checks confirm the conventions earn their keep:
+
+- $k = n$ (arrange everything): $P(n,n) = n!/(n-n)! = n!/0! = n!/1 = n!$, matching
+  @sec-factorial. This is *why* $0! = 1$ is the right convention.
+- $k = 0$ (select nothing): $P(n,0) = n!/n! = 1$ — there is exactly one way to choose nothing
+  (the empty selection), and the formula agrees.
+
+::: {.callout-tip title="You might be asked"}
+*"Compute the number of ways to award gold, silver, and bronze medals among 8 finalists."*
+This is a permutation: the medals are *ordered* (gold ≠ silver), and a runner gets at most
+one (no replacement). So $P(8,3) = 8!/5! = 8 \cdot 7 \cdot 6 = 336$. The reflex to train: the
+instant you hear "first, second, third" or "in order" or "ranked," order matters and you are
+in the permutation column. We will contrast this with the *unordered* version — "choose 3 of
+8 to advance, no ranking" — in the very next section, and the factor between the two answers
+will be exactly $3!$.
+:::
+
+## Combinations: when order does not matter {#sec-combinations}
+
+Often we do not care about the order of a selection — only *which* items were chosen. A poker
+hand is the same hand however you sort it; a committee of three is the same committee whoever
+was named first. To count unordered selections, we use the permutation count and *correct for
+overcounting*.
+
+Here is the key idea, and it is the whole article in one move. Counting *ordered* selections
+of $k$ items (that is $P(n,k)$) counts each *unordered* selection many times — once for every
+ordering of its $k$ chosen items. By @sec-factorial, a set of $k$ distinct items has exactly
+$k!$ orderings. So $P(n,k)$ has counted each unordered selection $k!$ times over. To get the
+count of unordered selections, divide by $k!$:
+$$
+\binom{n}{k} \;=\; \frac{P(n,k)}{k!}.
+$$ {#eq-comb-quotient}
+
+We can make the overcounting argument completely rigorous with the multiplication principle,
+so that "divide by $k!$" is a theorem, not a slogan.
+
+::: {#thm-comb}
+**Theorem (combination count).** The number of **combinations of $k$ objects taken from $n$
+distinct objects** — unordered selections without replacement — written $\binom{n}{k}$ (read
+"$n$ choose $k$"; also $_nC_k$ or $C(n,k)$) is
+$$
+\binom{n}{k} \;=\; \frac{n!}{k!\,(n-k)!}, \qquad 0 \le k \le n .
+$$
+:::
+
+::: {.proof}
+Build any *ordered* selection of $k$ from $n$ — there are $P(n,k)$ of them by
+@def-permutation — as a two-stage procedure, then apply @thm-mult *in reverse* to solve for
+the unknown count of unordered selections, which we name $C$.
+
+- **Stage 1:** choose the *set* of $k$ items, ignoring order. Let the (unknown) number of
+  ways be $C$ — this is exactly the quantity $\binom{n}{k}$ we want.
+- **Stage 2:** arrange the chosen $k$ items into an order. By @sec-factorial there are
+  exactly $k!$ orderings of $k$ distinct items, and this count is $k!$ *regardless of which
+  $k$ items were chosen* — so @thm-mult applies.
+
+Every ordered selection arises in exactly one way from this two-stage procedure (its set is
+determined, and its ordering is determined), and conversely each (set, ordering) pair gives a
+distinct ordered selection. So the two-stage count equals the ordered count:
+$$
+C \cdot k! \;=\; P(n,k) \;=\; \frac{n!}{(n-k)!},
+$$
+using @eq-Pnk for $P(n,k)$. Solving for $C$ by dividing both sides by $k!$,
+$$
+C \;=\; \binom{n}{k} \;=\; \frac{P(n,k)}{k!} \;=\; \frac{n!}{k!\,(n-k)!},
+$$
+which is both @eq-comb-quotient and the stated formula. $\qquad\blacksquare$
+:::
+
+The factor of $k!$ between a permutation and a combination is the single most important
+relationship in elementary counting, so let us see it concretely. @fig-perm-vs-comb lists,
+for $n=4$ and $k=2$, the $P(4,2)=12$ ordered selections grouped into the
+$\binom{4}{2}=6$ unordered ones — each unordered pair appears in exactly $2! = 2$ orders, and
+$12 / 2 = 6$.
+
+```{python}
+#| label: fig-perm-vs-comb
+#| fig-cap: "Permutations vs. combinations for $n=4$ items $\\{A,B,C,D\\}$, $k=2$. The $P(4,2)=12$ *ordered* selections (left) collapse into $\\binom{4}{2}=6$ *unordered* selections (right): each combination appears in exactly $2!=2$ orders, so dividing the ordered count by $2!$ gives the unordered count. This $\\div k!$ is the whole content of @eq-comb-quotient."
+from itertools import permutations, combinations as itercomb
+items = ["A", "B", "C", "D"]
+perms = list(permutations(items, 2))
+combs = list(itercomb(items, 2))
+
+fig, ax = plt.subplots(figsize=(7.2, 4.2))
+ax.axis("off")
+ax.text(0.16, 1.02, f"Ordered: P(4,2) = {len(perms)}", fontsize=11.5, ha="center", color=POINT)
+ax.text(0.78, 1.02, f"Unordered: C(4,2) = {len(combs)}", fontsize=11.5, ha="center", color=ACCENT)
+
+# group the 12 ordered pairs by their underlying set, 2 per combination
+for row, c in enumerate(combs):
+    y = 0.92 - row * 0.155
+    ordered_versions = [p for p in perms if set(p) == set(c)]
+    txt = "   ".join("".join(p) for p in ordered_versions)
+    ax.text(0.16, y, txt, fontsize=12, ha="center", family="monospace", color=POINT)
+    ax.annotate("", xy=(0.62, y), xytext=(0.34, y),
+                arrowprops=dict(arrowstyle="->", color=GREY, lw=1.3))
+    ax.text(0.78, y, "".join(c), fontsize=13, ha="center", family="monospace", color=ACCENT)
+    ax.text(0.47, y + 0.045, r"$\div 2!$", fontsize=9, ha="center", color=GREY)
+ax.set_xlim(0, 1); ax.set_ylim(0.0, 1.06)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"How many 5-card poker hands are there from a 52-card deck?"* Order does not matter — a hand
+is a set — so this is a combination:
+$$
+\binom{52}{5} = \frac{52!}{5!\,47!}
+= \frac{52 \cdot 51 \cdot 50 \cdot 49 \cdot 48}{5!}
+= \frac{311{,}875{,}200}{120} = 2{,}598{,}960 .
+$$
+Notice the efficient way to compute it: write $\binom{n}{k} = P(n,k)/k!$ and only carry the
+top $k$ descending factors $52 \cdot 51 \cdots 48$ over $5!$ — never form the full $52!$,
+which has $68$ digits. Whether you are asked for ordered hands ($P(52,5)$, if "dealt in
+order" mattered) or unordered hands ($\binom{52}{5}$) is the entire question; the factor
+between them is $5! = 120$.
+:::
+
+## The symmetry $\binom{n}{k} = \binom{n}{n-k}$ {#sec-symmetry}
+
+The combination count has a beautiful symmetry that is both a computational shortcut and a
+piece of genuine insight.
+
+::: {#thm-symmetry}
+**Theorem (symmetry of the binomial coefficient).** For $0 \le k \le n$,
+$$
+\binom{n}{k} = \binom{n}{n-k}.
+$$
+:::
+
+::: {.proof}
+*Algebraically*, substitute $n-k$ for $k$ in @thm-comb and watch the two factorials in the
+denominator simply swap places:
+$$
+\binom{n}{n-k}
+= \frac{n!}{(n-k)!\,\bigl(n-(n-k)\bigr)!}
+= \frac{n!}{(n-k)!\,k!}
+= \frac{n!}{k!\,(n-k)!}
+= \binom{n}{k},
+$$
+since multiplication in the denominator is commutative, $(n-k)!\,k! = k!\,(n-k)!$. $\qquad\blacksquare$
+:::
+
+The algebra is one line, but the *meaning* is worth more than the proof. **Choosing which
+$k$ items to include is the same act as choosing which $n-k$ items to exclude.** Every time
+you pick a committee of $k$ from $n$ people, you simultaneously pick the $n-k$ people left
+off it; the two choices are in perfect one-to-one correspondence, so they must be equinumerous.
+This "bijection" argument — pair up the things you are counting with things you already know
+how to count — is the deepest tool in combinatorics, and here it gives the symmetry for free,
+with no factorials at all. Practically, it lets you replace a hard computation with an easy
+one: $\binom{50}{48} = \binom{50}{2} = \frac{50 \cdot 49}{2} = 1225$, rather than grinding
+through $48$ factors.
+
+## Pascal's recurrence {#sec-pascal}
+
+The next identity is the engine behind the whole structure of binomial coefficients and the
+single most useful way to *build* them without factorials.
+
+::: {#thm-pascal}
+**Theorem (Pascal's recurrence).** For $1 \le k \le n-1$,
+$$
+\binom{n}{k} = \binom{n-1}{k-1} + \binom{n-1}{k}.
+$$
+:::
+
+::: {.proof}
+We give the **combinatorial** proof — it explains *why* the identity is true, not just that
+it is. Fix one particular item out of the $n$; call it the *special* item $\star$. We want to
+count the $k$-subsets of the $n$ items, and we split them into two cases according to a
+single yes/no question: *does the subset contain $\star$?* These two cases are mutually
+exclusive (a subset either contains $\star$ or it does not) and exhaustive (every subset
+falls into one), so by the addition principle (@thm-addition) the total is the sum of the two
+case counts.
+
+- **Case 1 — the subset contains $\star$.** Then $\star$ takes one of the $k$ slots, and we
+  must choose the remaining $k-1$ items from the other $n-1$ (non-special) items. By
+  @thm-comb that can be done in $\binom{n-1}{k-1}$ ways.
+- **Case 2 — the subset does not contain $\star$.** Then all $k$ chosen items come from the
+  other $n-1$ items, which can be done in $\binom{n-1}{k}$ ways.
+
+Adding the two disjoint, exhaustive cases gives the total number of $k$-subsets,
+$$
+\binom{n}{k} = \binom{n-1}{k-1} + \binom{n-1}{k},
+$$
+as claimed. $\qquad\blacksquare$
+:::
+
+Arranging these numbers in a triangle — row $n$ holding $\binom{n}{0}, \binom{n}{1}, \dots,
+\binom{n}{n}$ — gives **Pascal's triangle**, in which @thm-pascal says *every interior entry
+is the sum of the two entries above it*, and @thm-symmetry says *each row reads the same
+left-to-right as right-to-left*. @fig-pascal draws it and verifies both identities visually.
+
+```{python}
+#| label: fig-pascal
+#| fig-cap: "Pascal's triangle, rows $n=0$ through $7$. Each interior entry is the sum of the two directly above it (Pascal's recurrence, @thm-pascal) — one such addition is highlighted: $\\binom{6}{2}=15$ sits atop $\\binom{7}{2}=21$. Each row is a palindrome (the symmetry $\\binom{n}{k}=\\binom{n}{n-k}$, @thm-symmetry). The row sums (right margin) are the powers of two, $\\sum_k \\binom{n}{k} = 2^n$, proved in @sec-binomial-theorem."
+N = 7
+fig, ax = plt.subplots(figsize=(7.2, 4.8))
+ax.axis("off")
+dx, dy = 0.62, 0.62
+for n in range(N + 1):
+    for k in range(n + 1):
+        val = comb(n, k)
+        x = (k - n / 2) * dx
+        y = -n * dy
+        highlight = (n in (6, 7)) and ((n == 6 and k in (1, 2)) or (n == 7 and k == 2))
+        color = LINE if highlight else POINT
+        ax.text(x, y, str(val), fontsize=11, ha="center", va="center",
+                color="white", fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.28", fc=color, ec="none"))
+    ax.text((n / 2) * dx + 0.9, -n * dy, f"$\\Sigma = {2**n}$",
+            fontsize=10, va="center", color=GREY)
+ax.set_xlim(-(N / 2) * dx - 0.6, (N / 2) * dx + 1.9)
+ax.set_ylim(-N * dy - 0.5, 0.5)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why would you ever use Pascal's recurrence instead of the factorial formula?"* Two real
+reasons. **Numerically:** the recurrence builds $\binom{n}{k}$ from smaller integers by
+*addition only*, never forming the gigantic intermediate $n!$ that overflows or loses
+precision — it is the basis of a stable, exact, integer dynamic-programming computation of
+binomial coefficients. **Conceptually:** the "does it contain the special element?"
+case-split in the proof is a reusable template. The same split derives the recurrences for
+countless combinatorial quantities (the negative binomial's structure in [PROB-11], the
+order-statistic counts in [PROB-23]). Knowing the recurrence is knowing the *method*, not
+just the number.
+:::
+
+## The binomial theorem {#sec-binomial-theorem}
+
+We now reach the result this whole article is built to deliver to the catalog: the **binomial
+theorem**, which expands $(x+y)^n$ and explains why the coefficients are exactly the
+combination counts $\binom{n}{k}$ — hence the name *binomial coefficient*.
+
+::: {#thm-binomial}
+**Theorem (binomial theorem).** For any real (or complex) numbers $x, y$ and any
+non-negative integer $n$,
+$$
+(x + y)^n = \sum_{k=0}^{n} \binom{n}{k}\, x^{k}\, y^{\,n-k}.
+$$
+:::
+
+::: {.proof}
+Write the power as a product of $n$ identical factors:
+$$
+(x+y)^n = \underbrace{(x+y)(x+y)\cdots(x+y)}_{n \text{ factors}} .
+$$
+Expanding this product by the distributive law means: from *each* of the $n$ factors choose
+either the $x$ term or the $y$ term, multiply the $n$ chosen terms together, and sum over
+*every* possible way of choosing. That is precisely a sequence of $n$ independent two-way
+choices — exactly the choice tree of @sec-intuition — so by @thm-mult there are $2^n$ such
+selections, and the full expansion is the sum of those $2^n$ products before any combining.
+
+Now collect like terms. A single product in that expansion contributes a factor of $x$ for
+each factor where we picked $x$, and a factor of $y$ for each factor where we picked $y$. If
+we picked $x$ from exactly $k$ of the $n$ factors (and therefore $y$ from the remaining
+$n-k$), that product equals $x^k y^{\,n-k}$ — *the same monomial regardless of which $k$
+factors supplied the $x$.* The $2^n$ products therefore partition into mutually exclusive
+groups indexed by $k$ — the group "$x$ chosen from exactly $k$ factors" for each
+$k = 0, 1, \dots, n$, every product landing in exactly one group — so by the addition
+principle (@thm-addition) the number of products in group $k$ is the
+**number of ways to choose which $k$ of the $n$ factors contribute the $x$.** Choosing $k$
+factors out of $n$, order irrelevant, is counted by @thm-comb as $\binom{n}{k}$. All
+$\binom{n}{k}$ products in group $k$ equal the same monomial $x^k y^{\,n-k}$, so the group
+contributes $\binom{n}{k}\,x^k y^{\,n-k}$ to the sum. Summing the
+collected groups over every $k$ from $0$ to $n$,
+$$
+(x+y)^n = \sum_{k=0}^{n} \binom{n}{k}\, x^{k}\, y^{\,n-k},
+$$
+which is the theorem. $\qquad\blacksquare$
+:::
+
+This proof is the reason the binomial coefficient is the bridge to probability. In [PROB-11]
+the term $\binom{n}{k} p^k (1-p)^{n-k}$ will be the probability of exactly $k$ successes in
+$n$ independent trials — and the binomial theorem is exactly what guarantees those
+probabilities sum to one. Set $x = p$ and $y = 1-p$:
+$$
+\sum_{k=0}^{n} \binom{n}{k}\, p^{k}\,(1-p)^{n-k}
+= \bigl(p + (1-p)\bigr)^{n} = 1^{n} = 1 .
+$$ {#eq-binom-normalize}
+A whole distribution normalizes to $1$ in a single line, *because* we counted its outcomes
+with $\binom{n}{k}$. That is the payoff the catalog was waiting for.
+
+One more identity falls out immediately and we promised it in @fig-pascal. Set $x = y = 1$ in
+@thm-binomial:
+$$
+2^n = (1+1)^n = \sum_{k=0}^{n} \binom{n}{k}\, 1^{k}\, 1^{\,n-k} = \sum_{k=0}^{n} \binom{n}{k}.
+$$ {#eq-row-sum}
+The sum of each row of Pascal's triangle is $2^n$ — which is also obvious combinatorially: the
+left side $2^n$ counts *all* subsets of an $n$-element set (each element is in or out, $n$
+independent two-way choices, @sec-ordered), and the right side counts those same subsets
+grouped by their size $k$. Two ways of counting the same thing must agree, and they do.
+
+# The 2×2 table of sampling {#sec-2x2}
+
+Every elementary counting problem in this article is one of four kinds, determined by two
+independent yes/no questions:
+
+1. **Does order matter?** (Is $AB$ different from $BA$?)
+2. **Is replacement allowed?** (Can an item be chosen more than once?)
+
+Two binary questions give four cells. Three of the four we have already derived; we complete
+the table now with the fourth, which needs one new idea.
+
+| | **Order matters** | **Order does not matter** |
+|---|---|---|
+| **With replacement** | $n^k$ (@eq-with-repl) | $\binom{n+k-1}{k}$ (@sec-stars-bars) |
+| **Without replacement** | $\dfrac{n!}{(n-k)!} = P(n,k)$ (@eq-Pnk) | $\dfrac{n!}{k!\,(n-k)!} = \binom{n}{k}$ (@thm-comb) |
+
+: The four ways to draw $k$ items from $n$ distinct items. Classifying a problem into the
+right cell is the entire skill of elementary counting. {#tbl-2x2}
+
+The three corners we know: ordered-with-replacement is the unrestricted product $n^k$;
+ordered-without is the falling factorial $P(n,k)$; unordered-without is $\binom{n}{k}$. The
+remaining corner — **unordered, with replacement** — counts *multisets*: selections of size
+$k$ where repeats are allowed but order is ignored (e.g. how many ways to fill a bag with $k$
+scoops from $n$ ice-cream flavors). It deserves its own short derivation because the naive
+guesses ($n^k/k!$ or $\binom{n}{k}$) are both *wrong* — $n^k/k!$ is not even an integer in
+general.
+
+## Stars and bars: unordered with replacement {#sec-stars-bars}
+
+::: {#thm-stars-bars}
+**Theorem (multiset count / stars and bars).** The number of ways to choose $k$ items from $n$
+distinct types, with repetition allowed and order ignored, is
+$$
+\binom{n+k-1}{k} = \binom{n+k-1}{n-1}.
+$$
+:::
+
+::: {.proof}
+A multiset of size $k$ from $n$ types is fully described by *how many of each type* it
+contains: a list of counts $(c_1, c_2, \dots, c_n)$ of non-negative integers with
+$c_1 + c_2 + \cdots + c_n = k$ (we chose $c_i$ copies of type $i$, and the total is $k$). So
+we need only count the number of such count-lists.
+
+Encode each count-list as a row of symbols. Write $k$ **stars** $\star$ for the $k$ chosen
+items and $n-1$ **bars** $\mid$ to partition them into $n$ groups (the bars are the $n-1$
+fences between $n$ bins). For example, with $n=3$ types and $k=4$, the row
+$\star\star \mid \;\mid \star\star$ means "two of type 1, zero of type 2, two of type 3."
+*Every* arrangement of $k$ stars and $n-1$ bars in a row corresponds to exactly one valid
+count-list (read off the number of stars in each of the $n$ regions the bars create), and
+every count-list gives exactly one such arrangement — a perfect one-to-one correspondence.
+
+So the count of multisets equals the count of these rows. A row has $k + (n-1)$ total
+positions, and we need only choose *which* $k$ of them hold stars (the rest are bars) — an
+unordered, without-replacement choice of positions, counted by @thm-comb:
+$$
+\binom{k + (n-1)}{k} = \binom{n+k-1}{k}.
+$$
+The alternative form $\binom{n+k-1}{n-1}$ follows by the symmetry @thm-symmetry (equivalently,
+choose which $n-1$ positions hold the bars instead). $\qquad\blacksquare$
+:::
+
+@fig-stars-bars illustrates the bijection for $n=3$, $k=4$, the heart of why the formula has
+that shape.
+
+```{python}
+#| label: fig-stars-bars
+#| fig-cap: "Stars and bars for $n=3$ flavors, $k=4$ scoops. A multiset (how many of each flavor) is encoded as a row of $4$ stars and $n-1=2$ bars; choosing which of the $4+2=6$ positions are stars determines everything, so the count is $\\binom{6}{4}=15$. Three example encodings are shown with the multiset they represent."
+fig, ax = plt.subplots(figsize=(7.0, 3.4))
+ax.axis("off")
+examples = [
+    ("★★|★|★", "(2, 1, 1)"),
+    ("★★★★||", "(4, 0, 0)"),
+    ("|★★|★★", "(0, 2, 2)"),
+]
+ax.text(0.30, 1.0, "encoding (stars & bars)", fontsize=11, ha="center", color=POINT)
+ax.text(0.80, 1.0, "counts per flavor", fontsize=11, ha="center", color=ACCENT)
+for row, (enc, cnt) in enumerate(examples):
+    y = 0.78 - row * 0.24
+    ax.text(0.30, y, enc, fontsize=18, ha="center", family="monospace", color=POINT)
+    ax.annotate("", xy=(0.62, y), xytext=(0.46, y),
+                arrowprops=dict(arrowstyle="->", color=GREY, lw=1.3))
+    ax.text(0.80, y, cnt, fontsize=14, ha="center", family="monospace", color=ACCENT)
+ax.text(0.5, 0.03,
+        r"total $= \binom{n+k-1}{k} = \binom{6}{4} = 15$ multisets",
+        fontsize=12.5, ha="center")
+ax.set_xlim(0, 1); ax.set_ylim(0, 1.05)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"You're given a counting problem cold. What's your first move?"* Locate it in @tbl-2x2. Ask
+the two questions in order: (1) *does swapping two chosen items give a different outcome?* —
+if yes, order matters (top vs. bottom rows do **not** apply; you are in the "order matters"
+column); (2) *can the same item be chosen twice?* — if yes, with replacement. Those two
+answers pin the cell and hand you the formula. Misclassifying the cell is the only way to get
+these problems wrong; the arithmetic afterward is mechanical. The dangerous cell is
+**unordered-with-replacement** (stars and bars), because it is the one people have not
+memorized and it does *not* equal any of the other three.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on three honest problems. The first is the canonical equally-likely
+calculation; the second is a real applied count; the third is deliberately placed at the
+**edge of applicability**, where the equally-likely assumption that licenses all of this
+quietly breaks.
+
+## Example 1 — the birthday problem {#sec-birthday}
+
+A staple of every probability course and interview, the **birthday problem** asks: in a room
+of $m$ people, what is the probability that *at least two share a birthday*? It is the perfect
+showcase because it is pure counting, the answer is famously counterintuitive, and the
+equally-likely assumption is (nearly) honest here.
+
+Assume $365$ days, each equally likely, and independent birthdays — so every one of the
+$365^m$ ordered birthday-assignments is equally likely (ordered-with-replacement,
+@eq-with-repl: each of the $m$ people independently lands on one of $365$ days). That is our
+denominator. Computing the "at least two share" event directly is messy (two could share,
+three could, two separate pairs could…), so we count the **complement** — *all $m$ birthdays
+distinct* — and subtract from $1$. This is the classic move: when an event is a tangle of
+cases but its complement is clean, count the complement (the rule $P(A) = 1 - P(A^c)$ is from
+[PROB-0]).
+
+All-distinct birthdays is an *ordered, without-replacement* assignment: the first person can
+have any of $365$ days, the second any of the remaining $364$, …, the $m$-th any of
+$365 - m + 1$. By @eq-Pnk that count is $P(365, m) = 365!/(365-m)!$. Dividing the favorable
+(all-distinct) count by the total $365^m$,
+$$
+P(\text{all distinct}) = \frac{P(365,m)}{365^m} = \frac{365 \cdot 364 \cdots (365-m+1)}{365^m},
+$$
+and therefore
+$$
+P(\text{at least one shared birthday}) = 1 - \frac{365 \cdot 364 \cdots (365-m+1)}{365^m}.
+$$ {#eq-birthday}
+
+@fig-birthday plots @eq-birthday. The shock is that it crosses $50\%$ at just $m = 23$ people
+and exceeds $99\%$ by $m = 57$ — far fewer than intuition (anchored on the $365$ days)
+suggests. The reason is that the relevant count is *pairs* of people, $\binom{m}{2}$, which
+grows quadratically: $23$ people already form $\binom{23}{2} = 253$ pairs, each a chance to
+collide.
+
+```{python}
+#| label: fig-birthday
+#| fig-cap: "The birthday problem (@eq-birthday). The probability that at least two of $m$ people share a birthday crosses $50\\%$ at only $m=23$ and exceeds $99\\%$ by $m=57$. The counterintuitive speed comes from the *pairs* count $\\binom{m}{2}$ (right axis annotation) growing quadratically — $23$ people already make $253$ pairs. Markers at $m=23$ and $m=57$."
+def p_shared(m):
+    # 1 - P(all distinct), computed stably as a running product of ratios
+    p_distinct = 1.0
+    for i in range(m):
+        p_distinct *= (365 - i) / 365.0
+    return 1.0 - p_distinct
+
+ms = np.arange(1, 81)
+ps = np.array([p_shared(int(m)) for m in ms])
+
+fig, ax = plt.subplots()
+ax.plot(ms, ps, color=LINE)
+ax.axhline(0.5, color=GREY, ls="--", lw=1.2)
+for mm in (23, 57):
+    ax.scatter([mm], [p_shared(mm)], color=ACCENT, s=70, zorder=4, edgecolor="white")
+    ax.annotate(f"$m={mm}$\n$P={p_shared(mm):.3f}$", (mm, p_shared(mm)),
+                textcoords="offset points", xytext=(8, -28 if mm == 23 else -2),
+                fontsize=9, color=ACCENT)
+ax.set_xlabel("number of people $m$"); ax.set_ylabel("P(at least one shared birthday)")
+ax.set_title("23 people is enough for a coin-flip")
+ax.set_ylim(0, 1.02)
+plt.tight_layout()
+print(f"P(shared) at m=23: {p_shared(23):.4f}")
+print(f"P(shared) at m=57: {p_shared(57):.4f}")
+print(f"pairs among 23 people: C(23,2) = {comb(23,2)}")
+```
+
+Every ingredient was a count from this article: the denominator $365^m$ from
+ordered-with-replacement, the numerator $P(365,m)$ from ordered-without, the complement trick
+from [PROB-0], and the quadratic intuition from $\binom{m}{2}$.
+
+## Example 2 — the lottery, and why combinations make it hopeless {#sec-lottery}
+
+A genuinely useful applied count: the odds in a $6/49$ lottery, where you choose $6$
+distinct numbers from $1$ to $49$ and win the jackpot if your set matches the drawn set.
+Order does not matter (the balls are sorted before comparison) and numbers are not repeated —
+**unordered, without replacement**, the $\binom{n}{k}$ cell of @tbl-2x2:
+$$
+\binom{49}{6} = \frac{49!}{6!\,43!}
+= \frac{49 \cdot 48 \cdot 47 \cdot 46 \cdot 45 \cdot 44}{6!}
+= \frac{10{,}068{,}347{,}520}{720} = 13{,}983{,}816 .
+$$
+There are about $14$ million equally-likely tickets, so a single ticket wins with probability
+$1/13{,}983{,}816 \approx 7.2 \times 10^{-8}$. This is an honest use of equally-likely
+counting: a well-mixed lottery machine *designs in* the symmetry that makes every combination
+equiprobable.
+
+The article also lets us count **partial** matches — the smaller prizes for matching exactly
+$j$ of the $6$ drawn numbers. This is a textbook use of the multiplication principle: to match
+exactly $j$, choose $j$ of your numbers from the $6$ winning numbers **and** the other $6-j$
+from the $43$ losing numbers, by @thm-mult:
+$$
+P(\text{match exactly } j) = \frac{\binom{6}{j}\binom{43}{6-j}}{\binom{49}{6}}, \qquad j = 0,1,\dots,6 .
+$$ {#eq-hypergeom}
+(This is the **hypergeometric** distribution; [PROB-11] names it and ties it to sampling
+without replacement.) @fig-lottery plots these probabilities — the jackpot bar is so tiny it
+is invisible against the near-certainty of matching only zero, one, or two numbers.
+
+```{python}
+#| label: fig-lottery
+#| fig-cap: "Lottery match probabilities (@eq-hypergeom) for a $6/49$ draw: probability of matching exactly $j$ of the $6$ drawn numbers with one ticket. The mass piles up at $j=0,1,2$ (you almost certainly match almost nothing); the jackpot $j=6$ has probability $\\approx 7.2\\times10^{-8}$ — invisible on the bar, annotated explicitly. Computed via the multiplication principle: $\\binom{6}{j}$ ways to hit winners times $\\binom{43}{6-j}$ ways to hit losers."
+total = comb(49, 6)
+js = np.arange(0, 7)
+probs = np.array([comb(6, j) * comb(43, 6 - j) / total for j in js])
+
+fig, ax = plt.subplots()
+bars = ax.bar(js, probs, color=POINT, width=0.6)
+ax.set_xlabel("numbers matched, $j$"); ax.set_ylabel("probability")
+ax.set_title("Lottery: you match almost nothing, almost always")
+for j, p in zip(js, probs):
+    if p > 0.01:
+        ax.text(j, p + 0.008, f"{p:.3f}", ha="center", fontsize=9, color=POINT)
+ax.annotate(f"jackpot $j=6$:\n$P \\approx {probs[6]:.1e}$",
+            xy=(6, 0), xytext=(4.2, 0.30),
+            arrowprops=dict(arrowstyle="->", color=LINE, lw=1.4),
+            fontsize=9.5, color=LINE)
+plt.tight_layout()
+print(f"C(49,6) = {total:,}")
+print(f"P(jackpot) = 1 / {total:,} = {1/total:.3e}")
+print("match-exactly-j probabilities:", np.round(probs, 6))
+print("sum of probabilities (must be 1):", probs.sum())
+```
+
+The printed check that the seven probabilities sum to $1$ is the hypergeometric analogue of
+the binomial normalization @eq-binom-normalize — another distribution made legitimate by
+counting.
+
+## Example 3 — the edge of applicability: when "equally likely" is a lie {#sec-edge}
+
+Now the honest boundary. Every formula in this article computes a *size* — a number of
+outcomes. Converting a size to a *probability* requires the outcomes to be **equally likely**,
+and that assumption is doing enormous, often invisible, work. The edge case is any situation
+where counting *looks* applicable but the outcomes are not interchangeable.
+
+Take a concrete, real one: **the distribution of two-letter sequences (bigrams) in English
+text.** A naive counting argument says: there are $26 \times 26 = 676$ ordered letter pairs
+(ordered, with replacement — letters can repeat, and "TH" $\neq$ "HT"), so if we picked a
+random bigram from text, each pair would have probability $1/676 \approx 0.00148$. That is
+flatly, badly wrong, because letters in English are *not* equally likely and consecutive
+letters are *not* independent: "TH", "HE", "IN" are wildly more common than "QZ" or "JX",
+many of which never occur at all. @fig-bigram puts the counting prediction against reality.
+
+```{python}
+#| label: fig-bigram
+#| fig-cap: "The edge of applicability. *Counting* says all $26^2=676$ letter bigrams are equally likely at $1/676$ (red line). *Reality* — bigram frequencies from a sample of English text — is violently unequal: a handful of bigrams (TH, HE, IN, ER, AN) dominate and most are rare or absent. Counting gives the right *denominator* (676 possible bigrams) but a wrong *probability*, because the equally-likely assumption that converts size into probability is false here. This is where the classical model stops and a probability *model* (PROB-11 onward) must take over."
+# A short but real English passage; we tally adjacent-letter bigrams.
+text = (
+    "the quick brown fox jumps over the lazy dog and then the dog runs back "
+    "to the other side of the field where the cattle and the horses graze in "
+    "the morning light as the farmer brings the hay and water for them all "
+    "and the children watch the animals from the fence near the great old barn"
+)
+letters = [c for c in text.lower() if c.isalpha()]
+from collections import Counter
+bigrams = Counter(a + b for a, b in zip(letters, letters[1:]))
+total_bg = sum(bigrams.values())
+top = bigrams.most_common(12)
+
+fig, ax = plt.subplots(figsize=(7.0, 4.0))
+labels = [b.upper() for b, _ in top]
+freqs = [c / total_bg for _, c in top]
+ax.bar(range(len(top)), freqs, color=POINT, width=0.7, label="observed frequency")
+ax.axhline(1 / 676, color=LINE, lw=2.0, label=r"counting model: $1/676 \approx 0.0015$")
+ax.set_xticks(range(len(top))); ax.set_xticklabels(labels, fontsize=9)
+ax.set_xlabel("bigram"); ax.set_ylabel("relative frequency")
+ax.set_title("Counting's equal-likelihood assumption fails on real text")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+print(f"distinct bigrams observed: {len(bigrams)} of 676 possible")
+print(f"most common: {top[0][0].upper()} at {top[0][1]/total_bg:.3f}  vs  counting's {1/676:.4f}")
+```
+
+The lesson is not that counting is wrong — the denominator $676$ is exactly right, and if you
+genuinely drew a uniformly random pair of letters (say, two independent fair $26$-sided dice
+labeled A–Z) the $1/676$ would be exactly right too. The lesson is that **counting computes
+probabilities only when a symmetry guarantees equal likelihood**, and you must check that
+guarantee. A fair die, a shuffled deck, a designed lottery, a random permutation of treatment
+labels — these *manufacture* the symmetry, and counting is exact. Natural data (letters,
+words, incomes, arrival times) almost never has it, and there counting the outcomes is the
+wrong tool; you need a probability model that assigns *unequal* probabilities, which is what
+the rest of the catalog builds. Knowing which world you are in is the whole judgment.
+
+# Failure modes and what to reach for instead {#sec-failure}
+
+The machinery is mechanical once you are in the right cell of @tbl-2x2, so the failures are
+failures of *classification* and of *assumption*, not of arithmetic.
+
+**1. Wrong cell — order/replacement misread.** The dominant error. "How many ways to seat
+$5$ people in $5$ chairs" is ordered-without ($5! = 120$); "how many $5$-person committees
+from $20$" is unordered-without ($\binom{20}{5}$); "how many $5$-letter passwords" is
+ordered-with ($26^5$). The fix is the two-question drill of @sec-2x2 — and when in doubt,
+*enumerate a tiny case by hand* (as in @fig-perm-vs-comb) to see whether $AB$ and $BA$ are
+being double-counted.
+
+**2. The equally-likely assumption is false.** The edge case of @sec-edge. Counting sizes is
+always valid; turning a size into a probability via "favorable / total" is valid **only**
+under a genuine symmetry. When outcomes are not interchangeable, you have left this article's
+domain and must reach for a probability *model* — the Bernoulli/binomial of [PROB-11], the
+Poisson of [PROB-12], or any weighted distribution downstream.
+
+**3. Forgetting indistinguishable items.** Our formulas assume the $n$ objects are
+*distinct*. Arranging the letters of "MISSISSIPPI" is **not** $11!$, because the four S's are
+identical and swapping two of them gives the same word. The correction is to divide by the
+factorial of each repeat group — $\dfrac{11!}{4!\,4!\,2!\,1!}$ (four S, four I, two P, one M)
+— which is the **multinomial coefficient**, the natural generalization of $\binom{n}{k}$ to
+more than two groups. We build it next.
+
+**4. The numbers explode.** $\binom{n}{k}$ and $n!$ overflow fast (@fig-factorial-growth). The
+fixes: compute $\binom{n}{k}$ as the descending product $P(n,k)/k!$ (never the full $n!$); use
+the symmetry @thm-symmetry to keep $k \le n/2$; or build with Pascal's recurrence (@thm-pascal)
+for exact integers; or work with $\ln \binom{n}{k} = \ln n! - \ln k! - \ln(n-k)!$ via
+`scipy.special.gammaln` when only the magnitude is needed.
+
+## The multinomial coefficient {#sec-multinomial}
+
+Failure mode 3 deserves a derivation, because the result is exactly the count that [PROB-23]
+needs for order statistics and that [PROB-11] needs for the multinomial distribution.
+
+::: {#thm-multinomial}
+**Theorem (multinomial coefficient).** The number of distinct arrangements of $n$ objects of
+which $n_1$ are of type 1, $n_2$ of type 2, …, $n_r$ of type $r$ (with
+$n_1 + n_2 + \cdots + n_r = n$, objects of the same type indistinguishable) is
+$$
+\binom{n}{n_1, n_2, \dots, n_r} = \frac{n!}{n_1!\,n_2!\cdots n_r!}.
+$$
+:::
+
+::: {.proof}
+First pretend all $n$ objects are distinct; then there are $n!$ arrangements by
+@sec-factorial. But each *truly distinct* arrangement has been counted multiple times,
+because permuting the $n_1$ type-1 objects among the positions they occupy does not change
+the visible arrangement — and there are $n_1!$ such permutations (@sec-factorial). The same
+holds independently for each type: $n_2!$ redundant orderings of the type-2 objects, and so
+on. By the multiplication principle (@thm-mult), every visible arrangement has been counted
+$n_1!\,n_2!\cdots n_r!$ times. Dividing the over-count $n!$ by the redundancy factor,
+$$
+\binom{n}{n_1,\dots,n_r} = \frac{n!}{n_1!\,n_2!\cdots n_r!}. \qquad\blacksquare
+$$
+:::
+
+The two-type case $r=2$, with groups of sizes $k$ and $n-k$, is exactly
+$\dfrac{n!}{k!\,(n-k)!} = \binom{n}{k}$ — so the binomial coefficient is the multinomial
+coefficient with two groups, and the "divide out the redundant orderings" argument here is
+the same one that produced @thm-comb. The pattern is unmistakable: *count as if everything
+were distinct, then divide by the orderings you cannot tell apart.* That single idea is the
+spine of the whole article.
+
+::: {.callout-tip title="You might be asked"}
+*"How many distinct arrangements of the word STATISTICS are there?"* Ten letters with repeats
+S(3), T(3), A(1), I(2), C(1). By @thm-multinomial,
+$\dfrac{10!}{3!\,3!\,1!\,2!\,1!} = \dfrac{3{,}628{,}800}{6 \cdot 6 \cdot 2} = 50{,}400$.
+The interviewer is checking that you (a) recognized indistinguishable letters and did *not*
+say $10!$, and (b) divided by the factorial of *each* repeat group. Forgetting either is the
+classic slip.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[PROB-0 *What Is Probability?*]**, which established the classical /
+equally-likely interpretation — probability as favorable count over total count. This
+article supplied the *counting* that interpretation needs and could not provide for itself.
+From here the catalog continues, and several articles consume exactly what we built:
+
+- **[PROB-11 *Bernoulli, Binomial & Negative-Binomial*]** — the immediate sequel. The
+  binomial pmf $\binom{n}{k}p^k(1-p)^{n-k}$ uses $\binom{n}{k}$ to count the arrangements of
+  $k$ successes among $n$ trials, and the binomial theorem (@thm-binomial, via
+  @eq-binom-normalize) is precisely what makes it a valid distribution. The hypergeometric we
+  met in @sec-lottery is named there too.
+- **[PROB-23 *Order Statistics*]** — the density of the $k$-th smallest of $n$ samples is
+  built from the multinomial count of @thm-multinomial: how many ways to split the sample
+  into "below," "at," and "above" the order statistic.
+- **Across tracks — Statistical Inference E3 (permutation tests)** — the null distribution of
+  a permutation test is a uniform draw over the $n!$ relabelings of the data, the factorial
+  of @sec-factorial; the test's validity rests on those relabelings being equally likely
+  under the null, the same equal-likelihood premise that opened this article.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary source / origin.** The 1654 Pascal–Fermat correspondence on the *problem of
+  points* (how to split the stakes of an interrupted game) is the founding document — and the
+  first serious use of "probability = count of favorable / count of total." Pascal's
+  *Traité du triangle arithmétique* (posthumous, 1665) is the source of Pascal's triangle and
+  the recurrence of @thm-pascal.
+- **The bijective method.** The symmetry proof (@thm-symmetry) and stars-and-bars
+  (@thm-stars-bars) are your first taste of **bijective combinatorics** — proving two
+  quantities equal by exhibiting a one-to-one correspondence rather than computing both. It is
+  the most powerful and most elegant tool in the subject; Stanley's *Enumerative
+  Combinatorics* is the canonical deep dive.
+- **Open threads this article deliberately deferred.** *What if the trials are not equally
+  likely?* — that is the entire point of the distribution catalog beginning in [PROB-11].
+  *What about counting that involves both inclusion and exclusion of overlapping conditions?*
+  — that is the **inclusion–exclusion principle**, introduced in [PROB-0] for two events and
+  generalized in advanced combinatorics. *Where does $\binom{n}{k}$ go for non-integer $n$?* —
+  Newton's **generalized binomial theorem** extends @thm-binomial to real exponents via an
+  infinite series, the gateway to the gamma function that [PROB-14] builds and that lets
+  $\binom{\alpha}{k}$ make sense for any real $\alpha$.

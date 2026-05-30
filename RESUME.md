@@ -10,8 +10,8 @@ truth for what's done.
 | Wave | Track | slug | Articles | Status |
 |---|---|---|---:|---|
 | — | Pilots | regression | 2 (REGR-0,1) | ✅ committed |
-| 1 | Probability Foundations | probability-foundations | 24 | 🔄 in progress |
-| 2 | Geometry of Data | geometry-of-data | 28 | ⬜ pending |
+| 1 | Probability Foundations | probability-foundations | 24 | ✅ committed |
+| 2 | Geometry of Data | geometry-of-data | 28 | 🔄 in progress |
 | 3 | Optimization | optimization | 18 | ⬜ pending |
 | 4 | Statistical Inference | statistical-inference | 18 | ⬜ pending |
 | 5 | Regression (REGR-2…26) | regression | 25 | ⬜ pending |
