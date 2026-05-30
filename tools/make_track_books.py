@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """Generate one standalone Quarto *book* project per track, so each track renders to its
-own PDF (e.g. "Probability Foundations.pdf") in addition to the full bound book and the
-per-article PDFs.
+own PDF (e.g. "Optimization.pdf").
 
-No content is duplicated: each generated project under build/books/<slug>/ is a symlink
-farm pointing back at articles/<slug>/*.qmd, plus a generated _quarto.yml (book config with
-the same PDF preamble as the main book) and a tiny index.qmd title page.
+Each article becomes exactly ONE chapter: we prepend a chapter heading "# <ID> — <title>"
+and DEMOTE the article's own headings by one level (# -> ##, ## -> ###, ...), skipping
+'#' comment lines inside ```{python}``` code blocks. Without this, every article's
+section-level '#' headings would each become a top-level book chapter, dissolving the
+article boundaries into one long flat run of chapters.
 
-Zero-filled numeric IDs (PROB-00..) and movement IDs (INFR-A1..) both sort correctly with a
-plain lexicographic sort, so chapter order = sorted(filenames).
+Result: clear per-article breaks (new page + "Chapter N · <ID> — <title>"), and the book
+TOC maps each <ID> to its page range for per-article printing. Source articles are not
+modified — transformed copies are written under build/books/<slug>/.
 
-Usage:  python3 tools/make_track_books.py     (regenerates build/books/ from articles/)
+Usage:  python3 tools/make_track_books.py
 """
-import os, pathlib, shutil
+import os, re, shutil, pathlib
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ART = ROOT / "articles"
@@ -29,8 +36,42 @@ TRACKS = {
     "causal-inference": "Causal Inference",
 }
 
+HEADING = re.compile(r'^(#{1,6})(\s)')
+FENCE = re.compile(r'^\s*```')
+
+def article_id(name):           # "OPTM-01-one-...qmd" -> "OPTM-01"; "INFR-A1-...qmd" -> "INFR-A1"
+    return "-".join(name.split("-")[:2])
+
+def front_matter_title(text, fallback):
+    m = re.match(r'^---\n(.*?)\n---\n', text, re.S)
+    if m and yaml:
+        try:
+            d = yaml.safe_load(m.group(1)) or {}
+            if d.get("title"):
+                return str(d["title"])
+        except Exception:
+            pass
+    return fallback
+
+def to_chapter(text, aid, title):
+    m = re.match(r'^---\n.*?\n---\n', text, re.S)
+    body = text[m.end():] if m else text
+    out, in_fence = [], False
+    for line in body.splitlines():
+        if FENCE.match(line):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if not in_fence:
+            hm = HEADING.match(line)
+            if hm:
+                line = '#' * min(len(hm.group(1)) + 1, 6) + line[len(hm.group(1)):]
+        out.append(line)
+    head = f"# {aid} — {title}\n\n"
+    return head + "\n".join(out).lstrip("\n") + "\n"
+
 def quarto_yaml(name, chapter_files):
-    chapters = "\n".join(f"    - {f}" for f in chapter_files)  # 4 spaces: same level as "- index.qmd"
+    chapters = "\n".join(f"    - {f}" for f in chapter_files)
     return f'''project:
   type: book
   output-dir: _out
@@ -90,15 +131,20 @@ def main():
         proj = BUILD / slug
         proj.mkdir(parents=True)
         for f in files:
-            (proj / f.name).symlink_to(os.path.relpath(f, proj))
+            aid = article_id(f.name)
+            text = f.read_text()
+            title = front_matter_title(text, aid)
+            (proj / f.name).write_text(to_chapter(text, aid, title))
         (proj / "index.qmd").write_text(
             f"# {name} {{.unnumbered}}\n\n"
-            f"A *Core Sample* track — {len(files)} articles, each an inch wide and a mile deep.\n"
+            f"A *Core Sample* track — {len(files)} articles, each an inch wide and a mile deep. "
+            f"Each chapter is one article, labelled with its ID (e.g. {article_id(files[0].name)}); "
+            f"use the table of contents to find an article's pages.\n"
         )
         (proj / "_quarto.yml").write_text(quarto_yaml(name, [f.name for f in files]))
-        built.append((slug, name, len(files)))
-    for slug, name, n in built:
-        print(f"  {slug}: {n} chapters -> build/books/{slug}")
+        built.append((slug, len(files)))
+    for slug, n in built:
+        print(f"  {slug}: {n} chapters")
     print(f"generated {len(built)} track book project(s)")
 
 if __name__ == "__main__":
