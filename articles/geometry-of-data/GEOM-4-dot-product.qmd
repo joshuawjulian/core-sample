@@ -1,0 +1,1065 @@
+---
+title: "The Dot Product: Length and Angle from Coordinates"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # vectors
+HILITE = "#c1121f"   # the highlighted vector / quantity
+ACCENT = "#0a7d4d"   # angle / projection highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0)):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center")
+```
+
+> **Where this sits in the track.** This is the fourth article in the **Geometry of
+> Data** track and the opening of Movement II, where length and angle finally enter the
+> picture. It assumes [GEOM-0 *What Is a Vector, Really?*] (a vector is at once an arrow,
+> a list of numbers in $\mathbb{R}^n$, and a row of a dataset) and [GEOM-1 *Adding and
+> Scaling*] (the linear combination $c_1\mathbf{v}_1 + \cdots + c_k\mathbf{v}_k$). It
+> also leans on one fact from below the Calc-1 floor — the **law of cosines** — which we
+> restate and use, not assume. Everything so far has been *affine*: we could add and
+> scale, but we had no way to say how *long* a vector is or what *angle* sits between two
+> of them. This article installs both, and it does so from a single new operation, the
+> **dot product**. It sets up [GEOM-5 *Orthogonality and Orthonormal Bases*]
+> (perpendicular means "dot product zero"), [GEOM-6 *Orthogonal Projection*] (the
+> keystone, built entirely from dot products), and [GEOM-17 *Quadratic Forms*] (which
+> generalize the length-squared $\mathbf{x}^\top\mathbf{x}$).
+
+## Abstract {.unnumbered}
+
+A vector's coordinates are just numbers — they carry no ruler and no protractor. Yet from
+those numbers alone we can recover two of the most geometric quantities imaginable: the
+**length** of a vector and the **angle** between two of them. The bridge is one
+deceptively small operation, the **dot product** $\mathbf{x}^\top\mathbf{y} = \sum_i
+x_i y_i$: multiply matching coordinates, add them up, get a single number. This article
+defends one claim — that **this one scalar simultaneously encodes length and angle**, and
+that the identity tying them together,
+$$\mathbf{x}^\top\mathbf{y} = \lVert\mathbf{x}\rVert\,\lVert\mathbf{y}\rVert\cos\theta,$$
+is not a definition handed down from above but a *theorem* we derive from the law of
+cosines. We build the length (norm) from the Pythagorean theorem in $n$ dimensions, prove
+the angle formula, prove the Cauchy–Schwarz inequality that makes the angle well-defined,
+and cash it all out as the **cosine similarity** that powers search engines and
+recommender systems. The payoff is that "how aligned are these two data points?" becomes a
+quantity we can compute from a spreadsheet.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **dot product** of two vectors is one number built by multiplying matching
+coordinates and summing: $\mathbf{x}^\top\mathbf{y} = x_1 y_1 + \cdots + x_n y_n$. That
+single number holds *all* the metric geometry. Set $\mathbf{y}=\mathbf{x}$ and you get the
+**squared length**, $\mathbf{x}^\top\mathbf{x} = \lVert\mathbf{x}\rVert^2$ — Pythagoras in
+$n$ dimensions. Keep $\mathbf{x}$ and $\mathbf{y}$ distinct and you get the **angle**
+between them, through $\mathbf{x}^\top\mathbf{y} =
+\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta$. Length and angle — the entire
+ruler-and-protractor kit — fall out of one sum of products.
+:::
+
+Everything below orbits that box. The dot product will look at first like an arbitrary
+recipe — *why* multiply coordinates and add? — but by the end it should feel inevitable:
+it is the *only* operation, up to scaling, that turns the Pythagorean theorem and the law
+of cosines into algebra you can run on a list of numbers. Once we have it, the central
+data-science reading follows immediately: **a dot product measures how much two vectors
+point the same way**, and "pointing the same way" is exactly what we mean when we say two
+documents are similar, two users have the same taste, or two features are correlated.
+
+# Why we are doing this: coordinates lost their geometry {#sec-why}
+
+Keep one question in view for the whole article: **we threw away the picture when we
+turned vectors into lists of numbers — how do we get the geometry back?** Every step below
+is an answer to some piece of that.
+
+## What we had, and what we lost
+
+[GEOM-0] made a vector three things at once: an arrow with a tip and a tail, a list of
+numbers $(x_1,\dots,x_n)$, and a row of a data table. [GEOM-1] then gave us the only two
+operations we were allowed: add two vectors (tip-to-tail), and scale a vector (stretch or
+flip). With just those two moves we can build any linear combination, and that is enough
+to talk about *which directions we can reach* (span, [GEOM-2]) and *whether our directions
+are redundant* (independence, [GEOM-3]).
+
+But notice what we still cannot do. We cannot say a vector is "three units long." We
+cannot say two vectors are "perpendicular," or "almost parallel," or "$30^\circ$ apart."
+Addition and scaling are **affine** operations — they respect the flat structure of space
+(lines stay lines, the origin stays put) but they are blind to *distance* and *angle*. A
+shear transformation, for instance, preserves all linear-combination structure yet
+mangles every length and angle in sight. So far our space is a sheet of graph paper with
+no ruler printed on it and no protractor in the drawer.
+
+This is not a pedantic gap. It is the gap that blocks almost everything the rest of the
+series wants to do:
+
+- **Regression** asks for the line closest to a cloud of points — and "closest" is a
+  distance.
+- **Classification** separates groups by how *far apart* and how *aligned* their feature
+  vectors are.
+- **Clustering** groups points that are *near* each other.
+- **Recommendation and search** rank items by how *similar* two vectors are.
+
+Every one of those words — closest, far, aligned, near, similar — is a metric notion. None
+of them is available from addition and scaling alone. We need to install length and angle.
+
+## The original problem: from physics to a sum of products
+
+Historically, the dot product did not arrive as an abstract definition. It arrived from
+mechanics. When a force $\mathbf{F}$ pushes an object through a displacement $\mathbf{d}$,
+the **work** done is not $\lVert\mathbf{F}\rVert\lVert\mathbf{d}\rVert$ — only the part of
+the force that lies *along* the motion counts. Push a sled horizontally while pulling the
+rope at an angle and only the horizontal component of your pull moves the sled; the
+vertical part is wasted. The right quantity is
+$\lVert\mathbf{F}\rVert\lVert\mathbf{d}\rVert\cos\theta$, where $\theta$ is the angle
+between push and motion: full credit when you push straight along the motion ($\theta=0$,
+$\cos\theta=1$), zero credit when you push sideways ($\theta=90^\circ$, $\cos\theta=0$),
+and negative when you push backward ($\theta>90^\circ$).
+
+In the 1840s W. R. Hamilton, building his quaternions, isolated exactly this
+"projection-weighted product" of two directed quantities; by the 1880s J. W. Gibbs and
+Oliver Heaviside had stripped the quaternion scaffolding away and left the clean operation
+we now call the dot (or *scalar*, or *inner*) product, taught as a stand-alone tool of
+vector analysis. The number it computes was *defined* geometrically — magnitudes times the
+cosine of the angle — and only later recognized to equal the humble coordinate sum
+$\sum_i x_i y_i$. The thread we will pull on is that recognition, **run in reverse**: we
+will *start* from the coordinate sum (because that is what a computer has — a list of
+numbers) and *recover* the geometry (length and angle) that the physicists started with.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the dot product a vector or a number?"* A number — a scalar. That is the whole point,
+and it is why "scalar product" is a synonym. You feed in two vectors and get back one real
+number. Contrast this with the **cross product** (a different operation, vectors in only),
+which returns a vector and exists only in three dimensions. The dot product works in every
+dimension, $\mathbb{R}^2$ or $\mathbb{R}^{10000}$, and always returns a single number. That
+generality is exactly why it, not the cross product, is the workhorse of data science,
+where vectors routinely live in thousands of dimensions.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, hold two pictures in mind.
+
+**Length is the Pythagorean theorem, repeated.** In the plane, a vector $\mathbf{x} =
+(x_1, x_2)$ is the hypotenuse of a right triangle with legs $x_1$ and $x_2$, so its length
+is $\sqrt{x_1^2 + x_2^2}$ — that is just Pythagoras. In three dimensions you apply
+Pythagoras twice (once in the base plane, once to climb to the tip) and get
+$\sqrt{x_1^2 + x_2^2 + x_3^2}$. The pattern obviously wants to continue: length is the
+square root of the sum of squared coordinates, in any dimension. We will make "obviously"
+honest in @sec-norm.
+
+**Angle is about alignment.** Two arrows from the same origin can point the same way
+($0^\circ$), opposite ways ($180^\circ$), at right angles ($90^\circ$), or anywhere
+between. The dot product is going to read off where on that spectrum they sit — large and
+positive when they agree, zero when perpendicular, negative when they oppose. @fig-align
+shows the three regimes and previews the sign of the dot product in each.
+
+```{python}
+#| label: fig-align
+#| fig-cap: "The dot product reads alignment. Holding a reference vector $\\mathbf{x}$ fixed (dark blue), a second vector $\\mathbf{y}$ that points roughly the same way gives a *positive* dot product (left, acute angle); a perpendicular $\\mathbf{y}$ gives *exactly zero* (middle); a vector pointing against $\\mathbf{x}$ gives a *negative* dot product (right, obtuse angle). The sign of $\\mathbf{x}^\\top\\mathbf{y}$ is the sign of the cosine of the angle between them."
+fig, axes = plt.subplots(1, 3, figsize=(9.2, 3.3))
+x = np.array([2.4, 0.6])
+configs = [
+    (np.array([1.8, 1.6]),  "acute:  $\\mathbf{x}^\\top\\mathbf{y} > 0$"),
+    (np.array([-0.5, 2.0]), "right:  $\\mathbf{x}^\\top\\mathbf{y} = 0$"),
+    (np.array([-1.6, 1.4]), "obtuse: $\\mathbf{x}^\\top\\mathbf{y} < 0$"),
+]
+# Make the middle one exactly perpendicular to x.
+configs[1] = (np.array([-x[1], x[0]]) * 0.85, configs[1][1])
+for ax, (y, title) in zip(axes, configs):
+    draw_vec(ax, (0, 0), x, color=VEC, label=r"$\mathbf{x}$", label_offset=(0.25, -0.15))
+    draw_vec(ax, (0, 0), y, color=HILITE, label=r"$\mathbf{y}$", label_offset=(0.1, 0.25))
+    dp = float(x @ y)
+    ax.set_title(title, fontsize=10)
+    ax.set_xlim(-2.6, 3.2); ax.set_ylim(-0.6, 2.8)
+    ax.set_aspect("equal")
+    ax.axhline(0, color=GREY, lw=0.8, alpha=0.5)
+    ax.axvline(0, color=GREY, lw=0.8, alpha=0.5)
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+The plan is now concrete. Define the dot product as the sum of products (@sec-def). Show
+that setting both inputs equal gives squared length, recovering Pythagoras in $n$
+dimensions (@sec-norm). Then prove — via the law of cosines — that the dot product of two
+*different* vectors equals $\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta$, which
+hands us the angle (@sec-angle). Prove Cauchy–Schwarz, which guarantees that cosine is a
+legal cosine (@sec-cauchy). Cash it out as cosine similarity on real data
+(@sec-examples). Mark the boundary where the standard dot product is the *wrong* ruler
+(@sec-failure).
+
+# The formal development {#sec-formal}
+
+## The dot product, defined {#sec-def}
+
+::: {#def-dot}
+**Definition (dot product).** Let $\mathbf{x} = (x_1, \dots, x_n)$ and $\mathbf{y} =
+(y_1, \dots, y_n)$ be two vectors in $\mathbb{R}^n$ — two lists of $n$ real numbers. Their
+**dot product** is the single real number
+$$
+\mathbf{x}^\top\mathbf{y} \;=\; \sum_{i=1}^{n} x_i y_i
+\;=\; x_1 y_1 + x_2 y_2 + \cdots + x_n y_n .
+$$ {#eq-dot-def}
+:::
+
+Read @eq-dot-def slowly. We march down the two lists in lockstep, multiply the entries
+that sit in the same position ($x_1$ with $y_1$, $x_2$ with $y_2$, and so on), and add all
+$n$ products. The output is **one number**, not a vector. The two inputs must have the
+*same* length $n$, or there is nothing to pair $x_i$ with.
+
+A word on notation, since several forms appear in the wild and we will use one
+consistently. We write the dot product as $\mathbf{x}^\top\mathbf{y}$ — a "row times a
+column." The symbol $\mathbf{x}^\top$ is the **transpose** of the column vector
+$\mathbf{x}$: it lays the column on its side into a row. Stacking a $1\times n$ row against
+an $n \times 1$ column and using the row-times-column rule produces exactly the single sum
+$\sum_i x_i y_i$. (The transpose gets its own full treatment in [GEOM-10]; here we use it
+only as compact notation for "pair up and sum," and the matrix-multiplication rule that
+justifies it is built in [GEOM-9].) The older notation $\mathbf{x}\cdot\mathbf{y}$ — the
+literal "dot" — means the identical number; the most general name, $\langle
+\mathbf{x},\mathbf{y}\rangle$, the **inner product**, we save for @sec-inner where we say
+what makes the dot product just *one* inner product among many.
+
+Three algebraic properties fall straight out of the definition, and we will use all three
+constantly, so we prove them now rather than assert them.
+
+::: {#lem-dot-props}
+**Lemma (algebra of the dot product).** For all vectors $\mathbf{x},\mathbf{y},\mathbf{z}
+\in \mathbb{R}^n$ and every scalar $c \in \mathbb{R}$:
+
+1. **Symmetry:** $\mathbf{x}^\top\mathbf{y} = \mathbf{y}^\top\mathbf{x}$.
+2. **Linearity in each slot:** $(\mathbf{x}+\mathbf{z})^\top\mathbf{y} =
+   \mathbf{x}^\top\mathbf{y} + \mathbf{z}^\top\mathbf{y}$, and $(c\mathbf{x})^\top\mathbf{y}
+   = c\,(\mathbf{x}^\top\mathbf{y})$.
+3. **Positivity:** $\mathbf{x}^\top\mathbf{x} = \sum_i x_i^2 \ge 0$, and it equals $0$ if
+   and only if $\mathbf{x} = \mathbf{0}$ (the zero vector).
+:::
+
+::: {.proof}
+Each is a one-line consequence of the definition @eq-dot-def, which is built from ordinary
+multiplication and addition of real numbers.
+
+*Symmetry.* Real multiplication commutes, so $x_i y_i = y_i x_i$ for every $i$. Summing
+both sides, $\sum_i x_i y_i = \sum_i y_i x_i$, i.e. $\mathbf{x}^\top\mathbf{y} =
+\mathbf{y}^\top\mathbf{x}$.
+
+*Linearity in the first slot.* The $i$-th entry of $\mathbf{x}+\mathbf{z}$ is $x_i + z_i$,
+so by @eq-dot-def,
+$$
+(\mathbf{x}+\mathbf{z})^\top\mathbf{y}
+= \sum_i (x_i + z_i)\,y_i
+= \sum_i \bigl(x_i y_i + z_i y_i\bigr)
+= \sum_i x_i y_i + \sum_i z_i y_i
+= \mathbf{x}^\top\mathbf{y} + \mathbf{z}^\top\mathbf{y},
+$$
+using the distributive law $(a+b)c = ac+bc$ inside the sum and then splitting the sum.
+For the scaling part, the $i$-th entry of $c\mathbf{x}$ is $c x_i$, so
+$(c\mathbf{x})^\top\mathbf{y} = \sum_i (c x_i) y_i = c\sum_i x_i y_i =
+c\,(\mathbf{x}^\top\mathbf{y})$, pulling the constant $c$ out of the sum. By symmetry
+(part 1) the same linearity holds in the *second* slot.
+
+*Positivity.* Setting $\mathbf{y}=\mathbf{x}$ in @eq-dot-def gives
+$\mathbf{x}^\top\mathbf{x} = \sum_i x_i x_i = \sum_i x_i^2$. A real square is never
+negative, so the sum of squares is $\ge 0$. A sum of nonnegative terms is zero only when
+*every* term is zero, i.e. $x_i^2 = 0$ for all $i$, i.e. $x_i = 0$ for all $i$, which is
+exactly $\mathbf{x}=\mathbf{0}$. $\qquad\blacksquare$
+:::
+
+Property 3 is the quiet hero of the whole article. It says $\mathbf{x}^\top\mathbf{x}$ is a
+nonnegative number that vanishes only at the origin — precisely the behavior we want from
+a *squared length*. That is the next step.
+
+## Length: Pythagoras in $n$ dimensions {#sec-norm}
+
+We now define length and show it agrees with the Pythagorean picture, not just in two or
+three dimensions but in all of them.
+
+::: {#def-norm}
+**Definition (norm / length).** The **norm** (or **length**, or **magnitude**) of a vector
+$\mathbf{x}\in\mathbb{R}^n$ is
+$$
+\lVert \mathbf{x}\rVert \;=\; \sqrt{\mathbf{x}^\top\mathbf{x}}
+\;=\; \sqrt{\,\sum_{i=1}^{n} x_i^2\,}.
+$$ {#eq-norm-def}
+:::
+
+The square root is legitimate because @lem-dot-props(3) guarantees the thing under it,
+$\mathbf{x}^\top\mathbf{x}$, is never negative. Squaring both sides records the relation we
+will reach for over and over:
+$$
+\lVert\mathbf{x}\rVert^2 = \mathbf{x}^\top\mathbf{x} = \sum_{i=1}^n x_i^2 .
+$$ {#eq-norm-sq}
+
+But why is $\sqrt{\sum_i x_i^2}$ the *right* notion of length and not some other formula?
+Because it is forced by the Pythagorean theorem, the one geometric fact we are willing to
+take as given at the Calc-1 floor. Let us watch it build up dimension by dimension, since
+the $n$-dimensional case is nothing but the 2-D case applied repeatedly.
+
+**Two dimensions.** A vector $\mathbf{x}=(x_1,x_2)$ runs from the origin to the point
+$(x_1,x_2)$. Drop a perpendicular to the horizontal axis and you have a right triangle:
+one leg of length $|x_1|$ along the horizontal, one leg of length $|x_2|$ vertical, and
+the vector itself as the hypotenuse. The Pythagorean theorem — *in a right triangle the
+square of the hypotenuse equals the sum of the squares of the legs* — gives
+$$
+\lVert\mathbf{x}\rVert^2 = x_1^2 + x_2^2 ,
+\qquad\text{so}\qquad
+\lVert\mathbf{x}\rVert = \sqrt{x_1^2 + x_2^2}.
+$$
+(We use $x_1^2$, not $|x_1|^2$; they are the same number, since squaring already discards
+the sign.) This matches @eq-norm-def with $n=2$.
+
+**Three dimensions.** Take $\mathbf{x}=(x_1,x_2,x_3)$. First find the length of its shadow
+in the horizontal $(x_1,x_2)$-plane: by the 2-D case that shadow has length $r$ with
+$r^2 = x_1^2 + x_2^2$. Now the full vector is the hypotenuse of a *second* right triangle,
+whose horizontal leg is that shadow (length $r$) and whose vertical leg rises by $x_3$.
+These two legs meet at a right angle (the vertical axis is perpendicular to the horizontal
+plane), so Pythagoras applies again:
+$$
+\lVert\mathbf{x}\rVert^2 = r^2 + x_3^2 = (x_1^2 + x_2^2) + x_3^2 = x_1^2 + x_2^2 + x_3^2 .
+$$
+We applied the *same* theorem twice and the squares simply accumulated. @fig-pythagoras
+draws this two-step climb.
+
+```{python}
+#| label: fig-pythagoras
+#| fig-cap: "Length in three dimensions is Pythagoras applied twice. The shadow of $\\mathbf{x}$ in the floor plane has squared length $x_1^2 + x_2^2$ (first right triangle, in the floor). The vector $\\mathbf{x}$ is then the hypotenuse of a second right triangle whose legs are that shadow and the vertical rise $x_3$, giving $\\lVert\\mathbf{x}\\rVert^2 = (x_1^2 + x_2^2) + x_3^2$. The same accumulation of squares continues into every higher dimension, even where we can no longer draw it."
+x1, x2, x3 = 2.6, 2.0, 2.4
+fig = plt.figure(figsize=(6.0, 5.0))
+ax = fig.add_subplot(111, projection="3d")
+
+# The vector and its shadow.
+ax.plot([0, x1], [0, x2], [0, 0], color=ACCENT, lw=2.2)             # shadow in floor
+ax.plot([x1, x1], [x2, x2], [0, x3], color=GREY, lw=1.8, ls="--")  # vertical rise
+ax.plot([0, x1], [0, x2], [0, x3], color=HILITE, lw=2.8)           # the vector x
+
+# Floor triangle legs.
+ax.plot([0, x1], [0, 0], [0, 0], color=VEC, lw=1.6)
+ax.plot([x1, x1], [0, x2], [0, 0], color=VEC, lw=1.6)
+
+ax.text(x1 * 0.5, x2 * 0.5, x3 * 0.55, r"$\mathbf{x}$", color=HILITE, fontsize=14)
+ax.text(x1 * 0.55, x2 * 0.55, -0.35, "shadow $r$", color=ACCENT, fontsize=10)
+ax.text(x1 + 0.15, x2 + 0.15, x3 * 0.5, "$x_3$", color=GREY, fontsize=11)
+ax.text(x1 * 0.5, -0.45, 0, "$x_1$", color=VEC, fontsize=11)
+ax.text(x1 + 0.2, x2 * 0.5, 0, "$x_2$", color=VEC, fontsize=11)
+
+ax.set_xlim(0, 3); ax.set_ylim(0, 3); ax.set_zlim(0, 3)
+ax.set_xlabel("axis 1"); ax.set_ylabel("axis 2"); ax.set_zlabel("axis 3")
+ax.view_init(elev=20, azim=-58)
+ax.set_title("Length is Pythagoras, applied once per new dimension")
+plt.tight_layout()
+```
+
+**$n$ dimensions, by induction.** The three-dimensional argument exposes the general
+machine. Suppose for some dimension $k$ we have shown that a vector
+$(x_1,\dots,x_k)$ has squared length $x_1^2 + \cdots + x_k^2$ — that is our **induction
+hypothesis**. Now take a vector $(x_1,\dots,x_k,x_{k+1})$ in $\mathbb{R}^{k+1}$. Its first
+$k$ coordinates form a vector lying in the $\mathbb{R}^k$ "floor," whose squared length is
+$x_1^2 + \cdots + x_k^2$ by the hypothesis. The new axis (coordinate $k+1$) is
+perpendicular to that entire floor, so the full vector is the hypotenuse of a right
+triangle with legs $\sqrt{x_1^2 + \cdots + x_k^2}$ and $x_{k+1}$. Pythagoras gives
+$$
+\lVert(x_1,\dots,x_{k+1})\rVert^2
+= \bigl(x_1^2 + \cdots + x_k^2\bigr) + x_{k+1}^2
+= x_1^2 + \cdots + x_k^2 + x_{k+1}^2 .
+$$
+This is the statement for dimension $k+1$. Since we verified the claim for $k=2$ outright,
+it now holds for $k=3$, hence $k=4$, and so on through every dimension: by induction,
+$\lVert\mathbf{x}\rVert^2 = \sum_{i=1}^n x_i^2$ in $\mathbb{R}^n$ for every $n$. The norm
+of @eq-norm-def is therefore not a definition pulled from thin air — it is the only formula
+consistent with Pythagoras holding in every dimension at once.
+
+::: {.callout-tip title="You might be asked"}
+*"Isn't the higher-dimensional Pythagorean theorem itself something that needs proving —
+aren't you assuming the thing you want?"* No, and the distinction matters. We assume
+Pythagoras only for an ordinary **right triangle in a plane** — three points, one right
+angle, the Calc-1-floor fact. The induction never uses a "higher Pythagoras"; it uses the
+*planar* theorem repeatedly, each time in the 2-D plane spanned by the running diagonal and
+one new axis. The reason a new axis is perpendicular to all the previous ones is the
+defining feature of Cartesian coordinates: the axes are mutually perpendicular by
+construction. So the only geometric input is the plane theorem, applied $n-1$ times.
+:::
+
+A vector of length $1$ is called a **unit vector**. Any nonzero $\mathbf{x}$ can be turned
+into a unit vector pointing the same way by dividing by its length,
+$\hat{\mathbf{x}} = \mathbf{x}/\lVert\mathbf{x}\rVert$; this is called **normalizing**, and
+we will lean on it heavily when we isolate *direction* from *magnitude* in @sec-examples.
+That the result has length $1$ is immediate from @lem-dot-props(2): $\lVert
+c\mathbf{x}\rVert^2 = (c\mathbf{x})^\top(c\mathbf{x}) = c^2 \mathbf{x}^\top\mathbf{x} = c^2
+\lVert\mathbf{x}\rVert^2$, so $\lVert c\mathbf{x}\rVert = |c|\,\lVert\mathbf{x}\rVert$, and
+with $c = 1/\lVert\mathbf{x}\rVert$ this is $\lVert\mathbf{x}\rVert /
+\lVert\mathbf{x}\rVert = 1$. Scaling a vector scales its length by the same factor — exactly
+what "stretch by $c$" should do.
+
+## Distance falls out for free {#sec-distance}
+
+Once we can measure length, distance comes at no extra cost. The **distance** between two
+points $\mathbf{x}$ and $\mathbf{y}$ is the length of the arrow joining them, i.e. the norm
+of their difference:
+$$
+\operatorname{dist}(\mathbf{x},\mathbf{y}) = \lVert\mathbf{x} - \mathbf{y}\rVert
+= \sqrt{\sum_{i=1}^n (x_i - y_i)^2}.
+$$ {#eq-distance}
+This is the familiar **Euclidean distance** — the straight-line distance you would measure
+with a ruler — now defined in any number of dimensions purely from coordinates. The
+$\mathbf{x}-\mathbf{y}$ arrow runs from the tip of $\mathbf{y}$ to the tip of $\mathbf{x}$
+(tip-to-tail addition: $\mathbf{y} + (\mathbf{x}-\mathbf{y}) = \mathbf{x}$), and its length
+is what @eq-distance computes. Every "how close are these two data points?" question in
+clustering and nearest-neighbor methods is this one formula.
+
+## Angle: the dot product through the law of cosines {#sec-angle}
+
+Now the centerpiece. We have length from $\mathbf{x}^\top\mathbf{x}$; we want angle from
+$\mathbf{x}^\top\mathbf{y}$. The tool is the **law of cosines**, the generalization of
+Pythagoras to triangles that are *not* right-angled. We restate it (it sits just below our
+floor) and then use it.
+
+::: {.callout-note title="The law of cosines (restated, not assumed)"}
+In any triangle with side lengths $a$, $b$, $c$, where $\theta$ is the angle *opposite*
+the side of length $c$ (equivalently, the angle *between* the sides of lengths $a$ and
+$b$),
+$$
+c^2 = a^2 + b^2 - 2ab\cos\theta .
+$$
+When $\theta = 90^\circ$, $\cos\theta = 0$ and this collapses to $c^2 = a^2 + b^2$ —
+ordinary Pythagoras. The $-2ab\cos\theta$ term is the *correction* for the angle not being
+a right angle: it subtracts when $\theta$ is acute (the opposite side is shorter than
+Pythagoras would predict) and adds when $\theta$ is obtuse ($\cos\theta<0$).
+:::
+
+Set up the triangle. Place $\mathbf{x}$ and $\mathbf{y}$ as two arrows from the same
+origin, with $\theta$ the angle between them. The third side of the triangle they form is
+the vector joining their tips, $\mathbf{x}-\mathbf{y}$ (it runs from the tip of
+$\mathbf{y}$ to the tip of $\mathbf{x}$). So the three side lengths are
+$$
+a = \lVert\mathbf{x}\rVert, \qquad b = \lVert\mathbf{y}\rVert,
+\qquad c = \lVert\mathbf{x}-\mathbf{y}\rVert,
+$$
+and $\theta$ — between $\mathbf{x}$ and $\mathbf{y}$ — is exactly the angle opposite side
+$c$. @fig-lawcos draws this triangle.
+
+```{python}
+#| label: fig-lawcos
+#| fig-cap: "The triangle behind the angle formula. Two vectors $\\mathbf{x}$ and $\\mathbf{y}$ share a tail; the side joining their tips is $\\mathbf{x}-\\mathbf{y}$. The side lengths are $\\lVert\\mathbf{x}\\rVert$, $\\lVert\\mathbf{y}\\rVert$, and $\\lVert\\mathbf{x}-\\mathbf{y}\\rVert$, with the angle $\\theta$ between $\\mathbf{x}$ and $\\mathbf{y}$ sitting opposite the third side. Applying the law of cosines to this triangle and expanding the lengths with the dot product yields $\\mathbf{x}^\\top\\mathbf{y} = \\lVert\\mathbf{x}\\rVert\\lVert\\mathbf{y}\\rVert\\cos\\theta$."
+x = np.array([3.0, 0.7])
+y = np.array([1.3, 2.5])
+fig, ax = plt.subplots(figsize=(5.6, 4.4))
+draw_vec(ax, (0, 0), x, color=VEC, label=r"$\mathbf{x}$", label_offset=(0.28, -0.18))
+draw_vec(ax, (0, 0), y, color=HILITE, label=r"$\mathbf{y}$", label_offset=(-0.05, 0.28))
+# Third side, x - y, drawn from tip of y to tip of x.
+ax.annotate("", xy=x, xytext=y,
+            arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.2, shrinkA=0, shrinkB=0))
+ax.text(0.5 * (x[0] + y[0]) + 0.15, 0.5 * (x[1] + y[1]) + 0.2,
+        r"$\mathbf{x}-\mathbf{y}$", color=ACCENT, fontsize=13)
+# Angle arc at the origin.
+th1 = np.arctan2(x[1], x[0]); th2 = np.arctan2(y[1], y[0])
+arc = np.linspace(th1, th2, 40)
+ax.plot(0.7 * np.cos(arc), 0.7 * np.sin(arc), color=GREY, lw=1.5)
+ax.text(0.95 * np.cos(0.5 * (th1 + th2)), 0.95 * np.sin(0.5 * (th1 + th2)),
+        r"$\theta$", color=GREY, fontsize=13)
+ax.scatter([0], [0], color="black", s=20, zorder=6)
+ax.set_xlim(-0.6, 3.6); ax.set_ylim(-0.6, 3.0)
+ax.set_aspect("equal")
+ax.axhline(0, color=GREY, lw=0.8, alpha=0.4); ax.axvline(0, color=GREY, lw=0.8, alpha=0.4)
+ax.set_xticks([]); ax.set_yticks([])
+ax.set_title("Two vectors, their difference, and the angle between them")
+plt.tight_layout()
+```
+
+Now run the law of cosines and translate every length into a dot product. The left side is
+$c^2 = \lVert\mathbf{x}-\mathbf{y}\rVert^2$. By @eq-norm-sq this is a dot product of the
+difference with itself, which we expand using the linearity from @lem-dot-props:
+$$
+\lVert\mathbf{x}-\mathbf{y}\rVert^2
+= (\mathbf{x}-\mathbf{y})^\top(\mathbf{x}-\mathbf{y}) .
+$$
+Distribute the dot product over the subtraction in both slots — exactly like FOIL, licensed
+term by term by linearity (@lem-dot-props(2)):
+$$
+(\mathbf{x}-\mathbf{y})^\top(\mathbf{x}-\mathbf{y})
+= \mathbf{x}^\top\mathbf{x}
+ - \mathbf{x}^\top\mathbf{y}
+ - \mathbf{y}^\top\mathbf{x}
+ + \mathbf{y}^\top\mathbf{y} .
+$$
+By symmetry (@lem-dot-props(1)) the two middle terms are equal,
+$\mathbf{x}^\top\mathbf{y} = \mathbf{y}^\top\mathbf{x}$, so they combine into
+$-2\,\mathbf{x}^\top\mathbf{y}$. Using @eq-norm-sq on the outer terms,
+$$
+\lVert\mathbf{x}-\mathbf{y}\rVert^2
+= \lVert\mathbf{x}\rVert^2 + \lVert\mathbf{y}\rVert^2 - 2\,\mathbf{x}^\top\mathbf{y} .
+$$ {#eq-expand}
+That is a pure *algebraic* identity — no geometry yet, just the definition and its
+linearity. Now lay it beside the law of cosines, which is a pure *geometric* fact about
+the same triangle, with $a = \lVert\mathbf{x}\rVert$, $b = \lVert\mathbf{y}\rVert$,
+$c = \lVert\mathbf{x}-\mathbf{y}\rVert$:
+$$
+\lVert\mathbf{x}-\mathbf{y}\rVert^2
+= \lVert\mathbf{x}\rVert^2 + \lVert\mathbf{y}\rVert^2
+ - 2\,\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta .
+$$ {#eq-lawcos}
+
+The left sides of @eq-expand and @eq-lawcos are the *same quantity*, and the first two
+terms on the right match exactly. Subtract those common terms from both equations; what
+remains must be equal:
+$$
+-2\,\mathbf{x}^\top\mathbf{y} = -2\,\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta .
+$$
+Divide both sides by $-2$ (a nonzero constant cannot change an equality) and we have the
+identity at the heart of the article.
+
+::: {#thm-angle}
+**Theorem (geometric form of the dot product).** For nonzero vectors
+$\mathbf{x},\mathbf{y}\in\mathbb{R}^n$ with $\theta$ the angle between them,
+$$
+\mathbf{x}^\top\mathbf{y} = \lVert\mathbf{x}\rVert\,\lVert\mathbf{y}\rVert\,\cos\theta .
+$$ {#eq-angle}
+Equivalently, the angle itself is recovered from coordinates by
+$$
+\cos\theta = \frac{\mathbf{x}^\top\mathbf{y}}{\lVert\mathbf{x}\rVert\,\lVert\mathbf{y}\rVert}
+= \frac{\sum_i x_i y_i}{\sqrt{\sum_i x_i^2}\,\sqrt{\sum_i y_i^2}} .
+$$ {#eq-cos}
+:::
+
+::: {.proof}
+The computation above @eq-angle is the proof: expanding $\lVert\mathbf{x}-\mathbf{y}\rVert^2$
+by the algebra of the dot product gives @eq-expand; the law of cosines applied to the same
+triangle gives @eq-lawcos; equating the two and cancelling yields
+$\mathbf{x}^\top\mathbf{y} = \lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta$. For
+@eq-cos, divide @eq-angle by $\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert$, which is
+nonzero because both vectors are nonzero (@lem-dot-props(3)), and substitute the coordinate
+formulas @eq-dot-def and @eq-norm-def. $\qquad\blacksquare$
+:::
+
+Stand back and appreciate what just happened. @eq-cos lets us compute the angle between two
+vectors **from their coordinates alone** — multiply matching entries, sum, and divide by
+the two lengths. We never measured an angle; we *computed* one from a spreadsheet. This is
+the article's central promise delivered: the geometry the physicists started with is
+recovered from the numbers a computer holds.
+
+Two special cases are worth naming on the spot, because the entire next article (GEOM-5)
+hangs on the first:
+
+- **Perpendicular ($\theta = 90^\circ$).** Then $\cos\theta = 0$, so @eq-angle forces
+  $\mathbf{x}^\top\mathbf{y} = 0$. Conversely, if $\mathbf{x}^\top\mathbf{y}=0$ for nonzero
+  vectors, then $\cos\theta = 0$ and $\theta = 90^\circ$. So **"perpendicular" and "dot
+  product zero" are the same statement** — the definition of *orthogonality* that
+  [GEOM-5] runs on, and a notion that now makes sense in any dimension, even where we cannot
+  picture a right angle.
+- **Parallel ($\theta = 0^\circ$ or $180^\circ$).** Then $\cos\theta = \pm 1$, so
+  $\mathbf{x}^\top\mathbf{y} = \pm\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert$ — the dot
+  product hits its largest possible magnitude when the vectors point the same way (or
+  exactly opposite). This is the equality case of Cauchy–Schwarz, proved next.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the dot product defined as a sum of products and not, say, the product of the
+lengths? Which came first — @eq-dot-def or @eq-angle?"* Both formulas compute the same
+number, and that equality is the content of @thm-angle. Pedagogically you can start from
+either end: physics texts often *define* the dot product geometrically as $\lVert
+\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta$ and then *derive* the coordinate sum;
+linear-algebra texts (and we, here) *define* it as the coordinate sum and *derive* the
+angle. We chose the coordinate-first route deliberately, because in data science the
+coordinates are what you are handed — a row of numbers — and the angle is what you want to
+extract. The interviewer's deeper point: the two definitions agree, so the dot product is
+the unique operation that makes "sum of products" and "magnitude times cosine" the same
+thing.
+:::
+
+## Cauchy–Schwarz: the cosine is a legal cosine {#sec-cauchy}
+
+There is a gap in @thm-angle we are obligated to close. We wrote $\cos\theta =
+\mathbf{x}^\top\mathbf{y} / (\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert)$ and called it a
+cosine. But a cosine must lie in $[-1, 1]$ — there is no real angle whose cosine is $1.3$.
+If the right-hand side of @eq-cos could exceed $1$ in magnitude, the "angle" would be a
+fiction. We must prove it never does. That guarantee is the **Cauchy–Schwarz inequality**,
+one of the most-used inequalities in all of mathematics.
+
+::: {#thm-cs}
+**Theorem (Cauchy–Schwarz).** For all $\mathbf{x},\mathbf{y}\in\mathbb{R}^n$,
+$$
+\bigl|\mathbf{x}^\top\mathbf{y}\bigr| \;\le\; \lVert\mathbf{x}\rVert\,\lVert\mathbf{y}\rVert,
+$$ {#eq-cs}
+with equality if and only if $\mathbf{x}$ and $\mathbf{y}$ are scalar multiples of each
+other (one is a stretched/flipped copy of the other, or one is the zero vector).
+:::
+
+::: {.proof}
+If $\mathbf{y}=\mathbf{0}$ both sides are $0$ and the inequality holds with equality
+($\mathbf{0}$ is a scalar multiple — the $0$ multiple — of anything), so assume
+$\mathbf{y}\ne\mathbf{0}$, which makes $\lVert\mathbf{y}\rVert^2 = \mathbf{y}^\top\mathbf{y}
+> 0$ by @lem-dot-props(3).
+
+The trick is to use positivity (@lem-dot-props(3)) on a cleverly chosen vector. For *any*
+real number $t$, the vector $\mathbf{x} - t\mathbf{y}$ has nonnegative squared length:
+$$
+0 \le \lVert\mathbf{x} - t\mathbf{y}\rVert^2
+= (\mathbf{x} - t\mathbf{y})^\top(\mathbf{x} - t\mathbf{y}) .
+$$
+Expand by linearity and symmetry, exactly as in @sec-angle, treating $t$ as a constant
+scalar that pulls out of dot products by @lem-dot-props(2):
+$$
+\lVert\mathbf{x} - t\mathbf{y}\rVert^2
+= \mathbf{x}^\top\mathbf{x} - 2t\,\mathbf{x}^\top\mathbf{y} + t^2\,\mathbf{y}^\top\mathbf{y}
+= \lVert\mathbf{x}\rVert^2 - 2t\,(\mathbf{x}^\top\mathbf{y}) + t^2 \lVert\mathbf{y}\rVert^2 .
+$$
+Read the right-hand side as a function of $t$:
+$$
+q(t) = \lVert\mathbf{y}\rVert^2\, t^2 - 2(\mathbf{x}^\top\mathbf{y})\, t + \lVert\mathbf{x}\rVert^2 .
+$$
+This is a quadratic in $t$ with positive leading coefficient $\lVert\mathbf{y}\rVert^2 > 0$
+— an upward-opening parabola — and we have just shown $q(t)\ge 0$ for *every* real $t$. The
+slickest route is to plug in the $t$ that minimizes $q$, but we can avoid even calculus:
+a quadratic $q(t)$ stays $\ge 0$ for all real $t$ if and only if it has no two distinct real
+roots, which (for $at^2+bt+c$ with $a>0$) happens exactly when its discriminant
+$b^2 - 4ac \le 0$. Here $a = \lVert\mathbf{y}\rVert^2$, $b = -2(\mathbf{x}^\top\mathbf{y})$,
+$c = \lVert\mathbf{x}\rVert^2$, so
+$$
+b^2 - 4ac
+= 4(\mathbf{x}^\top\mathbf{y})^2 - 4\,\lVert\mathbf{y}\rVert^2\lVert\mathbf{x}\rVert^2
+\;\le\; 0 .
+$$
+Divide by $4$ and rearrange:
+$$
+(\mathbf{x}^\top\mathbf{y})^2 \;\le\; \lVert\mathbf{x}\rVert^2\,\lVert\mathbf{y}\rVert^2 .
+$$
+Take the square root of both sides (both are nonnegative, so the inequality survives), and
+since $\sqrt{(\mathbf{x}^\top\mathbf{y})^2} = |\mathbf{x}^\top\mathbf{y}|$ and
+$\sqrt{\lVert\mathbf{x}\rVert^2\lVert\mathbf{y}\rVert^2} =
+\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert$,
+$$
+|\mathbf{x}^\top\mathbf{y}| \le \lVert\mathbf{x}\rVert\,\lVert\mathbf{y}\rVert ,
+$$
+which is @eq-cs.
+
+*Equality.* The discriminant is exactly zero — equality in @eq-cs — precisely when $q$ has
+a (single, repeated) real root $t_\star$, i.e. when $q(t_\star) = \lVert\mathbf{x} -
+t_\star\mathbf{y}\rVert^2 = 0$ for some real $t_\star$. By @lem-dot-props(3) a zero norm
+forces $\mathbf{x} - t_\star\mathbf{y} = \mathbf{0}$, i.e. $\mathbf{x} = t_\star\mathbf{y}$:
+$\mathbf{x}$ is a scalar multiple of $\mathbf{y}$. Conversely, if $\mathbf{x} =
+t_\star\mathbf{y}$ then $q(t_\star)=0$ and the discriminant vanishes, giving equality. So
+equality holds if and only if the two vectors are parallel. $\qquad\blacksquare$
+:::
+
+Cauchy–Schwarz is exactly the missing guarantee. Dividing @eq-cs by the positive number
+$\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert$ (both vectors nonzero) gives
+$$
+-1 \le \frac{\mathbf{x}^\top\mathbf{y}}{\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert} \le 1 ,
+$$
+so the quantity we called $\cos\theta$ in @eq-cos really does sit in $[-1, 1]$, and a
+genuine angle $\theta\in[0^\circ, 180^\circ]$ exists with that cosine. The angle between two
+vectors in $\mathbb{R}^n$ is now a well-defined object, not a hopeful analogy. And the
+equality case has a clean reading: $|\cos\theta| = 1$ — vectors exactly parallel or
+anti-parallel — happens precisely when one vector is a scalar multiple of the other, which
+is exactly when they are *linearly dependent* in the sense of [GEOM-3]. The geometry
+($\theta\in\{0^\circ,180^\circ\}$) and the algebra (linear dependence) agree.
+
+::: {.callout-tip title="You might be asked"}
+*"Prove the triangle inequality from Cauchy–Schwarz."* This is a favorite follow-up,
+because it shows the inequality earning its keep. The **triangle inequality** says
+$\lVert\mathbf{x}+\mathbf{y}\rVert \le \lVert\mathbf{x}\rVert + \lVert\mathbf{y}\rVert$ —
+the direct route is never longer than a detour. Expand the left side squared:
+$$
+\lVert\mathbf{x}+\mathbf{y}\rVert^2
+= \lVert\mathbf{x}\rVert^2 + 2\,\mathbf{x}^\top\mathbf{y} + \lVert\mathbf{y}\rVert^2
+\le \lVert\mathbf{x}\rVert^2 + 2\,\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert + \lVert\mathbf{y}\rVert^2
+= \bigl(\lVert\mathbf{x}\rVert + \lVert\mathbf{y}\rVert\bigr)^2 ,
+$$
+where the middle step bounds $\mathbf{x}^\top\mathbf{y} \le |\mathbf{x}^\top\mathbf{y}| \le
+\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert$ by Cauchy–Schwarz. Taking the (nonnegative)
+square root of both ends gives the triangle inequality. The single inequality
+@eq-cs is what makes our notion of length behave like a real length.
+:::
+
+## The inner product: the dot product is one of many {#sec-inner}
+
+We should say honestly what is *standard* about the standard dot product, because the rest
+of the series (and a good interview) will press on it. Everything above — the angle
+formula, Cauchy–Schwarz, the triangle inequality — used only the three properties in
+@lem-dot-props: symmetry, linearity, and positivity. It never used the *specific* recipe
+$\sum_i x_i y_i$ beyond those three properties. Any operation that takes two vectors to a
+number and obeys those three rules is called an **inner product**, written
+$\langle\mathbf{x},\mathbf{y}\rangle$, and every inner product comes with its own induced
+length $\lVert\mathbf{x}\rVert = \sqrt{\langle\mathbf{x},\mathbf{x}\rangle}$, its own angles,
+and its own Cauchy–Schwarz — *because those theorems only ever used the three axioms*.
+
+The dot product $\sum_i x_i y_i$ is the **standard** inner product on $\mathbb{R}^n$, the
+one that matches the everyday Euclidean ruler. But it is a *choice*, and sometimes the wrong
+one. A simple alternative is a **weighted** inner product $\langle\mathbf{x},\mathbf{y}
+\rangle_W = \sum_i w_i x_i y_i$ with positive weights $w_i$, which counts some coordinates
+as more important than others — and it satisfies all three axioms, so it inherits the entire
+geometric apparatus. More general still is $\langle\mathbf{x},\mathbf{y}\rangle_M =
+\mathbf{x}^\top M\mathbf{y}$ for a suitable matrix $M$; choosing $M$ to be the inverse
+covariance of the data produces the **Mahalanobis** inner product, the right ruler when the
+features have wildly different scales and correlations (we will meet it again as a quadratic
+form in [GEOM-17] and as the geometry of positive-definite matrices in [GEOM-18]). The
+takeaway for now: the *machinery* of length and angle is general; the *standard* dot product
+is the particular inner product that treats all coordinates symmetrically and on the same
+scale. When that assumption is wrong — and @sec-failure shows when — the standard dot
+product is the wrong ruler, and a different inner product is the fix.
+
+# Worked examples {#sec-examples}
+
+We now run the formulas on real, honest data — including one example near the edge where
+the standard dot product is the *wrong* tool, exactly as the constitution demands.
+
+## Example 1 — by hand: length, distance, and angle from coordinates {#sec-ex-hand}
+
+First, the whole apparatus on small vectors, every number in the open, so you watch the
+formulas breathe. Take two three-dimensional vectors,
+$$
+\mathbf{x} = (3, 1, 2), \qquad \mathbf{y} = (1, 4, 0).
+$$
+
+```{python}
+#| label: ex-hand
+#| echo: true
+import numpy as np
+x = np.array([3.0, 1.0, 2.0])
+y = np.array([1.0, 4.0, 0.0])
+
+dot   = x @ y                              # the dot product, sum of products
+nx    = np.sqrt(x @ x)                     # ||x||
+ny    = np.sqrt(y @ y)                     # ||y||
+dist  = np.sqrt((x - y) @ (x - y))         # Euclidean distance ||x - y||
+costh = dot / (nx * ny)                    # cos of the angle
+theta = np.degrees(np.arccos(costh))       # angle in degrees
+
+print(f"x . y              = {dot:.4f}")
+print(f"||x||              = {nx:.4f}")
+print(f"||y||              = {ny:.4f}")
+print(f"dist(x, y)         = {dist:.4f}")
+print(f"cos(theta)         = {costh:.4f}")
+print(f"theta (degrees)    = {theta:.2f}")
+```
+
+Walk the arithmetic, plugging straight into the boxed formulas:
+
+- **Dot product** (@eq-dot-def): pair and sum,
+  $\mathbf{x}^\top\mathbf{y} = (3)(1) + (1)(4) + (2)(0) = 3 + 4 + 0 = 7$.
+- **Lengths** (@eq-norm-def): $\lVert\mathbf{x}\rVert = \sqrt{3^2+1^2+2^2} = \sqrt{14}
+  \approx 3.742$ and $\lVert\mathbf{y}\rVert = \sqrt{1^2+4^2+0^2} = \sqrt{17} \approx 4.123$.
+- **Distance** (@eq-distance): $\mathbf{x}-\mathbf{y} = (2,-3,2)$, so
+  $\lVert\mathbf{x}-\mathbf{y}\rVert = \sqrt{2^2 + (-3)^2 + 2^2} = \sqrt{17} \approx 4.123$.
+- **Angle** (@eq-cos): $\cos\theta = 7 / (\sqrt{14}\,\sqrt{17}) = 7/\sqrt{238} \approx
+  0.4537$, giving $\theta \approx 63.0^\circ$.
+
+A positive cosine, so an acute angle: the two vectors broadly agree in direction but are far
+from parallel. Notice we obtained a $63^\circ$ angle *in three dimensions* without ever
+drawing a protractor — the formula carried all the geometry. The same code, with vectors of
+length 10000, would return the angle between two documents just as readily; nothing in the
+formulas cares about the dimension.
+
+## Example 2 — cosine similarity: ranking documents by direction, not size {#sec-ex-cosine}
+
+The dot product's headline data-science role is **cosine similarity**: the cosine of the
+angle between two feature vectors, used to decide *how alike* two items are. The key idea is
+that @eq-cos divides out both lengths, so it measures **direction, not magnitude** — it asks
+"do these two vectors point the same way?" and ignores "how big are they?"
+
+That distinction is exactly what we want for text. Represent each document as a vector of
+word counts (a "bag of words"): coordinate $i$ is how many times word $i$ appears. A long
+article and a short note on the *same topic* use the same words in the same proportions, so
+their count vectors point in nearly the same direction — but the long article's vector is
+much *longer* (bigger counts). Raw dot products or Euclidean distance would call the two
+documents dissimilar simply because one is longer. Cosine similarity, by normalizing away
+length, sees that they are about the same thing.
+
+Here are five short documents over a tiny vocabulary. Three are about finance, two about
+cooking; one finance document is deliberately much longer than the others.
+
+```{python}
+#| label: fig-cosine
+#| fig-cap: "Cosine similarity on bag-of-words vectors. **Left:** the raw word-count matrix; document D3 ('finance, long') has much larger counts than the rest. **Right:** the matrix of pairwise cosine similarities $\\cos\\theta = \\mathbf{d}_i^\\top\\mathbf{d}_j / (\\lVert\\mathbf{d}_i\\rVert\\lVert\\mathbf{d}_j\\rVert)$. The three finance documents form a bright block (similarity near 1) and the two cooking documents form another, with near-zero cross-topic similarity. Crucially, the long finance document D3 is still scored as highly similar to the short finance documents D1, D2 — cosine ignored its size and saw only its direction."
+vocab = ["stock", "market", "invest", "recipe", "bake", "flavor"]
+docs = {
+    "D1 finance":      np.array([4, 3, 2, 0, 0, 0]),
+    "D2 finance":      np.array([3, 4, 3, 0, 0, 1]),
+    "D3 finance(long)":np.array([40, 35, 28, 1, 0, 2]),
+    "D4 cooking":      np.array([0, 0, 0, 5, 4, 3]),
+    "D5 cooking":      np.array([1, 0, 0, 4, 5, 4]),
+}
+names = list(docs.keys())
+M = np.array([docs[n] for n in names], dtype=float)
+
+# Cosine similarity matrix.
+norms = np.sqrt((M * M).sum(axis=1))
+Mn = M / norms[:, None]
+C = Mn @ Mn.T
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(10.0, 4.0),
+                               gridspec_kw={"width_ratios": [1.15, 1]})
+imL = axL.imshow(M, cmap="Blues", aspect="auto")
+axL.set_xticks(range(len(vocab))); axL.set_xticklabels(vocab, rotation=40, ha="right")
+axL.set_yticks(range(len(names))); axL.set_yticklabels(names)
+for i in range(M.shape[0]):
+    for j in range(M.shape[1]):
+        axL.text(j, i, int(M[i, j]), ha="center", va="center",
+                 color="white" if M[i, j] > 18 else "black", fontsize=9)
+axL.set_title("Raw word counts"); axL.grid(False)
+
+imR = axR.imshow(C, cmap="viridis", vmin=0, vmax=1, aspect="auto")
+axR.set_xticks(range(len(names))); axR.set_xticklabels([n.split()[0] for n in names], rotation=40, ha="right")
+axR.set_yticks(range(len(names))); axR.set_yticklabels([n.split()[0] for n in names])
+for i in range(len(names)):
+    for j in range(len(names)):
+        axR.text(j, i, f"{C[i, j]:.2f}", ha="center", va="center",
+                 color="white" if C[i, j] < 0.6 else "black", fontsize=9)
+axR.set_title("Pairwise cosine similarity"); axR.grid(False)
+fig.colorbar(imR, ax=axR, fraction=0.046, pad=0.04)
+plt.tight_layout()
+
+print(f"cos(D1, D3 long) = {C[0,2]:.3f}   (same topic, very different size -> still high)")
+print(f"cos(D1, D4)      = {C[0,3]:.3f}   (different topic -> near zero)")
+print(f"Euclidean dist(D1, D3 long) = {np.sqrt(((M[0]-M[2])**2).sum()):.1f}  (size makes them look far!)")
+```
+
+The printout makes the point sharp. Documents D1 and D3 are about the same topic, but D3 is
+ten times longer; their **Euclidean distance is enormous**, which would wrongly rank them
+as dissimilar. Their **cosine similarity is near 1**, correctly recognizing that they point
+the same way. This length-invariance is why cosine similarity, built from nothing but the
+dot product and two norms, is the default measure in search engines, document retrieval,
+and the nearest-neighbor step of many recommender systems.
+
+::: {.callout-tip title="You might be asked"}
+*"When would you use cosine similarity instead of Euclidean distance?"* When **direction
+matters and magnitude is a nuisance** — text where document length varies, user-rating
+vectors where some users rate far more items than others, any setting where you care about
+*proportions* across features rather than their absolute sizes. Use Euclidean distance when
+magnitude is meaningful (physical measurements, positions in space). The crisp connection
+to state: on vectors already normalized to unit length, the two are monotone equivalents,
+because $\lVert\mathbf{x}-\mathbf{y}\rVert^2 = 2 - 2\,\mathbf{x}^\top\mathbf{y} = 2(1 -
+\cos\theta)$ when $\lVert\mathbf{x}\rVert = \lVert\mathbf{y}\rVert = 1$ — so on the unit
+sphere, larger cosine *is* smaller distance. Off the unit sphere they can disagree, and the
+disagreement is exactly the document-length effect we just saw.
+:::
+
+## Example 3 (edge of applicability) — when the standard dot product is the wrong ruler {#sec-ex-edge}
+
+Now the honest boundary. The standard dot product treats every coordinate identically and
+on the same scale. When the features have **wildly different units or scales**, that
+even-handedness is a bug, not a feature: the largest-scale coordinate dominates the sum of
+products and silently drowns out the others. The "angle" you compute is then governed by an
+arbitrary choice of units.
+
+Consider two houses, each described by `(price in dollars, number of bedrooms)`. Price runs
+to hundreds of thousands; bedrooms run from 1 to 5. We will compute the angle between two
+houses that differ a lot in bedrooms but little in price, and then watch what happens when
+we merely **change the price units** from dollars to thousands of dollars — a change that
+should not affect any honest notion of "how similar are these houses," yet swings the dot
+product geometry wildly.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of applicability. Two houses described by (price, bedrooms). **Left, in raw units (dollars):** price is so large it dominates the dot product; the two houses look almost perfectly aligned (angle near $0^\\circ$) no matter how their bedrooms differ. **Middle, price in $1000s:** the *same houses*, only the price unit changed, now show a far larger angle. The standard dot product gave a unit-dependent, meaningless answer. **Right, after standardizing each feature to comparable scale:** the angle finally reflects the real difference between the houses. The lesson: the standard dot product silently assumes the coordinates are on comparable scales."
+def angle_deg(a, b):
+    return np.degrees(np.arccos((a @ b) / (np.sqrt(a @ a) * np.sqrt(b @ b))))
+
+# Two houses: similar price, different bedroom count.
+h1_dollars = np.array([320_000.0, 2.0])
+h2_dollars = np.array([330_000.0, 5.0])
+
+# Same houses, price expressed in thousands of dollars.
+h1_k = np.array([320.0, 2.0])
+h2_k = np.array([330.0, 5.0])
+
+# Standardized: divide each feature by a representative spread so units vanish.
+price_sd, bed_sd = 50_000.0, 1.5
+h1_z = np.array([320_000.0 / price_sd, 2.0 / bed_sd])
+h2_z = np.array([330_000.0 / price_sd, 5.0 / bed_sd])
+
+cases = [
+    ("raw: dollars",   h1_dollars, h2_dollars),
+    ("price in $1000s", h1_k,      h2_k),
+    ("standardized",   h1_z,       h2_z),
+]
+fig, axes = plt.subplots(1, 3, figsize=(10.2, 3.5))
+for ax, (title, a, b) in zip(axes, cases):
+    an = a / np.sqrt(a @ a)   # show directions only
+    bn = b / np.sqrt(b @ b)
+    draw_vec(ax, (0, 0), an, color=VEC, label="house 1", label_offset=(0.0, 0.12))
+    draw_vec(ax, (0, 0), bn, color=HILITE, label="house 2", label_offset=(0.0, -0.16))
+    ang = angle_deg(a, b)
+    ax.set_title(f"{title}\nangle = {ang:.1f}°", fontsize=10)
+    ax.set_xlim(-0.2, 1.2); ax.set_ylim(-0.2, 1.2)
+    ax.set_aspect("equal")
+    ax.axhline(0, color=GREY, lw=0.8, alpha=0.4); ax.axvline(0, color=GREY, lw=0.8, alpha=0.4)
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+
+print(f"angle, dollars     = {angle_deg(h1_dollars, h2_dollars):6.2f} deg")
+print(f"angle, $1000s      = {angle_deg(h1_k,       h2_k):6.2f} deg")
+print(f"angle, standardized= {angle_deg(h1_z,       h2_z):6.2f} deg")
+```
+
+The three angles are wildly different for **the same two houses**. In raw dollars the price
+coordinate is so enormous that the sum of products is essentially all price, the bedroom
+difference is invisible, and the houses look nearly identical in direction (angle near
+$0^\circ$). Re-express price in thousands — a change of units that carries no information —
+and the angle leaps, because now price and bedrooms are closer in scale. The geometry was
+hostage to an arbitrary unit choice.
+
+**When you reach for something else.** This is the standard dot product used outside its
+assumption. The fixes are exactly the more general inner products of @sec-inner:
+
+- **Standardize first.** Rescale each feature (e.g. divide by its standard deviation) so the
+  coordinates are dimensionless and comparable, *then* take the ordinary dot product. The
+  right panel does this and recovers an honest angle. This is the most common practical fix
+  and is why "standardize your features" is a reflex before any distance- or angle-based
+  method (k-NN, k-means, PCA).
+- **Use a weighted or Mahalanobis inner product** (@sec-inner), which builds the rescaling —
+  and, in the Mahalanobis case, the *correlations* between features — directly into the
+  ruler. This is the principled version of standardizing, developed via positive-definite
+  matrices in [GEOM-18].
+
+The honest summary: the dot product is a *ruler that assumes all axes are marked in the same
+units*. When that is false, fix the axes (standardize) or change the ruler (weighted inner
+product). Never compute angles on raw, mixed-unit features and trust them.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Collecting the boundaries in one place — the section that separates "can compute a dot
+product" from "knows when the number means something."
+
+## Scale sensitivity {#sec-fail-scale}
+
+As @sec-ex-edge showed in full, the standard dot product is **not scale-invariant across
+features**. A coordinate measured in large units dominates the sum of products and the
+induced angle. Whenever features carry different units or spreads, standardize them or use a
+weighted/Mahalanobis inner product before computing lengths, distances, or angles. This is
+the single most common way the dot product is misused in practice.
+
+::: {.callout-warning title="Pitfall"}
+**Computing cosine similarity or Euclidean distance on raw, mixed-scale features.** The
+result is governed by your arbitrary choice of units (dollars vs. thousands, grams vs.
+kilograms), not by the data. Always standardize features to a comparable scale first — or
+adopt an inner product (weighted, Mahalanobis) that encodes the right scale. The dot product
+gives you a number on *any* input; whether that number is *meaningful* is your
+responsibility, not the formula's.
+:::
+
+## High dimensions: the angle concentrates {#sec-fail-highdim}
+
+A subtler, genuinely surprising failure shows up when the dimension $n$ is large — the home
+turf of data science. Take two **random** vectors in $\mathbb{R}^n$ with independent
+coordinates centered at zero. As $n$ grows, the angle between them concentrates sharply
+around $90^\circ$: random high-dimensional vectors are *almost always nearly orthogonal*.
+The reason is visible in @eq-cos: the numerator $\sum_i x_i y_i$ is a sum of $n$ terms with
+random signs that largely cancel (it grows like $\sqrt{n}$), while each norm in the
+denominator grows like $\sqrt{n}$, so the cosine behaves like $\sqrt{n}/n = 1/\sqrt{n} \to
+0$. @fig-concentration shows the angle distribution collapsing onto $90^\circ$ as $n$ rises.
+
+```{python}
+#| label: fig-concentration
+#| fig-cap: "The concentration of angle in high dimensions. For each dimension $n$, we draw many pairs of random vectors (independent standard-normal coordinates) and histogram the angle between them. In low dimensions the angle is spread out, but as $n$ grows the distribution piles up tightly around $90^\\circ$: almost every pair of random high-dimensional vectors is nearly orthogonal. This is a face of the 'curse of dimensionality' and a reason cosine similarity loses discriminating power when features are many and largely uninformative."
+rng = np.random.default_rng(0)
+dims = [2, 10, 100, 1000]
+colors = [PALE, ACCENT, VEC, HILITE]
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+for n, col in zip(dims, colors):
+    A = rng.standard_normal((4000, n))
+    B = rng.standard_normal((4000, n))
+    dots = np.sum(A * B, axis=1)
+    angs = np.degrees(np.arccos(dots / (np.linalg.norm(A, axis=1) * np.linalg.norm(B, axis=1))))
+    ax.hist(angs, bins=60, density=True, histtype="step", lw=2.0, color=col, label=f"$n={n}$")
+ax.axvline(90, color=GREY, lw=1.2, ls="--")
+ax.set_xlabel("angle between two random vectors (degrees)")
+ax.set_ylabel("density")
+ax.set_title("Random vectors become nearly orthogonal as $n$ grows")
+ax.legend()
+plt.tight_layout()
+```
+
+The practical consequence: in very high dimensions, *most* pairs look nearly orthogonal, so
+the cosine between genuinely related items must compete against a sea of near-$90^\circ$
+noise. Cosine similarity still works — the signal is real — but its *contrast* shrinks, and
+this is one face of the **curse of dimensionality**. The usual remedies are to first reduce
+dimension (PCA, owned by Unsupervised Learning, built on the SVD of [GEOM-20]) or to use
+features that are informative rather than padded, so the relevant directions are not buried.
+The point for this article: the dot product remains exactly correct, but *what counts as a
+"large" similarity* must be calibrated against this baseline, not against the naive
+intuition that $90^\circ$ means "unrelated."
+
+## The zero vector has no direction {#sec-fail-zero}
+
+A small but real edge: the angle formula @eq-cos divides by $\lVert\mathbf{x}\rVert
+\lVert\mathbf{y}\rVert$, which is zero if either vector is the zero vector. This is not a
+formula bug — it is the honest statement that **the zero vector has no direction**, so the
+"angle to it" is undefined. In code, a document with no words in your vocabulary, or a user
+who rated nothing, produces a zero vector, and cosine similarity is genuinely undefined for
+it. Guard against it explicitly (e.g. drop or specially handle empty vectors) rather than
+letting a divide-by-zero produce a silent `nan`.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from [GEOM-1 *Adding and Scaling*] with only affine structure — addition and
+scaling, but no ruler and no protractor. This article installed both from one operation, the
+dot product: length via $\lVert\mathbf{x}\rVert = \sqrt{\mathbf{x}^\top\mathbf{x}}$
+(Pythagoras in $n$ dimensions) and angle via $\mathbf{x}^\top\mathbf{y} =
+\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta$ (the law of cosines), with
+Cauchy–Schwarz guaranteeing the angle is real. From here:
+
+- **[GEOM-5 *Orthogonality and Orthonormal Bases*]** — the read-as-a-pair companion to this
+  article. It runs entirely on the special case we flagged: $\mathbf{x}^\top\mathbf{y} = 0$
+  means perpendicular. It builds the generalized Pythagorean theorem, orthonormal bases
+  (where coordinates are *just dot products*, $c_i = \mathbf{q}_i^\top\mathbf{x}$), and the
+  orthogonal complement.
+- **[GEOM-6 *Orthogonal Projection onto a Subspace*]** — the keystone of the track. The
+  projection of one vector onto another, $(\mathbf{a}^\top\mathbf{x}/\mathbf{a}^\top
+  \mathbf{a})\,\mathbf{a}$, is built entirely from the dot products defined here; "closest
+  point" is "drop a perpendicular," and perpendicular is dot-product-zero. This is the
+  geometry under least squares.
+- **[GEOM-17 *Quadratic Forms*]** — generalizes the squared length
+  $\mathbf{x}^\top\mathbf{x} = \sum_i x_i^2$ to $\mathbf{x}^\top A\mathbf{x}$, and the
+  weighted/Mahalanobis inner products of @sec-inner are exactly quadratic forms in disguise.
+- **Cross-track:** cosine similarity (@sec-ex-cosine) is consumed by Classification (k-NN,
+  the kernel trick, where a kernel is a generalized inner product) and Unsupervised Learning
+  (clustering, recommender systems). The "regression slope is covariance over variance"
+  result of [REGR-1] is, geometrically, a dot product in disguise — a connection [REGR-4]
+  makes explicit once projection is in hand.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Historical thread.** The dot product's modern form was distilled by J. W. Gibbs and
+  Oliver Heaviside in the 1880s out of Hamilton's quaternion calculus; Gibbs's lecture notes
+  *Elements of Vector Analysis* (1881–84) are where the dot and cross products first appear
+  as the stand-alone operations taught today. The notion of "work as force-dot-displacement"
+  is the physical seed the whole construction grew from.
+- **Cauchy–Schwarz.** The inequality is named for Augustin-Louis Cauchy (1821, finite sums)
+  and Hermann Schwarz (1888, integrals); Viktor Bunyakovsky proved the integral form
+  earlier, so it is sometimes the Cauchy–Bunyakovsky–Schwarz inequality. Our quadratic-
+  discriminant proof is the standard one and the same template that proves the general
+  inner-product version in @sec-inner verbatim.
+- **Open threads this article deliberately deferred.** *What if perpendicular is the whole
+  story?* — orthogonality and its consequences are [GEOM-5]. *How do we find the closest
+  point in a subspace?* — projection, [GEOM-6], the keystone. *Is there a "best" inner
+  product for a given dataset?* — the Mahalanobis distance and positive-definite matrices,
+  [GEOM-17]–[GEOM-18]. *Why do nearly all high-dimensional vectors look orthogonal, made
+  precise?* — measure concentration, a probabilistic story owned by the Probability track but
+  visible here in @fig-concentration.

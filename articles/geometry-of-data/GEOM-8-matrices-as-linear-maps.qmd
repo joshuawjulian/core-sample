@@ -1,0 +1,932 @@
+---
+title: "Matrices as Linear Maps: Columns Are Where the Axes Go"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # generic vectors / data
+HILITE = "#c1121f"   # the highlighted vector / image
+ACCENT = "#0a7d4d"   # the columns / basis images
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+E1COL  = "#c1121f"   # first basis vector and its image
+E2COL  = "#0a7d4d"   # second basis vector and its image
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0), ls="-"):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0, linestyle=ls), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center", zorder=z + 1)
+
+
+def transform_grid(ax, A, lim=3, nlines=7, color=PALE, lw=1.0):
+    """Draw the image of an integer grid on [-lim, lim]^2 under the 2x2 matrix A.
+    This is the visual heart of the article: the grid shows where space goes."""
+    ticks = np.linspace(-lim, lim, nlines)
+    fine = np.linspace(-lim, lim, 60)
+    for t in ticks:                       # vertical lines x = t  ->  their images
+        pts = np.array([[t, s] for s in fine]).T
+        img = A @ pts
+        ax.plot(img[0], img[1], color=color, lw=lw, zorder=1)
+    for t in ticks:                       # horizontal lines y = t -> their images
+        pts = np.array([[s, t] for s in fine]).T
+        img = A @ pts
+        ax.plot(img[0], img[1], color=color, lw=lw, zorder=1)
+```
+
+> **Where this sits in the track.** This article opens **Movement III — Matrices as
+> Maps**, the matrix half of the Geometry of Data track. It assumes [GEOM-1 *Adding and
+> Scaling: The Linear Combination*] — the single move of forming
+> $c_1\mathbf{v}_1+\dots+c_k\mathbf{v}_k$, which is the engine of everything here — and
+> [GEOM-4 *The Dot Product*], for the row-times-vector reading and the geometry of length
+> and angle. It quietly rests on the picture from [GEOM-0]–[GEOM-3] that a vector is a
+> point in $\mathbb{R}^n$ and a dataset is a cloud of such points. It sets up [GEOM-9
+> *Matrix Multiplication as Composition*] (chaining two maps), [GEOM-10 *The Transpose*],
+> [GEOM-11 *Solving $A\mathbf{x}=\mathbf{b}$*], and — further on — [GEOM-14 *Eigenvalues
+> and Eigenvectors*], where the special directions a map only stretches become the whole
+> story. Almost every downstream article, in this track and across Regression, Inference,
+> and Optimization, reads a matrix the way this article teaches: **as a thing that does
+> something to space.**
+
+## Abstract {.unnumbered}
+
+A matrix is not a grid of numbers to be memorized — it is a **function that moves space**.
+This article defends one claim: a matrix $A$ encodes a *linear transformation*
+$\mathbf{x}\mapsto A\mathbf{x}$, and the entire content of that transformation is **where
+it sends the basis vectors** — which is exactly what the columns of $A$ record. We define
+the matrix–vector product two equivalent ways, the *combination-of-columns* reading
+$A\mathbf{x}=x_1\mathbf{a}_1+\dots+x_n\mathbf{a}_n$ and the *row-by-row dot products*
+reading, and prove they give the same numbers. We prove that the map is **linear** —
+$A(\mathbf{x}+\mathbf{y})=A\mathbf{x}+A\mathbf{y}$ and $A(c\mathbf{x})=cA\mathbf{x}$ — and,
+conversely, that *every* linear map is a matrix whose columns are the images of the
+standard basis vectors. We then walk a gallery of the maps you will meet for the rest of
+the series — scaling, rotation, reflection, shear, and projection — drawing each as it
+deforms a unit grid, so that reading a $2\times 2$ matrix and seeing what it does to a
+picture becomes one and the same act.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A matrix $A$ *is* a function: feed it a vector $\mathbf{x}$, it returns the vector
+$A\mathbf{x}$. The function is **linear** — it respects addition and scaling — and that
+single property forces a remarkable economy: to know what $A$ does to *every* vector, you
+only need to know what it does to the **basis vectors**, because every vector is a linear
+combination of them. The matrix simply *stores those images in its columns*. The $j$-th
+column of $A$ is the place the $j$-th standard axis vector $\mathbf{e}_j$ lands. Hence the
+master reading of the product:
+$$A\mathbf{x} \;=\; x_1\mathbf{a}_1 + x_2\mathbf{a}_2 + \cdots + x_n\mathbf{a}_n,$$
+where $\mathbf{a}_1,\dots,\mathbf{a}_n$ are the columns. **$A\mathbf{x}$ is the linear
+combination of $A$'s columns with weights taken from $\mathbf{x}$.** Columns are where the
+axes go.
+:::
+
+Everything below orbits that box. The product rule $A\mathbf{x}=\sum_j x_j\mathbf{a}_j$
+will look, at first, like one of several formulas for matrix–vector multiplication you
+could memorize. By the end it should feel inevitable: it is *not a definition we chose for
+convenience* but the only thing $A\mathbf{x}$ could possibly mean once we decide a matrix
+is a linear function and that linearity means "do whatever you do to the parts, then add."
+The phrase "columns are where the axes go," which sounds like a slogan, will turn out to
+be a one-line theorem (@thm-columns-are-images) — and the most useful single sentence in
+the whole matrix half of this track.
+
+# Why we are here: the problem that forces the idea {#sec-why}
+
+Keep one question in view for the whole article: **what does a matrix *do*, and why is
+"track where the basis vectors go" enough to know everything it does?** Every step below
+answers some piece of that.
+
+## Where matrices came from — and the reading we lost
+
+Matrices entered mathematics through the back door, as bookkeeping. In the nineteenth
+century a *system of linear equations* like
+$$
+\begin{aligned}
+2x_1 + 3x_2 &= 5,\\
+x_1 - x_2 &= 1,
+\end{aligned}
+$$
+was the object of interest, and the array of coefficients $\begin{psmallmatrix}2 & 3\\ 1 &
+-1\end{psmallmatrix}$ was just a compact way to write down the numbers you would manipulate
+while eliminating variables. The word *matrix* (Latin for "womb") was coined by James
+Joseph Sylvester in 1850 for exactly this: a rectangular array from which determinants and
+solutions are *born*. For the rest of that century a matrix was a static tableau of
+numbers and not much else.
+
+The shift that this article is about — the shift that the entire modern subject hangs on —
+was the realization, sharpened by Arthur Cayley in his 1858 *Memoir on the Theory of
+Matrices*, that a matrix is better understood not as a table but as an **operation**: a
+single object that *acts on* vectors and transforms them. Cayley noticed that if you define
+how matrices multiply vectors and each other in the natural way, the matrices behave like
+the *functions* they represent — multiplying two matrices corresponds to *composing* the
+two transformations (the subject of [GEOM-9]). The grid of numbers is just the operation's
+fingerprint.
+
+This is the reading we are going to install, because it is the one that makes everything
+downstream feel inevitable instead of arbitrary:
+
+> A matrix is a **verb, not a noun.** It is something you *do to* space.
+
+::: {.callout-tip title="You might be asked"}
+*"Why do we even need the transformation viewpoint? Isn't a matrix just a way to write down
+a system of equations?"* You can get an undergraduate's worth of mileage treating matrices
+as coefficient tables — but every deep idea in linear algebra is a statement about the
+*action*, not the array. Eigenvectors ([GEOM-14]) are the directions the action does not
+turn; the determinant ([GEOM-13]) is how much the action scales volume; the SVD ([GEOM-20])
+says *every* action is a rotation, a stretch, and a rotation. None of those make sense for
+a static table of numbers. The interviewer asking this wants to hear: *a matrix is a linear
+map, and the entries are just its description in a chosen basis.*
+:::
+
+## The economy linearity buys
+
+Here is the tension that forces the central idea. A transformation of $\mathbb{R}^n$ is, in
+full generality, a function from an $n$-dimensional space to an $m$-dimensional space —
+there are unimaginably many such functions, and you could never tabulate one. Yet the
+particular transformations that matter for data — the ones built only out of the two
+operations [GEOM-1] allows, *adding* and *scaling* — turn out to be pinned down by a
+finite, tiny amount of information. If a map respects addition and scaling, then once you
+know where it sends each coordinate axis, you know where it sends *everything*, because
+every vector is a combination of the axes and the map distributes over combinations. That
+"finite description of an infinite object" is the whole payoff, and the columns of a matrix
+are precisely that description. The rest of the article makes this exact.
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, here is the picture. Take the plane $\mathbb{R}^2$ and lay down its
+standard grid: the horizontal axis vector $\mathbf{e}_1=\begin{psmallmatrix}1\\0\end{psmallmatrix}$
+(one step east) and the vertical axis vector $\mathbf{e}_2=\begin{psmallmatrix}0\\1\end{psmallmatrix}$
+(one step north). Every point in the plane is "go $x_1$ steps east and $x_2$ steps north" —
+that is what its coordinates $\begin{psmallmatrix}x_1\\x_2\end{psmallmatrix}$ literally
+mean, and it is the linear combination $x_1\mathbf{e}_1+x_2\mathbf{e}_2$ from [GEOM-1].
+
+Now suppose we have a transformation $T$ that picks up the whole plane and moves it — but
+*rigidly with respect to combinations*: it may stretch, rotate, shear, or flip the grid, but
+it keeps grid lines straight, evenly spaced, and parallel, and it pins the origin in place.
+The crucial observation is that such a $T$ is completely determined the instant you tell me
+two things: where $\mathbf{e}_1$ lands and where $\mathbf{e}_2$ lands. Call those landing
+spots $\mathbf{a}_1=T(\mathbf{e}_1)$ and $\mathbf{a}_2=T(\mathbf{e}_2)$. Then any point
+"$x_1$ east, $x_2$ north" must go to "$x_1$ copies of $\mathbf{a}_1$, plus $x_2$ copies of
+$\mathbf{a}_2$" — because $T$ turns the recipe $x_1\mathbf{e}_1+x_2\mathbf{e}_2$ into the
+same recipe written in the moved basis. @fig-axes-go draws this.
+
+```{python}
+#| label: fig-axes-go
+#| fig-cap: "The whole idea in one picture. **Left:** the standard basis $\\mathbf{e}_1$ (east) and $\\mathbf{e}_2$ (north), and a sample point $\\mathbf{x}=(2,1)$ built as $2\\mathbf{e}_1+1\\mathbf{e}_2$. **Right:** a transformation sends $\\mathbf{e}_1$ to $\\mathbf{a}_1=(1,0.4)$ and $\\mathbf{e}_2$ to $\\mathbf{a}_2=(0.6,1.2)$ — these are the *columns* of the matrix. The image of $\\mathbf{x}$ is forced: it is $2\\mathbf{a}_1+1\\mathbf{a}_2$, the same recipe in the moved basis. Knowing only where the two axes go fixes where every point goes."
+A = np.array([[1.0, 0.6],
+              [0.4, 1.2]])
+x = np.array([2.0, 1.0])
+Ax = A @ x
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.3))
+for ax in (axL, axR):
+    ax.set_xlim(-0.6, 3.4); ax.set_ylim(-0.6, 3.0)
+    ax.set_aspect("equal"); ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+
+# Left: standard basis and the point as a combination
+transform_grid(axL, np.eye(2), lim=3, color="#e3e8f0")
+draw_vec(axL, (0, 0), (1, 0), color=E1COL, label=r"$\mathbf{e}_1$", label_offset=(0.15, -0.2))
+draw_vec(axL, (0, 0), (0, 1), color=E2COL, label=r"$\mathbf{e}_2$", label_offset=(-0.25, 0.12))
+draw_vec(axL, (0, 0), tuple(x), color=HILITE, label=r"$\mathbf{x}=2\mathbf{e}_1+\mathbf{e}_2$",
+         label_offset=(0.0, 0.28))
+axL.set_title("Before: the standard grid")
+
+# Right: images of the basis and the forced image of x
+transform_grid(axR, A, lim=3, color="#cfe0d6")
+draw_vec(axR, (0, 0), tuple(A[:, 0]), color=E1COL, label=r"$\mathbf{a}_1$", label_offset=(0.18, -0.18))
+draw_vec(axR, (0, 0), tuple(A[:, 1]), color=E2COL, label=r"$\mathbf{a}_2$", label_offset=(-0.28, 0.1))
+draw_vec(axR, (0, 0), tuple(Ax), color=HILITE, label=r"$A\mathbf{x}=2\mathbf{a}_1+\mathbf{a}_2$",
+         label_offset=(0.1, 0.28))
+axR.set_title("After: where the grid goes")
+plt.tight_layout()
+```
+
+That is the entire article in one sentence: **store $\mathbf{a}_1$ and $\mathbf{a}_2$ as the
+columns of a matrix, and matrix–vector multiplication is just "rebuild the point from the
+moved axes."** Everything formal below is bookkeeping in service of this picture.
+
+# The formal development {#sec-formal}
+
+## Vectors and the standard basis, fixed in notation {#sec-notation}
+
+We write vectors as columns. A vector in $\mathbb{R}^n$ is an ordered list of $n$ real
+numbers,
+$$
+\mathbf{x} = \begin{pmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{pmatrix},
+$$
+and $x_j$ is its $j$-th **coordinate**. The **standard basis vectors** of $\mathbb{R}^n$ are
+$\mathbf{e}_1,\dots,\mathbf{e}_n$, where $\mathbf{e}_j$ has a $1$ in slot $j$ and $0$
+everywhere else. In $\mathbb{R}^3$, for instance,
+$$
+\mathbf{e}_1 = \begin{pmatrix}1\\0\\0\end{pmatrix},\quad
+\mathbf{e}_2 = \begin{pmatrix}0\\1\\0\end{pmatrix},\quad
+\mathbf{e}_3 = \begin{pmatrix}0\\0\\1\end{pmatrix}.
+$$
+The single fact about them we will use over and over is the one from [GEOM-1]: **every
+vector is the linear combination of the standard basis with its own coordinates as the
+weights.** Concretely,
+$$
+\mathbf{x} = x_1\mathbf{e}_1 + x_2\mathbf{e}_2 + \cdots + x_n\mathbf{e}_n,
+$$ {#eq-coord-decomp}
+because the right-hand side puts $x_1$ in the first slot (only $\mathbf{e}_1$ contributes
+there), $x_2$ in the second, and so on, reproducing $\mathbf{x}$ exactly. This identity is
+small but load-bearing: it is the lever that turns "where do the axes go" into "where does
+everything go."
+
+An $m\times n$ **matrix** $A$ is a rectangular array of real numbers with $m$ rows and $n$
+columns,
+$$
+A = \begin{pmatrix}
+a_{11} & a_{12} & \cdots & a_{1n}\\
+a_{21} & a_{22} & \cdots & a_{2n}\\
+\vdots & \vdots & \ddots & \vdots\\
+a_{m1} & a_{m2} & \cdots & a_{mn}
+\end{pmatrix},
+$$
+where $a_{ij}$ is the entry in row $i$, column $j$. We will need to look at $A$ two ways. As
+a stack of **columns**,
+$$
+A = \begin{pmatrix} \mathbf{a}_1 & \mathbf{a}_2 & \cdots & \mathbf{a}_n \end{pmatrix},
+\qquad
+\mathbf{a}_j = \begin{pmatrix} a_{1j}\\ a_{2j}\\ \vdots\\ a_{mj}\end{pmatrix}\in\mathbb{R}^m,
+$$
+each column $\mathbf{a}_j$ a vector in $\mathbb{R}^m$; and as a stack of **rows**,
+$$
+A = \begin{pmatrix} \text{---}\ \mathbf{r}_1^\top\ \text{---}\\
+\text{---}\ \mathbf{r}_2^\top\ \text{---}\\
+\vdots\\
+\text{---}\ \mathbf{r}_m^\top\ \text{---}\end{pmatrix},
+\qquad
+\mathbf{r}_i = \begin{pmatrix} a_{i1}\\ a_{i2}\\ \vdots\\ a_{in}\end{pmatrix}\in\mathbb{R}^n,
+$$
+each row written as a transposed vector $\mathbf{r}_i^\top$ (the transpose $\top$ turns a
+column into a row; its deeper meaning is [GEOM-10]'s, but here it is just typography). Both
+views describe the *same* array; which one we use depends on which reading of the product
+we want, and the two readings are the heart of @sec-two-readings.
+
+## Defining the matrix–vector product as "combine the columns" {#sec-define-product}
+
+We now *define* what it means for a matrix to act on a vector. There is a choice of how to
+write the definition, and we make the choice the Core demands — the columns reading — and
+then prove the familiar entrywise formula falls out of it.
+
+::: {#def-matvec}
+**Definition (matrix–vector product).** Let $A$ be an $m\times n$ matrix with columns
+$\mathbf{a}_1,\dots,\mathbf{a}_n\in\mathbb{R}^m$, and let
+$\mathbf{x}=(x_1,\dots,x_n)^\top\in\mathbb{R}^n$. The **product** $A\mathbf{x}$ is the
+vector in $\mathbb{R}^m$ obtained by taking the linear combination of the columns with the
+entries of $\mathbf{x}$ as weights:
+$$
+A\mathbf{x} \;:=\; x_1\mathbf{a}_1 + x_2\mathbf{a}_2 + \cdots + x_n\mathbf{a}_n
+\;=\; \sum_{j=1}^{n} x_j\,\mathbf{a}_j.
+$$ {#eq-matvec-cols}
+:::
+
+Two sanity checks make the definition concrete before we lean on it.
+
+First, **dimensions.** Each column $\mathbf{a}_j$ lives in $\mathbb{R}^m$, and a sum of
+$\mathbb{R}^m$ vectors is again in $\mathbb{R}^m$, so $A\mathbf{x}\in\mathbb{R}^m$. For the
+weights to match up there must be exactly $n$ of them — one per column — which is why
+$\mathbf{x}$ must live in $\mathbb{R}^n$. An $m\times n$ matrix is therefore a map
+$$
+A:\ \mathbb{R}^n \longrightarrow \mathbb{R}^m,
+$$
+taking $n$-vectors as input and producing $m$-vectors as output. (Memory aid: $A$ has $n$
+columns, so it eats $n$-vectors; it has $m$ rows, so it spits out $m$-vectors.)
+
+Second, **the columns are the images of the axes.** Feed the definition the standard basis
+vector $\mathbf{e}_j$. Its coordinates are all zero except a $1$ in slot $j$, so in
+@eq-matvec-cols every weight $x_k$ is $0$ except $x_j=1$:
+$$
+A\mathbf{e}_j = 0\cdot\mathbf{a}_1 + \cdots + 1\cdot\mathbf{a}_j + \cdots + 0\cdot\mathbf{a}_n
+= \mathbf{a}_j.
+$$
+This is the slogan, now a fact:
+
+::: {#thm-columns-are-images}
+**Theorem (columns are where the axes go).** For any matrix $A$ and any standard basis
+vector $\mathbf{e}_j$, the product $A\mathbf{e}_j$ equals the $j$-th column of $A$. That is,
+the $j$-th column of $A$ is exactly the image of the $j$-th coordinate axis vector under the
+map $\mathbf{x}\mapsto A\mathbf{x}$.
+:::
+
+::: {.proof}
+By @def-matvec, $A\mathbf{e}_j = \sum_{k=1}^n (\mathbf{e}_j)_k\,\mathbf{a}_k$, where
+$(\mathbf{e}_j)_k$ is the $k$-th coordinate of $\mathbf{e}_j$. By the definition of
+$\mathbf{e}_j$, that coordinate is $1$ when $k=j$ and $0$ otherwise. Every term in the sum
+with $k\ne j$ is therefore the zero vector, and the single surviving term is
+$1\cdot\mathbf{a}_j=\mathbf{a}_j$. Hence $A\mathbf{e}_j=\mathbf{a}_j$. $\qquad\blacksquare$
+:::
+
+This is the most useful sentence in the matrix half of the track. It means you never have to
+ask "what does this matrix do?" abstractly — you *read the columns*, and each column tells
+you, in plain coordinates, where one axis vector ends up.
+
+## The two equivalent readings of $A\mathbf{x}$ {#sec-two-readings}
+
+The columns reading @eq-matvec-cols is conceptually primary. But there is a second reading,
+the one you probably half-remember from a first course — *each output coordinate is a dot
+product of a row of $A$ with $\mathbf{x}$* — and it is worth proving the two agree, both
+because exam questions test it and because each reading wins in different situations.
+
+::: {#thm-two-readings}
+**Theorem (column reading = row reading).** With $A$, $\mathbf{x}$ as above, the $i$-th
+coordinate of $A\mathbf{x}$ equals the dot product of the $i$-th row of $A$ with
+$\mathbf{x}$:
+$$
+\bigl(A\mathbf{x}\bigr)_i \;=\; \mathbf{r}_i^\top \mathbf{x}
+\;=\; \sum_{j=1}^{n} a_{ij}\,x_j.
+$$ {#eq-matvec-rows}
+:::
+
+::: {.proof}
+Start from the columns definition and read off coordinate $i$. By @eq-matvec-cols,
+$$
+A\mathbf{x} = \sum_{j=1}^{n} x_j\,\mathbf{a}_j .
+$$
+Reading the $i$-th coordinate of both sides — and using that the $i$-th coordinate of a sum
+is the sum of the $i$-th coordinates (componentwise addition, from [GEOM-1]) and that the
+$i$-th coordinate of the scaled vector $x_j\mathbf{a}_j$ is $x_j$ times the $i$-th
+coordinate of $\mathbf{a}_j$ —
+$$
+\bigl(A\mathbf{x}\bigr)_i
+= \Bigl(\sum_{j=1}^{n} x_j\,\mathbf{a}_j\Bigr)_i
+= \sum_{j=1}^{n} x_j\,(\mathbf{a}_j)_i .
+$$
+Now $(\mathbf{a}_j)_i$ is the $i$-th coordinate of the $j$-th column — which, by the
+indexing convention $a_{ij}$ = "row $i$, column $j$," is exactly $a_{ij}$. Substituting,
+$$
+\bigl(A\mathbf{x}\bigr)_i = \sum_{j=1}^{n} x_j\,a_{ij} = \sum_{j=1}^{n} a_{ij}\,x_j .
+$$
+The right-hand side is, term for term, the dot product (from [GEOM-4]) of the row vector
+$\mathbf{r}_i=(a_{i1},\dots,a_{in})^\top$ with $\mathbf{x}=(x_1,\dots,x_n)^\top$, i.e.
+$\mathbf{r}_i^\top\mathbf{x}$. $\qquad\blacksquare$
+:::
+
+So there is one product with two faces. Hold both, because each answers a different
+question:
+
+- **Columns reading** $A\mathbf{x}=\sum_j x_j\mathbf{a}_j$: *"What does $A$ do to space?"*
+  It says $A\mathbf{x}$ lives in the span of the columns — the **column space** of $A$
+  ([GEOM-2], formalized in [GEOM-12]) — and it is the reading behind every geometric
+  picture in this article. This is the reading to reach for first.
+- **Rows reading** $(A\mathbf{x})_i=\mathbf{r}_i^\top\mathbf{x}$: *"What is each output
+  number?"* It says output coordinate $i$ measures the alignment (dot product) of the input
+  with row $i$. This is the reading for computing a single entry by hand and the one that
+  makes a *system of equations* $A\mathbf{x}=\mathbf{b}$ read as "$m$ separate dot-product
+  conditions on $\mathbf{x}$."
+
+::: {.callout-tip title="You might be asked"}
+*"Multiply $A=\begin{psmallmatrix}1&2\\3&4\\5&6\end{psmallmatrix}$ by
+$\mathbf{x}=\begin{psmallmatrix}1\\-1\end{psmallmatrix}$ — and tell me both ways."* By
+columns: $A\mathbf{x}=1\begin{psmallmatrix}1\\3\\5\end{psmallmatrix}-1\begin{psmallmatrix}2\\4\\6\end{psmallmatrix}
+=\begin{psmallmatrix}-1\\-1\\-1\end{psmallmatrix}$ — combine the columns with weights $1$ and
+$-1$. By rows: each entry is a row dotted with $\mathbf{x}$: $1\cdot1+2\cdot(-1)=-1$,
+$3\cdot1+4\cdot(-1)=-1$, $5\cdot1+6\cdot(-1)=-1$. Same answer
+$\begin{psmallmatrix}-1\\-1\\-1\end{psmallmatrix}$. A $3\times 2$ matrix maps
+$\mathbb{R}^2\to\mathbb{R}^3$; note the output is $3$-dimensional, the input $2$-dimensional.
+The interviewer wants you fluent enough to switch readings mid-sentence.
+:::
+
+## The map is linear — and that is the whole point {#sec-linearity}
+
+We have been calling $\mathbf{x}\mapsto A\mathbf{x}$ a *linear* transformation. Now we earn
+the word. Linearity is two properties, and they are precisely the two operations [GEOM-1]
+allows — addition and scaling — being *respected* by the map.
+
+::: {#def-linear}
+**Definition (linear map).** A function $T:\mathbb{R}^n\to\mathbb{R}^m$ is **linear** if for
+all vectors $\mathbf{x},\mathbf{y}\in\mathbb{R}^n$ and all scalars $c\in\mathbb{R}$,
+$$
+T(\mathbf{x}+\mathbf{y}) = T(\mathbf{x}) + T(\mathbf{y})
+\qquad\text{(additivity)},
+$$
+$$
+T(c\,\mathbf{x}) = c\,T(\mathbf{x})
+\qquad\text{(homogeneity)}.
+$$
+In words: $T$ commutes with the two basic operations — it does not matter whether you add
+(or scale) first and then apply $T$, or apply $T$ first and then add (or scale).
+:::
+
+::: {#thm-A-is-linear}
+**Theorem.** For every matrix $A$, the map $\mathbf{x}\mapsto A\mathbf{x}$ is linear.
+:::
+
+::: {.proof}
+We verify both properties directly from the columns definition @eq-matvec-cols. Let
+$\mathbf{x}=(x_1,\dots,x_n)^\top$ and $\mathbf{y}=(y_1,\dots,y_n)^\top$.
+
+*Additivity.* The sum $\mathbf{x}+\mathbf{y}$ has $j$-th coordinate $x_j+y_j$
+(componentwise addition). Apply @eq-matvec-cols to it:
+$$
+A(\mathbf{x}+\mathbf{y}) = \sum_{j=1}^{n} (x_j+y_j)\,\mathbf{a}_j .
+$$
+Distribute the scalar over the addition in each term — $(x_j+y_j)\mathbf{a}_j =
+x_j\mathbf{a}_j + y_j\mathbf{a}_j$, which is the ordinary distributive law for scaling a
+vector (one of the eight rules of [GEOM-1]) — and split the sum into two sums:
+$$
+A(\mathbf{x}+\mathbf{y})
+= \sum_{j=1}^{n}\bigl(x_j\mathbf{a}_j + y_j\mathbf{a}_j\bigr)
+= \sum_{j=1}^{n} x_j\mathbf{a}_j + \sum_{j=1}^{n} y_j\mathbf{a}_j
+= A\mathbf{x} + A\mathbf{y}.
+$$
+
+*Homogeneity.* The scaled vector $c\mathbf{x}$ has $j$-th coordinate $c\,x_j$. Then
+$$
+A(c\mathbf{x}) = \sum_{j=1}^{n} (c\,x_j)\,\mathbf{a}_j
+= \sum_{j=1}^{n} c\,(x_j\mathbf{a}_j)
+= c\sum_{j=1}^{n} x_j\mathbf{a}_j
+= c\,(A\mathbf{x}),
+$$
+where the middle step regroups $(c\,x_j)\mathbf{a}_j = c\,(x_j\mathbf{a}_j)$ (associativity
+of scalar multiplication, again a [GEOM-1] rule) and the next pulls the common scalar $c$
+out of the sum. Both properties hold, so the map is linear. $\qquad\blacksquare$
+:::
+
+Two consequences are worth stating outright, because they are constantly used and
+constantly tested.
+
+**The origin is fixed.** Setting $c=0$ in homogeneity gives $A\mathbf{0}=A(0\cdot\mathbf{x})
+=0\cdot A\mathbf{x}=\mathbf{0}$: a linear map *always* sends the zero vector to the zero
+vector. This is why every linear map keeps the origin pinned, and it is why a map that
+*shifts* the plane (a translation $\mathbf{x}\mapsto\mathbf{x}+\mathbf{b}$ with
+$\mathbf{b}\ne\mathbf{0}$) is **not** linear — it moves the origin. (Such shifts are
+*affine*, not linear; the standard trick of folding them into a linear map by adding a
+constant coordinate is the homogeneous-coordinates idea, flagged here and used wherever a
+regression intercept appears, [REGR-1].)
+
+**Combinations are preserved wholesale.** Chaining additivity and homogeneity, for any
+weights $c_1,\dots,c_k$ and vectors $\mathbf{v}_1,\dots,\mathbf{v}_k$,
+$$
+A\bigl(c_1\mathbf{v}_1 + \cdots + c_k\mathbf{v}_k\bigr)
+= c_1\,A\mathbf{v}_1 + \cdots + c_k\,A\mathbf{v}_k.
+$$ {#eq-superposition}
+A linear map turns a recipe of inputs into the same recipe of outputs. (In physics and
+engineering this is the *superposition principle*: the response to a sum of inputs is the
+sum of the responses.) @eq-superposition is the formal statement of the picture in
+@fig-axes-go, and it is what we use next to prove the converse of the whole story.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me a function on vectors that is **not** linear, and say why."* Several clean answers:
+$\mathbf{x}\mapsto\mathbf{x}+\mathbf{b}$ for fixed $\mathbf{b}\ne\mathbf{0}$ (fails — moves
+the origin); $\mathbf{x}\mapsto\|\mathbf{x}\|$ (fails homogeneity for negative $c$, since
+$\|{-}\mathbf{x}\|=\|\mathbf{x}\|\ne-\|\mathbf{x}\|$); $x\mapsto x^2$ on $\mathbb{R}$ (fails
+both: $(x+y)^2\ne x^2+y^2$). The cleanest litmus test to *say out loud*: a map is linear iff
+it sends grid lines to evenly-spaced parallel grid lines and fixes the origin — equivalently,
+iff it can be written as a matrix.
+:::
+
+## The converse: every linear map is a matrix {#sec-converse}
+
+So far: every matrix gives a linear map. The reason the matrix picture is *complete* — the
+reason we lose nothing by studying matrices instead of abstract linear functions — is the
+converse. Every linear map, no matter how it is described, *is* multiplication by a matrix,
+and that matrix is forced: its columns are the images of the standard basis vectors. This is
+the precise theorem behind "columns are where the axes go."
+
+::: {#thm-converse}
+**Theorem (matrix representation of a linear map).** Let $T:\mathbb{R}^n\to\mathbb{R}^m$ be
+*any* linear map. Define the $m\times n$ matrix $A$ whose $j$-th column is the image of the
+$j$-th standard basis vector,
+$$
+A = \begin{pmatrix} T(\mathbf{e}_1) & T(\mathbf{e}_2) & \cdots & T(\mathbf{e}_n)\end{pmatrix}.
+$$
+Then $T(\mathbf{x}) = A\mathbf{x}$ for every $\mathbf{x}\in\mathbb{R}^n$. The matrix $A$ is
+the **unique** matrix with this property.
+:::
+
+::: {.proof}
+*Existence.* Take any $\mathbf{x}=(x_1,\dots,x_n)^\top$. By the coordinate decomposition
+@eq-coord-decomp, $\mathbf{x}=\sum_{j=1}^n x_j\mathbf{e}_j$. Apply $T$ and use that $T$ is
+linear, so by @eq-superposition it distributes over the combination:
+$$
+T(\mathbf{x}) = T\Bigl(\sum_{j=1}^{n} x_j\mathbf{e}_j\Bigr)
+= \sum_{j=1}^{n} x_j\,T(\mathbf{e}_j).
+$$
+Now $T(\mathbf{e}_j)$ is, by construction, the $j$-th column $\mathbf{a}_j$ of $A$. So
+$$
+T(\mathbf{x}) = \sum_{j=1}^{n} x_j\,\mathbf{a}_j = A\mathbf{x},
+$$
+the last equality being exactly the columns definition @eq-matvec-cols. Thus $T$ agrees with
+multiplication by $A$ on every vector.
+
+*Uniqueness.* Suppose some matrix $B$ also satisfies $T(\mathbf{x})=B\mathbf{x}$ for all
+$\mathbf{x}$. Feed it the basis vectors: by @thm-columns-are-images, $B\mathbf{e}_j$ is the
+$j$-th column of $B$, while $A\mathbf{e}_j$ is the $j$-th column of $A$. But both equal
+$T(\mathbf{e}_j)$, so the $j$-th columns of $A$ and $B$ are equal for every $j$. Two matrices
+with all columns equal are the same matrix, so $B=A$. $\qquad\blacksquare$
+:::
+
+This closes the loop and justifies the entire viewpoint of the track. A linear map and its
+matrix are two names for one object; the matrix is the map *written down in the standard
+basis*, column by column, each column the destination of one axis. From here on we will say
+"the matrix $A$" and "the map $A$" interchangeably without apology.
+
+::: {.callout-tip title="You might be asked"}
+*"How would you find the matrix of a transformation described in words — say, 'rotate every
+vector $90^\circ$ counterclockwise'?"* Use @thm-converse mechanically: track the standard
+basis. Rotating $\mathbf{e}_1=(1,0)$ by $90^\circ$ counterclockwise lands it at $(0,1)$;
+rotating $\mathbf{e}_2=(0,1)$ lands it at $(-1,0)$. Stack those images as columns:
+$A=\begin{psmallmatrix}0&-1\\1&0\end{psmallmatrix}$. That is the rotation matrix, *derived*,
+not memorized. The procedure — "where do the axes go? those are the columns" — works for any
+linear map you can describe geometrically, and it is the fastest correct answer in an
+interview.
+:::
+
+# A gallery of maps {#sec-gallery}
+
+The payoff of "read the columns" is that a small matrix becomes a picture you can see at a
+glance. We now build the gallery of transformations that recur for the rest of the series,
+each as a $2\times 2$ matrix acting on a unit grid, each understood by reading where the
+axes — the red $\mathbf{e}_1$ and green $\mathbf{e}_2$ — go. In every figure the faint blue
+grid is the original space and the deformed grid is its image; watch the unit square (the
+shaded patch) deform, because the way it deforms *is* the transformation.
+
+```{python}
+#| label: fig-gallery
+#| fig-cap: "A gallery of linear maps, each read off its columns. Faint blue is the original grid; the deformed grid is its image. The red arrow is $A\\mathbf{e}_1$ (first column), the green arrow is $A\\mathbf{e}_2$ (second column); the shaded patch is the image of the unit square. **Scaling** stretches the axes; **rotation** turns them rigidly; **reflection** flips one axis across a line; **shear** slides one axis while pinning the other; **projection** collapses the plane onto a line (the unit square flattens to a segment — the map is not invertible)."
+from matplotlib.patches import Polygon
+
+theta = np.deg2rad(35)
+mats = {
+    r"Scaling: cols $(2,0),(0,0.5)$":
+        np.array([[2.0, 0.0], [0.0, 0.5]]),
+    r"Rotation by $35^\circ$":
+        np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]),
+    r"Reflection across $x$-axis":
+        np.array([[1.0, 0.0], [0.0, -1.0]]),
+    r"Shear: cols $(1,0),(1,1)$":
+        np.array([[1.0, 1.0], [0.0, 1.0]]),
+    r"Projection onto $x$-axis":
+        np.array([[1.0, 0.0], [0.0, 0.0]]),
+    r"Projection onto line $y=x$":
+        0.5 * np.array([[1.0, 1.0], [1.0, 1.0]]),
+}
+
+fig, axes = plt.subplots(2, 3, figsize=(9.6, 6.4))
+unit_sq = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=float)
+for ax, (name, M) in zip(axes.ravel(), mats.items()):
+    transform_grid(ax, np.eye(2), lim=2, nlines=5, color="#dce3ef", lw=0.8)
+    transform_grid(ax, M, lim=2, nlines=5, color="#9fb3d1", lw=1.0)
+    img_sq = (M @ unit_sq.T).T
+    ax.add_patch(Polygon(img_sq, closed=True, facecolor=ACCENT, alpha=0.18,
+                         edgecolor=ACCENT, lw=1.2, zorder=2))
+    draw_vec(ax, (0, 0), tuple(M[:, 0]), color=E1COL, lw=2.6, z=6)
+    draw_vec(ax, (0, 0), tuple(M[:, 1]), color=E2COL, lw=2.6, z=6)
+    ax.set_xlim(-2.2, 2.4); ax.set_ylim(-2.2, 2.4); ax.set_aspect("equal")
+    ax.axhline(0, color=GREY, lw=0.6); ax.axvline(0, color=GREY, lw=0.6)
+    ax.set_title(name, fontsize=9.5)
+    ax.set_xticks([]); ax.set_yticks([])
+plt.tight_layout()
+```
+
+We read each one off its columns; the figure is the proof.
+
+**Scaling.** $A=\begin{psmallmatrix}2&0\\0&0.5\end{psmallmatrix}$ has first column
+$\binom{2}{0}$ (so $\mathbf{e}_1$ doubles in length, still pointing east) and second column
+$\binom{0}{0.5}$ (so $\mathbf{e}_2$ halves). A diagonal matrix stretches each axis by its
+diagonal entry, independently. This is the simplest map and the model for what
+*eigenvectors* will turn every nice matrix into ([GEOM-14]).
+
+**Rotation.** From the interview box, rotating by angle $\theta$ sends
+$\mathbf{e}_1\mapsto(\cos\theta,\sin\theta)$ and $\mathbf{e}_2\mapsto(-\sin\theta,\cos\theta)$,
+so
+$$
+R_\theta = \begin{pmatrix} \cos\theta & -\sin\theta\\ \sin\theta & \cos\theta\end{pmatrix}.
+$$ {#eq-rotation}
+Its columns are unit length and perpendicular, which is exactly why rotation preserves lengths
+and angles — the columns form an *orthonormal* set ([GEOM-5]), the defining feature of an
+*orthogonal matrix* ([GEOM-10]). Notice it has *no real eigenvectors* (no nonzero vector
+keeps its direction under a genuine rotation) — a complication [GEOM-14] meets head-on.
+
+**Reflection.** $\begin{psmallmatrix}1&0\\0&-1\end{psmallmatrix}$ leaves $\mathbf{e}_1$ alone
+and flips $\mathbf{e}_2$ to $-\mathbf{e}_2$: a mirror across the $x$-axis. Reflections, like
+rotations, preserve length (their columns are orthonormal) but they *reverse orientation* —
+the grid is flipped over, not just turned. That orientation flip is the negative determinant
+of [GEOM-13].
+
+**Shear.** $\begin{psmallmatrix}1&1\\0&1\end{psmallmatrix}$ pins $\mathbf{e}_1$ (first column
+$\binom{1}{0}$, unchanged) but slides $\mathbf{e}_2$ to $\binom{1}{1}$ — the top of the grid
+slides sideways while the bottom stays put, like a deck of cards pushed askew. Shears keep
+areas the same (determinant $1$) yet are not rigid; they are the prototype of a map that
+distorts shape without changing size.
+
+**Projection.** The last two collapse the whole plane onto a line. Onto the $x$-axis,
+$\begin{psmallmatrix}1&0\\0&0\end{psmallmatrix}$ keeps $\mathbf{e}_1$ and *annihilates*
+$\mathbf{e}_2$ (its second column is $\mathbf{0}$). Onto the line $y=x$,
+$\tfrac12\begin{psmallmatrix}1&1\\1&1\end{psmallmatrix}$ sends both axes onto that line. These
+maps are not invertible — once the plane is flattened to a line, you cannot recover which
+point you started from, because a whole line of inputs maps to each output. That is the
+*keystone* operation of [GEOM-6] (orthogonal projection) seen here as a matrix, and the
+non-invertibility is the "no unique solution" case of [GEOM-11].
+
+::: {.callout-tip title="You might be asked"}
+*"Just by looking at a $2\times 2$ matrix, how can you tell roughly what it does?"* Read the
+two columns as the landing spots of east and north. If the columns are perpendicular and
+unit length, it is a rotation or reflection (rigid). If they are along the axes but scaled,
+it is a stretch. If one column equals a multiple of the other (the columns are *parallel*),
+the map squashes the plane onto a line — it is degenerate, the unit square flattens to a
+segment, and the map cannot be undone. Equal-or-parallel columns are the visual signature of
+a *singular* matrix, the thread picked up by rank ([GEOM-12]) and the determinant ([GEOM-13]).
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the column reading on honest, real-flavored data, including one example squarely
+at the edge of where "matrix as a clean geometric map" is the right way to think.
+
+## Example 1 — RGB to grayscale: a $1\times 3$ matrix that mixes channels {#sec-rgb}
+
+A digital image stores each pixel as three numbers, its red, green, and blue intensities,
+$\mathbf{p}=(R,G,B)^\top\in\mathbb{R}^3$. Converting to grayscale means assigning each pixel
+a single brightness. The standard (Rec. 601 luma) recipe is a *weighted combination of the
+channels*,
+$$
+\text{gray} = 0.299\,R + 0.587\,G + 0.114\,B,
+$$
+the weights chosen because the human eye is most sensitive to green and least to blue. This
+is precisely a $1\times 3$ matrix acting on the pixel vector:
+$$
+W = \begin{pmatrix} 0.299 & 0.587 & 0.114 \end{pmatrix},
+\qquad
+\text{gray} = W\mathbf{p}.
+$$
+By the rows reading @eq-matvec-rows, the single output number is the dot product of the one
+row of $W$ with $\mathbf{p}$ — it measures how much the pixel "aligns" with the brightness
+direction. By the columns reading @eq-matvec-cols, $W$ has three columns, each a single
+number ($0.299$, $0.587$, $0.114$), telling us where each *primary color axis* lands on the
+gray scale: a pure-green pixel contributes most, a pure-blue pixel least. @fig-rgb applies
+$W$ to a small real-looking image.
+
+```{python}
+#| label: fig-rgb
+#| fig-cap: "A linear map from $\\mathbb{R}^3$ to $\\mathbb{R}^1$. **Left:** a synthetic color swatch image, each pixel a vector $(R,G,B)$. **Right:** its grayscale, every pixel passed through the $1\\times3$ matrix $W=(0.299,\\,0.587,\\,0.114)$. The green block stays bright and the blue block goes dark, exactly as the column weights predict — green's column ($0.587$) is the largest, blue's ($0.114$) the smallest."
+# Build a small image of solid color blocks.
+H, Wd = 60, 60
+img = np.zeros((H, Wd, 3))
+img[:30, :30] = [0.85, 0.15, 0.15]   # red block
+img[:30, 30:] = [0.15, 0.75, 0.20]   # green block
+img[30:, :30] = [0.20, 0.30, 0.90]   # blue block
+img[30:, 30:] = [0.90, 0.85, 0.20]   # yellow block
+
+w = np.array([0.299, 0.587, 0.114])
+gray = img @ w                       # apply W to every pixel at once
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.4, 4.0))
+axL.imshow(img); axL.set_title("Color image: each pixel is $(R,G,B)$")
+axL.set_xticks([]); axL.set_yticks([]); axL.grid(False)
+im = axR.imshow(gray, cmap="gray", vmin=0, vmax=1)
+axR.set_title(r"After $W\mathbf{p}$: one brightness per pixel")
+axR.set_xticks([]); axR.set_yticks([]); axR.grid(False)
+plt.tight_layout()
+print(f"pure green (0,1,0) -> {w @ np.array([0,1,0]):.3f}   (brightest channel)")
+print(f"pure blue  (0,0,1) -> {w @ np.array([0,0,1]):.3f}   (darkest channel)")
+```
+
+The example makes the abstract concrete: a non-square matrix is a genuine map between spaces
+of different dimension ($\mathbb{R}^3\to\mathbb{R}^1$ here), and the columns reading still
+holds — the output is a weighted sum of where each input axis goes. This is the model for
+*every* linear feature combination in data science: a row of weights dotted into a feature
+vector is exactly a single linear-regression prediction ([REGR-1], [REGR-5]) or one neuron's
+pre-activation.
+
+## Example 2 — a 2-D transformation read entirely from its columns {#sec-2d-read}
+
+Take the matrix
+$$
+A = \begin{pmatrix} 1.5 & -0.5 \\ 0.5 & 1.0 \end{pmatrix}.
+$$
+We read it without computing anything: column one $\binom{1.5}{0.5}$ is where east goes,
+column two $\binom{-0.5}{1.0}$ is where north goes. East gets stretched and tilted upward;
+north gets tilted left and lengthened. So the map is a combined stretch-and-rotate (no
+collapse, since the columns are not parallel). To find where a specific point goes — say a
+data point $\mathbf{x}=(2,1)^\top$ — the columns reading does it in one line:
+$$
+A\mathbf{x} = 2\binom{1.5}{0.5} + 1\binom{-0.5}{1.0}
+= \binom{3.0}{1.0} + \binom{-0.5}{1.0} = \binom{2.5}{2.0}.
+$$
+@fig-2d-read shows the deformed grid, the two column-images, and the point $\mathbf{x}$
+landing at $A\mathbf{x}$ as the very combination we just wrote.
+
+```{python}
+#| label: fig-2d-read
+#| fig-cap: "Reading $A=\\begin{pmatrix}1.5&-0.5\\\\0.5&1.0\\end{pmatrix}$ off its columns. The red arrow is $A\\mathbf{e}_1=(1.5,0.5)$ (column 1), the green arrow $A\\mathbf{e}_2=(-0.5,1.0)$ (column 2). The point $\\mathbf{x}=(2,1)$ (open circle, original grid) lands at $A\\mathbf{x}=(2.5,2.0)$ (filled), which is literally $2$ red arrows plus $1$ green arrow — the dashed path shows the combination being built."
+A = np.array([[1.5, -0.5], [0.5, 1.0]])
+x = np.array([2.0, 1.0])
+Ax = A @ x
+a1, a2 = A[:, 0], A[:, 1]
+
+fig, ax = plt.subplots(figsize=(6.4, 5.2))
+transform_grid(ax, np.eye(2), lim=3, nlines=7, color="#dce3ef", lw=0.8)
+transform_grid(ax, A, lim=3, nlines=7, color="#9fb3d1", lw=1.0)
+draw_vec(ax, (0, 0), tuple(a1), color=E1COL, lw=2.8, label=r"$A\mathbf{e}_1$", label_offset=(0.25, -0.2))
+draw_vec(ax, (0, 0), tuple(a2), color=E2COL, lw=2.8, label=r"$A\mathbf{e}_2$", label_offset=(-0.35, 0.15))
+# Build Ax as 2*a1 then +1*a2, dashed.
+draw_vec(ax, (0, 0), tuple(2 * a1), color=GREY, lw=1.6, ls="--", z=4)
+draw_vec(ax, tuple(2 * a1), tuple(Ax), color=GREY, lw=1.6, ls="--", z=4)
+draw_vec(ax, (0, 0), tuple(Ax), color=HILITE, lw=2.8, label=r"$A\mathbf{x}=2\mathbf{a}_1+\mathbf{a}_2$",
+         label_offset=(0.1, 0.3))
+ax.scatter([x[0]], [x[1]], facecolor="white", edgecolor=VEC, s=70, zorder=7, lw=1.8)
+ax.text(x[0] + 0.15, x[1] - 0.25, r"$\mathbf{x}=(2,1)$", color=VEC, fontsize=11)
+ax.set_xlim(-2.5, 4.0); ax.set_ylim(-2.0, 4.0); ax.set_aspect("equal")
+ax.axhline(0, color=GREY, lw=0.7); ax.axvline(0, color=GREY, lw=0.7)
+ax.set_title("Where the point goes is a combination of where the axes go")
+ax.legend(loc="lower right", fontsize=9, framealpha=0.92)
+plt.tight_layout()
+```
+
+The figure is the entire article in action: the answer $A\mathbf{x}$ is built by laying down
+$x_1$ copies of the first column-arrow and $x_2$ copies of the second. No row arithmetic
+needed — though the rows reading would give the same $(2.5,2.0)$ if you preferred to compute
+entry by entry.
+
+## Example 3 (the edge) — when "tidy geometric map" is the wrong lens {#sec-edge}
+
+Every example so far has flattered the geometric picture. Here is one where it strains, on
+purpose, so the boundary is honest. Consider a $4\times 4$ matrix $A$ acting on a feature
+vector $\mathbf{x}\in\mathbb{R}^4$ — say four standardized measurements of a flower (sepal
+length, sepal width, petal length, petal width) — where two of the columns are *nearly
+parallel*:
+$$
+A = \begin{pmatrix}
+1 & 0 & 0 & 0\\
+0 & 1 & 0 & 0\\
+0 & 0 & 1 & 1\\
+0 & 0 & 1 & 1.001
+\end{pmatrix}.
+$$
+Read the columns: $\mathbf{a}_3=(0,0,1,1)^\top$ and $\mathbf{a}_4=(0,0,1,1.001)^\top$ point in
+*almost the same direction*. Geometrically the map sends the third and fourth axes to nearly
+the same place — it *very nearly* collapses a two-dimensional chunk of input space onto one
+dimension, just as the projection in the gallery collapsed the plane onto a line. It is not
+*exactly* singular (the columns are not exactly parallel), so technically the map is
+invertible — but only barely.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge of the clean picture. We map $20$ random input vectors through $A$ and look at the third and fourth output coordinates, the ones fed by the near-parallel columns $\\mathbf{a}_3$ and $\\mathbf{a}_4$. **Left:** the inputs scatter in two genuine dimensions. **Right:** their images are squashed onto a razor-thin sliver near the line $y=x$ — the map has *almost* destroyed one dimension. The geometry still 'works,' but the action is so close to a collapse that recovering the input from the output is numerically hopeless. This near-collapse is the geometric face of multicollinearity and ill-conditioning."
+rng = np.random.default_rng(0)
+A = np.array([[1, 0, 0, 0],
+              [0, 1, 0, 0],
+              [0, 0, 1, 1],
+              [0, 0, 1, 1.001]], dtype=float)
+X = rng.normal(size=(20, 4))
+Y = (A @ X.T).T
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 4.0))
+axL.scatter(X[:, 2], X[:, 3], color=VEC, s=40, zorder=3)
+axL.set_title("Inputs: coordinates 3 and 4")
+axL.set_xlabel("$x_3$"); axL.set_ylabel("$x_4$"); axL.set_aspect("equal")
+axR.scatter(Y[:, 2], Y[:, 3], color=HILITE, s=40, zorder=3)
+lo, hi = Y[:, 2:].min() - 0.5, Y[:, 2:].max() + 0.5
+axR.plot([lo, hi], [lo, hi], color=GREY, lw=1.0, ls="--", zorder=1)
+axR.set_title("Outputs: squashed onto a sliver")
+axR.set_xlabel("$(A\\mathbf{x})_3$"); axR.set_ylabel("$(A\\mathbf{x})_4$"); axR.set_aspect("equal")
+plt.tight_layout()
+cond = np.linalg.cond(A)
+print(f"condition number of A = {cond:,.1f}   (huge -> nearly singular)")
+print(f"determinant of A      = {np.linalg.det(A):.6f}  (small but nonzero)")
+```
+
+Two honest lessons live here. **First**, the column reading still *describes* the map
+perfectly — but "where the axes go" is the wrong thing to *meditate on* when two axes go to
+almost the same place; the live question becomes *how close to collapse is it?*, which is the
+condition number ([GEOM-26]), not the columns themselves. **Second**, when columns are nearly
+parallel, the determinant being nonzero is a false comfort: $A$ is technically invertible, but
+inverting it ([GEOM-11]) amplifies tiny errors enormously. This is exactly *multicollinearity*
+in regression ([REGR-7]) — two predictors carrying nearly the same information — viewed as a
+linear map that has all but flattened a dimension. The clean gallery pictures of @sec-gallery
+are the *exact* cases; real data lives in the messy neighborhood of "almost singular," and
+the geometric viewpoint's job there is to tell you *which* direction is about to be lost, not
+to pretend the picture is tidy.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The matrix-as-map viewpoint is the right lens for an enormous swath of data science, but it
+has honest limits. Knowing them is the difference between using it and over-using it.
+
+::: {.callout-warning title="Pitfall"}
+**Only *linear* maps are matrices.** The single most common misuse is to model an
+intrinsically nonlinear relationship with a matrix. A matrix can stretch, rotate, shear,
+reflect, and project — but it can *never* bend a straight grid line into a curve, and it can
+*never* move the origin. If your transformation curves space (most of the interesting
+functions in machine learning do) or shifts it, no matrix represents it. The fix is one of:
+add a constant coordinate to absorb a shift (affine maps, the regression intercept trick of
+[REGR-1]); apply a *fixed* nonlinear feature map first and then a linear map (basis
+expansions, [REGR-20]; the kernel idea, owned by [CLAS]); or accept that you need a genuinely
+nonlinear model (neural networks interleave matrices with nonlinear activations precisely
+*because* a stack of matrices alone collapses to a single matrix — see the next pitfall).
+:::
+
+::: {.callout-warning title="Pitfall"}
+**A composition of linear maps is still just one linear map.** It is tempting to think that
+applying many matrices in a row builds something richer. It does not: if $A$ and $B$ are
+matrices, then $\mathbf{x}\mapsto A(B\mathbf{x})$ equals $\mathbf{x}\mapsto (AB)\mathbf{x}$
+for a single matrix $AB$ ([GEOM-9] makes this precise). Ten linear layers in a row are
+mathematically *one* linear layer. This is exactly why deep networks insert a nonlinearity
+between matrices — without it the depth is an illusion. The interview version: *"why do neural
+networks need activation functions?"* — because otherwise the whole network is a single
+matrix, no more expressive than one linear layer.
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Reading a matrix's action off its columns is basis-dependent.** The columns are the images
+of the *standard* axes. If your data naturally lives in a different coordinate system — say
+the principal-component axes ([UNSP], built on [GEOM-20]) — the same underlying map has a
+*different* matrix, and the cleanest description of what it does may only appear in the right
+basis. The eigenvector and SVD machinery ([GEOM-14], [GEOM-16], [GEOM-20]) is, in large part,
+the search for the basis in which a given map's matrix is as simple (diagonal) as possible.
+"Columns are where the axes go" is always true; *which* axes you chose is a decision with
+consequences.
+:::
+
+The boundary, stated plainly: **use the matrix-as-map lens whenever the transformation is
+linear** — feature combinations, rotations and reflections of a point cloud, projections,
+covariance and Gram operators, the design matrix of a regression, one layer of weights.
+**Reach for something else** when the map is nonlinear (use feature maps, kernels, or
+nonlinear models), when it shifts the origin (use affine/homogeneous coordinates), or when
+the action is near-collapse and the live question is conditioning rather than direction (use
+the SVD and the condition number, [GEOM-20], [GEOM-26]).
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. In code you never write the sums
+by hand. In NumPy the product is `A @ x` (the `@` operator is matrix multiplication), and the
+*columns reading* is literally how a vectorized library prefers you think: to transform a
+whole cloud of points stored as rows of a data matrix $X$ (shape $n\times d$), you write
+`X @ A.T` and every row is mapped at once, which is what `img @ w` did in @sec-rgb. Two habits
+worth keeping: prefer `A @ x` to looping over rows (the library's compiled routine is far
+faster and more numerically careful), and remember from @sec-edge that *applying* a matrix is
+always safe, but *inverting* one — `np.linalg.inv(A)` — is dangerous when columns are nearly
+parallel; you almost always want `np.linalg.solve(A, b)` instead, for reasons [GEOM-11] and
+[GEOM-26] make precise.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the foundations of **Movement I–II**: [GEOM-1] gave you the linear
+combination, [GEOM-4] the dot product, and [GEOM-0]–[GEOM-3] the picture of vectors as points
+and datasets as clouds. This article installed the reading that powers the entire matrix half
+of the track — **a matrix is a linear map, and its columns are the images of the axes.** From
+here the trunk continues:
+
+- **[GEOM-9 *Matrix Multiplication as Composition*]** — what happens when you apply one map
+  after another. The row-times-column multiplication rule is *derived* from "do $B$, then
+  $A$," and the non-commutativity ($AB\ne BA$) becomes obvious geometrically.
+- **[GEOM-10 *The Transpose*]** — what $A^\top$ *means* beyond flipping rows and columns, why
+  $A^\top A$ keeps appearing, and what symmetry buys.
+- **[GEOM-11 *Solving $A\mathbf{x}=\mathbf{b}$*]** — running a map *backwards*: when can you
+  invert it, and what do "no solution" and "infinitely many" mean geometrically (the
+  collapse cases you saw in the gallery and at the edge).
+- **[GEOM-14 *Eigenvalues and Eigenvectors*]** — the special directions a map only stretches,
+  the cleanest possible version of the scaling matrix from the gallery, and the key to
+  understanding *any* matrix by finding the basis in which it is simplest.
+
+Downstream of the track, this reading is everywhere: a regression design matrix ([REGR-5]) is
+a linear map from coefficients to predictions, a covariance matrix ([GEOM-16]) is a symmetric
+map, and a layer of a neural network is a matrix followed by a nonlinearity.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary source.** Arthur Cayley, "A Memoir on the Theory of Matrices,"
+  *Philosophical Transactions of the Royal Society of London* 148 (1858) — where matrices were
+  first treated as algebraic objects you compose and invert, not just coefficient tables. The
+  shift from "array of numbers" to "operation" starts here.
+- **The historical word.** J. J. Sylvester coined *matrix* in 1850; the etymology ("womb,"
+  the thing from which determinants are born) is a small window into how the static-table view
+  preceded the transformation view by a generation.
+- **The viewpoint, distilled.** Gilbert Strang's *Introduction to Linear Algebra* makes "the
+  column space and $A\mathbf{x}$ as a combination of columns" the organizing idea of the whole
+  subject — the same stance this article takes; and 3Blue1Brown's *Essence of Linear Algebra*
+  is the canonical animated version of the "where the grid goes" picture if you want to *watch*
+  the gallery move.
+- **Open threads this article deliberately deferred.** *Why is matrix multiplication defined
+  by that strange row-times-column rule?* — because it must encode composition of maps,
+  derived in [GEOM-9]. *When can a map be undone?* — [GEOM-11]. *Which maps have directions
+  they merely stretch?* — [GEOM-14]. *Is there a basis in which every map is just a scaling?* —
+  almost, and the precise answer is the SVD, [GEOM-20].

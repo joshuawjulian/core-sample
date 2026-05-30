@@ -1,0 +1,656 @@
+---
+title: "What Is a Vector, Really?"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"    # data points / vectors
+ARROW  = "#c1121f"    # the highlighted arrow
+ACCENT = "#0a7d4d"    # highlights
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the front door to the entire **Geometry of
+> Data** track and assumes nothing above the Calculus-I floor — the Cartesian plane,
+> ordered pairs, and the idea of a function. It does not lean on any other Core Sample.
+> Everything the track later builds — span, projection, matrices as maps, the SVD,
+> gradients — rests on one idea fixed here: *a vector is a point in space, a list of
+> numbers, and a row of a dataset, and those are the same object.* It sets up
+> [GEOM-1 *Adding and Scaling*] (the two operations you may perform on the object defined
+> here) and the framing the whole track runs on: **a dataset is a cloud of points in a
+> room with as many walls as it has features.**
+
+## Abstract {.unnumbered}
+
+A vector wears three faces. To a physicist it is an **arrow**: a magnitude and a
+direction, floating in space. To a programmer it is a **list of numbers**, a tuple you
+can index. To a data scientist it is a **row of a table**: one customer, one patient, one
+photograph, recorded as its measured features. This article's single claim is that *these
+are not three things that happen to share a name — they are one object seen from three
+angles*, and the dictionary between them is the simplest idea in all of linear algebra:
+**a coordinate is "how far along each axis."** We build that dictionary carefully, fix the
+notation the rest of the track will use, and then take the one leap that makes the
+geometry of data possible: a row with 100 columns is a single point in a 100-dimensional
+space, and we reason about it with the *exact same rules* as a dot on a page — even though
+no one can draw it.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A **vector** is an ordered list of numbers, $\mathbf{x} = (x_1, x_2, \dots, x_n)$. That
+single list *is*, simultaneously and with no contradiction: a **point** in
+$n$-dimensional space (its coordinates are the entries), an **arrow** from the origin to
+that point (its direction and length are fixed by the entries), and **one row of a data
+table** (each entry is one feature of one observation). The whole of this track is the
+study of what you can do to such lists, always asked geometrically: *where is this in
+space, and what is being done to the cloud?*
+:::
+
+Everything in this article — and, in a real sense, everything in the track — orbits that
+box. The payoff is conceptual, not computational: once you genuinely believe that a row of
+a spreadsheet is a point in a room, every later tool (measuring the angle between two
+customers, projecting a data cloud onto its dominant direction, asking what a matrix
+*does* to space) becomes a question about geometry you already have intuition for, just
+lifted into more dimensions than you can see.
+
+# Why we are here: the problem that forced the idea {#sec-why}
+
+Keep one question in view for the entire article: **why would anyone insist that a list of
+numbers and an arrow in space are the same thing?** The answer is the entire reason this
+track exists, so it is worth telling as the story it actually was.
+
+## Two traditions that did not know they were the same
+
+For most of mathematical history, "arrow" and "list of numbers" lived in different worlds
+and different centuries.
+
+The **arrow** came first, from physics and geometry. A force has a size and a direction; so
+does a velocity, a displacement, a magnetic field. By the early 1800s, mathematicians like
+Bolzano, Möbius, and later Hamilton and Grassmann were formalizing how such directed
+quantities add (place them tip-to-tail) and scale (stretch them). This was *geometry*:
+pictures of arrows in a plane or in space, with no spreadsheet in sight.
+
+The **list of numbers** came from a different need: solving systems of equations. When you
+write down
+
+$$
+\begin{aligned}
+3x_1 + 2x_2 &= 7,\\
+x_1 - 4x_2 &= 1,
+\end{aligned}
+$$
+
+the *coefficients* $(3,2)$ and $(1,-4)$ and the unknowns $(x_1,x_2)$ are just ordered
+tuples of numbers. Through the 19th century this became the algebra of matrices and
+determinants (Cayley, Sylvester) — pure symbol manipulation, with no arrows drawn.
+
+The unification — the recognition that *these are the same structure*, an abstract **vector
+space**, whether the objects are arrows, tuples, polynomials, or functions — was the work
+of Peano (1888) and was made standard by Banach and others in the early 20th century. The
+moment it clicked, two enormous toolkits merged: you could now solve a system of equations
+by **drawing a picture**, and you could compute on a geometric object by **manipulating its
+list of numbers**. Geometry got coordinates; algebra got pictures.
+
+## Why a data scientist should care about a 19th-century merger
+
+Here is the part that makes the *why* concrete for this track, and it is the third face.
+A modern dataset is a table. Each row is one observation — one house, one transaction, one
+genome — and each column is one measured feature. Consider three houses recorded by area
+(in hundreds of square feet) and number of bedrooms:
+
+| house | area (100 sq ft) | bedrooms |
+|------:|-----------------:|---------:|
+| A     | 12               | 2        |
+| B     | 22               | 4        |
+| C     | 15               | 3        |
+
+House A is the row $(12, 2)$. By the merger above, that row is *also a point*: go $12$
+units along an "area" axis and $2$ along a "bedrooms" axis, and you have plotted house A
+in a plane whose two directions are the two features. Three houses become three points —
+a tiny **cloud**. And now the entire geometric toolkit is available to ask *data*
+questions: Which two houses are most alike? (The two points that are closest, or whose
+arrows point most nearly the same way.) Is one feature redundant given another? (Do the
+points fall on a line?) What is the "typical" house? (The center of the cloud.)
+
+That is the whole game, and it is why this track is called *Geometry of Data*. **The merger
+of arrow and list is what lets us treat a spreadsheet as a shape and bring geometry to
+bear on it.** Every later article is one more geometric question asked of the cloud. We
+hold onto this *why* throughout: when a definition below looks like dry bookkeeping, it is
+there to keep the dictionary between the three faces exact.
+
+::: {.callout-tip title="You might be asked"}
+*"Isn't a vector just an array? Why dress it up?"* An interviewer asking this wants to hear
+that you know the difference between a **data structure** and a **mathematical object**. A
+C array or a NumPy array is the storage; a vector is what that storage *means* the moment
+you grant it two operations — addition and scaling (the subject of [GEOM-1]) — and a
+geometric home, a space it lives in. The array `[12, 2]` is inert. Calling it a vector
+commits you to a geometry: it is a point at coordinates $(12,2)$, an arrow of a definite
+length and direction, and a comparison can now be made to other vectors by distance and
+angle. The "dressing up" is exactly the content — it is what turns bytes into a place in a
+room you can reason about.
+:::
+
+# Intuition first: the three faces, before any formalism {#sec-intuition}
+
+Let us *see* the three faces as one object before we write a single definition, because the
+picture is the thing to hold onto.
+
+## Face one — the arrow
+
+Pick a starting point, the **origin** $O$, and draw an arrow from it to some destination.
+The arrow has a **length** (how far) and a **direction** (which way). That is the
+physicist's vector: a directed quantity. Crucially, what pins the arrow down completely is
+just *where its tip lands relative to the origin* — and "where the tip lands" is given by
+two numbers in the plane: how far right, how far up.
+
+## Face two — the point and its coordinates
+
+Those two numbers are the **coordinates**. Set up two perpendicular axes through the
+origin. Then "$3$ units right, $2$ units up" names a single point, and we write it
+$(3, 2)$. The first slot is always the first axis, the second slot the second axis: the
+list is **ordered**, which is why $(3,2)$ and $(2,3)$ are different points. The tip of the
+arrow and the point $(3,2)$ are *literally the same dot on the page* — which is the first
+half of the merger. @fig-three-faces draws the arrow and its tip together.
+
+## Face three — the row of data
+
+Now relabel the axes. Instead of "right" and "up," call the first axis *area* and the
+second *bedrooms*. The point $(12, 2)$ is no longer abstract — it is **house A**, and its
+two coordinates are its two feature values. Nothing about the math changed; we only renamed
+the directions. **A data row is a point whose axes are the features.** That is the second
+half of the merger, and the foundation of the entire track.
+
+```{python}
+#| label: fig-three-faces
+#| fig-cap: "One object, three faces. **Left:** the vector $\\mathbf{x}=(3,2)$ as an *arrow* from the origin to a tip, and as the *point* where the tip lands — the same dot. The coordinates are read off as 'how far along each axis': $3$ rightward, $2$ upward (dashed). **Right:** relabel the very same axes as data features (area, bedrooms) and the three rows of the house table become three points — a small cloud. No mathematics changed between the panels; only the names on the axes did."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.0))
+
+# --- Left: arrow = point = coordinates ---
+axL.annotate("", xy=(3, 2), xytext=(0, 0),
+             arrowprops=dict(arrowstyle="-|>", color=ARROW, lw=2.4))
+axL.scatter([3], [2], color=POINT, s=70, zorder=5)
+axL.plot([3, 3], [0, 2], color=GREY, ls="--", lw=1.3)
+axL.plot([0, 3], [2, 2], color=GREY, ls="--", lw=1.3)
+axL.text(3.05, 2.12, r"$\mathbf{x}=(3,2)$", color=POINT, fontsize=11)
+axL.text(1.5, -0.45, "$3$ along axis 1", color=GREY, ha="center", fontsize=9)
+axL.text(-0.15, 1.0, "$2$ along axis 2", color=GREY, ha="right", va="center",
+         rotation=90, fontsize=9)
+axL.scatter([0], [0], color="black", s=30, zorder=5)
+axL.text(0.05, -0.35, "origin $O$", fontsize=9)
+axL.set_xlim(-0.5, 4.2); axL.set_ylim(-0.8, 3.0)
+axL.set_aspect("equal")
+axL.set_xlabel("axis 1"); axL.set_ylabel("axis 2")
+axL.set_title("Arrow = point = ordered pair")
+
+# --- Right: same plane, axes renamed to features ---
+houses = {"A": (12, 2), "B": (22, 4), "C": (15, 3)}
+for name, (a, b) in houses.items():
+    axR.annotate("", xy=(a, b), xytext=(0, 0),
+                 arrowprops=dict(arrowstyle="-|>", color=GREY, lw=1.2, alpha=0.6))
+    axR.scatter([a], [b], color=POINT, s=70, zorder=5)
+    axR.text(a + 0.4, b + 0.06, f"house {name}", fontsize=9, color=POINT)
+axR.scatter([0], [0], color="black", s=30, zorder=5)
+axR.set_xlim(-1, 26); axR.set_ylim(-0.4, 5)
+axR.set_xlabel("area (100 sq ft)"); axR.set_ylabel("bedrooms")
+axR.set_title("Same plane, axes are features")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between a point and a vector? Aren't you using them
+interchangeably?"* You are, and you should be able to say *why that is legitimate here.*
+Strictly, a **point** is a location and a **vector** is a displacement (a "how to get from
+here to there"). The two coincide the instant you fix an origin: the point $P$ corresponds
+to the unique arrow from $O$ to $P$, and that arrow corresponds back to the point $P$. So
+once the origin is chosen — which we always do — "the point $(3,2)$" and "the arrow to
+$(3,2)$" are interchangeable names for the same object, and we will switch between them
+freely. The honest caveat: this identification is *origin-dependent*. Move the origin and
+the same physical arrow gets new coordinates. We will lean on a fixed origin throughout
+the track; just know that the freedom to relocate it is real and is what *affine* geometry
+studies. For data, the natural origin is often the **center of the cloud** (the mean),
+which is why "centering" data — subtracting the mean — is the first move in so many
+methods.
+:::
+
+# Formal development {#sec-formal}
+
+We now make the three faces precise with as little machinery as the job allows. Define
+every symbol on first use; nothing is assumed beyond ordered pairs and the real number
+line.
+
+## The space the vectors live in {#sec-rn}
+
+::: {#def-rn}
+**Definition (real coordinate space).** For a positive integer $n$, the set
+$\mathbb{R}^n$ is the collection of all ordered lists of $n$ real numbers:
+$$
+\mathbb{R}^n
+= \bigl\{\, (x_1, x_2, \dots, x_n) \;:\; x_1, x_2, \dots, x_n \in \mathbb{R} \,\bigr\}.
+$$
+An element $\mathbf{x} = (x_1, \dots, x_n)$ of $\mathbb{R}^n$ is a **vector**; the real
+number $x_i$ is its **$i$-th component** or **$i$-th coordinate**. The integer $n$ is the
+**dimension** of the space — the number of slots, equivalently the number of independent
+directions, equivalently the number of features in a data row.
+:::
+
+Three pieces of this definition deserve unpacking, because each carries one of the three
+faces.
+
+- **"$\mathbb{R}$"** is the set of real numbers — the entire number line, including
+  negatives, fractions, and irrationals. The boldface $\mathbb{R}$ (a "blackboard" $R$) is
+  standard for it. The superscript $n$ in $\mathbb{R}^n$ means "an ordered list of $n$ of
+  them," exactly as $\mathbb{R}^2$ is the familiar coordinate *plane* and $\mathbb{R}^3$ is
+  three-dimensional *space*. So $\mathbb{R}^n$ is just "the plane, but with $n$ axes instead
+  of $2$." We will retire the picture but keep the rules.
+
+- **"Ordered."** The list $(3, 2)$ is not the list $(2, 3)$: the first slot belongs to the
+  first axis (or first feature) and the second to the second. Order is the whole reason a
+  vector can encode *which* feature is *which*. This is the precise sense in which a vector
+  differs from a mere *set* of numbers, where order would not matter.
+
+- **Notation we fix now and keep for the track.** Vectors are lowercase boldface,
+  $\mathbf{x}, \mathbf{y}, \mathbf{v}$; their components are the same letter, not bold, with
+  a subscript index, $x_1, x_2, \dots$. Plain (non-bold) lowercase letters like $c$ or
+  $\lambda$ will be **scalars** — single real numbers, the things we scale vectors by in
+  [GEOM-1]. When a component itself needs a second index — as it will once we stack many
+  data rows — we write $x_{ij}$ for "row $i$, feature $j$," and we will flag that the moment
+  it appears.
+
+## Column vectors, and why we prefer them {#sec-column}
+
+We have been writing vectors *across* the page, $(x_1, \dots, x_n)$, because it reads like
+a list. From here on, the track's working form is the **column**:
+
+$$
+\mathbf{x} =
+\begin{bmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{bmatrix}.
+$$ {#eq-column}
+
+This is the same vector — same components, same order, same point in $\mathbb{R}^n$ — only
+stood up vertically. The reason for the preference is not aesthetics: when matrices arrive
+([GEOM-8]) and act on vectors by the rule "matrix times column," the column shape is what
+makes the multiplication line up. We adopt it now so no renotation is needed later. The
+horizontal form $(x_1, \dots, x_n)$ remains a convenient way to *write* a column inline,
+and the operation that formally turns one into the other — the **transpose**, written
+$\mathbf{x}^\top$ — gets its full geometric meaning in [GEOM-10]; here it is just "lay the
+column on its side."
+
+::: {.callout-tip title="You might be asked"}
+*"Row vector or column vector — does it matter?"* For storing a single observation, no: it
+is the same $n$ numbers either way. It starts to matter the instant you multiply by a
+matrix, because matrix multiplication is shape-sensitive (it pairs *rows of the left* with
+*columns of the right*, derived in [GEOM-9]). The near-universal convention in this track,
+and in most of statistics and machine learning, is: **a vector is a column by default**,
+and a **data table stacks one observation per row** — so the matrix $X$ of a dataset has
+each *row* equal to one observation written across. Those two conventions seem to fight,
+and reconciling them (an observation is a column vector, but it sits as a row of $X$) is a
+classic source of indexing bugs. The fix is to keep one picture in mind: $X$'s rows are
+observations, $X$'s columns are features, and a lone observation pulled out of $X$ is, by
+default, a column.
+:::
+
+## The two special vectors {#sec-special}
+
+Two vectors will recur so often they earn names now.
+
+::: {#def-zero}
+**Definition (zero vector).** The **zero vector** $\mathbf{0} \in \mathbb{R}^n$ is the
+vector whose every component is $0$:
+$$
+\mathbf{0} = (0, 0, \dots, 0).
+$$
+:::
+
+Geometrically $\mathbf{0}$ is the **origin** — the point all our arrows start from, the
+one location that is its own arrow (an arrow of zero length, pointing nowhere). It is the
+unique vector with no direction and zero length. In the data picture, the origin is the
+"all features equal to zero" observation, which is why centering a dataset (subtracting the
+mean from every feature) deliberately *moves the cloud so its center sits at* $\mathbf{0}$
+— it puts the interesting geometry around the origin where the algebra is cleanest.
+
+The second family is the **standard basis vectors**, the unit steps along each axis. In
+$\mathbb{R}^n$ there are $n$ of them, $\mathbf{e}_1, \dots, \mathbf{e}_n$, where
+$\mathbf{e}_i$ has a $1$ in slot $i$ and $0$ everywhere else. In $\mathbb{R}^3$:
+
+$$
+\mathbf{e}_1 = \begin{bmatrix} 1 \\ 0 \\ 0 \end{bmatrix}, \qquad
+\mathbf{e}_2 = \begin{bmatrix} 0 \\ 1 \\ 0 \end{bmatrix}, \qquad
+\mathbf{e}_3 = \begin{bmatrix} 0 \\ 0 \\ 1 \end{bmatrix}.
+$$ {#eq-basis}
+
+These are exactly the axes themselves, turned into vectors: $\mathbf{e}_1$ is "one unit
+along the first axis." They make precise the phrase from the Core — *a coordinate is "how
+far along each axis"* — because, as the next subsection shows, every vector is its
+coordinates measured against these axis-vectors. We only name them here; what they truly
+*are* (a minimal set of directions that builds everything, a **basis**) is the subject of
+[GEOM-3].
+
+## "How far along each axis," made exact {#sec-coords}
+
+The single sentence that powers the whole article is *a coordinate is how far along each
+axis*. We can now state it without hand-waving, using only the names just defined. Take any
+$\mathbf{x} = (x_1, x_2, x_3)$ in $\mathbb{R}^3$. Then
+
+$$
+\mathbf{x}
+= \begin{bmatrix} x_1 \\ x_2 \\ x_3 \end{bmatrix}
+= \begin{bmatrix} x_1 \\ 0 \\ 0 \end{bmatrix}
++ \begin{bmatrix} 0 \\ x_2 \\ 0 \end{bmatrix}
++ \begin{bmatrix} 0 \\ 0 \\ x_3 \end{bmatrix}
+= x_1\!\begin{bmatrix} 1 \\ 0 \\ 0 \end{bmatrix}
++ x_2\!\begin{bmatrix} 0 \\ 1 \\ 0 \end{bmatrix}
++ x_3\!\begin{bmatrix} 0 \\ 0 \\ 1 \end{bmatrix}
+= x_1\mathbf{e}_1 + x_2\mathbf{e}_2 + x_3\mathbf{e}_3.
+$$ {#eq-coords}
+
+Let us justify each equals-sign so nothing is taken on faith.
+
+- The **first** equality is just @eq-column: the column form of $\mathbf{x}$.
+- The **second** equality splits the single column into a sum of three columns, one
+  carrying each component and zeros elsewhere. This is legitimate because adding vectors is
+  defined slot-by-slot — the entry in slot $1$ of the sum is $x_1 + 0 + 0 = x_1$, and
+  likewise for the others, so the right side really does reassemble $\mathbf{x}$. (We are
+  *using* componentwise addition here; it is *defined and drawn* as the first operation of
+  [GEOM-1], so this is a forward pointer, not a hidden assumption — the arithmetic
+  $x_1+0+0=x_1$ is all that is needed and it is plain.)
+- The **third** equality pulls the lone nonzero number out of each column. A column with
+  $x_1$ on top and zeros below is $x_1$ copies of the column with $1$ on top and zeros below
+  — that is what scaling a vector by a number does, again slot-by-slot
+  ($x_1 \cdot 1 = x_1$, $x_1 \cdot 0 = 0$). This scaling operation is the *second* operation
+  formalized in [GEOM-1]; here we need only the grade-school fact that $x_1 \cdot 0 = 0$.
+- The **fourth** equality is the definition @eq-basis of the $\mathbf{e}_i$, read backwards.
+
+The result @eq-coords is worth saying in words, because it is the precise form of the Core's
+slogan: **every vector is built by walking $x_1$ steps along the first axis, $x_2$ along the
+second, $x_3$ along the third — and the coordinates are exactly the number of steps.** The
+same statement holds in $\mathbb{R}^n$ with $n$ terms,
+$\mathbf{x} = \sum_{i=1}^{n} x_i \mathbf{e}_i$. The expression on the right — a sum of scaled
+vectors — is the **linear combination**, the one move from which the rest of linear algebra
+is built; [GEOM-1] is devoted to it. We have just shown that *the coordinates of a vector
+are the recipe for rebuilding it from the axes*, which is why "how far along each axis" is
+not a metaphor but a literal decomposition.
+
+# The leap: dimensions you cannot draw {#sec-leap}
+
+Here is the move that the whole track depends on and that beginners find unsettling, so we
+make it slowly and honestly.
+
+## What changes past three dimensions, and what does not
+
+In @def-rn we let $n$ be *any* positive integer. For $n = 1, 2, 3$ we can draw the space: a
+line, a plane, a room. For $n = 4$ and beyond, **we cannot draw it, and we cannot picture
+it, and that is fine** — because nothing in @def-rn, @eq-column, or @eq-coords ever required
+a picture. A vector in $\mathbb{R}^{100}$ is a list of $100$ real numbers. The zero vector
+is $100$ zeros. The point is "$x_1$ along axis $1$, …, $x_{100}$ along axis $100$." Every
+rule we have written is *componentwise* — it speaks of slot $1$, slot $2$, and so on — and
+componentwise rules do not care how many slots there are. **The algebra is identical; only
+the picture fails.**
+
+This is the leap: a row of a data table with $100$ features *is* a single point in
+$\mathbb{R}^{100}$, and we reason about it with the same dictionary we used for the house in
+the plane. "Which two observations are most alike" is still "which two points are closest";
+we just measure closeness with a formula (the distance, built in [GEOM-4]) instead of a
+ruler. The geometry survives into dimensions we cannot see, carried entirely by the
+coordinates.
+
+::: {.callout-tip title="You might be asked"}
+*"How can you talk about a 100-dimensional space if you can't visualize it?"* The honest,
+confident answer: *we reason with the coordinate definition, not the picture.* The picture
+is a crutch that happens to work in $n \le 3$; the *definition* — an ordered list of $n$
+reals, with everything done slot-by-slot — works for every $n$ and is what we actually
+compute with. We *port intuition up* from the cases we can see (closeness, direction, "lies
+on a flat sheet through the origin") and *verify it with the algebra*, which is dimension-
+blind. The mature stance is: visualize in 2-D or 3-D to *generate* a conjecture, then trust
+the coordinates to *settle* it. The companion warning is below — some of that ported
+intuition does break, and a good practitioner knows which.
+:::
+
+## An honest worked example: text as vectors, near the edge {#sec-edge}
+
+To make the leap concrete *and* to show where the geometric intuition starts to strain, we
+turn three short documents into vectors and look at the cloud — including the part of the
+picture that lies past where we can draw.
+
+A standard, genuinely-used encoding is the **bag of words**: fix a vocabulary, and let each
+document become a vector whose $j$-th component is the count of vocabulary word $j$ in that
+document. The space has one axis per vocabulary word — easily thousands of dimensions for
+real text. We keep a five-word vocabulary so the *vectors* are honest but small.
+
+```{python}
+#| label: tbl-docs
+#| echo: false
+import numpy as np
+
+vocab = ["model", "data", "loss", "cat", "nap"]
+docs = {
+    "D1 (ML note)":   "the model fits the data, the model lowers the loss on data",
+    "D2 (ML note)":   "data drives the model; loss measures model error on the data",
+    "D3 (cat blog)":  "the cat took a nap, then the cat wanted another nap",
+}
+
+def bag(text, vocab):
+    words = text.lower().replace(",", " ").replace(";", " ").split()
+    return np.array([sum(w == v for w in words) for v in vocab], dtype=int)
+
+vecs = {name: bag(t, vocab) for name, t in docs.items()}
+
+print("vocabulary axes:", vocab)
+print()
+for name, v in vecs.items():
+    print(f"{name:14s} -> {v.tolist()}")
+```
+
+Each document is now a point in $\mathbb{R}^5$ — a five-feature row, exactly like the house
+but with word-counts for features. We cannot draw $\mathbb{R}^5$. What we *can* do is the
+geometry that does not need a picture: compare directions. Two documents about the same
+topic should point roughly the *same way* (high counts on the same axes), even if one is
+longer (a bigger arrow). The figure below shows the count vectors as a heat-style bar
+picture (what we *can* render) alongside a 2-D shadow of the cloud (a deliberate
+compression of the 5-D points down to a plane, so we can place a flat picture next to the
+honest 5-D numbers).
+
+```{python}
+#| label: fig-docs
+#| fig-cap: "Three documents as vectors in $\\mathbb{R}^5$, one axis per vocabulary word. **Left:** the honest object — each document's five word-counts, the thing that actually lives in 5-D. The two machine-learning notes (D1, D2) load on the same axes (`model`, `data`, `loss`); the cat blog (D3) loads on entirely different ones (`cat`, `nap`). **Right:** a 2-D *shadow* of the same three points (a projection, the operation of [GEOM-6]); D1 and D2 land near each other and D3 far off, which is the cloud's real structure — but the shadow is lossy, a point we make honest in the text."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 4.0))
+
+names = list(vecs.keys())
+M = np.array([vecs[n] for n in names], dtype=float)  # 3 x 5
+
+# --- Left: the honest 5-D objects as grouped bars ---
+width = 0.25
+xpos = np.arange(len(vocab))
+colors = [POINT, ACCENT, ARROW]
+for k, n in enumerate(names):
+    axL.bar(xpos + (k - 1) * width, M[k], width, label=n, color=colors[k], alpha=0.9)
+axL.set_xticks(xpos); axL.set_xticklabels(vocab, rotation=0)
+axL.set_ylabel("word count (coordinate)")
+axL.set_title("Each document = 5 coordinates")
+axL.legend(fontsize=8, framealpha=0.9)
+
+# --- Right: a 2-D shadow via the top-2 principal directions (just for a picture) ---
+Mc = M - M.mean(axis=0, keepdims=True)
+U, S, Vt = np.linalg.svd(Mc, full_matrices=False)
+coords2d = Mc @ Vt[:2].T
+for k, n in enumerate(names):
+    axR.scatter(coords2d[k, 0], coords2d[k, 1], color=colors[k], s=110, zorder=5)
+    axR.annotate(n, (coords2d[k, 0], coords2d[k, 1]),
+                 textcoords="offset points", xytext=(8, 4), fontsize=9, color=colors[k])
+axR.axhline(0, color=GREY, lw=0.8); axR.axvline(0, color=GREY, lw=0.8)
+axR.set_xlabel("shadow direction 1"); axR.set_ylabel("shadow direction 2")
+axR.set_title("A lossy 2-D shadow of the 5-D cloud")
+plt.tight_layout()
+```
+
+Read the figure for the lesson it teaches, including the uncomfortable part. The left panel
+is the *truth*: three points in five dimensions, and you can verify by eye that D1 and D2
+have their weight on the same three axes while D3 sits on the other two. The right panel is
+a *shadow* — we squashed five dimensions down to two so a flat picture could exist — and it
+shows D1 and D2 near each other, D3 banished to the side, which faithfully reflects the
+real structure. **But the shadow is not the object.** Two points that look close in the
+2-D shadow could be far apart in the true $\mathbb{R}^5$, because the squashing can hide
+disagreement along the three axes it threw away. This is the honest edge of "just visualize
+it": **every low-dimensional picture of high-dimensional data is a projection, and
+projection loses information.** The right tool — how to choose the *least* lossy shadow,
+and how to quantify what it discarded — is the projection of [GEOM-6] and the SVD of
+[GEOM-20], built later in this track. For now the takeaway is exactly the article's thesis,
+with its caveat attached: the row *is* a point in $\mathbb{R}^5$; we may *draw* only its
+shadow; and we must not confuse the drawing with the thing.
+
+## Where ported intuition genuinely breaks {#sec-curse}
+
+Some intuition from the plane survives the leap (closeness, direction, lines and flats
+through the origin). Some does not, and being unaware of the difference is how people get
+burned. The sharpest example, which the track returns to with full machinery later, is that
+**in high dimensions almost everything is far from almost everything, and roughly the same
+distance away.** Pack points into $\mathbb{R}^2$ and some are clearly near, others clearly
+far. Do the same in $\mathbb{R}^{1000}$ and the *spread* of pairwise distances shrinks
+relative to their *typical* value — the comfortable 2-D notion that "there are close
+neighbors and far strangers" weakens. This is the so-called **curse of dimensionality**,
+and it is why nearest-neighbor methods that feel obviously sensible in the plane can quietly
+fail on wide data.
+
+```{python}
+#| label: fig-curse
+#| fig-cap: "An honest edge case: intuition that does *not* survive the leap. For dimensions $n = 2, 10, 100, 1000$ we drop $500$ random points uniformly in the unit cube of $\\mathbb{R}^n$ and histogram all pairwise distances. As $n$ grows the distribution marches rightward (everything is farther apart) and tightens (distances bunch around their average). The 2-D intuition of 'some neighbors are clearly closer than others' erodes — the practical meaning of the curse of dimensionality."
+rng = np.random.default_rng(0)
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+dims = [2, 10, 100, 1000]
+shades = ["#cfe3f5", "#7fb3e0", "#3d7fc0", "#13325c"]
+for d, c in zip(dims, shades):
+    P = rng.random((500, d))
+    # pairwise distances among a sample of points
+    idx = rng.choice(500, size=(4000, 2))
+    diffs = P[idx[:, 0]] - P[idx[:, 1]]
+    dists = np.sqrt(np.sum(diffs ** 2, axis=1))
+    dists = dists / np.sqrt(d)   # scale by sqrt(n) so the panels are comparable
+    ax.hist(dists, bins=40, density=True, histtype="stepfilled",
+            alpha=0.65, color=c, label=f"$n={d}$")
+ax.set_xlabel(r"pairwise distance (scaled by $1/\sqrt{n}$)")
+ax.set_ylabel("density")
+ax.set_title("High dimensions: distances bunch up")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+```
+
+We do not resolve the curse here — that needs the dot product and norms ([GEOM-4]) to even
+state precisely, and it ramifies through Classification and Unsupervised Learning. We flag
+it now for one reason consistent with this article's job: **the leap into high dimensions is
+real and powerful, but it is not free.** The coordinate definition ports perfectly; *some*
+geometric instincts do not. Knowing which is the beginning of practitioner judgment, and the
+rest of the track is partly an inventory of exactly that.
+
+# Failure modes and honest boundaries {#sec-failure}
+
+This article defines an object rather than a method, so its "failure modes" are the
+*misreadings* of the object — the places where calling something a vector commits you to
+more (or less) than you intended.
+
+::: {.callout-warning title="Pitfall"}
+**Not every list of numbers should be treated as a vector.** The definition is free — any
+$n$ reals form an element of $\mathbb{R}^n$ — but the *geometry* you inherit (distances,
+angles, "averaging two points") is only meaningful if the components are commensurable
+quantities that it makes sense to add and scale. Three traps:
+
+- **Categorical codes.** If you encode `{red, green, blue}` as `{1, 2, 3}`, the vector
+  arithmetic will happily compute that "green is the average of red and blue," which is
+  nonsense. The integers are *labels*, not positions on an axis. The fix is one-hot
+  encoding — turn the single coded column into three indicator axes — which *does* yield an
+  honest vector.
+- **Mismatched units and scales.** Area in square feet (values in the thousands) and
+  bedrooms (values $1$–$5$) live on wildly different scales, so a raw distance in
+  $\mathbb{R}^2$ is dominated by area and effectively ignores bedrooms. The geometry is
+  valid but *misleading* until the features are standardized — a recurring theme once we
+  have norms ([GEOM-4]).
+- **Identifiers.** A ZIP code or a customer ID is stored as a number but has no axis
+  meaning at all; subtracting two ZIP codes is meaningless. It is data, but it is not a
+  coordinate.
+
+The lesson: *being storable as a list of numbers is necessary but not sufficient for being
+a vector you can do geometry to.* The components must be quantities for which "how far
+along this axis" is a real statement.
+:::
+
+A second boundary worth stating plainly: this article fixes the **standard** axes and the
+**standard** notion of $\mathbb{R}^n$. There are vectors that are not tuples of real numbers
+at all — polynomials, functions, random variables — which obey the same two operations and
+so form vector spaces too. The track deliberately *does not* pursue that abstraction
+([GEOM-1] explains the eight rules as "what addition and scaling obey," not as axioms to be
+revered), because the data-science payoff lives almost entirely in $\mathbb{R}^n$. Knowing
+the abstraction exists is enough; chasing it is out of scope by design.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me three different things that are all vectors."* A crisp answer that shows range:
+**(1)** the velocity of a thrown ball — an arrow in $\mathbb{R}^3$ with magnitude (speed)
+and direction; **(2)** one row of a customer table — `(age, income, purchases)` as a point
+in $\mathbb{R}^3$ whose axes are features; **(3)** a grayscale image — a $28 \times 28$
+photo flattened into $784$ pixel-intensity components, a single point in $\mathbb{R}^{784}$.
+The interviewer is checking that you see the *unifying structure*: all three are ordered
+lists of reals on which addition and scaling make sense, so all three live in some
+$\mathbb{R}^n$ and all three submit to the same geometry — even the image, which we can
+display but never plot *as a point* in its $784$-dimensional home.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You are at the **start** of the Geometry of Data track. This article fixed the object —
+the vector as arrow, as list, as data row — and the dictionary among the three faces, plus
+the leap that lets a $100$-feature row be a single point in $\mathbb{R}^{100}$. From here
+the build is mostly linear:
+
+- **[GEOM-1 *Adding and Scaling: The Linear Combination*]** — the *only two* operations
+  linear algebra grants this object, defined componentwise and drawn geometrically
+  (tip-to-tail addition, stretch/flip scaling). Every "we are using componentwise
+  addition/scaling" forward-pointer in @sec-coords is discharged there.
+- **[GEOM-2 *Span and Subspaces*]** — having one move (the linear combination), we ask
+  *which points it can reach* from a given handful of vectors, and what shape that set is.
+- **[GEOM-4 *The Dot Product*]** — equips $\mathbb{R}^n$ with **length and angle**, which is
+  how we finally measure the "closeness" and "same direction" this article could only
+  gesture at, and how the curse of dimensionality ([@sec-curse]) gets stated precisely.
+- **[GEOM-6 *Orthogonal Projection*]** — the keystone, and the honest tool behind the lossy
+  2-D *shadow* of [@fig-docs]: it tells us how to cast a high-dimensional cloud down to a
+  picture and exactly what gets lost.
+- **[GEOM-8 *Matrices as Linear Maps*]** — once a dataset is a *stack* of these row-vectors,
+  a matrix is the natural object that acts on the whole cloud at once.
+
+The running thread the track never drops: **a dataset is a cloud of points in a room with
+as many walls as it has features**, and every later technique is a geometric question asked
+of that cloud.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The historical merger.** Giuseppe Peano's 1888 *Calcolo geometrico* contains the first
+  modern axioms of a vector space; Hermann Grassmann's 1844 *Ausdehnungslehre* is the
+  ambitious, under-read origin of the "arrows you can add and scale" view. The fusion with
+  the algebra-of-tuples tradition (Cayley, Sylvester) into today's single notion is a
+  20th-century standardization (Banach, and the textbook tradition after him).
+- **The leap, taken seriously.** The fact that a $784$-pixel image *is* a point in
+  $\mathbb{R}^{784}$ is the working premise of nearly all modern machine learning; the
+  honest counterweight — that high-dimensional geometry is genuinely strange — is surveyed
+  under "the curse of dimensionality," which we will be equipped to make precise after
+  [GEOM-4].
+- **Open threads this article deliberately deferred.** *How do we add and scale these
+  objects, exactly?* — [GEOM-1]. *How do we measure length, distance, and angle so
+  "closeness" and "same direction" become numbers?* — [GEOM-4]. *How do we draw the least-
+  lossy flat picture of a high-dimensional cloud, and quantify what the picture threw away?*
+  — [GEOM-6] and [GEOM-20]. Each is a direct continuation of a promise made above.

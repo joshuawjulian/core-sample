@@ -3,12 +3,12 @@ title: "Why a Line? The Regression Question"
 subtitle: "Core Sample · Regression"
 ---
 
-> **Where this sits in the track.** This is **REGR-0**, the opener of the
+> **Where this sits in the track.** This is **REGR-00**, the opener of the
 > Regression track. It assumes nothing above the knowledge floor — functions, a
 > scatterplot, and the idea of an average. It is the *motivational* article: it
 > poses the question the whole track answers and tells the origin story, but it
 > does **not** derive the line. The algebra — choosing squared-error loss and
-> solving for the slope and intercept — is the job of **REGR-1**, which this
+> solving for the slope and intercept — is the job of **REGR-01**, which this
 > article sets up.
 
 ## Abstract {.unnumbered}
@@ -20,7 +20,7 @@ The single claim this article defends is that regression is the estimation of a
 we know — and that the familiar straight line is the simplest honest guess at
 that function. Along the way we show that "draw the best line through the cloud"
 is *ill-posed* until we say what *best* means, which is exactly the choice
-REGR-1 makes. We tell the history that forces all of this into existence:
+REGR-01 makes. We tell the history that forces all of this into existence:
 Galton's discovery of *regression to the mean*, and Legendre and Gauss
 inventing least squares to pin down planets and the shape of the Earth.
 
@@ -81,7 +81,7 @@ the *expectation* — a weighted average of all possible values, weighted by how
 likely each is. (Formally, for a discrete outcome it is $\sum_y y \, P(Y = y)$;
 for a continuous one it is $\int y \, f(y)\,dy$. We only need the *idea* of an
 average here; the Probability track builds expectation properly, and we use it
-seriously starting in REGR-2.) The vertical bar $\mid X = x$ says: take that
+seriously starting in REGR-02.) The vertical bar $\mid X = x$ says: take that
 average *only over the cases where the input equals $x$*. As $x$ sweeps across
 its possible values, $m(x)$ traces out a curve — the **regression function**.
 
@@ -110,7 +110,7 @@ So *if* you have decided that being wrong by 2 is four times as bad as being
 wrong by 1 — that is what squaring does — then the conditional mean is, with no
 further assumptions, the best possible predictor. That "if" is doing enormous
 work, and it is the hinge of the next section. (This minimization fact is the
-*population* version of the squared-error story; REGR-1 does the *sample*
+*population* version of the squared-error story; REGR-01 does the *sample*
 version with calculus, and REGR-23 returns to estimate $m(x)$ directly without
 assuming a line.)
 
@@ -192,7 +192,7 @@ plt.show()
 
 # "Best line" is meaningless until we define "best"
 
-Now we hit the question that REGR-1 exists to answer, and the reason REGR-0
+Now we hit the question that REGR-01 exists to answer, and the reason REGR-00
 comes first: **there is no such thing as "the best line" until you have chosen
 how to score a line's mistakes.** This sounds pedantic. It is not. Different
 scoring rules give *different lines through the same points*, and the choice is
@@ -273,12 +273,12 @@ out later:
 1. **It targets the mean.** Minimizing squared error estimates $E[Y \mid X]$ —
    the conditional mean we argued for in §1 — whereas absolute error estimates
    the median. If the conditional mean is your target, squared error is the
-   matching tool. (REGR-1 shows this with calculus on the sample.)
+   matching tool. (REGR-01 shows this with calculus on the sample.)
 2. **It has a clean closed-form solution.** Squaring makes the score a smooth,
    bowl-shaped (quadratic) function of $\beta_0$ and $\beta_1$; setting its
    derivatives to zero gives two linear equations you can solve by hand. Absolute
-   error has a kink at zero and no such tidy formula. (REGR-1 derives the
-   formula; REGR-4 reveals it as a geometric projection.)
+   error has a kink at zero and no such tidy formula. (REGR-01 derives the
+   formula; REGR-04 reveals it as a geometric projection.)
 3. **It is the maximum-likelihood choice under Gaussian noise.** If the scatter
    around the line is normally distributed, least squares is not an arbitrary
    convenience — it is the *most probable* explanation of the data. (REGR-12
@@ -416,7 +416,7 @@ son slides toward the middle.
 
 This is why the regression line is *flatter* than the 45-degree line — and the
 slope of a standardized regression line is exactly the correlation coefficient,
-a fact REGR-1 makes precise. Galton handed us not just a word but a permanent
+a fact REGR-01 makes precise. Galton handed us not just a word but a permanent
 warning, which appears all over applied science:
 
 ::: {.callout-warning title="Pitfall"}
@@ -446,7 +446,7 @@ practical danger is the answer interviewers are listening for.
 
 # When is "fit a line" the right move — and when not?
 
-We promised an honest applicability call, and this is where REGR-0 earns its
+We promised an honest applicability call, and this is where REGR-00 earns its
 place as the opener: before you spend the rest of the track learning *how* to
 fit lines, you should know *when* to.
 
@@ -492,11 +492,11 @@ interpretability that made it worth drawing in the first place.
 
 This article posed the question; the rest of the track answers it.
 
-- **REGR-1 — OLS, One Predictor.** Commits to squared-error loss and *derives*
+- **REGR-01 — OLS, One Predictor.** Commits to squared-error loss and *derives*
   the slope $\hat\beta_1 = S_{xy}/S_{xx}$ and intercept $\hat\beta_0 = \bar y -
   \hat\beta_1 \bar x$ with full Calc-1 calculus. This is the true computational
   entry point; everything in §3's "least squares wins" claim is cashed out there.
-- **REGR-2 — What the Line Assumes.** States precisely the conditions under
+- **REGR-02 — What the Line Assumes.** States precisely the conditions under
   which the least-squares line is a *good* estimator of $E[Y \mid X]$ — making
   rigorous the hand-waving about "noise" and "average" we used here.
 - **REGR-12 — The Maximum-Likelihood View.** Proves Gauss's claim: under

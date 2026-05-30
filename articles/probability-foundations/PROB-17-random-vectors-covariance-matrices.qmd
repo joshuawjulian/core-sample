@@ -32,9 +32,9 @@ SKY    = "#1f77b4"
 
 > **Where this sits in the track.** This is the seventeenth stop in **Probability
 > Foundations**, opening *Movement 4 — going to vectors, then to the limit*. It assumes
-> you have the scalar summaries already: [PROB-5 *Expectation*] (the long-run average and
-> its linearity), [PROB-6 *Variance*] (spread as a sum of squares), and especially
-> [PROB-7 *Joint Distributions, Covariance & Correlation*], where covariance was defined
+> you have the scalar summaries already: [PROB-05 *Expectation*] (the long-run average and
+> its linearity), [PROB-06 *Variance*] (spread as a sum of squares), and especially
+> [PROB-07 *Joint Distributions, Covariance & Correlation*], where covariance was defined
 > for a *pair* of random variables and shown to be bilinear. It also uses the bell curve
 > from [PROB-13 *The Normal Distribution*]. Here we make the leap from *scalars* to
 > *vectors*: we pack $d$ random variables into one object $\mathbf X$, replace the mean
@@ -42,7 +42,7 @@ SKY    = "#1f77b4"
 > this matrix is forced to be symmetric and positive semidefinite. It sets up
 > [PROB-18 *Linear Transforms of Random Vectors*] (what $\mathbf A\mathbf X+\mathbf b$
 > does to $\boldsymbol\mu$ and $\Sigma$) and is consumed across the series: Regression
-> needs it for the covariance of $\hat{\boldsymbol\beta}$ ([REGR-6]), the Geometry of
+> needs it for the covariance of $\hat{\boldsymbol\beta}$ ([REGR-06]), the Geometry of
 > Data track takes the spectral analysis of $\Sigma$, and Unsupervised Learning runs PCA
 > on it.
 
@@ -97,8 +97,8 @@ shape it does?** Every step below answers some piece of that.
 ## The problem the scalar tools cannot reach
 
 Up to now the Probability track has handled random quantities essentially one at a time.
-[PROB-5] gave us $E[X]$, a single number for "where $X$ lands on average." [PROB-6] gave us
-$\operatorname{Var}(X)$, a single number for "how far $X$ scatters." [PROB-7] took the
+[PROB-05] gave us $E[X]$, a single number for "where $X$ lands on average." [PROB-06] gave us
+$\operatorname{Var}(X)$, a single number for "how far $X$ scatters." [PROB-07] took the
 first step toward *togetherness* with $\operatorname{Cov}(X,Y)$, a single number for "do
 $X$ and $Y$ move together." But real data almost never arrives as one or two columns. A
 single patient record carries height, weight, blood pressure, cholesterol, age. A single
@@ -137,7 +137,7 @@ summary?"* It is lossy, and you should say so plainly. The mean vector and covar
 matrix capture only the **first two moments** — centers and pairwise linear co-movement.
 They are blind to skewness, to heavy tails, and to any *nonlinear* dependence (two
 variables can have zero covariance yet be perfectly dependent, the counterexample from
-[PROB-7]). We summarize with $(\boldsymbol\mu,\Sigma)$ anyway for two honest reasons:
+[PROB-07]). We summarize with $(\boldsymbol\mu,\Sigma)$ anyway for two honest reasons:
 first, the second moments are often the dominant, most stable, and most interpretable
 features of a cloud; second — and this is the deep reason — there is exactly one
 distribution for which $(\boldsymbol\mu,\Sigma)$ is the *complete* story, the
@@ -191,7 +191,7 @@ rather than a pile of separate numbers.
 # Formal development {#sec-formal}
 
 We build the objects from the bottom up, defining every symbol on first appearance and
-leaning only on the scalar mean, variance, and covariance from [PROB-5]–[PROB-7].
+leaning only on the scalar mean, variance, and covariance from [PROB-05]–[PROB-07].
 
 ## A note on the linear-algebra we use {#sec-la-floor}
 
@@ -228,7 +228,7 @@ $$
 $$
 
 whose components $X_1,\dots,X_d$ are random variables defined on the *same* underlying
-experiment (the same sample space, in the sense of [PROB-0]). A single draw of the
+experiment (the same sample space, in the sense of [PROB-00]). A single draw of the
 experiment produces one number for each component simultaneously, i.e. one point in
 $d$-dimensional space.
 :::
@@ -240,7 +240,7 @@ once, which is exactly why they can be correlated. A random vector is the formal
 "several numbers from one draw."
 
 Now the first summary. The mean of each component is an ordinary scalar expectation from
-[PROB-5], $E[X_i]=\mu_i$. We collect them.
+[PROB-05], $E[X_i]=\mu_i$. We collect them.
 
 ::: {#def-mean-vector}
 **Definition (mean vector).** The **mean vector** of a random vector $\mathbf X$ is the
@@ -262,12 +262,12 @@ The mean vector is the center of the cloud — literally the point you would bal
 on, coordinate by coordinate. Because expectation is linear component-wise, the mean vector
 inherits linearity in the obvious way: $E[\mathbf X+\mathbf Y]=E[\mathbf X]+E[\mathbf Y]$,
 since that equation is just $E[X_i+Y_i]=E[X_i]+E[Y_i]$ holding in every slot. We will use
-this freely; it is [PROB-5]'s linearity, read one component at a time.
+this freely; it is [PROB-05]'s linearity, read one component at a time.
 
 ## The covariance matrix {#sec-covmat}
 
-Now the spread. For a single variable, [PROB-6] defined
-$\operatorname{Var}(X)=E[(X-\mu)^2]$, and [PROB-7] defined, for a pair,
+Now the spread. For a single variable, [PROB-06] defined
+$\operatorname{Var}(X)=E[(X-\mu)^2]$, and [PROB-07] defined, for a pair,
 $\operatorname{Cov}(X_i,X_j)=E[(X_i-\mu_i)(X_j-\mu_j)]$. Notice the variance is the special
 case $\operatorname{Cov}(X_i,X_i)=E[(X_i-\mu_i)^2]=\operatorname{Var}(X_i)$ — a variable's
 covariance with *itself* is its variance. That single observation is what lets one object
@@ -329,7 +329,7 @@ $$
 \Sigma = E[\mathbf X\mathbf X^\top] - \boldsymbol\mu\boldsymbol\mu^\top .
 $$
 
-Entry $(i,j)$ reads $E[X_iX_j]-\mu_i\mu_j$, which is precisely [PROB-7]'s scalar shortcut
+Entry $(i,j)$ reads $E[X_iX_j]-\mu_i\mu_j$, which is precisely [PROB-07]'s scalar shortcut
 $\operatorname{Cov}(X_i,X_j)=E[X_iX_j]-E[X_i]E[X_j]$ in every slot. Same identity, stacked.
 :::
 
@@ -373,7 +373,7 @@ $$
 \sum_{i=1}^d a_i X_i - \sum_{i=1}^d a_i \mu_i = \sum_{i=1}^d a_i (X_i-\mu_i),
 $$
 
-where we just grouped the two sums termwise. By the definition of variance from [PROB-6],
+where we just grouped the two sums termwise. By the definition of variance from [PROB-06],
 $\operatorname{Var}(\mathbf a^\top\mathbf X)$ is the expected square of this deviation:
 
 $$
@@ -392,7 +392,7 @@ $$
 = \sum_{i=1}^d \sum_{j=1}^d a_i a_j (X_i-\mu_i)(X_j-\mu_j).
 $$
 
-Take expectation. Expectation is linear ([PROB-5]), so it passes through the finite double
+Take expectation. Expectation is linear ([PROB-05]), so it passes through the finite double
 sum, and the constants $a_i a_j$ pull out:
 
 $$
@@ -436,7 +436,7 @@ $$
 $$
 
 Take $\mathbf b=\mathbf a$ and it collapses to @eq-quad, since
-$\operatorname{Cov}(Z,Z)=\operatorname{Var}(Z)$. This is just [PROB-7]'s bilinearity of
+$\operatorname{Cov}(Z,Z)=\operatorname{Var}(Z)$. This is just [PROB-07]'s bilinearity of
 covariance, now read off the matrix in one stroke — and it is the seed of the full
 $\operatorname{Cov}(\mathbf A\mathbf X)=\mathbf A\Sigma\mathbf A^\top$ identity that
 [PROB-18] derives next.
@@ -463,7 +463,7 @@ random quantities have equal expectations, so $\Sigma_{ij}=\Sigma_{ji}$. $\qquad
 :::
 
 Symmetry is the matrix shadow of the symmetry of covariance,
-$\operatorname{Cov}(X_i,X_j)=\operatorname{Cov}(X_j,X_i)$, established in [PROB-7]. It means
+$\operatorname{Cov}(X_i,X_j)=\operatorname{Cov}(X_j,X_i)$, established in [PROB-07]. It means
 $\Sigma$ has at most $\binom{d}{2}+d=\binom{d+1}{2}$ distinct entries, not $d^2$ — the upper
 triangle determines the lower. Practically, it also guarantees (a fact the Geometry of Data
 track proves and uses) that $\Sigma$ has *real* eigenvalues and orthogonal eigenvectors,
@@ -493,7 +493,7 @@ $$
 The right-hand side is the variance of a real-valued random variable, namely
 $\mathbf a^\top\mathbf X$. A variance is the expected value of a squared quantity,
 $E[(\,\cdot-\text{mean})^2]$, and a square is never negative, so its expectation is never
-negative ([PROB-6]): $\operatorname{Var}(\cdot)\ge 0$ always. Therefore
+negative ([PROB-06]): $\operatorname{Var}(\cdot)\ge 0$ always. Therefore
 $\mathbf a^\top\Sigma\,\mathbf a\ge 0$ for every $\mathbf a$, which is exactly the
 definition of positive semidefinite. $\qquad\blacksquare$
 :::
@@ -511,7 +511,7 @@ variance to some direction, which is impossible for real data.
 distinction matter?"* The boundary case $\mathbf a^\top\Sigma\,\mathbf a=0$ for some nonzero
 $\mathbf a$ means $\operatorname{Var}(\mathbf a^\top\mathbf X)=0$ — the linear combination
 $\mathbf a^\top\mathbf X$ is *constant* (a random variable with zero variance never moves
-off its mean, by [PROB-6]). That happens precisely when the components satisfy an exact
+off its mean, by [PROB-06]). That happens precisely when the components satisfy an exact
 linear relationship, e.g. $X_3=2X_1-X_2$. Then the cloud is squashed flat into a
 lower-dimensional subspace, $\Sigma$ is **singular** (its determinant is zero, it has no
 inverse), and we say the distribution is *degenerate*. When no such exact linear
@@ -567,7 +567,7 @@ plt.tight_layout()
 
 Covariances carry the *units* of their two variables — a covariance between height (cm) and
 weight (kg) is in cm·kg, which is meaningless to compare against a covariance between two
-prices in dollars-squared. [PROB-7] fixed this for a pair by dividing out the standard
+prices in dollars-squared. [PROB-07] fixed this for a pair by dividing out the standard
 deviations to get correlation. The vector version divides $\Sigma$ down to a
 **correlation matrix** $\mathbf R$ with entries
 
@@ -577,7 +577,7 @@ R_{ij} = \frac{\Sigma_{ij}}{\sqrt{\Sigma_{ii}}\sqrt{\Sigma_{jj}}}
 $$ {#eq-corr}
 
 so every diagonal entry is $R_{ii}=\Sigma_{ii}/(\sigma_i\sigma_i)=1$ and every off-diagonal
-entry lies in $[-1,1]$ by the Cauchy–Schwarz bound on correlation proved in [PROB-7]. In
+entry lies in $[-1,1]$ by the Cauchy–Schwarz bound on correlation proved in [PROB-07]. In
 matrix form, writing $\mathbf D=\operatorname{diag}(\sigma_1,\dots,\sigma_d)$ for the
 diagonal matrix of standard deviations, $\mathbf R=\mathbf D^{-1}\Sigma\,\mathbf D^{-1}$.
 Because this is $\Sigma$ pre- and post-multiplied by the same diagonal matrix, $\mathbf R$
@@ -746,7 +746,7 @@ plt.tight_layout()
 
 ::: {.callout-tip title="You might be asked"}
 *"For the multivariate normal — and only for it — what does zero covariance imply?"* This is
-the one place the classic trap from [PROB-7] reverses. In general, zero covariance does
+the one place the classic trap from [PROB-07] reverses. In general, zero covariance does
 **not** imply independence (that article gave a worked counterexample). But if
 $\mathbf X$ is *jointly multivariate normal* and $\operatorname{Cov}(X_i,X_j)=0$, then
 $X_i$ and $X_j$ **are** independent. You can see why by pushing @eq-mvn-density all the way
@@ -771,7 +771,7 @@ $$
 
 a product of the one-dimensional normal densities $f_i$ from [PROB-13]. A joint density that
 factors into the product of its marginals *is* exactly the definition of independence
-([PROB-8]), so the components are independent. The interviewer wants you
+([PROB-08]), so the components are independent. The interviewer wants you
 to state the implication *and* its sharp caveat: it holds for the joint normal, and the
 emphasis on "jointly" matters — two variables can each be normal and uncorrelated yet
 dependent if they are not jointly normal.
@@ -822,7 +822,7 @@ Walk the arithmetic the code printed, plugging straight into the definitions:
   forearm length, each computed exactly as the scalar mean of its column (@def-mean-vector).
 - The **diagonal of $\Sigma$** holds the three variances. For instance the height variance
   is $\Sigma_{11}=\frac1n\sum_i(\text{height}_i-\bar{\text{height}})^2=
-  `{python} f"{Sigma[0,0]:.2f}"`$, identical to [PROB-6]'s formula applied to the height
+  `{python} f"{Sigma[0,0]:.2f}"`$, identical to [PROB-06]'s formula applied to the height
   column alone.
 - The **off-diagonal** $\Sigma_{12}=\operatorname{Cov}(\text{height},\text{weight})=
   \frac1n\sum_i(\text{height}_i-\bar h)(\text{weight}_i-\bar w)=`{python} f"{Sigma[0,1]:.2f}"`$
@@ -942,7 +942,7 @@ treatment shows where that is enough and where it quietly fails.
 
 ## The edge case: covariance is blind to nonlinear dependence {#sec-nonlinear}
 
-This is the most important caveat, and it inherits directly from [PROB-7]'s scalar
+This is the most important caveat, and it inherits directly from [PROB-07]'s scalar
 counterexample. The covariance matrix sees only *linear* co-movement. Two components can be
 deterministically, perfectly related and still have **zero** covariance, so that $\Sigma$
 reports them as "uncorrelated" and a normal model would call them independent — when in
@@ -992,7 +992,7 @@ invert a non-invertible matrix). The cloud has collapsed into a lower-dimensiona
 is not a numerical accident; it is the honest statement that *the data have no genuine
 $d$-dimensional spread*. Near-degeneracy — tiny but nonzero spread along some direction,
 i.e. near-collinear columns — is just as dangerous: $\Sigma^{-1}$ becomes enormous and
-unstable, the multivariate echo of the multicollinearity that [REGR-7] treats in full.
+unstable, the multivariate echo of the multicollinearity that [REGR-07] treats in full.
 
 ```{python}
 #| label: fig-degenerate
@@ -1064,8 +1064,8 @@ why the matrix is shaped the way it is.
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from the distribution catalog and the scalar summaries: [PROB-5 *Expectation*],
-[PROB-6 *Variance*], and [PROB-7 *Joint Distributions, Covariance & Correlation*], with the
+You arrived from the distribution catalog and the scalar summaries: [PROB-05 *Expectation*],
+[PROB-06 *Variance*], and [PROB-07 *Joint Distributions, Covariance & Correlation*], with the
 bell curve from [PROB-13 *The Normal Distribution*]. This article stacked those scalars into
 a **random vector**, summarized it with a **mean vector** and a **covariance matrix**,
 proved the hinge identity $\operatorname{Var}(\mathbf a^\top\mathbf X)=\mathbf a^\top
@@ -1080,7 +1080,7 @@ proved the hinge identity $\operatorname{Var}(\mathbf a^\top\mathbf X)=\mathbf a
 - **The Geometry of Data track** takes the *spectral* analysis of $\Sigma$ — eigenvalues
   and eigenvectors, the principal axes glimpsed in @fig-psd and @fig-mvn-contours — and the
   general theory of positive (semi)definite matrices that we used only operationally here.
-- **[REGR-6]** consumes $\operatorname{Cov}(\mathbf A\mathbf X)=\mathbf A\Sigma\mathbf A^\top$
+- **[REGR-06]** consumes $\operatorname{Cov}(\mathbf A\mathbf X)=\mathbf A\Sigma\mathbf A^\top$
   to derive the covariance matrix of the OLS estimator,
   $\operatorname{Cov}(\hat{\boldsymbol\beta})=\sigma^2(\mathbf X^\top\mathbf X)^{-1}$.
 - **Unsupervised Learning** runs **PCA** directly on $\Sigma$: the long-axis directions of

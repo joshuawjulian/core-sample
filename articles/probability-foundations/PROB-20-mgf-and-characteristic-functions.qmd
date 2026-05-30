@@ -33,9 +33,9 @@ GREY   = "#6c757d"
 > the downstream tracks consume. Its sibling, [PROB-19 *Chebyshev's Inequality and the
 > Concentration Idea*], bounded how much probability can sit far from the mean using only
 > the first two moments; this article builds the object that packages **all** the moments
-> at once and turns sums of independent variables into products. It assumes [PROB-5
+> at once and turns sums of independent variables into products. It assumes [PROB-05
 > *Expectation*] (the expectation operator and the law of the unconscious statistician),
-> [PROB-6 *Variance*] and [PROB-7 *Covariance*] (the second moment), and [PROB-8
+> [PROB-06 *Variance*] and [PROB-07 *Covariance*] (the second moment), and [PROB-08
 > *Independence and the i.i.d. Sample*] (the factoring of expectations of products that
 > makes the convolution property work). To compute the transforms of named distributions
 > we lean on the catalog: [PROB-11 *Bernoulli, Binomial, Negative-Binomial*], [PROB-12
@@ -109,7 +109,7 @@ $$
 f_S(s) = \int_{-\infty}^{\infty} f_X(x)\, f_Y(s-x)\, dx .
 $$ {#eq-convolution}
 
-This is built carefully in the joint-distribution work of [PROB-7]; here we only need to
+This is built carefully in the joint-distribution work of [PROB-07]; here we only need to
 register how *unpleasant* it is. To add three variables you convolve twice; to add $n$ you
 convolve $n-1$ times, each a fresh integral over the whole line. The integrand changes
 every time and rarely simplifies. By hand, the convolution route to "what is the
@@ -236,7 +236,7 @@ Three symbols to fix. $t$ is an ordinary real number — the **transform variabl
 dial we turn; it is not random and has no probabilistic meaning of its own. $e^{tX}$ is
 the random variable obtained by applying the deterministic function $u \mapsto e^{tu}$ to
 $X$; computing its expectation is exactly the **law of the unconscious statistician** from
-[PROB-5], which says $E[g(X)] = \sum_x g(x) p_X(x)$ or $\int g(x) f_X(x)\,dx$ — here with
+[PROB-05], which says $E[g(X)] = \sum_x g(x) p_X(x)$ or $\int g(x) f_X(x)\,dx$ — here with
 $g(u)=e^{tu}$. That is why @eq-mgf-def has the form it does: it is LOTUS applied to the
 exponential. Finally, note $M_X(0) = E[e^{0}] = E[1] = 1$ always — every MGF passes
 through the point $(0,1)$, a free sanity check on any computation.
@@ -288,7 +288,7 @@ $$
 
 Now take expectations of both sides. Expectation is **linear** — the expected value of a
 sum is the sum of the expected values, and constants come out front (this is the linearity
-proved in [PROB-5], and for the infinite sum it is licensed by the finiteness of $M_X$ on
+proved in [PROB-05], and for the infinite sum it is licensed by the finiteness of $M_X$ on
 $(-h,h)$, which is exactly the analyst's condition for swapping $E$ and $\sum$; we flag
 this interchange as the one step resting on a convergence theorem above the Calc-1 floor).
 Applying $E[\cdot]$ term by term, and pulling out the constants $t^k/k!$:
@@ -319,7 +319,7 @@ which is @eq-moments. $\qquad\blacksquare$
 
 So the recipe is mechanical: write down $M_X(t)$, differentiate, set $t=0$. The first
 derivative gives the mean, the second gives $E[X^2]$ (and then $\operatorname{Var}(X) =
-E[X^2] - (E[X])^2$ by the computational identity of [PROB-6]), the third gives $E[X^3]$,
+E[X^2] - (E[X])^2$ by the computational identity of [PROB-06]), the third gives $E[X^3]$,
 and so on — a sequence of integrals replaced by a sequence of derivatives.
 
 ::: {.callout-tip title="You might be asked"}
@@ -581,7 +581,7 @@ hypothesis — leaving it out is the classic error.
 # Sums of independents: convolution becomes a product {#sec-convolution}
 
 Here is the property that earns the MGF its keep. It rests on one fact about independence,
-proved in [PROB-8] and restated here so the chain is complete.
+proved in [PROB-08] and restated here so the chain is complete.
 
 ## The independence-to-product lemma {#sec-indep-lemma}
 
@@ -595,7 +595,7 @@ $$
 :::
 
 ::: {.proof}
-This is the defining consequence of independence established in [PROB-8]; we re-derive it
+This is the defining consequence of independence established in [PROB-08]; we re-derive it
 for the continuous case so nothing is assumed. Independence means the joint density
 factors as $f_{U,V}(u,v) = f_U(u) f_V(v)$. Then, by LOTUS for two variables,
 
@@ -651,7 +651,7 @@ $$
 
 For general $n$, write $S = (X_1 + \cdots + X_{n-1}) + X_n$. The sum $X_1+\cdots+X_{n-1}$
 is independent of $X_n$ (a function of the first $n-1$ independent variables is independent
-of the $n$-th — the grouping property of independence from [PROB-8]), so the two-variable
+of the $n$-th — the grouping property of independence from [PROB-08]), so the two-variable
 result applies and, by the induction hypothesis, $M_{X_1+\cdots+X_{n-1}}(t) =
 \prod_{i=1}^{n-1} M_{X_i}(t)$. Multiplying by $M_{X_n}(t)$ gives @eq-conv. $\qquad\blacksquare$
 :::
@@ -690,7 +690,7 @@ The closure-under-addition of the normal — which [PROB-13] could only assert o
 a hard convolution — falls out in three lines of algebra. By induction, a sum of any number
 of independent normals is normal, with means and variances adding. (Note the means always
 add by linearity of expectation, and the variances add by independence — exactly the rules
-of [PROB-8]; the MGF additionally certifies that the *shape* stays normal.)
+of [PROB-08]; the MGF additionally certifies that the *shape* stays normal.)
 
 ## Sum of independent Poissons is Poisson {#sec-sum-poisson}
 
@@ -744,7 +744,7 @@ M_Y''(0) = np\bigl[\,1\cdot 1 + 1\cdot(n-1)\cdot 1\cdot p\cdot 1\,\bigr]
 = np\bigl[1 + (n-1)p\bigr] = np + n(n-1)p^2 = E[Y^2].
 $$
 
-Then, by the computational identity of [PROB-6],
+Then, by the computational identity of [PROB-06],
 
 $$
 \operatorname{Var}(Y) = M_Y''(0) - \bigl(M_Y'(0)\bigr)^2
@@ -829,7 +829,7 @@ finite only at $t=0$ (where the integrand is just $f$, integrating to $1$) — w
 The canonical example is the **Cauchy distribution**, with density $f(x) =
 \frac{1}{\pi(1+x^2)}$ on the whole real line. Its tails decay like $1/x^2$, so heavy that
 even its *mean* does not exist (the integral $\int x f(x)\,dx$ diverges, as shown in
-[PROB-5]). With no finite mean, there is certainly no MGF on an interval — there are no
+[PROB-05]). With no finite mean, there is certainly no MGF on an interval — there are no
 moments for it to generate. @fig-heavy-tail contrasts a thin tail (normal) with a heavy
 tail (Cauchy) and shows the tilted integrand diverging.
 
@@ -1109,7 +1109,7 @@ to write $M_{X+Y}(t) = M_X(t)M_Y(t)$ for *any* $X+Y$. It holds **only when $X$ a
 independent** — that is the single hypothesis @lem-product needs. If $X$ and $Y$ are
 correlated, the MGF of the sum involves their joint distribution and does not factor. (By
 contrast, the *means* always add, $E[X+Y]=E[X]+E[Y]$, independent or not — that is
-linearity of expectation from [PROB-5], a strictly weaker and unconditional statement. Do
+linearity of expectation from [PROB-05], a strictly weaker and unconditional statement. Do
 not confuse "means always add" with "transforms always multiply.")
 :::
 

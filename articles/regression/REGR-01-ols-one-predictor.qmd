@@ -40,12 +40,12 @@ def ols_fit(x, y):
 ```
 
 > **Where this sits in the track.** This is the true entry point of the Regression
-> track. It assumes only [REGR-0 *Why a Line?*], which established *what* regression is
+> track. It assumes only [REGR-00 *Why a Line?*], which established *what* regression is
 > after — estimating how the average of an outcome moves with a predictor — and *why*
 > "draw the best line through the cloud" is meaningless until we pin down the word
 > *best*. Here we make that commitment (squared error) and follow it all the way to a
-> closed-form line. It sets up [REGR-2 *What the Line Assumes*] (when this line is
-> trustworthy), [REGR-3 *How Good Is the Fit?*] (how we score it), and [REGR-4
+> closed-form line. It sets up [REGR-02 *What the Line Assumes*] (when this line is
+> trustworthy), [REGR-03 *How Good Is the Fit?*] (how we score it), and [REGR-04
 > *Regression as Projection*] (the same answer seen as geometry).
 
 ## Abstract {.unnumbered}
@@ -492,7 +492,7 @@ $$ {#eq-normal}
 here means *perpendicular*. The first normal equation says $\sum e_i = 0$ and the second
 says $\sum x_i e_i = 0$ — i.e. the residual vector is **orthogonal** to both the constant
 vector and the $x$ vector. That orthogonality is the entire geometric story of least
-squares, taken up in full in [REGR-4 *Regression as Projection*]. For now, just register
+squares, taken up in full in [REGR-04 *Regression as Projection*]. For now, just register
 that "normal" = "at right angles," and that we have *two* equations because we set *two*
 partials to zero.
 :::
@@ -659,7 +659,7 @@ $$ {#eq-b1-cov}
 The top is the **sample covariance** of $x$ and $y$ — how much they move together — and
 the bottom is the **sample variance** of $x$ — how much $x$ moves on its own. The slope
 is *co-movement normalized by $x$'s own spread*. (If covariance and variance are rusty,
-they are built from the ground up in [REGR-2]; here we only need that these named
+they are built from the ground up in [REGR-02]; here we only need that these named
 formulas are what those words mean.)
 
 This single line of reading answers a great deal at once:
@@ -682,7 +682,7 @@ S_{xy}/\sqrt{S_{xx}S_{yy}}$, a little algebra gives $\hat\beta_1 = r\cdot
 \frac{s_y}{s_x}$ where $s_x,s_y$ are the sample standard deviations. So the slope is the
 correlation, rescaled from the dimensionless $[-1,1]$ world of $r$ back into the units of
 the data. If you first standardize both variables to unit variance, the slope *is* the
-correlation. This connection is developed in [REGR-3].
+correlation. This connection is developed in [REGR-03].
 :::
 
 ## The line passes through the means {#sec-through-means}
@@ -859,7 +859,7 @@ The printed checks confirm the derivation operationally: the residuals sum to ze
 their $x$-weighted sum is zero, the two normal equations made visible. The residual plot
 on the right is your first diagnostic tool — a structureless cloud around zero is what a
 good simple-regression fit looks like. Structure in that plot (a curve, a fan) is the
-signal that an assumption is breaking, the subject of [REGR-2] and [REGR-10].
+signal that an assumption is breaking, the subject of [REGR-02] and [REGR-10].
 
 ## Example 2 — a near-linear economic relationship with real noise {#sec-mortgage}
 
@@ -902,7 +902,7 @@ associated with about \$$`{python} f"{b1m*1000:.0f}"`$ more annual dining-out sp
 The residual band is wide — the line will not predict any single locality precisely — but
 it is *flat and patternless*, so the line is an honest summary of the central tendency. The
 gap between "captures the trend" and "predicts an individual well" is the difference
-between the slope's meaning and the residual spread, quantified in [REGR-3].
+between the slope's meaning and the residual spread, quantified in [REGR-03].
 
 # Failure modes and the edge of applicability {#sec-failure}
 
@@ -1040,7 +1040,7 @@ second-order determinant $4n S_{xx}$ is zero — the bowl degenerates into a tro
 unique bottom. This is not a numerical glitch; it is the honest statement that **you
 cannot learn how $y$ changes with $x$ if $x$ never changed.** Near-degeneracy (tiny but
 nonzero $S_{xx}$) is just as dangerous: the slope becomes wildly sensitive, the
-one-predictor shadow of *multicollinearity*, which gets its full treatment in [REGR-7].
+one-predictor shadow of *multicollinearity*, which gets its full treatment in [REGR-07].
 
 ::: {.callout-tip title="You might be asked"}
 *"When is simple OLS the right tool, and when is it the wrong one?"* The honest summary you
@@ -1049,7 +1049,7 @@ should be able to recite:
 - **Use it** when (a) you have one quantitative predictor and a quantitative outcome, (b) a
   scatterplot looks plausibly linear, (c) the residual plot is a flat, patternless cloud,
   and (d) no single point dominates. In that regime it is unbeatable: closed-form,
-  interpretable, fast, and — as [REGR-6] proves — the best linear unbiased estimator.
+  interpretable, fast, and — as [REGR-06] proves — the best linear unbiased estimator.
 - **Do not use it** when the relationship is curved (transform or go nonparametric —
   [REGR-20]+), when outliers dominate (robust regression), when the error spread changes
   across $x$ (weighted least squares, [REGR-11]), or when $x$ barely varies (degenerate).
@@ -1073,20 +1073,20 @@ two boxed formulas of @sec-clean-slope. You now know what the library is doing a
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[REGR-0 *Why a Line?*]**, which posed the regression question and
+You arrived from **[REGR-00 *Why a Line?*]**, which posed the regression question and
 argued that "best" needs defining. This article made the definition (squared error) and
 derived the unique line it produces. From here the trunk continues:
 
-- **[REGR-2 *What the Line Assumes*]** — we have *a* line; under what conditions on the
+- **[REGR-02 *What the Line Assumes*]** — we have *a* line; under what conditions on the
   errors is it a *trustworthy* one? Introduces the Gauss–Markov conditions and builds the
   covariance/variance machinery we leaned on in @eq-b1-cov.
-- **[REGR-3 *How Good Is the Fit?*]** — having a line, how do we *score* it? $R^2$,
+- **[REGR-03 *How Good Is the Fit?*]** — having a line, how do we *score* it? $R^2$,
   residual analysis, RMSE; the honest limits of those numbers (Anscombe, again).
-- **[REGR-4 *Regression as Projection*]** — the same answer, seen as geometry: the
+- **[REGR-04 *Regression as Projection*]** — the same answer, seen as geometry: the
   residual is *orthogonal* to the predictors (the real meaning of "normal" equations,
   @sec-normal-eqs), and the fit is a projection. This generalizes effortlessly to many
   predictors.
-- **[REGR-5 *Multiple Regression*]** — many predictors at once; the two normal equations
+- **[REGR-05 *Multiple Regression*]** — many predictors at once; the two normal equations
   @eq-normal become the single matrix equation $X^\top X\hat\beta = X^\top y$, with this
   article as its $p=1$ special case.
 :::
@@ -1102,7 +1102,7 @@ derived the unique line it produces. From here the trunk continues:
   always plotting.
 - **Open threads this article deliberately deferred.** *How uncertain are
   $\hat\beta_0,\hat\beta_1$?* — they are random, since the data are one sample; their
-  sampling distribution is [REGR-6]. *Is squared error "optimal" in any provable sense?* —
-  yes, the Gauss–Markov theorem, also [REGR-6]. *What if I want the line that minimizes
+  sampling distribution is [REGR-06]. *Is squared error "optimal" in any provable sense?* —
+  yes, the Gauss–Markov theorem, also [REGR-06]. *What if I want the line that minimizes
   perpendicular distance, not vertical?* — that is total least squares / principal
   components, a different objective that lives in the Geometry-of-Data track.

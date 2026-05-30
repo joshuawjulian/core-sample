@@ -51,7 +51,7 @@ def binom_pmf(k, n, p):
 > catalog** of the Probability Foundations track. It assumes [PROB-11 *Bernoulli,
 > Binomial, and Negative-Binomial*] — we will *build* the Poisson out of the binomial,
 > so its pmf, its mean $np$, and its variance $np(1-p)$ must already be in hand — and it
-> leans on [PROB-5 *Expectation*] and [PROB-6 *Variance*] for what "mean" and "variance"
+> leans on [PROB-05 *Expectation*] and [PROB-06 *Variance*] for what "mean" and "variance"
 > mean and how to compute them from a pmf. The only thing above the Calculus-I floor we
 > touch is one limit, $\bigl(1-\tfrac{\lambda}{n}\bigr)^n \to e^{-\lambda}$, which we
 > derive on the page rather than assume. It **sets up** [PROB-14 *Gamma, Exponential, and
@@ -365,7 +365,7 @@ report at most $n$ successes, the Poisson assigns positive (if minuscule) probab
 
 ## It is a genuine distribution: the masses sum to one {#sec-normalize}
 
-A pmf is only legitimate if its values are non-negative and sum to $1$ ([PROB-3]).
+A pmf is only legitimate if its values are non-negative and sum to $1$ ([PROB-03]).
 Non-negativity is immediate: $e^{-\lambda}>0$, $\lambda^k>0$, and $k!>0$, so every $p(k)>0$.
 The sum is where the constant $e^{-\lambda}$ earns its keep. We need one fact from Calc 1 —
 the **Taylor (Maclaurin) series of the exponential function**, which is
@@ -424,7 +424,7 @@ factor. Both stories give the same constant, because they are the same distribut
 
 ## The mean is $\lambda$ {#sec-mean}
 
-By the definition of expectation for a discrete random variable ([PROB-5]), $E[X] =
+By the definition of expectation for a discrete random variable ([PROB-05]), $E[X] =
 \sum_k k\,p(k)$. We compute it for the Poisson and find — as the Core promised — that it
 is exactly $\lambda$.
 
@@ -463,7 +463,7 @@ better have mean $\lambda$ — and it does.
 
 ## The variance is also $\lambda$: equidispersion {#sec-variance}
 
-Now the signature result. We use the computational identity for variance from [PROB-6],
+Now the signature result. We use the computational identity for variance from [PROB-06],
 
 $$
 \text{Var}(X) = E[X^2] - (E[X])^2,
@@ -478,7 +478,7 @@ $$
 E[X(X-1)] = E[X^2 - X] = E[X^2] - E[X],
 $$ {#eq-factorial-link}
 
-using linearity of expectation ([PROB-5]); we will rearrange this for $E[X^2]$ in a moment.
+using linearity of expectation ([PROB-05]); we will rearrange this for $E[X^2]$ in a moment.
 Compute the factorial moment:
 
 $$
@@ -569,7 +569,7 @@ are what they are, and it is worth seeing because it reuses [PROB-11] rather tha
 exponential series. It rests on just two ingredients, both already in hand: the limit
 construction of @thm-poisson-limit ($\text{Poisson}(\lambda) = \lim_n
 \text{Binomial}(n,\lambda/n)$), and the [PROB-11] decomposition of a binomial into a sum of
-independent Bernoulli indicators, whose mean and variance add by [PROB-8]. No new machinery
+independent Bernoulli indicators, whose mean and variance add by [PROB-08]. No new machinery
 is needed — in particular, this route does *not* use the additivity theorem of
 @sec-additivity; it simply follows the mean and variance through the same limit that built
 the pmf.
@@ -578,7 +578,7 @@ Recall from the limit construction that $\text{Poisson}(\lambda)$ is
 $\lim_n \text{Binomial}(n,\lambda/n)$. For a Binomial($n,p$) written as a sum of $n$
 independent Bernoulli($p$) indicators $B_1,\dots,B_n$ (the [PROB-11] decomposition), each
 $B_i$ has mean $p$ and variance $p(1-p)$. By linearity of expectation (no independence
-needed) and additivity of variance under independence ([PROB-8]),
+needed) and additivity of variance under independence ([PROB-08]),
 
 $$
 E\Bigl[\textstyle\sum_i B_i\Bigr] = np, \qquad
@@ -625,7 +625,7 @@ P(S=n) = \sum_{k=0}^{n} P(X=k,\,Y=n-k).
 $$
 
 Because $X$ and $Y$ are independent, the joint probability factors into the product of
-marginals ([PROB-8]): $P(X=k,\,Y=n-k) = P(X=k)\,P(Y=n-k)$. Insert the two Poisson pmfs:
+marginals ([PROB-08]): $P(X=k,\,Y=n-k) = P(X=k)\,P(Y=n-k)$. Insert the two Poisson pmfs:
 
 $$
 P(S=n) = \sum_{k=0}^{n}

@@ -30,9 +30,9 @@ FILL   = "#9fb3d1"     # shaded mass / area
 ```
 
 > **Where this sits in the track.** The two preceding articles built the objects this one
-> summarizes. [PROB-3 *Discrete Random Variables: The Probability Mass Function*] gave us a
+> summarizes. [PROB-03 *Discrete Random Variables: The Probability Mass Function*] gave us a
 > random variable that takes countably many values, described by a **pmf** $p(x)=P(X=x)$
-> with $\sum_x p(x)=1$. [PROB-4 *Continuous Random Variables: The Probability Density
+> with $\sum_x p(x)=1$. [PROB-04 *Continuous Random Variables: The Probability Density
 > Function*] gave us the continuum case, described by a **pdf** $f(x)$ with
 > $\int f(x)\,dx=1$ and $P(a\le X\le b)=\int_a^b f(x)\,dx$. A whole distribution is a lot of
 > information; very often we want **one number** that says where the variable lands on
@@ -40,8 +40,8 @@ FILL   = "#9fb3d1"     # shaded mass / area
 > of variable, derives the **law of the unconscious statistician** for $E[g(X)]$, proves
 > **linearity of expectation** — the workhorse identity that holds with or without
 > independence — and shows an honest case (the Cauchy distribution) where the expectation
-> *fails to exist*. It assumes [PROB-3] and [PROB-4], and floor-level summation and
-> integration. It sets up [PROB-6 *Variance*] (variance is an expectation), [PROB-7
+> *fails to exist*. It assumes [PROB-03] and [PROB-04], and floor-level summation and
+> integration. It sets up [PROB-06 *Variance*] (variance is an expectation), [PROB-07
 > *Covariance*] (covariance is an expectation), every distribution's mean in the catalog
 > [PROB-11]–[PROB-16], and the concentration inequalities of [PROB-19 *Chebyshev*].
 
@@ -52,7 +52,7 @@ most useful summary of a random variable $X$ is its **expectation** $E[X]$ — t
 lands on *on average* in the long run. This article builds that number from scratch as a
 **probability-weighted average** of $X$'s possible values: $E[X]=\sum_x x\,p(x)$ when $X$
 is discrete and $E[X]=\int x f(x)\,dx$ when it is continuous, the two formulas being one
-idea written in the two languages of [PROB-3] and [PROB-4]. We motivate it as the limit of
+idea written in the two languages of [PROB-03] and [PROB-04]. We motivate it as the limit of
 the sample average — the literal long-run average of repeated draws — and we make that
 limit visible. We then derive the **law of the unconscious statistician**, which computes
 $E[g(X)]$ by weighting $g(x)$ instead of $x$ without ever finding the distribution of
@@ -193,7 +193,7 @@ Before any formula does work, fix the mental image that makes expectation obviou
 the probability of a random variable as **physical mass** laid out along a number line: a
 discrete variable puts a lump of mass $p(x)$ at each value $x$; a continuous one smears mass
 along the line at density $f(x)$ (this is precisely why $p$ is called a probability *mass*
-function and $f$ a *density* — [PROB-3], [PROB-4] named them for exactly this picture).
+function and $f$ a *density* — [PROB-03], [PROB-04] named them for exactly this picture).
 
 Now ask a physics question: **where does this mass balance?** Put the number line on a
 fulcrum and slide the fulcrum until the line sits level, neither tipping left nor right.
@@ -267,7 +267,7 @@ linearly (@sec-linearity), which is why it dominates theory.
 ## Defining expectation for a discrete variable {#sec-def-discrete}
 
 We start where the simplest objects live: a discrete random variable, whose machinery
-([PROB-3]) is a pmf $p(x)=P(X=x)$ supported on a countable set of values.
+([PROB-03]) is a pmf $p(x)=P(X=x)$ supported on a countable set of values.
 
 ::: {#def-exp-discrete}
 **Definition (expectation, discrete case).** Let $X$ be a discrete random variable with pmf
@@ -316,7 +316,7 @@ average in @fig-lln-convergence converged to.
 
 ## Defining expectation for a continuous variable {#sec-def-continuous}
 
-The continuous case ([PROB-4]) replaces the pmf by a pdf $f(x)$ and, following the universal
+The continuous case ([PROB-04]) replaces the pmf by a pdf $f(x)$ and, following the universal
 recipe of that article, replaces the sum by an integral. The intuition is identical: we are
 still adding up (value) $\times$ (probability), but probability now lives in a *density*
 spread over the line, so an infinitesimal slice of width $dx$ at position $x$ carries
@@ -337,7 +337,7 @@ If it does not, $E[X]$ does not exist.
 
 The parallel with @eq-exp-discrete is exact and deliberate: $\sum_x x\,p(x)$ becomes
 $\int x\,f(x)\,dx$, point masses become a density, the sum becomes an integral. This is the
-same translation between [PROB-3] and [PROB-4] that turned $\sum_x p(x)=1$ into
+same translation between [PROB-03] and [PROB-04] that turned $\sum_x p(x)=1$ into
 $\int f(x)\,dx = 1$. If you can read one definition you can read the other; they are one
 idea in two notations. We will frequently state results once and note that they hold "in
 both cases," doing the algebra in whichever language is clearer.
@@ -345,7 +345,7 @@ both cases," doing the algebra in whichever language is clearer.
 ### A first continuous computation by hand
 
 Let $X$ be uniform on $[0,1]$ — the canonical continuous variable, with density $f(x)=1$
-for $0\le x\le 1$ and $f(x)=0$ elsewhere ([PROB-4] built this). Then
+for $0\le x\le 1$ and $f(x)=0$ elsewhere ([PROB-04] built this). Then
 
 $$
 E[X] = \int_{-\infty}^{\infty} x\,f(x)\,dx
@@ -364,7 +364,7 @@ outside it, so those parts contribute nothing — a habit worth keeping: the int
 *one* concept: the probability-weighted average of the values. The only difference is
 bookkeeping: a sum over point masses for discrete variables, an integral over a density for
 continuous ones. (There is a single unifying definition, the **Lebesgue–Stieltjes integral**
-$E[X]=\int x\,dF(x)$ against the CDF $F$ of [PROB-2], which handles discrete, continuous, and
+$E[X]=\int x\,dF(x)$ against the CDF $F$ of [PROB-02], which handles discrete, continuous, and
 even mixed variables in one stroke; we flag it as the grown-up version but do not need its
 machinery here, since absolutely everything we do follows from the two elementary forms
 above.)
@@ -379,7 +379,7 @@ the current $X$. So we need $E[g(X)]$ — the expected value of a transformed va
 There is an obvious-looking way and a clever way, and they turn out to agree. The obvious
 way: $Y=g(X)$ is itself a random variable, so find *its* distribution and apply
 @eq-exp-discrete to $Y$. Finding the distribution of $g(X)$ is genuine work — it is the
-change-of-variables machinery of [PROB-4]. The clever way avoids it entirely.
+change-of-variables machinery of [PROB-04]. The clever way avoids it entirely.
 
 ::: {#thm-lotus}
 **Theorem (Law of the Unconscious Statistician, LOTUS).** Let $X$ be a random variable and
@@ -415,7 +415,7 @@ then untangle it. Fix a value $y$. The event $\{Y=y\}$ is the event $\{g(X)=y\}$
 happens exactly when $X$ lands on *some* value $x$ that $g$ maps to $y$. Collect those
 values into the set $A_y=\{x\in\mathcal{X} : g(x)=y\}$ (the *preimage* of $y$). These $x$'s
 give disjoint outcomes (a single roll of $X$ is one value), so by the additivity of
-probability ([PROB-0]),
+probability ([PROB-00]),
 
 $$
 P(Y=y) = P\bigl(X\in A_y\bigr) = \sum_{x\in A_y} p(x).
@@ -496,8 +496,8 @@ piecewise-monotone case just handled.) $\qquad\blacksquare$
 
 The payoff is enormous. To get $E[X^2]$ you do **not** find the distribution of $X^2$; you
 just integrate $x^2 f(x)$. To get the expected payoff of a gamble you weight the payoffs by
-the original outcome probabilities. LOTUS is the tool that makes variance ([PROB-6],
-$\mathrm{Var}(X)=E[(X-\mu)^2]$ via $g(x)=(x-\mu)^2$), covariance ([PROB-7]), and moment
+the original outcome probabilities. LOTUS is the tool that makes variance ([PROB-06],
+$\mathrm{Var}(X)=E[(X-\mu)^2]$ via $g(x)=(x-\mu)^2$), covariance ([PROB-07]), and moment
 generating functions ([PROB-20], $g(x)=e^{tx}$) computable at all.
 
 ::: {.callout-tip title="You might be asked"}
@@ -565,7 +565,7 @@ $$
 
 Now read the two remaining sums. The first is exactly $E[X]$ by @eq-exp-discrete. The second
 is $\sum_x p(x)$, the total probability over all values, which equals $1$ — that is the
-normalization axiom of a pmf, built in [PROB-3]. Therefore
+normalization axiom of a pmf, built in [PROB-03]. Therefore
 
 $$
 E[aX+c] = a\,E[X] + c\cdot 1 = a\,E[X] + c. \qquad\blacksquare
@@ -582,7 +582,7 @@ variable that is always $c$ has its entire mass at $c$, which balances at $c$.
 The heart of the theorem is that the mean of a sum is the sum of the means. To prove it
 cleanly we need the **joint distribution** of $X$ and $Y$ — the function
 $p(x,y)=P(X=x,\,Y=y)$ giving the probability of each *pair* of values. This object is the
-full subject of [PROB-7]; here we need only two facts about it, both of which are just
+full subject of [PROB-07]; here we need only two facts about it, both of which are just
 "probability adds up":
 
 1. **Marginalization.** Summing the joint over all values of one variable recovers the other
@@ -653,7 +653,7 @@ $E\!\left[\sum_{i=1}^n a_i X_i\right]=\sum_{i=1}^n a_i E[X_i]$. $\qquad\blacksqu
 Take a moment to appreciate how strange and strong @lem-sum is. The *distribution* of $X+Y$
 depends intimately on how $X$ and $Y$ relate — whether they reinforce or cancel each other.
 Its *variance* will require an independence assumption (or a covariance correction —
-[PROB-6], [PROB-7]). But its **mean does not care at all.** You can add up the means of
+[PROB-06], [PROB-07]). But its **mean does not care at all.** You can add up the means of
 wildly entangled variables and the answer is exactly the mean of the sum. This is what makes
 expectation the tool of first resort for hard counting problems: you decompose a complicated
 random total into a sum of simple indicators and add up their (easy) means, never once
@@ -667,9 +667,9 @@ proof of @lem-sum, splitting $(x+y)$ let each term keep only *one* of the two va
 each collapsed to a clean marginal sum — the cross-structure $p(x,y)$ never had to factor.
 For a *product* $xy$ you cannot separate the variables that way; you are stuck with
 $\sum_x\sum_y xy\,p(x,y)$, and to break it into $(\sum_x x p_X(x))(\sum_y y p_Y(y))$ you need
-$p(x,y)=p_X(x)p_Y(y)$ — exactly the definition of **independence** ([PROB-8]). So
+$p(x,y)=p_X(x)p_Y(y)$ — exactly the definition of **independence** ([PROB-08]). So
 $E[XY]=E[X]E[Y]$ is a theorem *only under independence*; the gap $E[XY]-E[X]E[Y]$ is the
-**covariance**, the entire subject of [PROB-7]. Linearity is free; the product rule is
+**covariance**, the entire subject of [PROB-07]. Linearity is free; the product rule is
 earned.
 :::
 
@@ -751,7 +751,7 @@ plt.tight_layout()
 
 A continuous example with a real decision behind it. Calls arrive at a support desk, and the
 time $X$ (in minutes) until the next call is well modeled by an **exponential** distribution
-with rate $\lambda$ — the memoryless waiting time built in [PROB-4] and catalogued in
+with rate $\lambda$ — the memoryless waiting time built in [PROB-04] and catalogued in
 [PROB-14]. Its density is
 
 $$
@@ -1035,7 +1035,7 @@ throws away the shape of the distribution. Two informative failure modes:
   someone who will see one roll is technically true and practically useless.
 
 The fix is not to abandon the mean but to **report it alongside a measure of spread** — the
-variance and standard deviation of [PROB-6], which quantify how far individual outcomes
+variance and standard deviation of [PROB-06], which quantify how far individual outcomes
 typically stray from $E[X]$. A mean without a spread is half a summary. That is precisely why
 the next article exists, and why $E[X]$ is the foundation it builds on rather than the whole
 story.
@@ -1058,17 +1058,17 @@ when you have a long run to average over; risk-sensitive criteria take over when
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from the two articles that built the objects this one summarizes — [PROB-3
-*Discrete RVs (pmf)*] and [PROB-4 *Continuous RVs (pdf)*] — and you now hold the single
+You arrived from the two articles that built the objects this one summarizes — [PROB-03
+*Discrete RVs (pmf)*] and [PROB-04 *Continuous RVs (pdf)*] — and you now hold the single
 number that stands in for a whole distribution, plus the two properties (LOTUS and
 linearity) that make it computable. From here the track builds *directly* on expectation:
 
-- **[PROB-6 *Variance, Standard Deviation & Variance as a Sum of Squares*]** — the very next
+- **[PROB-06 *Variance, Standard Deviation & Variance as a Sum of Squares*]** — the very next
   step. Variance is *itself an expectation*, $\mathrm{Var}(X)=E[(X-\mu)^2]$, computed by
   LOTUS with $g(x)=(x-\mu)^2$. It is the "spread" that @sec-mean-lies showed the mean
   desperately needs, and it is where the affine rule $E[aX+c]=aE[X]+c$ gets its quadratic
   cousin $\mathrm{Var}(aX+b)=a^2\mathrm{Var}(X)$.
-- **[PROB-7 *Joint Distributions, Covariance & Correlation*]** — covariance is also an
+- **[PROB-07 *Joint Distributions, Covariance & Correlation*]** — covariance is also an
   expectation, $\mathrm{Cov}(X,Y)=E[(X-\mu_X)(Y-\mu_Y)]$, and it is exactly the gap
   $E[XY]-E[X]E[Y]$ that the interview note in @sec-linearity flagged. The two-variable LOTUS
   we proved here is its engine.
@@ -1094,9 +1094,9 @@ linearity) that make it computable. From here the track builds *directly* on exp
   with $1$ df *is* Cauchy (no mean), $t$ with $2$ df has a mean but no variance.
 - **Open threads this article deliberately deferred.** *Why does the sample average provably
   converge to $E[X]$?* — the Law of Large Numbers, built from Chebyshev ([PROB-19]) in the
-  Inference track. *How spread out are the outcomes around $E[X]$?* — variance, [PROB-6].
+  Inference track. *How spread out are the outcomes around $E[X]$?* — variance, [PROB-06].
   *What if we want the average of $Y$ given that we have already observed $X$?* — conditional
-  expectation $E[Y\mid X]$, the hinge result of [PROB-9] and the object that all of regression
+  expectation $E[Y\mid X]$, the hinge result of [PROB-09] and the object that all of regression
   is built to estimate. *Is there a single transform that packages all the moments
   $E[X],E[X^2],E[X^3],\dots$ at once?* — the moment generating function $E[e^{tX}]$, computed
   by LOTUS with $g(x)=e^{tx}$, in [PROB-20].

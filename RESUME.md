@@ -9,12 +9,12 @@ truth for what's done.
 
 | Wave | Track | slug | Articles | Status |
 |---|---|---|---:|---|
-| — | Pilots | regression | 2 (REGR-0,1) | ✅ committed |
+| — | Pilots | regression | 2 (REGR-00,1) | ✅ committed |
 | 1 | Probability Foundations | probability-foundations | 24 | ✅ committed |
 | 2 | Geometry of Data | geometry-of-data | 28 | 🔄 in progress |
 | 3 | Optimization | optimization | 18 | ⬜ pending |
 | 4 | Statistical Inference | statistical-inference | 18 | ⬜ pending |
-| 5 | Regression (REGR-2…26) | regression | 25 | ⬜ pending |
+| 5 | Regression (REGR-02…26) | regression | 25 | ⬜ pending |
 | 6 | Classification | classification | 21 | ⬜ pending |
 | 7 | Unsupervised Learning | unsupervised-learning | 16 | ⬜ pending |
 | 8 | Causal Inference | causal-inference | 18 | ⬜ pending |
@@ -28,7 +28,7 @@ A reusable workflow drafts + quality-gates every article in one track:
 - **Script (persists on disk):**
   `~/.claude/projects/-home-julian-dev-core-sample/<session>/workflows/scripts/write-track-articles-wf_eb3a3c23-06c.js`
 - Per article: a **write** agent (reads `CLAUDE.md`, `REGISTRY.md`, the track roadmap in
-  `tracks/<slug>.md`, and the `REGR-1` exemplar) + a **verify** agent (hunts dangling
+  `tracks/<slug>.md`, and the `REGR-01` exemplar) + a **verify** agent (hunts dangling
   claims / skipped steps and fixes them in place).
 
 ## To resume

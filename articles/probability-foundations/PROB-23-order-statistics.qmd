@@ -35,11 +35,11 @@ FILL   = "#9fb3d1"     # shaded areas / histogram bars
 > Foundations track, the second of the two "sampling-theory" articles that the data
 > tracks consume directly (its sibling is [PROB-22 *The Empirical CDF and Sampling With
 > Replacement*]). It assumes you can write down a **probability density** and integrate
-> it ([PROB-4 *Continuous Random Variables*]), that you can **count** selections and
+> it ([PROB-04 *Continuous Random Variables*]), that you can **count** selections and
 > arrangements ([PROB-10 *Counting: Permutations and Combinations*]), and that you have
 > met the **Beta distribution** as the model for a random proportion on $[0,1]$
 > ([PROB-14 *Gamma, Exponential & Beta*]). It also leans lightly on **independence and
-> the i.i.d. sample** ([PROB-8]). What it sets up lives mostly in other tracks: the
+> the i.i.d. sample** ([PROB-08]). What it sets up lives mostly in other tracks: the
 > uniform-null-p-value fact derived here is the engine of **multiple-comparison
 > procedures** in Statistical Inference (INFR D5, by explicit request), and the order
 > statistics are the raw material of every quantile estimate, every Q–Q plot, and the
@@ -196,7 +196,7 @@ $X_i$ marks **arrival order** (the $i$-th observation collected); the *parenthes
 subscript in $X_{(k)}$ marks **rank** (the $k$-th smallest). They are different random
 variables. "i.i.d." abbreviates *independent and identically distributed*: the $X_i$ are
 drawn independently, each from the same distribution $F$ — the standard model of a clean
-random sample, built in [PROB-8].
+random sample, built in [PROB-08].
 
 We will assume throughout that $X$ is **continuous**, i.e. $F$ has a density $f$. This buys
 us a small but crucial simplification: for a continuous variable, $P(X_i=X_j)=0$ for $i\ne
@@ -299,7 +299,7 @@ direct counting argument that makes the formula's structure transparent. We buil
 [PROB-10] to three categories.
 
 We want $f_{(k)}(x)$, the density of $X_{(k)}$ at the value $x$. Recall what a density means
-(from [PROB-4]): $f_{(k)}(x)\,dx$ is, to first order, the probability that $X_{(k)}$ lands
+(from [PROB-04]): $f_{(k)}(x)\,dx$ is, to first order, the probability that $X_{(k)}$ lands
 in a tiny window $[x,x+dx]$. So we ask: in what configurations of the $n$ original draws
 does the $k$-th smallest land in $[x,x+dx]$?
 
@@ -393,7 +393,7 @@ must.
 
 ## A quick sanity check: the density integrates to one {#sec-sanity}
 
-A density must integrate to $1$ over its support ([PROB-4]). Let us confirm
+A density must integrate to $1$ over its support ([PROB-04]). Let us confirm
 @eq-orderstat-density does, which also rehearses a substitution we will reuse. Integrate
 over all $x$:
 $$
@@ -401,7 +401,7 @@ $$
 =\frac{n!}{(k-1)!\,(n-k)!}\int_{-\infty}^{\infty}
    F(x)^{\,k-1}\bigl(1-F(x)\bigr)^{\,n-k} f(x)\,dx.
 $$
-Substitute $u=F(x)$, so $du=f(x)\,dx$ (the chain rule again, from [PROB-4]). As $x$ runs
+Substitute $u=F(x)$, so $du=f(x)\,dx$ (the chain rule again, from [PROB-04]). As $x$ runs
 from $-\infty$ to $\infty$, $u=F(x)$ runs from $0$ to $1$ (a CDF rises from $0$ to $1$).
 The integral becomes
 $$
@@ -478,7 +478,7 @@ For completeness — and because the uniform-spacing intuition needs it — here
 *joint* density of the whole sorted vector, derived by the same counting logic. Suppose we
 want the chance that the sorted values land near a specific increasing sequence
 $y_1<y_2<\cdots<y_n$. The original sample, *as drawn*, has joint density
-$\prod_{i=1}^n f(x_i)$ (independence multiplies densities, [PROB-8]). But the *sorted*
+$\prod_{i=1}^n f(x_i)$ (independence multiplies densities, [PROB-08]). But the *sorted*
 sample at $(y_1,\dots,y_n)$ could have come from any of the $n!$ orderings of those same
 values — observation 1 might have been any of the $n$ slots, and so on — and each
 permutation has the same density product. So we multiply by $n!$:
@@ -507,7 +507,7 @@ regardless of what $F$ was.
 
 ::: {.proof}
 We find the CDF of $U$, i.e. $P(U\le u)$ for a fixed $u\in(0,1)$, and show it equals $u$ —
-the defining CDF of a Uniform$(0,1)$ variable (from [PROB-4], the Uniform$(0,1)$ has
+the defining CDF of a Uniform$(0,1)$ variable (from [PROB-04], the Uniform$(0,1)$ has
 $P(U\le u)=u$ on $[0,1]$).
 
 Start from the definition $U=F(X)$:
@@ -540,7 +540,7 @@ $F^{-1}(u)=\inf\{x:F(x)\ge u\}$ — the leftmost value the CDF reaches level $u$
 $x_u=F^{-1}(u)$. Two facts about $x_u$, both from elementary properties of $F$:
 
 1. **$F(x_u)=u$ exactly.** By definition of the infimum there are points $x$ just above
-   $x_u$ with $F(x)\ge u$, so right-continuity (a CDF is right-continuous, [PROB-2]) gives
+   $x_u$ with $F(x)\ge u$, so right-continuity (a CDF is right-continuous, [PROB-02]) gives
    $F(x_u)\ge u$; and there are points $x<x_u$ with $F(x)<u$, so $F(x_u)\le u$ by
    monotonicity and **continuity** — a jump at $x_u$ could leave $F(x_u)$ strictly above
    $u$, but a *continuous* $F$ cannot skip over the level $u$. Hence $F(x_u)=u$. This is the
@@ -682,7 +682,7 @@ about $1/2$, and the maximum creeps toward $1$ as $n$ grows but never reaches it
 interviewer pushes to a general parent — *"and the expected maximum of $n$ Exponential(1)
 draws?"* — do not quote a formula; derive it from @eq-max-cdf in three honest lines. For a
 non-negative variable, the tail formula for the mean (itself a one-line consequence of
-Fubini / swapping an integral and an expectation, [PROB-5]) gives
+Fubini / swapping an integral and an expectation, [PROB-05]) gives
 $E[X_{(n)}]=\int_0^\infty P(X_{(n)}>x)\,dx=\int_0^\infty\bigl(1-F(x)^n\bigr)\,dx$. For
 Exponential(1), $F(x)=1-e^{-x}$, so substitute $t=1-e^{-x}$ (hence $x=-\ln(1-t)$ and
 $dx=dt/(1-t)$; as $x:0\to\infty$, $t:0\to1$):
@@ -1077,8 +1077,8 @@ in @sec-density claimed — claim discharged, no hand-waving. $\quad\blacksquare
 
 ::: {.callout-important title="Where you are in the track"}
 You arrived at the **end of the Probability Foundations track**. This article consumed the
-counting of **[PROB-10]** (the multinomial coefficient), the densities of **[PROB-4]**, the
-Beta distribution of **[PROB-14]**, and the i.i.d. sample of **[PROB-8]**, and it is the
+counting of **[PROB-10]** (the multinomial coefficient), the densities of **[PROB-04]**, the
+Beta distribution of **[PROB-14]**, and the i.i.d. sample of **[PROB-08]**, and it is the
 sibling of **[PROB-22 *The Empirical CDF*]** — together they are the two "objects sampling
 theory is built from" that the data tracks consume. From here the threads run outward, into
 other tracks:

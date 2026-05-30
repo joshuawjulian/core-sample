@@ -30,10 +30,10 @@ FILL   = "#9fb3d1"     # shaded areas
 ```
 
 > **Where this sits in the track.** This article is the immediate sequel to
-> [PROB-7 *Joint Distributions, Covariance & Correlation*], which put two random variables
+> [PROB-07 *Joint Distributions, Covariance & Correlation*], which put two random variables
 > in the same room: it built the **joint distribution** (their pmf/pdf taken together),
 > recovered each one's **marginal** by summing or integrating the other out, and measured
-> their tendency to move together with the **covariance**. [PROB-7] left one loose thread
+> their tendency to move together with the **covariance**. [PROB-07] left one loose thread
 > dangling on purpose — *zero covariance does not mean the variables are unrelated.* That
 > thread is where this article begins. We define **independence** of random variables —
 > the strongest possible statement that two quantities carry no information about each
@@ -43,8 +43,8 @@ FILL   = "#9fb3d1"     # shaded areas
 > **i.i.d.**, independent and identically distributed. Along the way we derive the rule
 > that powers every limit theorem downstream — that **variances of independent variables
 > add** — and watch the standard deviation of a sample mean shrink like $1/\sqrt{n}$. It
-> assumes [PROB-7] (joint distributions, covariance), and beneath that [PROB-5]
-> (expectation and its linearity) and [PROB-6] (variance). It sets up the i.i.d. backbone
+> assumes [PROB-07] (joint distributions, covariance), and beneath that [PROB-05]
+> (expectation and its linearity) and [PROB-06] (variance). It sets up the i.i.d. backbone
 > that [PROB-19 *Chebyshev's Inequality*] and [PROB-21 *Modes of Convergence*] need for the
 > law of large numbers, that [PROB-22 *The Empirical CDF*] resamples from, and that the
 > Statistical Inference, Regression, and Classification tracks open almost every analysis
@@ -151,7 +151,7 @@ for the clean $\sigma^2/n$ result.
 # Intuition before symbols {#sec-intuition}
 
 Before any factorization, hold the picture. Independence is a statement about a *joint
-distribution* — the cloud of $(X,Y)$ pairs from [PROB-7]. Two variables are independent
+distribution* — the cloud of $(X,Y)$ pairs from [PROB-07]. Two variables are independent
 when **slicing the cloud at any value of $X$ leaves the shape of $Y$ unchanged.** Walk
 along the $x$-axis from one vertical slice to another; if the conditional spread and center
 of $Y$ never budge — same shape, just possibly fewer points — the variables are
@@ -196,7 +196,7 @@ Notice the punchline already visible in the figure: the *marginal* histograms (t
 of $X$ alone and $Y$ alone) are essentially the same on both sides — yet the left is
 independent and the right is not. **Independence is invisible to the marginals.** It lives
 entirely in how the two fit together, which is exactly why we need the joint distribution of
-[PROB-7] to define it, and why a single correlation number (also from [PROB-7]) can miss it.
+[PROB-07] to define it, and why a single correlation number (also from [PROB-07]) can miss it.
 
 ::: {.callout-tip title="You might be asked"}
 *"Intuitively, what is the difference between independence and being uncorrelated?"*
@@ -213,10 +213,10 @@ in @sec-converse-fails.
 
 ## Defining independence by factorization {#sec-def}
 
-We start from the definition of independence for **events**, established in [PROB-1]: two
+We start from the definition of independence for **events**, established in [PROB-01]: two
 events $A$ and $B$ are independent when $P(A\cap B) = P(A)\,P(B)$ — the probability of both
 is the product of the probabilities, which is the formal way to say "$B$ happening does not
-shift the chance of $A$." Random variables are functions on the sample space ([PROB-2]), so
+shift the chance of $A$." Random variables are functions on the sample space ([PROB-02]), so
 the natural definition of independence for random variables is: *every* event built from $X$
 is independent of *every* event built from $Y$.
 
@@ -238,13 +238,13 @@ $$ {#eq-indep-factor}
 :::
 
 Every symbol here was built earlier: $F_{X,Y}$ is the joint CDF, $p_{X,Y}$ and $f_{X,Y}$ the
-joint pmf and pdf from [PROB-7], and $F_X, p_X, f_X$ the *marginals* obtained there by
+joint pmf and pdf from [PROB-07], and $F_X, p_X, f_X$ the *marginals* obtained there by
 summing or integrating the other variable out. The single new content of @def-independence is
 the word **factors**: the two-dimensional object on the left is the product of two
 one-dimensional objects on the right.
 
 Why is "factors" the right formalization of "carries no information"? Recall the conditional
-density from [PROB-1]/[PROB-9], $f_{Y\mid X}(y\mid x) = f_{X,Y}(x,y)/f_X(x)$ — the
+density from [PROB-01]/[PROB-09], $f_{Y\mid X}(y\mid x) = f_{X,Y}(x,y)/f_X(x)$ — the
 distribution of $Y$ *once you know* $X=x$. Substitute the factored form @eq-indep-factor:
 $$
 f_{Y\mid X}(y \mid x) = \frac{f_{X,Y}(x,y)}{f_X(x)} = \frac{f_X(x)\,f_Y(y)}{f_X(x)} = f_Y(y).
@@ -253,7 +253,7 @@ The conditional distribution of $Y$ given $X=x$ is just $f_Y(y)$ — **it does n
 $x$ at all.** Conditioning on $X$ changed nothing. That is precisely the slices-don't-move
 picture of @fig-slices, now in symbols: independence is exactly the statement that the
 conditional distribution equals the marginal. (We are borrowing the conditional-density
-*formula* from [PROB-9] here only to interpret the definition; nothing below depends on it.)
+*formula* from [PROB-09] here only to interpret the definition; nothing below depends on it.)
 
 ::: {.callout-tip title="You might be asked"}
 *"Is checking the factorization at every $(x,y)$ really necessary — can't I just check the
@@ -308,7 +308,7 @@ $\mathbb{E}[g(X)h(Y)] = \mathbb{E}[g(X)]\,\mathbb{E}[h(Y)]$.
 ::: {.proof}
 We prove the continuous case; the discrete case is identical with sums replacing integrals.
 Start from the **law of the unconscious statistician** for two variables, established in
-[PROB-5]/[PROB-7]: for any function $u(x,y)$, its expectation is the integral against the
+[PROB-05]/[PROB-07]: for any function $u(x,y)$, its expectation is the integral against the
 joint density,
 $$
 \mathbb{E}[u(X,Y)] = \int_{-\infty}^{\infty}\!\!\int_{-\infty}^{\infty} u(x,y)\,f_{X,Y}(x,y)\,dx\,dy.
@@ -352,7 +352,7 @@ vanish.
 
 ## Independence forces zero covariance {#sec-cov-zero}
 
-We can now settle the first half of the loose thread [PROB-7] left dangling.
+We can now settle the first half of the loose thread [PROB-07] left dangling.
 
 ::: {#cor-cov-zero}
 **Corollary (independence $\Rightarrow$ uncorrelated).** If $X$ and $Y$ are independent (and
@@ -361,12 +361,12 @@ zero.
 :::
 
 ::: {.proof}
-Recall the **computational form of covariance** derived in [PROB-7]:
+Recall the **computational form of covariance** derived in [PROB-07]:
 $$
 \operatorname{Cov}(X,Y) = \mathbb{E}[XY] - \mathbb{E}[X]\,\mathbb{E}[Y].
 $$
 (This itself comes from expanding the definition $\operatorname{Cov}(X,Y) =
-\mathbb{E}[(X-\mu_X)(Y-\mu_Y)]$ and using linearity of expectation — [PROB-7] does it in
+\mathbb{E}[(X-\mu_X)(Y-\mu_Y)]$ and using linearity of expectation — [PROB-07] does it in
 full.) By @thm-product, independence gives $\mathbb{E}[XY] = \mathbb{E}[X]\,\mathbb{E}[Y]$.
 Substitute:
 $$
@@ -404,7 +404,7 @@ covariance is zero. To see it, we first establish the one fact the example leans
 odd moment of a symmetric variable is zero.**
 
 Claim: if $f_X(-x)=f_X(x)$, then $\mathbb{E}[X^k] = 0$ for every *odd* power $k$. By LOTUS
-([PROB-5]), $\mathbb{E}[X^k] = \int_{-\infty}^{\infty} x^k f_X(x)\,dx$. Split the integral at
+([PROB-05]), $\mathbb{E}[X^k] = \int_{-\infty}^{\infty} x^k f_X(x)\,dx$. Split the integral at
 $0$ into its negative and positive halves:
 $$
 \mathbb{E}[X^k] = \int_{-\infty}^{0} x^k f_X(x)\,dx + \int_{0}^{\infty} x^k f_X(x)\,dx.
@@ -428,7 +428,7 @@ we need. (For a *discrete* symmetric $X$ the same argument runs with $p_X(-x)=p_
 sum split into negative and positive values; the term at $x$ and the term at $-x$ are
 negatives of each other for odd $k$ and cancel pairwise.)
 
-Now compute the covariance directly, using the computational form from [PROB-7] and
+Now compute the covariance directly, using the computational form from [PROB-07] and
 $XY = X\cdot X^2 = X^3$:
 $$
 \operatorname{Cov}(X,Y) = \mathbb{E}[XY] - \mathbb{E}[X]\,\mathbb{E}[Y]
@@ -518,7 +518,7 @@ $$ {#eq-mean-sum}
 :::
 
 ::: {.proof}
-This is precisely the **linearity of expectation** proved in [PROB-5]: for two variables,
+This is precisely the **linearity of expectation** proved in [PROB-05]: for two variables,
 $\mathbb{E}[X+Y] = \mathbb{E}[X] + \mathbb{E}[Y]$, with no assumption on how $X$ and $Y$
 relate. We extend to $n$ variables by induction. The base case $n=1$ is the bare identity
 $\mathbb{E}\!\left[\sum_{i=1}^{1} X_i\right] = \mathbb{E}[X_1] = \sum_{i=1}^{1}\mathbb{E}[X_i]$
@@ -565,7 +565,7 @@ $$ {#eq-var-sum-general}
 ::: {.proof}
 Write $S = \sum_{i=1}^n X_i$ and let $\mu_i = \mathbb{E}[X_i]$, so by @thm-mean-sum
 $\mathbb{E}[S] = \sum_i \mu_i$ and the centred sum is $S - \mathbb{E}[S] = \sum_i (X_i -
-\mu_i)$. By the definition of variance ([PROB-6]),
+\mu_i)$. By the definition of variance ([PROB-06]),
 $$
 \operatorname{Var}(S) = \mathbb{E}\!\left[\bigl(S - \mathbb{E}[S]\bigr)^2\right]
 = \mathbb{E}\!\left[\left(\sum_{i=1}^n (X_i - \mu_i)\right)^{\!2}\,\right].
@@ -584,7 +584,7 @@ Now split the double sum into the **diagonal** terms ($i=j$) and the **off-diago
 ($i \ne j$). On the diagonal, $\mathbb{E}[(X_i-\mu_i)(X_i-\mu_i)] =
 \mathbb{E}[(X_i-\mu_i)^2] = \operatorname{Var}(X_i)$ by definition. Off the diagonal,
 $\mathbb{E}[(X_i-\mu_i)(X_j-\mu_j)] = \operatorname{Cov}(X_i, X_j)$ by the definition of
-covariance ([PROB-7]). Therefore
+covariance ([PROB-07]). Therefore
 $$
 \operatorname{Var}(S) = \sum_{i=1}^n \operatorname{Var}(X_i) + \sum_{i \ne j} \operatorname{Cov}(X_i, X_j).
 $$
@@ -595,7 +595,7 @@ the second form. $\qquad\blacksquare$
 :::
 
 For two variables, @eq-var-sum-general is the identity $\operatorname{Var}(X+Y) =
-\operatorname{Var}(X) + \operatorname{Var}(Y) + 2\operatorname{Cov}(X,Y)$ that [PROB-7]
+\operatorname{Var}(X) + \operatorname{Var}(Y) + 2\operatorname{Cov}(X,Y)$ that [PROB-07]
 derived — this is its $n$-variable generalization. The crucial structural fact is now in
 plain view: **the variance of a sum is the sum of the variances *plus a correction made
 entirely of covariances*.** The correction is the price of dependence.
@@ -632,7 +632,7 @@ precisely and you signal you understand the dependency chain rather than a sloga
 (@thm-mean-sum); the variance of a sum adds **only** when the cross-covariances vanish.
 Variance is a *quadratic* quantity — it comes from squaring — and squaring a sum produces
 cross terms that a linear operation never would. This is the same "$a^2$ versus $a$"
-fingerprint of the square that [PROB-6] flagged in $\operatorname{Var}(aX+b) =
+fingerprint of the square that [PROB-06] flagged in $\operatorname{Var}(aX+b) =
 a^2\operatorname{Var}(X)$: linearity is blind to dependence, but anything quadratic is not.
 
 ::: {.callout-warning title="Pitfall"}
@@ -694,7 +694,7 @@ $$ {#eq-sample-mean-moments}
 
 ::: {.proof}
 **The expectation.** Apply @thm-mean-sum (which needs no independence) and then pull the
-constant $1/n$ out of the expectation, which linearity ([PROB-5]) permits:
+constant $1/n$ out of the expectation, which linearity ([PROB-05]) permits:
 $$
 \mathbb{E}[\bar X_n]
 = \mathbb{E}\!\left[\frac{1}{n}\sum_{i=1}^n X_i\right]
@@ -708,7 +708,7 @@ $\mu$. So the sample mean is **centered on the true mean** — on average it is 
 (In the vocabulary of the Inference track, $\bar X_n$ is an *unbiased* estimator of $\mu$.)
 
 **The variance.** Here independence finally earns its place. First handle the constant
-$1/n$. By the scaling rule $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$ from [PROB-6],
+$1/n$. By the scaling rule $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$ from [PROB-06],
 pulling the $1/n$ out of the variance squares it:
 $$
 \operatorname{Var}(\bar X_n)
@@ -726,7 +726,7 @@ $$
 $$
 The penultimate equality uses *identically distributed* again: every
 $\operatorname{Var}(X_i)$ equals the same $\sigma^2$. Finally, the standard deviation is the
-square root of the variance ([PROB-6]):
+square root of the variance ([PROB-06]):
 $$
 \operatorname{SD}(\bar X_n) = \sqrt{\operatorname{Var}(\bar X_n)} = \sqrt{\frac{\sigma^2}{n}}
 = \frac{\sigma}{\sqrt{n}}. \qquad\blacksquare
@@ -830,7 +830,7 @@ independent. How should we combine them, and how much does combining help?
 The naive combination is the simple average $\tfrac12(X_A + X_B)$. Both readings are
 unbiased ($\mathbb{E}[X_A] = \mathbb{E}[X_B] = w$), so by @thm-mean-sum the average is
 unbiased too. Its variance, using $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$
-([PROB-6]) and then independence (@cor-var-sum-indep) to add the variances:
+([PROB-06]) and then independence (@cor-var-sum-indep) to add the variances:
 $$
 \operatorname{Var}\!\left(\tfrac12 X_A + \tfrac12 X_B\right)
 = \tfrac14\operatorname{Var}(X_A) + \tfrac14\operatorname{Var}(X_B)
@@ -1095,7 +1095,7 @@ Collecting the boundaries, so the applicability call is clean.
 - **Heavy tails / no finite variance.** Every variance result here silently assumes
   $\sigma^2 < \infty$. For heavy-tailed populations (the Cauchy distribution, some financial
   returns) the variance is infinite and $\operatorname{Var}(\bar X_n) = \sigma^2/n$ is
-  meaningless — the sample mean does *not* concentrate. [PROB-5] flagged this boundary when it
+  meaningless — the sample mean does *not* concentrate. [PROB-05] flagged this boundary when it
   showed expectations can fail to exist; it bites again here.
 
 ::: {.callout-tip title="You might be asked"}
@@ -1141,14 +1141,14 @@ observations independent.** If you cannot answer, your standard error is a guess
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[PROB-7 *Joint Distributions, Covariance & Correlation*]**, which built
+You arrived from **[PROB-07 *Joint Distributions, Covariance & Correlation*]**, which built
 the joint distribution and the covariance and left the "zero covariance $\ne$ independence"
 thread hanging. This article tied it off: independence is factorization, it forces zero
 covariance, the converse fails, and — applied to a sample — it makes variances add and the
 sample mean concentrate at rate $1/\sqrt n$. From here:
 
-- **[PROB-9 *Conditional Distributions & Conditional Expectation*]** — the sibling of this
-  article. Independence is the case where conditioning on $X$ changes nothing; PROB-9 handles
+- **[PROB-09 *Conditional Distributions & Conditional Expectation*]** — the sibling of this
+  article. Independence is the case where conditioning on $X$ changes nothing; PROB-09 handles
   the general case where it changes everything, building $\mathbb{E}[Y\mid X]$ as the best
   predictor.
 - **[PROB-11 *Bernoulli, Binomial & Negative-Binomial*]** — the binomial *is* a sum of

@@ -1,0 +1,1056 @@
+---
+title: "Gram–Schmidt and the QR Decomposition"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"    # data points / generic vectors
+ARROW  = "#c1121f"    # the highlighted arrow / first direction
+ACCENT = "#0a7d4d"    # second orthogonal direction / highlights
+GREY   = "#6c757d"
+PURPLE = "#6a4c93"    # third direction / residual
+
+def gram_schmidt(A, modified=False):
+    """Return (Q, R) for the thin QR via Gram–Schmidt — the very process this
+    article derives, used here only to draw the pictures and run the checks.
+    Classical when modified=False, modified Gram–Schmidt when True."""
+    A = np.asarray(A, dtype=float)
+    m, n = A.shape
+    Q = np.zeros((m, n))
+    R = np.zeros((n, n))
+    for j in range(n):
+        v = A[:, j].copy()
+        if not modified:
+            # classical: project the ORIGINAL column onto each finished q
+            for i in range(j):
+                R[i, j] = Q[:, i] @ A[:, j]
+                v = v - R[i, j] * Q[:, i]
+        else:
+            # modified: subtract each projection as we go, from the running v
+            for i in range(j):
+                R[i, j] = Q[:, i] @ v
+                v = v - R[i, j] * Q[:, i]
+        R[j, j] = np.linalg.norm(v)
+        Q[:, j] = v / R[j, j]
+    return Q, R
+```
+
+> **Where this sits in the track.** This is the seventh article in the **Geometry of
+> Data** track and the immediate sequel to the keystone. It assumes
+> [GEOM-5 *Orthogonality and Orthonormal Bases*] — the dot product as a right-angle test
+> $\mathbf x^\top\mathbf y = 0$, the **orthonormal basis** in which a coordinate is just a
+> dot product $c_i = \mathbf q_i^\top\mathbf x$, and the **orthogonal decomposition**
+> $\mathbf x = (\text{part in the subspace}) + (\text{part perpendicular to it})$ — and
+> above all [GEOM-6 *Orthogonal Projection onto a Subspace*], which built the single move
+> we repeat over and over here: the projection of a vector onto a direction, and the
+> guarantee that the **residual is orthogonal** to what we projected onto. This article
+> turns that one move into a *machine*: feed it any basis, and it manufactures an
+> orthonormal one for the same space, bookkeeping the work into the factorization
+> $A = QR$. It sets up [GEOM-11 *Solving $A\mathbf x = \mathbf b$*] and
+> [GEOM-12 *Rank and the Four Subspaces*] (where QR becomes the numerically sound way to
+> solve least squares), and [GEOM-26 *Condition Number and Numerical Stability*] (where
+> the "orthogonality decays" warning we raise here is paid off in full). It is the route
+> Regression is handed for a stable least-squares solve — the honest alternative to the
+> normal equations of [REGR-1].
+
+## Abstract {.unnumbered}
+
+Orthonormal bases are the most pleasant coordinate systems in linear algebra — in one,
+every coordinate is a single dot product and projection collapses to a sum of those dot
+products (GEOM-5, GEOM-6). But data never arrives orthonormal; it arrives as whatever
+columns we happened to measure. **Gram–Schmidt** is the constructive bridge: given any
+linearly independent list $\mathbf a_1,\dots,\mathbf a_n$, it produces an orthonormal list
+$\mathbf q_1,\dots,\mathbf q_n$ spanning exactly the same subspaces, one vector at a time,
+by the single rule *subtract off the part that already lies in the span so far, then
+normalize*. We derive that rule from the projection of GEOM-6, prove at every step that it
+does what it claims, and then notice that the arithmetic we did was secretly a matrix
+factorization: $A = QR$, with $Q$ holding the orthonormal vectors and $R$ upper-triangular
+holding the bookkeeping. The single claim this article defends is that **$QR$ is not a
+separate algorithm bolted onto Gram–Schmidt — it *is* Gram–Schmidt, written down** — and
+that once you have it, projection onto the column space of $A$ becomes the almost
+embarrassingly simple $P = QQ^\top$. We close with the honest catch: the *classical*
+version of the process loses orthogonality on a computer, and one tiny reordering — the
+*modified* version — largely fixes it, our first real encounter with the numerical-reality
+theme that closes the track.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Take any basis $\mathbf a_1,\dots,\mathbf a_n$. Walk through it one vector at a time. For
+each new $\mathbf a_k$, **subtract off its projection onto everything you have already
+orthogonalized**, leaving only the part pointing in a genuinely new direction; then scale
+that part to unit length. The result is an **orthonormal basis** $\mathbf q_1,\dots,\mathbf
+q_n$ for the same space. Record, in an upper-triangular matrix $R$, the projection
+coefficients you subtracted and the lengths you divided by, and you have written
+$A = QR$ — the **QR decomposition**, the orthonormal basis and the recipe that built it,
+packaged together.
+:::
+
+Everything below orbits that box. The whole process is one move from GEOM-6 — *project,
+then keep the residual* — applied in a disciplined order. The bookkeeping that turns a
+sequence of these moves into the clean equation $A=QR$ will look like an accounting trick
+at first, but by the end you should see it as inevitable: the upper-triangular shape of
+$R$ is nothing but the statement *"$\mathbf q_k$ was built only from
+$\mathbf a_1,\dots,\mathbf a_k$, never from later columns."*
+
+# Why we are doing this: the problem that forced the process {#sec-why}
+
+Keep one question in view for the entire article: **we know orthonormal bases are golden
+(GEOM-5) — so how do we actually get one, starting from the un-special vectors data hands
+us?** Every step below is an answer to a piece of that question.
+
+## What GEOM-5 promised, and the bill it left unpaid
+
+In [GEOM-5] we established why an **orthonormal basis** — a set of mutually perpendicular
+unit vectors $\mathbf q_1,\dots,\mathbf q_n$ with
+
+$$
+\mathbf q_i^\top\mathbf q_j =
+\begin{cases} 1 & i = j \\ 0 & i \neq j \end{cases}
+$$ {#eq-orthonormal}
+
+— is the coordinate system you would design if you could. Two payoffs made it golden, and
+we restate them because the entire motivation for this article is to *manufacture* the
+bases that deliver them:
+
+1. **Coordinates are free.** To write a vector $\mathbf x$ in an orthonormal basis you do
+   not solve a linear system; each coordinate is a single dot product, $c_i = \mathbf
+   q_i^\top\mathbf x$. (Derived in GEOM-5: dot $\mathbf x = \sum_j c_j\mathbf q_j$ with
+   $\mathbf q_i$ and all cross-terms vanish by @eq-orthonormal.)
+2. **Projection collapses.** Projecting a vector onto the span of orthonormal vectors is
+   just adding up those coordinate pieces — no matrix inverse, no normal equations.
+
+But GEOM-5 never told us where such a basis *comes from*. Real data does not arrive
+orthonormal. A design matrix's columns are whatever predictors you measured — height,
+weight, age — and they are correlated, of different lengths, and generally at oblique
+angles to one another. The standard basis $\mathbf e_1,\dots,\mathbf e_n$ is orthonormal,
+but it spans the *coordinate axes*, not the subspace your data actually lives in. The
+unpaid bill is exactly this:
+
+> Given the arbitrary, oblique basis the world hands you, **construct** an orthonormal
+> basis for the *same* subspace.
+
+## Why "the same subspace" is the whole point
+
+We could trivially produce an orthonormal set — just hand back $\mathbf e_1,\dots,\mathbf
+e_n$. The constraint that makes the problem real is that the new basis must span the
+**same space** as the old one, and more than that, must build it up in the same order: the
+first $k$ new vectors must span exactly what the first $k$ old ones spanned. That order-
+preserving requirement is what makes the bookkeeping triangular, and triangularity is what
+makes the factorization useful for *solving* things downstream (@sec-solving). So the
+target is precise:
+
+$$
+\operatorname{span}\{\mathbf q_1,\dots,\mathbf q_k\}
+= \operatorname{span}\{\mathbf a_1,\dots,\mathbf a_k\}
+\qquad\text{for every } k = 1,\dots,n.
+$$ {#eq-nested-span}
+
+## A note on history: a process older than its name
+
+The procedure is named for Jørgen Pedersen Gram (1883) and Erhard Schmidt (1907), but
+neither invented it from nothing. Laplace and Cauchy used the same successive-orthogonal-
+ization idea decades earlier in the theory of least squares and in eliminating variables
+from quadratic forms; Schmidt, working on integral equations in Hilbert's circle at
+Göttingen, gave the clean iterative statement we still teach. The *why* is the same across
+all of them and across this article: orthogonal pieces do not interfere, so a problem that
+is tangled in an oblique basis falls apart into independent one-dimensional problems once
+you orthogonalize. That is the recurring dividend — least squares, QR solves, eigenvalue
+iterations, and the SVD ([GEOM-20]) all cash it.
+
+::: {.callout-tip title="You might be asked"}
+*"Why bother orthogonalizing at all — why not just solve in the original basis?"* Because
+in an oblique basis the coordinates of a vector are **coupled**: changing how much of
+$\mathbf a_1$ you use changes the best amount of $\mathbf a_2$, because they overlap. You
+must solve a full linear system (the normal equations of GEOM-6) to untangle them. In an
+orthonormal basis the coordinates are **decoupled** — each is its own independent dot
+product — so the system becomes trivial. Orthogonalizing *up front* trades one hard
+coupled solve for a sequence of easy independent ones, and (the payoff of @sec-solving)
+leaves behind a triangular system you can solve by inspection.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formula, watch the process run in the plane and then in space, because the
+whole algorithm is visible to the eye.
+
+**Two vectors in the plane.** You are given two arrows $\mathbf a_1,\mathbf a_2$ at some
+oblique angle. You want two *perpendicular* arrows spanning the same plane.
+
+- Keep the first direction: let $\mathbf q_1$ point along $\mathbf a_1$ (just shrink it to
+  length one).
+- Now look at $\mathbf a_2$. Part of it lies along $\mathbf q_1$ — that is the *shadow* of
+  $\mathbf a_2$ on the $\mathbf q_1$ line, the projection from GEOM-6. The rest of
+  $\mathbf a_2$ sticks out perpendicular to $\mathbf q_1$. **Throw away the shadow, keep
+  what sticks out.** What remains is, by the residual-is-orthogonal guarantee of GEOM-6,
+  exactly perpendicular to $\mathbf q_1$. Shrink it to length one; that is $\mathbf q_2$.
+
+Two perpendicular unit arrows, same plane. @fig-gs-2d shows precisely this subtraction.
+
+```{python}
+#| label: fig-gs-2d
+#| fig-cap: "Gram–Schmidt on two vectors in the plane. We keep $\\mathbf a_1$'s direction as $\\mathbf q_1$. The projection of $\\mathbf a_2$ onto $\\mathbf q_1$ (the dashed grey shadow) is the part of $\\mathbf a_2$ that is *redundant* — it points in a direction we already have. Subtracting it leaves the residual $\\mathbf v_2$ (purple), which the GEOM-6 guarantee makes exactly perpendicular to $\\mathbf q_1$. Normalizing $\\mathbf v_2$ gives $\\mathbf q_2$. The right angle between $\\mathbf q_1$ and $\\mathbf q_2$ is marked."
+a1 = np.array([3.0, 1.0])
+a2 = np.array([1.5, 2.6])
+q1 = a1 / np.linalg.norm(a1)
+proj = (q1 @ a2) * q1          # shadow of a2 on q1
+v2 = a2 - proj                 # residual, perpendicular to q1
+q2 = v2 / np.linalg.norm(v2)
+
+fig, ax = plt.subplots(figsize=(5.6, 5.0))
+def arrow(ax, vec, color, label, lw=2.4):
+    ax.annotate("", xy=vec, xytext=(0, 0),
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw))
+    ax.text(vec[0]*1.04, vec[1]*1.04, label, color=color, fontsize=12)
+
+arrow(ax, a1, GREY, r"$\mathbf{a}_1$")
+arrow(ax, a2, POINT, r"$\mathbf{a}_2$")
+# shadow + the dropped perpendicular
+ax.plot([0, proj[0]], [0, proj[1]], color=GREY, ls="--", lw=1.6)
+ax.text(proj[0]*0.5, proj[1]*0.5 - 0.18, "shadow", color=GREY, fontsize=9)
+ax.plot([proj[0], a2[0]], [proj[1], a2[1]], color=PURPLE, ls=":", lw=1.6)
+arrow(ax, v2, PURPLE, r"$\mathbf{v}_2=\mathbf{a}_2-\mathrm{shadow}$", lw=2.0)
+arrow(ax, q1, ARROW, r"$\mathbf{q}_1$")
+arrow(ax, q2, ACCENT, r"$\mathbf{q}_2$")
+# right-angle marker between q1 and q2
+s = 0.22
+corner = s*q1 + s*q2
+ax.plot([s*q1[0], corner[0]], [s*q1[1], corner[1]], color="k", lw=1.0)
+ax.plot([s*q2[0], corner[0]], [s*q2[1], corner[1]], color="k", lw=1.0)
+ax.set_xlim(-0.5, 3.4); ax.set_ylim(-0.5, 3.0)
+ax.set_aspect("equal"); ax.set_title("Keep the direction, subtract the shadow")
+plt.tight_layout()
+```
+
+**A third vector in space.** Now you are handed $\mathbf a_3$ in three dimensions and you
+already have a perpendicular pair $\mathbf q_1,\mathbf q_2$ spanning a plane. Same idea,
+one step bigger: $\mathbf a_3$ has a shadow *in that whole plane* — a piece built from both
+$\mathbf q_1$ and $\mathbf q_2$. Subtract the entire planar shadow; what remains pokes
+straight out of the plane, perpendicular to it. Normalize, and you have $\mathbf q_3$. The
+pattern is now clear and it never changes: **at step $k$, subtract the shadow on the span
+of everything before, keep the perpendicular leftover, normalize.** @fig-gs-3d shows the
+plane and the vector poking out of it.
+
+```{python}
+#| label: fig-gs-3d
+#| fig-cap: "The inductive step in three dimensions. With $\\mathbf q_1,\\mathbf q_2$ already orthonormal and spanning the grey plane, the new vector $\\mathbf a_3$ (navy) casts a shadow *into that plane* — its projection (grey, dashed). Subtracting the shadow leaves the residual $\\mathbf v_3$ (purple), which sticks straight out of the plane, perpendicular to both $\\mathbf q_1$ and $\\mathbf q_2$. Normalizing gives $\\mathbf q_3$ and completes an orthonormal basis of all of $\\mathbb R^3$."
+q1 = np.array([1.0, 0.0, 0.0])
+q2 = np.array([0.0, 1.0, 0.0])
+a3 = np.array([0.9, 0.6, 1.3])
+shadow = (q1 @ a3)*q1 + (q2 @ a3)*q2     # projection onto the q1-q2 plane
+v3 = a3 - shadow
+
+fig = plt.figure(figsize=(6.4, 5.2))
+ax = fig.add_subplot(111, projection="3d")
+# the spanned plane (z=0)
+gx, gy = np.meshgrid(np.linspace(-0.3, 1.3, 2), np.linspace(-0.3, 1.1, 2))
+ax.plot_surface(gx, gy, np.zeros_like(gx), alpha=0.18, color=GREY)
+
+def arr3(ax, v, color, label, lw=2.4):
+    ax.quiver(0, 0, 0, v[0], v[1], v[2], color=color, lw=lw, arrow_length_ratio=0.12)
+    ax.text(v[0]*1.05, v[1]*1.05, v[2]*1.05, label, color=color, fontsize=11)
+
+arr3(ax, q1, ARROW, r"$\mathbf{q}_1$")
+arr3(ax, q2, ACCENT, r"$\mathbf{q}_2$")
+arr3(ax, a3, POINT, r"$\mathbf{a}_3$")
+arr3(ax, shadow, GREY, "shadow", lw=1.8)
+ax.plot([shadow[0], a3[0]], [shadow[1], a3[1]], [shadow[2], a3[2]],
+        color=PURPLE, ls=":", lw=1.8)
+arr3(ax, v3, PURPLE, r"$\mathbf{v}_3$")
+ax.set_xlim(0, 1.3); ax.set_ylim(0, 1.1); ax.set_zlim(0, 1.4)
+ax.set_xlabel("$x$"); ax.set_ylabel("$y$"); ax.set_zlabel("$z$")
+ax.set_title("Subtract the planar shadow; the leftover pokes out")
+ax.view_init(elev=22, azim=-60)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what is Gram–Schmidt doing geometrically?"* It is repeatedly applying
+the orthogonal decomposition of GEOM-6 — split each new vector into *the part I already
+have* plus *the part that is new* — and keeping only the new part. The "part I already
+have" is a projection onto the span built so far; the "new part" is the residual, which is
+orthogonal to that span by construction. That is the entire algorithm; everything below is
+making "the part I already have" precise and tallying the receipts.
+:::
+
+# The formal development {#sec-formal}
+
+We now make the picture exact. We will need exactly one imported ingredient, the
+projection of GEOM-6, so we restate it precisely before using it.
+
+## The one tool we import: projection onto a unit vector {#sec-import}
+
+From [GEOM-6], the **orthogonal projection** of a vector $\mathbf v$ onto the line spanned
+by a nonzero vector $\mathbf a$ is
+
+$$
+\operatorname{proj}_{\mathbf a}(\mathbf v)
+= \frac{\mathbf a^\top\mathbf v}{\mathbf a^\top\mathbf a}\,\mathbf a,
+$$ {#eq-proj-general}
+
+and the defining guarantee that makes the whole process work is that the **residual**
+$\mathbf v - \operatorname{proj}_{\mathbf a}(\mathbf v)$ is **orthogonal to $\mathbf a$**.
+We use a sharpened form of this. When $\mathbf q$ is a *unit* vector ($\mathbf
+q^\top\mathbf q = 1$), the denominator in @eq-proj-general is $1$, and the projection
+simplifies to
+
+$$
+\operatorname{proj}_{\mathbf q}(\mathbf v) = (\mathbf q^\top\mathbf v)\,\mathbf q .
+$$ {#eq-proj-unit}
+
+The scalar $\mathbf q^\top\mathbf v$ is *how much of $\mathbf v$ points along $\mathbf q$*;
+multiplying it back by $\mathbf q$ rebuilds the shadow as an actual vector. Since
+Gram–Schmidt normalizes each direction *before* using it to project, we will always be in
+this clean unit-vector case — that is precisely why we normalize as we go rather than at
+the end.
+
+We also need the residual-orthogonality guarantee in unit form, and we *prove* it inline
+rather than merely cite it, so the chain is closed. Let $\mathbf r = \mathbf v -
+(\mathbf q^\top\mathbf v)\,\mathbf q$ with $\mathbf q^\top\mathbf q = 1$. Then
+
+$$
+\mathbf q^\top\mathbf r
+= \mathbf q^\top\mathbf v - (\mathbf q^\top\mathbf v)\,\mathbf q^\top\mathbf q
+= \mathbf q^\top\mathbf v - (\mathbf q^\top\mathbf v)(1)
+= 0 .
+$$ {#eq-resid-orth}
+
+Here we used that $\mathbf q^\top\mathbf v$ is a *scalar*, so it pulls out of the dot
+product, and $\mathbf q^\top\mathbf q = 1$. So the leftover is genuinely perpendicular to
+$\mathbf q$, no matter what $\mathbf v$ was. This single identity, used $k-1$ times at step
+$k$, is the engine of everything that follows.
+
+## The single-subtraction case, written out {#sec-two-step}
+
+Take two linearly independent vectors $\mathbf a_1,\mathbf a_2 \in \mathbb R^m$. We build
+$\mathbf q_1,\mathbf q_2$.
+
+**Step 1 — the first direction.** There is no "span so far" to subtract from, so we just
+keep $\mathbf a_1$'s direction. Define the unnormalized $\mathbf v_1 = \mathbf a_1$, its
+length $r_{11} = \lVert\mathbf v_1\rVert$, and
+
+$$
+\mathbf q_1 = \frac{\mathbf v_1}{r_{11}} = \frac{\mathbf a_1}{\lVert\mathbf a_1\rVert}.
+$$ {#eq-q1}
+
+(Since the $\mathbf a_i$ are independent, none is the zero vector, so $r_{11} > 0$ and the
+division is legal — we revisit what happens if independence fails in @sec-failure.) By
+construction $\mathbf q_1^\top\mathbf q_1 = 1$ and $\operatorname{span}\{\mathbf q_1\} =
+\operatorname{span}\{\mathbf a_1\}$, matching @eq-nested-span at $k=1$.
+
+**Step 2 — subtract the shadow, keep the residual.** Form the residual of $\mathbf a_2$
+after removing its projection onto $\mathbf q_1$, using @eq-proj-unit:
+
+$$
+\mathbf v_2 = \mathbf a_2 - (\mathbf q_1^\top\mathbf a_2)\,\mathbf q_1 .
+$$ {#eq-v2}
+
+By @eq-resid-orth (with $\mathbf v = \mathbf a_2$, $\mathbf q = \mathbf q_1$), we have
+$\mathbf q_1^\top\mathbf v_2 = 0$: the residual is perpendicular to $\mathbf q_1$, exactly
+as the picture promised. Is $\mathbf v_2$ nonzero? Yes — if it were the zero vector, then
+$\mathbf a_2 = (\mathbf q_1^\top\mathbf a_2)\mathbf q_1$ would be a scalar multiple of
+$\mathbf q_1$, hence of $\mathbf a_1$, contradicting that $\mathbf a_1,\mathbf a_2$ are
+independent. So we may normalize:
+
+$$
+r_{22} = \lVert\mathbf v_2\rVert > 0,
+\qquad
+\mathbf q_2 = \frac{\mathbf v_2}{r_{22}}.
+$$ {#eq-q2}
+
+Now $\{\mathbf q_1,\mathbf q_2\}$ is orthonormal. And the span is preserved: $\mathbf q_2$
+is a combination of $\mathbf a_2$ and $\mathbf q_1$ (which is a multiple of $\mathbf a_1$),
+so $\operatorname{span}\{\mathbf q_1,\mathbf q_2\} \subseteq \operatorname{span}\{\mathbf
+a_1,\mathbf a_2\}$; both are two-dimensional (two independent vectors each), so the
+inclusion is equality — @eq-nested-span at $k=2$.
+
+Already we can read off the coefficients we will need later. Rearranging @eq-v2 and
+@eq-q2 to express the *originals* in terms of the *orthonormal* vectors:
+
+$$
+\mathbf a_1 = r_{11}\,\mathbf q_1,
+\qquad
+\mathbf a_2 = (\mathbf q_1^\top\mathbf a_2)\,\mathbf q_1 + r_{22}\,\mathbf q_2 .
+$$ {#eq-a-in-q-2}
+
+Notice that $\mathbf a_1$ uses only $\mathbf q_1$, while $\mathbf a_2$ uses $\mathbf q_1$
+and $\mathbf q_2$. Each original column reaches back only to the orthonormal vectors with
+*equal or smaller index*. Hold that thought — it is the triangularity of @sec-qr, already
+visible.
+
+## The general step and the full process {#sec-general}
+
+Now the inductive step, which is @eq-v2 with more terms to subtract. Suppose we have
+already produced orthonormal $\mathbf q_1,\dots,\mathbf q_{k-1}$ with
+$\operatorname{span}\{\mathbf q_1,\dots,\mathbf q_{k-1}\} = \operatorname{span}\{\mathbf
+a_1,\dots,\mathbf a_{k-1}\}$. To bring in $\mathbf a_k$, subtract its projection onto each
+$\mathbf q_i$ already built. Because the $\mathbf q_i$ are *mutually* orthogonal, the
+projection of $\mathbf a_k$ onto their whole span is just the **sum** of the one-
+dimensional projections (this is the orthonormal-basis collapse from GEOM-5; we re-derive
+its orthogonality below). Define the projection coefficients
+
+$$
+r_{ik} = \mathbf q_i^\top\mathbf a_k \qquad (i = 1,\dots,k-1),
+$$ {#eq-rik}
+
+and form the residual
+
+$$
+\mathbf v_k = \mathbf a_k - \sum_{i=1}^{k-1} r_{ik}\,\mathbf q_i
+            = \mathbf a_k - \sum_{i=1}^{k-1} (\mathbf q_i^\top\mathbf a_k)\,\mathbf q_i .
+$$ {#eq-vk}
+
+::: {#lem-gs}
+**Lemma (the residual is orthogonal to all earlier directions).** With $\mathbf v_k$ as in
+@eq-vk and $\{\mathbf q_1,\dots,\mathbf q_{k-1}\}$ orthonormal, $\mathbf q_j^\top\mathbf
+v_k = 0$ for every $j = 1,\dots,k-1$.
+:::
+
+::: {.proof}
+Fix any $j \in \{1,\dots,k-1\}$ and dot $\mathbf q_j$ into @eq-vk, distributing over the
+sum:
+
+$$
+\mathbf q_j^\top\mathbf v_k
+= \mathbf q_j^\top\mathbf a_k
+  - \sum_{i=1}^{k-1} (\mathbf q_i^\top\mathbf a_k)\,(\mathbf q_j^\top\mathbf q_i).
+$$
+
+The scalars $\mathbf q_i^\top\mathbf a_k$ pulled out of each dot product. Now use
+orthonormality @eq-orthonormal: $\mathbf q_j^\top\mathbf q_i = 0$ unless $i = j$, and
+equals $1$ when $i = j$. Every term of the sum therefore dies except the single $i = j$
+term, which contributes $(\mathbf q_j^\top\mathbf a_k)(1)$:
+
+$$
+\mathbf q_j^\top\mathbf v_k
+= \mathbf q_j^\top\mathbf a_k - (\mathbf q_j^\top\mathbf a_k)
+= 0 .
+$$
+
+This holds for each $j$, so $\mathbf v_k$ is orthogonal to all of $\mathbf q_1,\dots,\mathbf
+q_{k-1}$. $\qquad\blacksquare$
+:::
+
+That the residual is nonzero follows from independence, exactly as in @sec-two-step: if
+$\mathbf v_k = \mathbf 0$ then $\mathbf a_k = \sum_{i<k} r_{ik}\mathbf q_i$ would lie in
+$\operatorname{span}\{\mathbf q_1,\dots,\mathbf q_{k-1}\} = \operatorname{span}\{\mathbf
+a_1,\dots,\mathbf a_{k-1}\}$, making $\mathbf a_1,\dots,\mathbf a_k$ dependent —
+contradiction. So we normalize:
+
+$$
+r_{kk} = \lVert\mathbf v_k\rVert > 0,
+\qquad
+\mathbf q_k = \frac{\mathbf v_k}{r_{kk}}.
+$$ {#eq-qk}
+
+Now $\{\mathbf q_1,\dots,\mathbf q_k\}$ is orthonormal ($\mathbf q_k$ is orthogonal to the
+earlier ones by @lem-gs, and has unit length by @eq-qk), and the span is preserved by the
+same dimension argument as before. Induction from the $k=1$ base case @eq-q1 carries this
+to $k = n$. We have proved the central theorem.
+
+::: {#thm-gs}
+**Theorem (Gram–Schmidt).** Let $\mathbf a_1,\dots,\mathbf a_n \in \mathbb R^m$ be linearly
+independent. The vectors produced by
+
+$$
+\mathbf v_k = \mathbf a_k - \sum_{i=1}^{k-1} (\mathbf q_i^\top\mathbf a_k)\,\mathbf q_i,
+\qquad
+\mathbf q_k = \frac{\mathbf v_k}{\lVert\mathbf v_k\rVert}
+\qquad (k = 1,\dots,n)
+$$
+
+are orthonormal and satisfy $\operatorname{span}\{\mathbf q_1,\dots,\mathbf q_k\} =
+\operatorname{span}\{\mathbf a_1,\dots,\mathbf a_k\}$ for every $k$.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Does the result depend on the order of the input vectors?"* Yes, and that is worth
+saying out loud. Reorder the $\mathbf a_i$ and you generally get a *different* orthonormal
+basis, because $\mathbf q_1$ always points along whichever vector you fed first, and every
+later vector is orthogonalized against that choice. All such bases span the same final
+space (@eq-nested-span holds for whatever order you pick), but they are different bases.
+The *nested* spans, however, do depend on order — that is exactly the information the
+triangular $R$ encodes. Practically, the ordering also affects numerical accuracy: feeding
+the vectors so that nearly-dependent ones come later tends to be safer.
+:::
+
+## The QR decomposition: Gram–Schmidt, written as a matrix equation {#sec-qr}
+
+Now we collect the receipts. We never threw any information away — every $\mathbf a_k$ was
+*rebuilt* from the $\mathbf q_i$ with known coefficients. Rearrange @eq-vk and @eq-qk to
+solve for the original $\mathbf a_k$. From @eq-qk, $\mathbf v_k = r_{kk}\mathbf q_k$;
+substituting into @eq-vk and moving the sum to the other side,
+
+$$
+\mathbf a_k = \sum_{i=1}^{k-1} r_{ik}\,\mathbf q_i + r_{kk}\,\mathbf q_k
+            = \sum_{i=1}^{k} r_{ik}\,\mathbf q_i .
+$$ {#eq-a-in-q}
+
+(The first $k-1$ terms are the shadow we subtracted; the last term is the rebuilt
+residual.) This says each original column is a combination of the orthonormal vectors with
+index $\le k$ — *no $\mathbf q_i$ with $i > k$ appears*. Set $r_{ik} = 0$ for $i > k$, and
+@eq-a-in-q holds with the sum running all the way to $n$:
+
+$$
+\mathbf a_k = \sum_{i=1}^{n} r_{ik}\,\mathbf q_i,
+\qquad\text{with } r_{ik} = 0 \text{ whenever } i > k .
+$$ {#eq-a-full}
+
+This is exactly a matrix product. Stack the originals as the columns of
+$A = [\,\mathbf a_1 \mid \dots \mid \mathbf a_n\,]$ ($m\times n$), the orthonormal vectors
+as the columns of $Q = [\,\mathbf q_1 \mid \dots \mid \mathbf q_n\,]$ ($m\times n$), and
+the coefficients as the entries of $R$ ($n\times n$) with $R_{ik} = r_{ik}$. The rule "the
+$k$-th column of $A$ is the combination of $Q$'s columns weighted by the $k$-th column of
+$R$" is precisely the definition of matrix multiplication $A = QR$ (the column view of
+$Ax$ from [GEOM-8], applied column by column). The condition $r_{ik} = 0$ for $i > k$ means
+**$R$ is upper-triangular**.
+
+::: {#thm-qr}
+**Theorem (QR decomposition).** Every real $m\times n$ matrix $A$ with linearly independent
+columns ($m \ge n$) factors as
+
+$$
+A = QR,
+$$ {#eq-qr}
+
+where $Q$ is $m\times n$ with orthonormal columns ($Q^\top Q = I_n$) and $R$ is $n\times n$
+upper-triangular with positive diagonal entries $r_{kk} = \lVert\mathbf v_k\rVert > 0$. The
+columns of $Q$ and the entries of $R$ are exactly those produced by Gram–Schmidt
+(@thm-gs). With the positive-diagonal convention, the factorization is **unique**.
+:::
+
+::: {.proof}
+*Existence* is the construction: Gram–Schmidt produces $Q$ and the coefficients $r_{ik}$,
+and @eq-a-full rearranges to @eq-qr. The diagonal entries are the norms $r_{kk} =
+\lVert\mathbf v_k\rVert$, which we showed are strictly positive. We verify $Q^\top Q = I_n$
+directly: the $(i,j)$ entry of $Q^\top Q$ is $\mathbf q_i^\top\mathbf q_j$, which is $1$ on
+the diagonal and $0$ off it by orthonormality @eq-orthonormal — that is the identity
+matrix.
+
+*Uniqueness.* Suppose $A = Q_1R_1 = Q_2R_2$ with both factors of the stated form. We show
+the factors coincide column by column. Equate the first columns: $\mathbf a_1 = (R_1)_{11}
+\mathbf q^{(1)}_1 = (R_2)_{11}\mathbf q^{(2)}_1$. Taking norms and using that each $\mathbf
+q$ is a unit vector, $(R_1)_{11} = \lVert\mathbf a_1\rVert = (R_2)_{11}$ (both positive by
+convention), hence $\mathbf q^{(1)}_1 = \mathbf q^{(2)}_1$. Proceed by induction: having
+matched the first $k-1$ columns of $Q$ and $R$, the $k$-th column gives $\mathbf a_k =
+\sum_{i=1}^{k} (R)_{ik}\mathbf q_i$. The coefficients with $i < k$ are forced, because
+dotting both sides with the (now-agreed) $\mathbf q_i$ isolates $(R)_{ik} = \mathbf
+q_i^\top\mathbf a_k$. What remains, $\mathbf a_k - \sum_{i<k}(R)_{ik}\mathbf q_i =
+(R)_{kk}\mathbf q_k$, then fixes $(R)_{kk} > 0$ as its norm and $\mathbf q_k$ as the unit
+vector in its direction — identically for both factorizations. So $Q_1 = Q_2$ and $R_1 =
+R_2$. $\qquad\blacksquare$
+:::
+
+::: {.callout-note title="Thin vs. full QR — a naming clarification you will meet"}
+What Gram–Schmidt produces is the **thin** (or **reduced**) QR: $Q$ is $m\times n$ with
+just enough orthonormal columns to span the column space of $A$. Libraries can also return
+the **full** QR, where $Q$ is enlarged to a square $m\times m$ orthogonal matrix (its extra
+$m-n$ columns are an orthonormal basis for the orthogonal complement — the *left null
+space*, [GEOM-12]) and $R$ gains $m-n$ rows of zeros at the bottom. The two carry the same
+information; the thin form is what least squares needs and what this article builds.
+:::
+
+## Why $Q$ makes projection trivial: $P = QQ^\top$ {#sec-projection}
+
+Here is the immediate payoff that connects straight back to the keystone. In [GEOM-6] the
+projection matrix onto the column space of a general $A$ was
+
+$$
+P = A(A^\top A)^{-1}A^\top,
+$$ {#eq-P-general}
+
+with that awkward inverse $(A^\top A)^{-1}$ sitting in the middle — the price of the
+columns of $A$ being oblique. Replace $A$ by an orthonormal $Q$ and watch the inverse
+evaporate. First, $Q^\top Q = I_n$ from @thm-qr, so $(Q^\top Q)^{-1} = I_n^{-1} = I_n$.
+Substituting $Q$ for $A$ in @eq-P-general:
+
+$$
+P = Q(Q^\top Q)^{-1}Q^\top = Q\,I_n\,Q^\top = QQ^\top .
+$$ {#eq-P-Q}
+
+The projection onto the column space of $A$ — *the same subspace*, since $Q$ and $A$ have
+the same span — is therefore the clean
+
+$$
+\boxed{\,P = QQ^\top\,.}
+$$ {#eq-PQQt}
+
+Read what $P\mathbf x = QQ^\top\mathbf x$ does, right to left, to see why this is the GEOM-5
+coordinate collapse in disguise. The vector $Q^\top\mathbf x$ stacks the dot products
+$\mathbf q_i^\top\mathbf x$ — the *coordinates of $\mathbf x$ along each orthonormal
+direction*. Multiplying by $Q$ rebuilds the vector $\sum_i (\mathbf q_i^\top\mathbf
+x)\mathbf q_i$ — *sum the shadows back up*. So projecting onto a subspace, once you hold an
+orthonormal basis for it, is "measure each coordinate, add the pieces back" — no system to
+solve. This is exactly why a least-squares solver reaches for QR (@sec-solving): it buys
+the orthonormal basis once, then everything downstream is dot products.
+
+::: {.callout-warning title="Pitfall"}
+$QQ^\top$ and $Q^\top Q$ are **not** the same matrix and not interchangeable. $Q^\top Q =
+I_n$ is the small $n\times n$ identity — it says the *columns* of $Q$ are orthonormal.
+$QQ^\top$ is the $m\times m$ **projection** matrix onto the column space — and it equals
+the identity $I_m$ only when $Q$ is square (i.e. its columns are a full basis of all of
+$\mathbb R^m$). When $n < m$, $QQ^\top \neq I_m$; it is a genuine projector with $QQ^\top
+\mathbf x = \mathbf x$ only for $\mathbf x$ already in the column space. Confusing the two
+is one of the most common QR errors.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the process on real, honestly-shaped data. The first we carry through **by hand,
+number by number**; the second is the workhorse application — least squares — on a genuine
+dataset; the third walks straight to the edge of applicability where the *classical*
+process fails on a computer.
+
+## Example 1 — orthonormalizing three feature vectors by hand {#sec-ex-byhand}
+
+Three measured "feature" vectors in $\mathbb R^4$ (think four observations of three
+correlated predictors). They are independent but oblique — the typical raw material. We
+orthonormalize them and read off $Q$ and $R$, checking every claim.
+
+```{python}
+#| label: tbl-ex1-data
+#| echo: false
+A = np.array([
+    [ 1.0,  1.0,  2.0],
+    [ 1.0,  2.0,  0.0],
+    [ 0.0,  1.0,  1.0],
+    [ 1.0,  0.0,  1.0],
+])
+a1, a2, a3 = A[:, 0], A[:, 1], A[:, 2]
+
+# --- step 1 ---
+r11 = np.linalg.norm(a1)
+q1 = a1 / r11
+# --- step 2 ---
+r12 = q1 @ a2
+v2 = a2 - r12 * q1
+r22 = np.linalg.norm(v2)
+q2 = v2 / r22
+# --- step 3 ---
+r13 = q1 @ a3
+r23 = q2 @ a3
+v3 = a3 - r13 * q1 - r23 * q2
+r33 = np.linalg.norm(v3)
+q3 = v3 / r33
+
+Q = np.column_stack([q1, q2, q3])
+R = np.array([[r11, r12, r13],
+              [0.0, r22, r23],
+              [0.0, 0.0, r33]])
+
+np.set_printoptions(precision=4, suppress=True)
+print("A =\n", A)
+print(f"\nStep 1:  r11 = ||a1||      = {r11:.4f}")
+print("         q1 = a1 / r11   =", np.round(q1, 4))
+print(f"\nStep 2:  r12 = q1 . a2     = {r12:.4f}")
+print("         v2 = a2 - r12 q1 =", np.round(v2, 4))
+print(f"         r22 = ||v2||     = {r22:.4f}")
+print("         q2 = v2 / r22    =", np.round(q2, 4))
+print(f"\nStep 3:  r13 = q1 . a3     = {r13:.4f}    r23 = q2 . a3 = {r23:.4f}")
+print("         v3 = a3 - r13 q1 - r23 q2 =", np.round(v3, 4))
+print(f"         r33 = ||v3||     = {r33:.4f}")
+print("         q3 = v3 / r33    =", np.round(q3, 4))
+```
+
+Walk the printed arithmetic against the formulas:
+
+- **Step 1** keeps $\mathbf a_1$'s direction: $r_{11} = \lVert\mathbf a_1\rVert =
+  \sqrt{1^2+1^2+0^2+1^2} = \sqrt 3 = `{python} f"{r11:.4f}"`$, and $\mathbf q_1 = \mathbf
+  a_1/r_{11}$ — @eq-q1.
+- **Step 2** subtracts the shadow of $\mathbf a_2$ on $\mathbf q_1$: the coefficient is
+  $r_{12} = \mathbf q_1^\top\mathbf a_2 = `{python} f"{r12:.4f}"`$, the residual is $\mathbf
+  v_2 = \mathbf a_2 - r_{12}\mathbf q_1$ — @eq-v2 — and we normalize by $r_{22} = `{python}
+  f"{r22:.4f}"`$.
+- **Step 3** subtracts the shadow of $\mathbf a_3$ on the *whole* $\mathbf q_1,\mathbf q_2$
+  plane: two coefficients $r_{13} = `{python} f"{r13:.4f}"`$, $r_{23} = `{python}
+  f"{r23:.4f}"`$, residual $\mathbf v_3 = \mathbf a_3 - r_{13}\mathbf q_1 - r_{23}\mathbf
+  q_2$ — @eq-vk — normalized by $r_{33} = `{python} f"{r33:.4f}"`$.
+
+Now verify every claim of @thm-qr numerically: $Q^\top Q$ should be the identity, $R$
+should be upper-triangular, and $QR$ should reproduce $A$ exactly.
+
+```{python}
+#| label: ex1-checks
+print("Q^T Q  (should be I_3):\n", np.round(Q.T @ Q, 6))
+print("\nR  (should be upper-triangular, positive diagonal):\n", np.round(R, 4))
+print("\nQ R  (should equal A):\n", np.round(Q @ R, 6))
+print("\nmax |QR - A| =", np.max(np.abs(Q @ R - A)))
+# compare against the library's QR (signs of columns may differ by convention)
+Qnp, Rnp = np.linalg.qr(A)
+print("\nnumpy diagonal of R:", np.round(np.diag(Rnp), 4),
+      "  ours:", np.round(np.diag(R), 4))
+```
+
+The off-diagonal entries of $Q^\top Q$ are zero to machine precision, the diagonal is all
+ones, $R$ is upper-triangular with a positive diagonal, and $QR$ rebuilds $A$ to $\sim
+10^{-15}$. The factorization is real and exact. (NumPy's $R$ may differ from ours by signs
+along the diagonal — a column-sign convention, not a different factorization; with the
+positive-diagonal convention of @thm-qr they agree.) @fig-ex1-gram visualizes the payoff:
+the **Gram matrix** $A^\top A$ of pairwise column dot products is dense and off-diagonal-
+heavy (the columns are tangled), while $Q^\top Q$ is the clean identity (the columns are
+untangled).
+
+```{python}
+#| label: fig-ex1-gram
+#| fig-cap: "What orthonormalization buys, seen as heatmaps of pairwise dot products. **Left:** the Gram matrix $A^\\top A$ of the original columns — big off-diagonal entries mean the features overlap and their coordinates are coupled. **Right:** $Q^\\top Q = I$ — every off-diagonal dot product is zero, so the new coordinates are completely decoupled. Gram–Schmidt is the transformation from the left picture to the right while preserving the span."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.4, 3.7))
+G = A.T @ A
+im1 = axL.imshow(G, cmap="PuOr", vmin=-G.max(), vmax=G.max())
+axL.set_title(r"$A^\top A$ (columns overlap)")
+for (i, j), val in np.ndenumerate(G):
+    axL.text(j, i, f"{val:.1f}", ha="center", va="center", fontsize=10)
+plt.colorbar(im1, ax=axL, fraction=0.046)
+
+QtQ = Q.T @ Q
+im2 = axR.imshow(QtQ, cmap="PuOr", vmin=-1, vmax=1)
+axR.set_title(r"$Q^\top Q = I$ (decoupled)")
+for (i, j), val in np.ndenumerate(QtQ):
+    axR.text(j, i, f"{val:.1f}", ha="center", va="center", fontsize=10)
+plt.colorbar(im2, ax=axR, fraction=0.046)
+for ax in (axL, axR):
+    ax.set_xticks([0, 1, 2]); ax.set_yticks([0, 1, 2])
+plt.tight_layout()
+```
+
+## Example 2 — least squares the stable way: QR vs. the normal equations {#sec-ex-leastsq}
+
+This is the application that earns QR its place in the track. We fit a line to a genuine
+physical dataset — **car stopping distance vs. speed**, from the classic 1920s `cars`
+measurements (50 cars, speed in mph, stopping distance in feet) — and solve the least-
+squares problem *two* ways: by forming and inverting $X^\top X$ (the normal equations of
+[REGR-1]), and by QR. The point is not the line itself but *why QR is the better road to
+it*.
+
+The least-squares problem is: find $\boldsymbol\beta$ minimizing $\lVert\mathbf y -
+X\boldsymbol\beta\rVert^2$, where $X = [\,\mathbf 1 \mid \text{speed}\,]$ is the design
+matrix (a column of ones for the intercept, a column of speeds for the slope). From
+[GEOM-6]/[REGR-1] the solution satisfies the normal equations $X^\top X\boldsymbol\beta =
+X^\top\mathbf y$. Substitute $X = QR$ and simplify:
+
+$$
+X^\top X\boldsymbol\beta = X^\top\mathbf y
+\;\Longrightarrow\;
+(QR)^\top(QR)\boldsymbol\beta = (QR)^\top\mathbf y
+\;\Longrightarrow\;
+R^\top\underbrace{Q^\top Q}_{=\,I}R\,\boldsymbol\beta = R^\top Q^\top\mathbf y .
+$$
+
+Here $(QR)^\top = R^\top Q^\top$ (the transpose reverses a product — [GEOM-10]) and $Q^\top
+Q = I$. The left side is $R^\top R\boldsymbol\beta$. Since $R$ is upper-triangular with
+positive diagonal it is invertible, so $R^\top$ is too; multiply both sides by
+$(R^\top)^{-1}$ to cancel it:
+
+$$
+R\,\boldsymbol\beta = Q^\top\mathbf y .
+$$ {#eq-qr-solve}
+
+This is a triangular system — solvable by **back-substitution** (bottom row gives the last
+unknown directly, then work upward), no matrix inverse at all. We never formed $X^\top X$;
+that matters because, as the numbers will show and [GEOM-26] will prove, forming $X^\top X$
+*squares the conditioning* of the problem, throwing away half your significant digits
+before you even solve.
+
+```{python}
+#| label: fig-ex2-leastsq
+#| fig-cap: "Least squares on the `cars` dataset (stopping distance vs. speed, $n=50$), solved via QR. **Left:** the fitted line $\\hat y = R^{-1}Q^\\top\\mathbf y$ through the cloud. **Right:** residuals vs. speed — a roughly flat band (with the mild fan of real braking data), confirming a line is an honest first summary. The printed block shows the QR solution agrees with the normal-equation solution to many digits *here*, where the problem is well-conditioned; Example 3 and GEOM-26 show where they diverge."
+# The classic R `cars` dataset (speed in mph, dist in ft), entered explicitly.
+speed = np.array([4,4,7,7,8,9,10,10,10,11,11,12,12,12,12,13,13,13,13,14,14,14,14,
+                  15,15,15,16,16,17,17,17,18,18,18,18,19,19,19,20,20,20,20,20,22,
+                  23,24,24,24,24,25], dtype=float)
+dist  = np.array([2,10,4,22,16,10,18,26,34,17,28,14,20,24,28,26,34,34,46,26,36,60,
+                  80,20,26,54,32,40,32,40,50,42,56,76,84,36,46,68,32,48,52,56,64,
+                  66,54,70,92,93,120,85], dtype=float)
+n = len(speed)
+X = np.column_stack([np.ones(n), speed])    # design matrix [1 | speed]
+y = dist
+
+# --- route A: normal equations (form and invert X^T X) ---
+beta_normal = np.linalg.inv(X.T @ X) @ (X.T @ y)
+# --- route B: QR + back-substitution ---
+Qx, Rx = gram_schmidt(X)                     # our own Gram–Schmidt
+rhs = Qx.T @ y
+beta_qr = np.zeros(2)
+for i in (1, 0):                              # back-substitution
+    beta_qr[i] = (rhs[i] - Rx[i, i+1:] @ beta_qr[i+1:]) / Rx[i, i]
+
+xs = np.linspace(speed.min(), speed.max(), 100)
+fitted = X @ beta_qr
+resid = y - fitted
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))
+axL.scatter(speed, dist, color=POINT, s=28, alpha=0.85, label="cars")
+axL.plot(xs, beta_qr[0] + beta_qr[1]*xs, color=ARROW,
+         label=fr"$\hat y = {beta_qr[0]:.2f} + {beta_qr[1]:.2f}\,x$")
+axL.set_xlabel("speed (mph)"); axL.set_ylabel("stopping distance (ft)")
+axL.set_title("Least-squares fit via QR"); axL.legend(loc="upper left", fontsize=9)
+
+axR.axhline(0, color=GREY, lw=1.2)
+axR.scatter(speed, resid, color=POINT, s=28, alpha=0.85)
+axR.set_xlabel("speed (mph)"); axR.set_ylabel("residual")
+axR.set_title("Residuals vs. speed")
+plt.tight_layout()
+
+print("beta via normal equations :", np.round(beta_normal, 6))
+print("beta via QR + back-subst   :", np.round(beta_qr, 6))
+print("max difference             :", np.max(np.abs(beta_normal - beta_qr)))
+print("cond(X)     =", f"{np.linalg.cond(X):.1f}")
+print("cond(X^T X) =", f"{np.linalg.cond(X.T @ X):.1f}",
+      "  <-- the normal equations work with THIS, the SQUARE of cond(X)")
+```
+
+Both routes land on the same line here, because this problem is mild. But read the last
+two printed numbers: $\operatorname{cond}(X^\top X) = \operatorname{cond}(X)^2$. The
+condition number measures how much a solve can amplify error ([GEOM-26]); squaring it is
+the normal equations' hidden tax. On a well-conditioned problem like `cars` the tax is
+affordable; on an ill-conditioned one it is ruinous, and that is exactly what Example 3
+exhibits.
+
+::: {.callout-tip title="You might be asked"}
+*"If both give the same answer, why prefer QR over the normal equations?"* On paper they
+are algebraically identical — @eq-qr-solve was *derived from* the normal equations. The
+difference is purely numerical and it is large. Forming $X^\top X$ squares the condition
+number, so a design matrix that loses (say) 4 digits of accuracy in a QR solve loses 8 in
+the normal-equation solve — and if you only had 16 to begin with, that can be the
+difference between a usable answer and noise. QR works with $X$ directly and never builds
+the worse-conditioned $X^\top X$. The rule of thumb you should be able to state: **"for
+least squares, factor the design matrix (QR or SVD); don't form and invert $X^\top X$."**
+The SVD ([GEOM-20]) is the even-more-robust option for the genuinely rank-deficient case.
+:::
+
+## Example 3 — the edge of applicability: classical Gram–Schmidt loses orthogonality {#sec-ex-edge}
+
+Here is the honest boundary, the case the technique strains and a naive implementation
+breaks. We build a matrix whose columns are *nearly* dependent — almost collinear, the
+numerical shadow of the multicollinearity that haunts regression — using a **Hilbert-like**
+construction known to be brutally ill-conditioned. We then run *classical* Gram–Schmidt
+(the formula of @thm-gs, projecting each original column against the finished $\mathbf q$'s)
+and measure how badly the supposedly-orthonormal $Q$ fails to be orthonormal.
+
+```{python}
+#| label: fig-ex3-loss
+#| fig-cap: "The edge of applicability: loss of orthogonality on an ill-conditioned matrix. For Hilbert matrices of growing size (rising condition number, x-axis log scale), we measure $\\lVert Q^\\top Q - I\\rVert$ — how far the computed $Q$ is from truly orthonormal. **Classical** Gram–Schmidt (red) degrades catastrophically: by $\\kappa\\sim10^{10}$ its $Q$ has essentially lost orthogonality. **Modified** Gram–Schmidt (green) — the same arithmetic, one reordering — holds far longer. This is the first hard evidence for the numerical-stability theme that closes the track (GEOM-26)."
+from scipy.linalg import hilbert
+
+sizes = range(2, 13)
+conds, loss_cls, loss_mod = [], [], []
+for nn in sizes:
+    H = hilbert(nn)                       # famously ill-conditioned, columns near-dependent
+    conds.append(np.linalg.cond(H))
+    Qc, _ = gram_schmidt(H, modified=False)
+    Qm, _ = gram_schmidt(H, modified=True)
+    I = np.eye(nn)
+    loss_cls.append(np.linalg.norm(Qc.T @ Qc - I))
+    loss_mod.append(np.linalg.norm(Qm.T @ Qm - I))
+
+fig, ax = plt.subplots(figsize=(6.6, 4.2))
+ax.loglog(conds, loss_cls, "o-", color=ARROW, label="classical Gram–Schmidt")
+ax.loglog(conds, loss_mod, "s-", color=ACCENT, label="modified Gram–Schmidt")
+ax.axhline(1.0, color=GREY, ls="--", lw=1.0)
+ax.text(conds[1], 1.3, "total loss of orthogonality", color=GREY, fontsize=9)
+ax.set_xlabel(r"condition number $\kappa(H)$")
+ax.set_ylabel(r"$\|Q^\top Q - I\|$  (orthogonality error)")
+ax.set_title("Classical Gram–Schmidt decays; modified holds")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+
+print("size  cond(H)        classical err     modified err")
+for nn, c, lc, lm in zip(sizes, conds, loss_cls, loss_mod):
+    print(f"{nn:>3}   {c:.2e}      {lc:.2e}      {lm:.2e}")
+```
+
+The numbers are stark: as the columns approach dependence, classical Gram–Schmidt's $Q$
+stops being orthonormal — $\lVert Q^\top Q - I\rVert$ climbs toward $1$ and beyond, meaning
+the columns it produced are no longer perpendicular at all. Why does this happen, and why
+does the modified version rescue it? That is the next section, and it is the article's
+first real lesson in numerical reality.
+
+# The numerical aside: classical vs. modified Gram–Schmidt {#sec-numerical}
+
+The math above is exact; computers are not. We keep this secondary to the math — but it is
+the honest reason practitioners do not implement @thm-gs literally.
+
+## Where the error enters {#sec-error}
+
+Look again at the general step @eq-vk. **Classical** Gram–Schmidt computes every
+coefficient $r_{ik} = \mathbf q_i^\top\mathbf a_k$ against the *original* $\mathbf a_k$,
+then subtracts all the shadows at once:
+
+$$
+\mathbf v_k = \mathbf a_k - (\mathbf q_1^\top\mathbf a_k)\mathbf q_1 - (\mathbf
+q_2^\top\mathbf a_k)\mathbf q_2 - \dots - (\mathbf q_{k-1}^\top\mathbf a_k)\mathbf q_{k-1}.
+$$
+
+In exact arithmetic the $\mathbf q_i$ are perfectly orthonormal, so this is fine. But on a
+computer the earlier $\mathbf q_i$ carry tiny rounding errors and are only *nearly*
+orthonormal. When $\mathbf a_k$ is nearly in the span of the earlier vectors — the ill-
+conditioned case — the true residual $\mathbf v_k$ is tiny, computed as the difference of
+large nearly-equal quantities (**catastrophic cancellation**). The small errors in the
+$\mathbf q_i$, which were harmless when $\mathbf v_k$ was large, now dominate the tiny true
+residual, and the resulting $\mathbf q_k$ tilts away from perpendicular.
+
+## The fix: subtract as you go {#sec-modified}
+
+**Modified** Gram–Schmidt computes the *identical* quantity in exact arithmetic but in a
+different order: instead of projecting the original $\mathbf a_k$ against each $\mathbf
+q_i$, it subtracts each shadow immediately and projects the *running, partially-cleaned*
+residual against the next direction. Writing $\mathbf v_k^{(0)} = \mathbf a_k$ and
+updating,
+
+$$
+\mathbf v_k^{(i)} = \mathbf v_k^{(i-1)} - \bigl(\mathbf q_i^\top\mathbf v_k^{(i-1)}\bigr)\,
+\mathbf q_i \qquad (i = 1,\dots,k-1),
+\qquad \mathbf v_k = \mathbf v_k^{(k-1)} .
+$$ {#eq-mgs}
+
+Compare the coefficient: classical uses $\mathbf q_i^\top\mathbf a_k$ (against the
+original); modified uses $\mathbf q_i^\top\mathbf v_k^{(i-1)}$ (against what is left after
+the earlier subtractions). In exact arithmetic these are equal — once you have subtracted
+the $\mathbf q_1,\dots,\mathbf q_{i-1}$ components, dotting with $\mathbf q_i$ gives the
+same number either way, because $\mathbf q_i$ is orthogonal to the pieces already removed.
+But in floating point, modified Gram–Schmidt projects against the freshly-cleaned residual,
+so each subtraction also mops up the small errors left by the previous ones instead of
+letting them accumulate. The reordering costs nothing extra in operations and buys the
+dramatically better orthogonality you saw in green in @fig-ex3-loss. The `gram_schmidt`
+helper at the top of this article implements both; the only difference between the two
+branches is exactly @eq-vk versus @eq-mgs.
+
+::: {.callout-tip title="You might be asked"}
+*"Is modified Gram–Schmidt the most stable way to get a QR?"* It is much better than
+classical, but not the best available. The gold standard is **Householder reflections**
+(or **Givens rotations**), which build $Q$ from exact orthogonal transformations and are
+*unconditionally* stable — the computed $Q$ is orthonormal to machine precision regardless
+of conditioning. They are what LAPACK and hence `numpy.linalg.qr` actually use. Gram–
+Schmidt's advantage is conceptual transparency (it *is* the projection picture) and that it
+produces the $\mathbf q_i$ one at a time in order, which some iterative algorithms (Arnoldi,
+GMRES) need. The honest summary: **understand the world through Gram–Schmidt; compute a
+dense QR with Householder.** Householder is a topic for the numerical-methods material the
+track points toward in [GEOM-26].
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The construction has a clean domain of validity; knowing its boundary is the difference
+between using QR and misusing it.
+
+## Linearly dependent columns: the process stalls {#sec-dependent}
+
+@thm-gs assumes the input vectors are linearly independent, and that assumption is load-
+bearing. If $\mathbf a_k$ lies in the span of $\mathbf a_1,\dots,\mathbf a_{k-1}$, then its
+residual is $\mathbf v_k = \mathbf 0$ exactly (in exact arithmetic), $r_{kk} = \lVert\mathbf
+v_k\rVert = 0$, and the normalization @eq-qk **divides by zero**. Geometrically this is
+honest, not a bug: a dependent column contributes *no new direction*, so there is no new
+$\mathbf q_k$ to manufacture. The remedies are real and worth naming:
+
+- **Skip-and-continue** (rank-revealing QR): when $r_{kk} = 0$, drop that column, record
+  the deficiency, and proceed. The result is a QR of the independent columns plus a
+  recorded rank — exactly the rank computation of [GEOM-12].
+- **Column pivoting** (`scipy.linalg.qr(..., pivoting=True)`): permute the most-independent
+  column to the front at each step, which both handles near-dependence gracefully and
+  reveals numerical rank.
+- **Use the SVD** ([GEOM-20]) when the matrix is genuinely rank-deficient and you want the
+  most stable possible handling — the SVD never divides by anything and reads rank straight
+  off the singular values.
+
+## Near-dependence: the silent danger {#sec-near-dependent}
+
+Worse than exact dependence — which at least announces itself with a zero — is *near*
+dependence, the case of @sec-ex-edge. Here $r_{kk}$ is small but nonzero, so the
+normalization succeeds and returns a $\mathbf q_k$, but that $\mathbf q_k$ was computed by
+dividing a noise-dominated residual by a tiny number, so it is essentially random. The
+process gives an answer; the answer is wrong; nothing warns you. This is the numerical
+fingerprint of **multicollinearity** in regression ([REGR-7]) and precisely what the
+**condition number** ([GEOM-26]) quantifies. The defense is the same as above: modified
+Gram–Schmidt buys you headroom, Householder buys more, column pivoting reveals the problem,
+and the SVD handles it most gracefully.
+
+::: {.callout-warning title="Pitfall"}
+A successful run of Gram–Schmidt does **not** certify that your $Q$ is orthonormal. On
+ill-conditioned input the algorithm completes happily and hands back columns that are
+visibly *not* perpendicular (@fig-ex3-loss). Always sanity-check a hand-rolled QR by
+computing $\lVert Q^\top Q - I\rVert$; if it is not near machine epsilon, your basis is a
+fiction. This is why production code does not hand-roll Gram–Schmidt — it calls a
+Householder-based library QR.
+:::
+
+## When QR is the right tool — and when to reach elsewhere {#sec-when}
+
+::: {.callout-tip title="You might be asked"}
+*"When do you use QR, and when something else?"* The honest practitioner's summary:
+
+- **Use QR** to (a) manufacture an orthonormal basis for a given span, (b) solve full-rank
+  least squares stably (@sec-ex-leastsq) — the default for well- to moderately-conditioned
+  design matrices — and (c) feed iterative eigenvalue/Krylov methods that need orthonormal
+  vectors produced in order.
+- **Reach for the SVD** ([GEOM-20]–[GEOM-21]) instead when the matrix is rank-deficient or
+  severely ill-conditioned, when you need the *minimum-norm* least-squares solution, or when
+  you want low-rank approximation — the SVD is more expensive but maximally robust and
+  reveals rank exactly.
+- **Reach for Cholesky** ([GEOM-19]) when you genuinely want to solve a *symmetric positive-
+  definite* system fast and the conditioning is benign — it is about twice as cheap as QR,
+  at the cost of the squared-conditioning issue we flagged.
+- **Don't** form and invert $X^\top X$ for least squares unless the problem is small and
+  well-conditioned and you understand the cost; the squared condition number is a real
+  hazard.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the keystone **[GEOM-6 *Orthogonal Projection onto a Subspace*]**, whose
+single move — project, keep the residual — this article ran in a disciplined loop to
+manufacture orthonormal bases, and from **[GEOM-5 *Orthogonality and Orthonormal Bases*]**,
+whose promise of "golden coordinate systems" we made constructive. From here:
+
+- **[GEOM-8 *Matrices as Linear Maps*]** — the next trunk article; it makes precise the
+  "columns of $A$ are a combination of $Q$'s columns" reading of $A=QR$ we used in
+  @sec-qr, and the geometry of what $Q$ (an orthogonal map: a rotation/reflection) does to
+  space.
+- **[GEOM-11 *Solving $A\mathbf x = \mathbf b$*]** and **[GEOM-12 *Rank and the Four
+  Subspaces*]** — where QR becomes a *solving* tool: the triangular system @eq-qr-solve and
+  the rank-revealing variant of @sec-dependent.
+- **[GEOM-20 *The Singular Value Decomposition*]** — the more powerful cousin that always
+  exists (even for dependent columns), the tool @sec-when sends you to when QR strains.
+- **[GEOM-26 *Condition Number and Numerical Stability*]** — pays off the orthogonality-
+  loss story of @sec-ex-edge in full, proves why the normal equations square the
+  conditioning, and ranks Gram–Schmidt against Householder.
+- **Out to Regression:** this is the numerically sound least-squares route offered to
+  **[REGR-1]** and the multicollinearity-aware tooling of **[REGR-7]** — QR is how a real
+  regression library computes the line that REGR-1 derives by hand.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** E. Schmidt, "Zur Theorie der linearen und nichtlinearen
+  Integralgleichungen" (*Math. Ann.*, 1907), where the iterative orthogonalization is
+  stated cleanly; J. P. Gram's 1883 paper on series expansions by least squares, where the
+  determinant-based version appears. The successive-orthogonalization idea predates both in
+  Laplace and Cauchy.
+- **The numerical-analysis classic.** Å. Björck, *Numerical Methods for Least Squares
+  Problems* (SIAM, 1996), and Trefethen & Bau, *Numerical Linear Algebra* (SIAM, 1997),
+  Lectures 7–8 and 10, for the loss-of-orthogonality analysis of @sec-numerical and the
+  Householder alternative — the rigorous version of the picture in @fig-ex3-loss.
+- **Open threads this article deliberately deferred.** *Why exactly do Householder
+  reflections beat Gram–Schmidt?* — the backward-stability argument, pointed to from
+  @sec-modified, belongs with [GEOM-26]. *What if the matrix is rank-deficient by design?* —
+  that is the pseudoinverse and the SVD, [GEOM-20]–[GEOM-21]. *Does $QR$ help compute
+  eigenvalues?* — yes: the *QR algorithm* iterates this factorization to find eigenvalues,
+  a beautiful payoff that lives with the eigenstructure articles [GEOM-14]–[GEOM-16].

@@ -30,10 +30,10 @@ GREY   = "#6c757d"
 ```
 
 > **Where this sits in the track.** This is the fifth stop in the **distribution catalog**
-> of the Probability Foundations track. It assumes [PROB-4 *Continuous Random Variables: the
+> of the Probability Foundations track. It assumes [PROB-04 *Continuous Random Variables: the
 > Probability Density Function*] for what a density is and how
-> $P(a\le X\le b)=\int_a^b f$ recovers probabilities; [PROB-5 *Expectation*] and
-> [PROB-6 *Variance*] for computing a mean and variance from a density; and
+> $P(a\le X\le b)=\int_a^b f$ recovers probabilities; [PROB-05 *Expectation*] and
+> [PROB-06 *Variance*] for computing a mean and variance from a density; and
 > [PROB-12 *The Poisson Distribution*] for the rare-event count whose *gaps in time* turn out
 > to be the exponential we build here. The one tool we reach for above the Calculus-I floor
 > — **integration by parts** and a single recursive integral — is a Calc-1 technique that we
@@ -295,7 +295,7 @@ and $f(x)=0$ for $x<0$.
 The rate $\lambda$ has units of "events per unit time"; its reciprocal $1/\lambda$ is the
 mean wait, as we are about to prove. First, two sanity checks done in full.
 
-**It is a valid density.** A density must integrate to $1$ over its support ([PROB-4]):
+**It is a valid density.** A density must integrate to $1$ over its support ([PROB-04]):
 $$
 \int_0^\infty \lambda e^{-\lambda x}\,dx
 =\lambda\Bigl[-\tfrac{1}{\lambda}e^{-\lambda x}\Bigr]_0^\infty
@@ -322,7 +322,7 @@ $$
 :::
 
 ::: {.proof}
-**The mean.** By the definition of expectation for a continuous variable ([PROB-5]),
+**The mean.** By the definition of expectation for a continuous variable ([PROB-05]),
 $$
 E[X]=\int_0^\infty x\,\lambda e^{-\lambda x}\,dx.
 $$
@@ -339,7 +339,7 @@ So $E[X]=1/\lambda$ — the average wait is the reciprocal of the rate, exactly 
 demand.
 
 **The variance.** Use the computational identity
-$\operatorname{Var}(X)=E[X^2]-(E[X])^2$ ([PROB-6]). We need $E[X^2]$:
+$\operatorname{Var}(X)=E[X^2]-(E[X])^2$ ([PROB-06]). We need $E[X^2]$:
 $$
 E[X^2]=\int_0^\infty x^2\,\lambda e^{-\lambda x}\,dx.
 $$
@@ -377,7 +377,7 @@ property.
 :::
 
 ::: {.proof}
-**Forward direction.** By the definition of conditional probability ([PROB-1]),
+**Forward direction.** By the definition of conditional probability ([PROB-01]),
 $$
 P(X>s+t\mid X>s)=\frac{P(\{X>s+t\}\cap\{X>s\})}{P(X>s)}.
 $$
@@ -515,7 +515,7 @@ $$
 
 ::: {.proof}
 We compute $E[X^r]$ for a general power $r$ in one stroke, because both moments fall out and
-the gamma function does the work. By [PROB-5],
+the gamma function does the work. By [PROB-05],
 $$
 E[X^r]=\int_0^\infty x^r\,\frac{\lambda^\alpha}{\Gamma(\alpha)}x^{\alpha-1}e^{-\lambda x}\,dx
 =\frac{\lambda^\alpha}{\Gamma(\alpha)}\int_0^\infty x^{(\alpha+r)-1}e^{-\lambda x}\,dx.
@@ -552,8 +552,8 @@ $$
 
 These match the "sum of $\alpha$ exponentials" picture exactly. If $X=\sum_{i=1}^\alpha Y_i$
 with $Y_i\sim\mathrm{Exp}(\lambda)$ independent (for integer $\alpha$), then linearity of
-expectation ([PROB-5]) gives $E[X]=\alpha\cdot\frac1\lambda=\frac\alpha\lambda$, and
-independence makes variances add ([PROB-8]),
+expectation ([PROB-05]) gives $E[X]=\alpha\cdot\frac1\lambda=\frac\alpha\lambda$, and
+independence makes variances add ([PROB-08]),
 $\operatorname{Var}(X)=\alpha\cdot\frac1{\lambda^2}=\frac\alpha{\lambda^2}$. The moments we got
 from the gamma function and the moments we get from the sum-of-exponentials picture **agree**,
 which is the consistency we should demand. We now prove that the sum really *is* gamma, not
@@ -566,7 +566,7 @@ $\mathrm{Exp}(\lambda)$ variables, then $S_n=Y_1+\cdots+Y_n\sim\mathrm{Gamma}(n,
 
 ::: {.proof}
 We induct on $n$, using the **convolution** formula for the density of a sum of independent
-continuous variables ([PROB-8]): if $S=A+B$ with $A,B$ independent, then
+continuous variables ([PROB-08]): if $S=A+B$ with $A,B$ independent, then
 $f_S(s)=\int f_A(t)f_B(s-t)\,dt$ over the values where both densities are nonzero.
 
 *Base case* $n=1$: $S_1=Y_1\sim\mathrm{Exp}(\lambda)=\mathrm{Gamma}(1,\lambda)$, already noted.
@@ -663,7 +663,7 @@ and $X$ is **independent** of the total $U+V$.
 We build the beta directly out of two gammas; the identity @eq-beta-gamma falls out of the
 same computation, so nothing is asserted separately. Let $U\sim\mathrm{Gamma}(\alpha,1)$ and
 $V\sim\mathrm{Gamma}(\beta,1)$ be independent. Because they are independent, their joint
-density is the product of the marginals ([PROB-8]), for $u,v>0$:
+density is the product of the marginals ([PROB-08]), for $u,v>0$:
 $$
 f_{U,V}(u,v)=\frac{u^{\alpha-1}e^{-u}}{\Gamma(\alpha)}\cdot\frac{v^{\beta-1}e^{-v}}{\Gamma(\beta)}
 =\frac{u^{\alpha-1}v^{\beta-1}e^{-(u+v)}}{\Gamma(\alpha)\Gamma(\beta)}.
@@ -675,7 +675,7 @@ $$
 so that $u=xs$ and $v=s-u=s(1-x)$, with $x\in(0,1)$ and $s>0$. This is a two-variable change
 of variables, so we need the Jacobian factor that rescales the area element — the
 two-dimensional cousin of the Calc-1 substitution rule, used here at exactly the level
-[PROB-4] introduces the single-variable version and flagged as such. The Jacobian matrix of
+[PROB-04] introduces the single-variable version and flagged as such. The Jacobian matrix of
 $(u,v)$ with respect to $(x,s)$ is
 $$
 \frac{\partial(u,v)}{\partial(x,s)}
@@ -699,7 +699,7 @@ f_{X,S}(x,s)
 \ \cdot\ \underbrace{s^{\alpha+\beta-1}e^{-s}}_{\text{depends on }s}.
 $$
 The joint density **factors** into a function of $x$ alone times a function of $s$ alone — so
-$X$ and $S$ are independent (this is the [PROB-8] criterion for independence), proving the
+$X$ and $S$ are independent (this is the [PROB-08] criterion for independence), proving the
 last claim. To extract the marginal density of $X$, integrate $s$ out over $(0,\infty)$:
 $$
 f_X(x)=\frac{x^{\alpha-1}(1-x)^{\beta-1}}{\Gamma(\alpha)\Gamma(\beta)}
@@ -734,7 +734,7 @@ $$
 :::
 
 ::: {.proof}
-We compute the general moment $E[X^r]$ and the beta–gamma identity does the rest. By [PROB-5],
+We compute the general moment $E[X^r]$ and the beta–gamma identity does the rest. By [PROB-05],
 $$
 E[X^r]=\int_0^1 x^r\,\frac{1}{B(\alpha,\beta)}x^{\alpha-1}(1-x)^{\beta-1}\,dx
 =\frac{1}{B(\alpha,\beta)}\int_0^1 x^{(\alpha+r)-1}(1-x)^{\beta-1}\,dx.
@@ -1044,7 +1044,7 @@ practitioner's move the question is fishing for.
 ::: {.callout-important title="Where you are in the track"}
 You arrived from [PROB-12 *The Poisson Distribution*] — whose event *counts* became the event
 *gaps* of this article (@thm-poisson-exp) — and from the continuous-density groundwork of
-[PROB-4], [PROB-5], and [PROB-6]. This article built three named continuous distributions end
+[PROB-04], [PROB-05], and [PROB-06]. This article built three named continuous distributions end
 to end and showed they are one family joined at the gamma function: the exponential
 (@sec-exponential), the gamma (@sec-gamma-dist), and the beta (@sec-beta), with the beta–gamma
 identity (@thm-beta-gamma) closing the loop. From here the catalog continues and the family's

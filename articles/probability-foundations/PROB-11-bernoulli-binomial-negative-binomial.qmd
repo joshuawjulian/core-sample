@@ -32,9 +32,9 @@ FILL   = "#9fb3d1"     # shaded areas / pmf stems
 
 > **Where this sits in the track.** This is the first *named distribution* in the
 > distribution catalog. It assumes [PROB-10 *Counting: Permutations & Combinations*] for
-> the binomial coefficient $\binom{n}{k}$ and the binomial theorem; [PROB-5 *Expectation*]
-> for $\mathbb{E}[X]$ and the law of the unconscious statistician; [PROB-6 *Variance*] for
-> $\operatorname{Var}(X)=\mathbb{E}[X^2]-(\mathbb{E}[X])^2$; and [PROB-8 *Independence and
+> the binomial coefficient $\binom{n}{k}$ and the binomial theorem; [PROB-05 *Expectation*]
+> for $\mathbb{E}[X]$ and the law of the unconscious statistician; [PROB-06 *Variance*] for
+> $\operatorname{Var}(X)=\mathbb{E}[X^2]-(\mathbb{E}[X])^2$; and [PROB-08 *Independence and
 > the i.i.d. Sample*] for the two rules that the expectation of a sum always adds and the
 > variance of a sum of *independent* variables adds. Those four articles are the entire
 > toolkit; everything else is built here. We start from the smallest possible random
@@ -205,7 +205,7 @@ repeated.
 **Definition (Bernoulli).** A random variable $X$ has the **Bernoulli($p$)** distribution,
 written $X \sim \text{Bernoulli}(p)$, if it takes the value $1$ ("success") with probability
 $p$ and $0$ ("failure") with probability $1-p$, where $p\in[0,1]$. Its probability mass
-function (the pmf, from [PROB-3] — the function giving $\mathbb{P}(X=x)$ for each value $x$
+function (the pmf, from [PROB-03] — the function giving $\mathbb{P}(X=x)$ for each value $x$
 the variable can take) is
 
 $$
@@ -229,12 +229,12 @@ Check it against @eq-bern-pmf: at $x=1$ this is $p^{1}(1-p)^{0} = p$ (since anyt
 zero power is $1$), and at $x=0$ it is $p^{0}(1-p)^{1} = 1-p$. The exponents $x$ and $1-x$
 act as on/off switches, selecting $p$ or $1-p$ depending on the outcome. It is a valid pmf
 because the two probabilities are nonnegative and sum to one: $p + (1-p) = 1$, exactly the
-normalization $\sum_x p_X(x)=1$ that [PROB-3] requires of any pmf.
+normalization $\sum_x p_X(x)=1$ that [PROB-03] requires of any pmf.
 
 ## The mean and variance of a Bernoulli {#sec-bern-moments}
 
 These are the most important two numbers in the article, because every other mean and
-variance below is built by multiplying or summing copies of them. Recall from [PROB-5] the
+variance below is built by multiplying or summing copies of them. Recall from [PROB-05] the
 definition of expectation for a discrete variable, $\mathbb{E}[X] = \sum_x x\,p_X(x)$ — the
 sum of each value weighted by its probability. With only two values, the sum has two terms:
 
@@ -247,9 +247,9 @@ $$ {#eq-bern-mean}
 The mean of a Bernoulli is just $p$ — the long-run fraction of successes, which is exactly
 what an average of $0$s and $1$s should be.
 
-For the variance we use the computational identity from [PROB-6],
+For the variance we use the computational identity from [PROB-06],
 $\operatorname{Var}(X) = \mathbb{E}[X^2] - (\mathbb{E}[X])^2$. We need $\mathbb{E}[X^2]$.
-By the law of the unconscious statistician ([PROB-5]), $\mathbb{E}[X^2] = \sum_x x^2 p_X(x)$,
+By the law of the unconscious statistician ([PROB-05]), $\mathbb{E}[X^2] = \sum_x x^2 p_X(x)$,
 again two terms:
 
 $$
@@ -322,7 +322,7 @@ particular outcome of all $n$ trials that happens to contain $k$ successes and $
 failures — say, the first $k$ are successes and the rest failures: $\underbrace{SS\cdots
 S}_{k}\underbrace{FF\cdots F}_{n-k}$. Because the trials are **independent**, the probability
 of a specific joint sequence is the *product* of the per-trial probabilities (this is the
-factorization rule from [PROB-8]: for independent events, the probability of the
+factorization rule from [PROB-08]: for independent events, the probability of the
 intersection is the product of the probabilities). Each success contributes a factor $p$ and
 each failure a factor $1-p$:
 
@@ -351,7 +351,7 @@ we only need that $\binom{n}{k}$ counts the unordered ways to pick $k$ items fro
 **Assemble.** The event "$Y = k$" is the union of all these $\binom{n}{k}$ sequences. They
 are *mutually exclusive* (a single run of $n$ trials produces exactly one sequence, so no
 two of these sequences can both occur), so by the addition rule for disjoint events
-([PROB-0]) we add their probabilities — and since each has the same probability
+([PROB-00]) we add their probabilities — and since each has the same probability
 $p^{k}(1-p)^{n-k}$, adding $\binom{n}{k}$ equal terms is just multiplying:
 
 $$
@@ -466,7 +466,7 @@ reason we wrote the binomial as a sum back in @eq-binom-as-sum.
 
 Recall $Y = \sum_{i=1}^{n} X_i$ with each $X_i \sim \text{Bernoulli}(p)$, independent.
 
-**Mean.** By **linearity of expectation** ([PROB-5]) — the expectation of a sum is the sum
+**Mean.** By **linearity of expectation** ([PROB-05]) — the expectation of a sum is the sum
 of the expectations, which holds *always*, independent or not — and using
 $\mathbb{E}[X_i] = p$ from @eq-bern-mean:
 
@@ -477,7 +477,7 @@ $$ {#eq-binom-mean-easy}
 
 One line, same answer as @eq-binom-mean, no factorials.
 
-**Variance.** Here independence earns its keep. From [PROB-8], the variance of a sum of
+**Variance.** Here independence earns its keep. From [PROB-08], the variance of a sum of
 **independent** variables is the sum of their variances (the cross-covariance terms vanish
 because independent variables have zero covariance). Using $\operatorname{Var}(X_i) = p(1-p)$
 from @eq-bern-var:
@@ -532,7 +532,7 @@ before that first success**. So $W=0$ means success on the very first trial, $W=
 failure then a success, and so on; $W$ ranges over $0, 1, 2, \dots$ with no upper bound.
 
 For $\{W = k\}$ to happen, the first $k$ trials must all be failures and the $(k+1)$-th must
-be a success. By independence ([PROB-8]) the probability of this specific sequence is the
+be a success. By independence ([PROB-08]) the probability of this specific sequence is the
 product of the per-trial probabilities — $k$ failures at $(1-p)$ each, then one success at
 $p$:
 
@@ -632,7 +632,7 @@ $$
 = \frac{(1-p)(2-p)}{p^{2}}.
 $$
 
-Now apply $\operatorname{Var}(W) = \mathbb{E}[W^2] - (\mathbb{E}[W])^2$ from [PROB-6], using
+Now apply $\operatorname{Var}(W) = \mathbb{E}[W^2] - (\mathbb{E}[W])^2$ from [PROB-06], using
 $\mathbb{E}[W] = \frac{1-p}{p}$ so $(\mathbb{E}[W])^2 = \frac{(1-p)^2}{p^2}$:
 
 $$
@@ -644,7 +644,7 @@ $$ {#eq-geom-var}
 
 (The bracket simplified as $(2-p)-(1-p) = 1$.) Note the shift convention does not change the
 variance — $T = W+1$ adds a constant, and adding a constant never changes variance
-($\operatorname{Var}(W+1)=\operatorname{Var}(W)$, from [PROB-6]).
+($\operatorname{Var}(W+1)=\operatorname{Var}(W)$, from [PROB-06]).
 
 ### The memoryless property {#sec-geom-memoryless}
 
@@ -660,7 +660,7 @@ $$
 $$
 
 since it requires $m$ independent failures in a row. Now the conditional probability, using
-$\mathbb{P}(A\mid B) = \mathbb{P}(A\cap B)/\mathbb{P}(B)$ from [PROB-1]. The event $\{W \ge
+$\mathbb{P}(A\mid B) = \mathbb{P}(A\cap B)/\mathbb{P}(B)$ from [PROB-01]. The event $\{W \ge
 m+j\}$ is a *subset* of $\{W \ge m\}$ (waiting at least $m+j$ certainly means waiting at
 least $m$), so their intersection is just $\{W \ge m+j\}$:
 
@@ -742,13 +742,13 @@ independent because, after each success, the coin starts fresh (the memorylessne
 @eq-memoryless), and identically distributed because $p$ never changes. This is the
 negative-binomial's version of "binomial = sum of Bernoullis."
 
-Now the moments fall out. By **linearity of expectation** ([PROB-5]) and @eq-geom-mean:
+Now the moments fall out. By **linearity of expectation** ([PROB-05]) and @eq-geom-mean:
 
 $$
 \mathbb{E}[Z] = \sum_{i=1}^{r}\mathbb{E}[W_i] = r\cdot\frac{1-p}{p} = \frac{r(1-p)}{p}.
 $$ {#eq-nb-mean}
 
-By **additivity of variance for independent variables** ([PROB-8]) and @eq-geom-var:
+By **additivity of variance for independent variables** ([PROB-08]) and @eq-geom-var:
 
 $$
 \operatorname{Var}(Z) = \sum_{i=1}^{r}\operatorname{Var}(W_i) = r\cdot\frac{1-p}{p^{2}}
@@ -910,7 +910,7 @@ plt.tight_layout()
 The estimated conversion rate is the natural one, $\hat p = Y/n = 137/1000 = 0.137$. The
 binomial machinery immediately tells us how precise that estimate is. The *count* $Y$ has
 standard deviation $\sqrt{np(1-p)}$; the *proportion* $\hat p = Y/n$ therefore has standard
-deviation (using $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$ from [PROB-6] with
+deviation (using $\operatorname{Var}(aX) = a^2\operatorname{Var}(X)$ from [PROB-06] with
 $a = 1/n$):
 
 $$
@@ -1100,7 +1100,7 @@ about when those assumptions fail.
 ::: {.callout-important title="Where you are in the track"}
 You arrived from **[PROB-10 *Counting: Permutations & Combinations*]**, which built the
 $\binom{n}{k}$ and the binomial theorem that the binomial pmf @eq-binom-pmf is made of, and
-from **[PROB-5]**, **[PROB-6]**, **[PROB-8]** — expectation, variance, and the i.i.d. sum
+from **[PROB-05]**, **[PROB-06]**, **[PROB-08]** — expectation, variance, and the i.i.d. sum
 rules that did all the real work. This article cataloged the first named discrete
 distributions. The catalog continues, and each next step is a *limit* of what you just built:
 

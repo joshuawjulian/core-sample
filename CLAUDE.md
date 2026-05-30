@@ -274,7 +274,7 @@ page, not to force every article into one mold.
 
 **Resolved — see `REGISTRY.md` for the authoritative details:**
 - **Repo layout & file naming.** Articles live at `articles/<track-slug>/<ID>-<slug>.qmd`;
-  global article IDs use four-letter track prefixes (`REGR-4`, `INFR-B4`, …). One source
+  global article IDs use four-letter track prefixes (`REGR-04`, `INFR-B4`, …). One source
   set serves both §4 output targets.
 - **Build pipeline.** Quarto `book` project (`_quarto.yml`) for the bound volume +
   per-article standalone via `articles/_metadata.yml`. PDFs render in GitHub Actions
@@ -288,7 +288,7 @@ page, not to force every article into one mold.
 **Still open:**
 - Master topic taxonomy beyond the 8 tracks in `tracks/` (more tracks to design).
 - A dedicated **Model-Evaluation** track (interim: classifier eval lives in CLAS-18..20).
-- Authoring + review workflow at scale (pilot articles REGR-0/REGR-1 written first).
+- Authoring + review workflow at scale (pilot articles REGR-00/REGR-01 written first).
 
 ---
 

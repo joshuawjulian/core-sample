@@ -26,7 +26,7 @@ The host stays lean — no Quarto/LaTeX installed locally. Two supported paths:
 - **GitHub Actions** (source of truth): `.github/workflows/render.yml` renders the book on
   every push to `main` and uploads the PDF as the `core-sample-pdf` artifact.
 - **Devcontainer** (local preview): `.devcontainer/` provides Quarto + TinyTeX + Python.
-  Then `quarto render` (book) or `quarto render articles/regression/REGR-1-*.qmd` (one).
+  Then `quarto render` (book) or `quarto render articles/regression/REGR-01-*.qmd` (one).
 
 ## Status — tracks designed, scaffold built, pilots written
 
@@ -44,20 +44,20 @@ The host stays lean — no Quarto/LaTeX installed locally. Two supported paths:
 | Causal Inference | `CAUS` | 18 | [tracks/causal-inference.md](tracks/causal-inference.md) |
 
 **Written so far:**
-- `REGR-0 — Why a Line?` (motivational opener; history of least squares + regression to the mean)
-- `REGR-1 — OLS, One Predictor` (flagship pilot: the full step-by-step derivation, Old
+- `REGR-00 — Why a Line?` (motivational opener; history of least squares + regression to the mean)
+- `REGR-01 — OLS, One Predictor` (flagship pilot: the full step-by-step derivation, Old
   Faithful worked example, the Anscombe quartet)
 
 ### ✅ The pipeline works — download the PDFs
 CI renders cleanly. Grab the latest PDFs from the **[`latest` release](../../releases/tag/latest)**:
-the bound `Core-Sample.pdf` plus each article standalone (`REGR-0-…`, `REGR-1-…`). They refresh
+the bound `Core-Sample.pdf` plus each article standalone (`REGR-00-…`, `REGR-01-…`). They refresh
 on every push to `main`.
 
-**Please skim REGR-1 (and REGR-0) for depth/format/voice** before we mass-produce — they are
+**Please skim REGR-01 (and REGR-00) for depth/format/voice** before we mass-produce — they are
 the template every future article will follow.
 
 ### Suggested next steps
 1. Confirm the first CI render produces a clean PDF (or report the error to fix).
 2. React to the pilots — adjust the article template/voice if needed.
-3. Then scale: write the rest of the Regression trunk (REGR-2 … REGR-13), and/or the
-   prerequisite-free entry articles of the foundational tracks (PROB-0, GEOM-0, OPTM-0).
+3. Then scale: write the rest of the Regression trunk (REGR-02 … REGR-13), and/or the
+   prerequisite-free entry articles of the foundational tracks (PROB-00, GEOM-00, OPTM-00).

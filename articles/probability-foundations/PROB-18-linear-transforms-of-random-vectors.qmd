@@ -46,16 +46,16 @@ def cov_ellipse_xy(mean, cov, n_std=2.0, n_pts=200):
 > [PROB-17 *Random Vectors, Mean Vectors, and Covariance Matrices*] for the three objects
 > we operate on here — a random vector $\mathbf X=(X_1,\dots,X_d)$, its mean vector
 > $\boldsymbol\mu=E[\mathbf X]$, and its covariance matrix $\boldsymbol\Sigma$ with
-> variances on the diagonal and covariances off it. It also leans on [PROB-5
-> *Expectation*] (linearity of expectation, the single workhorse identity), [PROB-6
-> *Variance*] and [PROB-7 *Joint Distributions, Covariance, and Correlation*] (covariance
+> variances on the diagonal and covariances off it. It also leans on [PROB-05
+> *Expectation*] (linearity of expectation, the single workhorse identity), [PROB-06
+> *Variance*] and [PROB-07 *Joint Distributions, Covariance, and Correlation*] (covariance
 > and its bilinearity), and on the closure facts of [PROB-13 *The Normal Distribution*]
 > when we transform the Gaussian. We use vectors and matrices *operationally* — addition,
 > multiplication, transpose — and build every matrix manipulation on the page; the
 > linear-algebra **theory** (eigendecomposition, positive-definiteness, matrix square
 > roots) belongs to the Geometry of Data track and is flagged, not assumed, where we
 > touch it. It **sets up**, by name, the single identity that downstream tracks consume:
-> [REGR-6] derives the sampling covariance $\operatorname{Var}(\hat{\boldsymbol\beta}) =
+> [REGR-06] derives the sampling covariance $\operatorname{Var}(\hat{\boldsymbol\beta}) =
 > \sigma^2 (X^\top X)^{-1}$ directly from the rule proved here; [REGR-11] (generalized
 > least squares) runs on the whitening transform of @sec-whitening; and the
 > Geometry-of-Data and Optimization tracks reuse the quadratic form $\mathbf
@@ -112,7 +112,7 @@ step below answers a piece of that.
 ## The original problem: too many measurements, combined linearly
 
 The need for these formulas is as old as least squares itself, and it comes from the same
-place (the astronomy and geodesy of @sec-why in [REGR-1]). An astronomer around 1800 did
+place (the astronomy and geodesy of @sec-why in [REGR-01]). An astronomer around 1800 did
 not observe one quantity; he observed a *vector* of noisy measurements — several sightings
 of a planet, several angles of a survey triangle — and the quantity he actually cared
 about was some **linear combination** of them: a weighted average, a difference, a
@@ -124,7 +124,7 @@ is the result?*
 
 Gauss answered it for the scalar pieces, and the answer is the propagation-of-error rule
 every lab course still teaches: the variance of a sum is the sum of the variances plus
-twice the covariances (the identity built in [PROB-7]). What [PROB-17] gave us was a way to
+twice the covariances (the identity built in [PROB-07]). What [PROB-17] gave us was a way to
 *package* all those variances and covariances into one object, the covariance matrix
 $\boldsymbol\Sigma$. What this article does is package the *propagation rule* to match: a
 single matrix identity, $A\boldsymbol\Sigma A^\top$, that does in one line what would
@@ -135,7 +135,7 @@ component-by-component sums hide.
 
 ::: {.callout-tip title="You might be asked"}
 *"Why bother with the matrix form $A\boldsymbol\Sigma A^\top$ — isn't it the same content
-as the scalar variance-of-a-sum rule from [PROB-7]?"* It is exactly the same content, and
+as the scalar variance-of-a-sum rule from [PROB-07]?"* It is exactly the same content, and
 that is the point you should make. The matrix form is not new probability; it is the
 scalar rule $\operatorname{Var}(\sum_i a_i X_i)=\sum_{i}\sum_j a_i a_j
 \operatorname{Cov}(X_i,X_j)$ written so that *all* the linear combinations you might form
@@ -216,7 +216,7 @@ Sliding a cloud changes its location (so $\mathbf b$ shows up in the mean) but l
 point's distance from the center unchanged (so $\mathbf b$ cannot affect the spread). When
 we center to compute covariance, the shift cancels against itself — you will see it cancel
 explicitly in @eq-b-cancels. This is the multivariate echo of $\operatorname{Var}(X+c) =
-\operatorname{Var}(X)$ from [PROB-6].
+\operatorname{Var}(X)$ from [PROB-06].
 :::
 
 # The formal development {#sec-formal}
@@ -293,7 +293,7 @@ to a single number, the case in @sec-scalar).
 
 ## A two-minute refresher: linearity of expectation, in vector form {#sec-linearity-refresher}
 
-The scalar tool is **linearity of expectation**, proved in [PROB-5]: for scalar random
+The scalar tool is **linearity of expectation**, proved in [PROB-05]: for scalar random
 variables and fixed numbers $a, c$,
 $$
 E[aX + c] = a\,E[X] + c, \qquad E[X_1 + X_2] = E[X_1] + E[X_2],
@@ -355,7 +355,7 @@ expectation itself, which is to say *always true*.
 *"Does the mean rule need the components of $\mathbf X$ to be independent, or normal, or
 anything?"* No. It is pure linearity of expectation, and linearity holds for any random
 variables whose means exist — correlated, dependent, any distribution. The only requirement
-is that the means $\mu_i$ are finite (an integral or sum that converges; [PROB-5] shows a
+is that the means $\mu_i$ are finite (an integral or sum that converges; [PROB-05] shows a
 heavy-tailed case where it does not). This unconditional universality is exactly why the
 mean rule is so heavily used and so rarely worried about.
 :::
@@ -422,7 +422,7 @@ $(k,j)$ entry of $E[\mathbf Z]\,C$. Equal in every entry, hence equal. $\qquad\b
 
 ## The covariance rule: $\operatorname{Cov}(A\mathbf X + \mathbf b)=A\boldsymbol\Sigma A^\top$ {#sec-cov-rule}
 
-This is the headline result — the single identity [REGR-6] consumes by name. We build it
+This is the headline result — the single identity [REGR-06] consumes by name. We build it
 slowly.
 
 ::: {#thm-cov}
@@ -515,7 +515,7 @@ covariance rule @eq-cov-rule gives a $1\times 1$ matrix, i.e. an ordinary number
 $$
 \operatorname{Var}(\mathbf a^\top\mathbf X) = \mathbf a^\top\boldsymbol\Sigma\,\mathbf a .
 $$ {#eq-quadratic-form}
-Let us confirm this *is* the variance-of-a-sum rule from [PROB-7], not a new claim. Expand
+Let us confirm this *is* the variance-of-a-sum rule from [PROB-07], not a new claim. Expand
 the quadratic form using @def-matrix-row twice (once for $\boldsymbol\Sigma\mathbf a$, once
 for the outer dot product):
 $$
@@ -535,7 +535,7 @@ $$
 $$
 For $d=2$ this is exactly $\operatorname{Var}(a_1X_1+a_2X_2)=a_1^2\operatorname{Var}(X_1)
 +a_2^2\operatorname{Var}(X_2)+2a_1a_2\operatorname{Cov}(X_1,X_2)$, the identity proved by
-hand in [PROB-7]. So @eq-quadratic-form is the variance-of-a-sum rule, *for every number of
+hand in [PROB-07]. So @eq-quadratic-form is the variance-of-a-sum rule, *for every number of
 terms at once*. This is the form the **Optimization** track (quadratic forms) and
 portfolio theory (@sec-portfolio) consume directly.
 
@@ -598,7 +598,7 @@ semidefinite (singular) the moment $A$ collapses a dimension — e.g. if a row o
 copy of another, two outputs are perfectly correlated and the output ellipse flattens onto a
 lower-dimensional subspace. That flattening is the geometric meaning of a singular
 covariance, and it is the multivariate face of the degenerate $S_{xx}=0$ boundary in
-[REGR-1].
+[REGR-01].
 :::
 
 # The geometry: how a linear map moves the covariance ellipse {#sec-geometry}
@@ -961,7 +961,7 @@ noise. The downstream computation needs **Cartesian** coordinates $x=r\cos\theta
 $y=r\sin\theta$. How does the measurement uncertainty propagate? The map is *not* linear —
 but for small errors it is well approximated by its linear part (the **Jacobian** matrix of
 first partial derivatives, the multivariable cousin of the single-variable derivative used
-in [PROB-4]'s change of variables). Near the measured values $(r_0,\theta_0)$,
+in [PROB-04]'s change of variables). Near the measured values $(r_0,\theta_0)$,
 $$
 \begin{pmatrix} \delta x \\ \delta y \end{pmatrix}
 \approx
@@ -1097,7 +1097,7 @@ The three concrete boundaries:
   output spread directly.
 - **Heavy tails / non-existent moments (@sec-edge).** If $\boldsymbol\Sigma$ barely exists
   (Student-$t$ with low df, Cauchy with no variance at all — the divergent case flagged in
-  [PROB-5]), the formula's inputs are unstable or undefined. *Reach for:* robust scatter
+  [PROB-05]), the formula's inputs are unstable or undefined. *Reach for:* robust scatter
   estimates, or quantile-based descriptions of spread.
 - **Degeneracy / rank-deficiency (@sec-psd).** If $A$ collapses a dimension (rank-deficient)
   or $\boldsymbol\Sigma$ is singular, the output covariance is singular and the cloud lives
@@ -1111,7 +1111,7 @@ able to recite:
 - **Use it** whenever you need the mean or covariance of a *linear* (or locally-linear)
   combination of random quantities whose first two moments are well-defined and stable:
   portfolio risk, error propagation in measurement, the sampling covariance of a linear
-  estimator like $\hat{\boldsymbol\beta}$ in [REGR-6], any preprocessing that decorrelates
+  estimator like $\hat{\boldsymbol\beta}$ in [REGR-06], any preprocessing that decorrelates
   features (whitening, GLS). For the Gaussian it gives the *entire* output distribution.
 - **Do not lean on it** when the map is strongly nonlinear over the input spread (linearize
   only if the curvature is mild, else simulate), when the input is heavy-tailed enough that
@@ -1158,7 +1158,7 @@ linearity of expectation alone. From here Movement 4 branches:
 
 And the cross-track payoffs this article was built to deliver, by name:
 
-- **[REGR-6]** derives the sampling covariance $\operatorname{Var}(\hat{\boldsymbol\beta}) =
+- **[REGR-06]** derives the sampling covariance $\operatorname{Var}(\hat{\boldsymbol\beta}) =
   \sigma^2(X^\top X)^{-1}$ by writing $\hat{\boldsymbol\beta}=(X^\top X)^{-1}X^\top\mathbf y$
   as a linear transform $A\mathbf y$ of the response and applying @eq-cov-rule — *this exact
   identity*.

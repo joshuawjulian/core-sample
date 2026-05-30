@@ -32,8 +32,8 @@ GREY   = "#6c757d"
 
 > **Where this sits in the track.** This is the article that closes Movement 4 of the
 > Probability Foundations track — the place where the two pieces of tail-and-limit
-> machinery finally have something to converge *to*. It assumes [PROB-5 *Expectation*]
-> (the expectation operator), [PROB-6 *Variance*] (the second moment), and [PROB-8
+> machinery finally have something to converge *to*. It assumes [PROB-05 *Expectation*]
+> (the expectation operator), [PROB-06 *Variance*] (the second moment), and [PROB-08
 > *Independence and the i.i.d. Sample*] (so that "the sample mean of $n$ i.i.d. draws" is
 > a defined object). Its two direct parents are the siblings that feed it:
 > [PROB-19 *Chebyshev's Inequality and the Concentration Idea*], whose
@@ -201,7 +201,7 @@ stronger notions that refine the left panel.
 We now make each mode precise. Throughout, $X_1, X_2, \dots$ is a sequence of random
 variables and $X$ is a "target" random variable (often a constant), all defined on the same
 probability space — meaning they are functions $X_n:\Omega\to\mathbb R$ of the same
-underlying outcome $\omega$, the object built in [PROB-2]. We define the modes from
+underlying outcome $\omega$, the object built in [PROB-02]. We define the modes from
 strongest to weakest, then prove the chain that connects them.
 
 ## Mode 1 — Convergence in probability {#sec-in-prob}
@@ -255,7 +255,7 @@ with $X=\mu$. That is the whole argument, every step shown.
 The headline instance is the **weak law of large numbers**, which [PROB-19] built to the
 "sketch" level and [INFR-A2] owns in full. For i.i.d. $X_i$ with mean $\mu$ and finite
 variance $\sigma^2$, the sample mean $\bar X_n=\frac1n\sum_{i=1}^n X_i$ has — by linearity
-of expectation ([PROB-5]) and the variance-of-an-independent-sum rule ([PROB-8]) —
+of expectation ([PROB-05]) and the variance-of-an-independent-sum rule ([PROB-08]) —
 $$
 E[\bar X_n]=\mu, \qquad
 \operatorname{Var}(\bar X_n)=\frac{1}{n^2}\sum_{i=1}^n \operatorname{Var}(X_i)
@@ -344,7 +344,7 @@ $$
 \qquad\text{for every } x \text{ at which } F_X \text{ is continuous},
 $$ {#eq-def-in-dist}
 where $F_{X_n}(x)=P(X_n\le x)$ and $F_X(x)=P(X\le x)$ are the cumulative distribution
-functions from [PROB-2]. In words: the CDFs converge pointwise, except possibly at the jump
+functions from [PROB-02]. In words: the CDFs converge pointwise, except possibly at the jump
 points of the limit CDF.
 :::
 
@@ -396,7 +396,7 @@ xs = np.linspace(-4, 4, 400)
 # of the pdf (Calc-1 trapezoid) to avoid importing scipy.
 grid = np.linspace(-12, 4, 4000)
 pdf = np.exp(-grid**2 / 2) / np.sqrt(2 * np.pi)
-cdf_vals = np.array([np.trapz(pdf[grid <= x], grid[grid <= x]) if np.any(grid <= x) else 0.0
+cdf_vals = np.array([np.trapezoid(pdf[grid <= x], grid[grid <= x]) if np.any(grid <= x) else 0.0
                      for x in xs])
 
 fig, ax = plt.subplots()
@@ -461,7 +461,7 @@ $$
 The sets $B_n$ are **nested and shrinking**: $B_{n+1}\subseteq B_n$, because the union
 defining $B_{n+1}$ is over a smaller index set ($m\ge n+1$ instead of $m\ge n$). So they
 decrease toward their intersection $B_\infty=\bigcap_n B_n$, and by continuity of probability
-from above — the elementary axiom-consequence proved in [PROB-0], that for a decreasing
+from above — the elementary axiom-consequence proved in [PROB-00], that for a decreasing
 sequence of events $P(B_n)\to P(B_\infty)$ — we have
 $$
 \lim_{n\to\infty} P(B_n) = P(B_\infty).
@@ -502,7 +502,7 @@ $|X_n-X|=X-X_n>(x+\varepsilon)-x=\varepsilon$. Writing this as an inclusion of e
 $$
 \{X_n\le x\}\ \subseteq\ \{X\le x+\varepsilon\}\ \cup\ \{|X_n - X|>\varepsilon\}.
 $$
-Taking probabilities (subadditivity, the union bound from [PROB-0]),
+Taking probabilities (subadditivity, the union bound from [PROB-00]),
 $$
 F_{X_n}(x) \;\le\; F_X(x+\varepsilon) + P(|X_n-X|>\varepsilon).
 $$
@@ -833,7 +833,7 @@ plt.show()
 Here is the honest boundary, the case where the comfortable intuition "averages converge"
 **fails completely**. Suppose the $X_i$ are i.i.d. **standard Cauchy** — the distribution
 with density $f(x)=\frac{1}{\pi(1+x^2)}$. This is the heavy-tailed villain flagged back in
-[PROB-5]: its tails decay so slowly that $E[|X|]=\int|x|f(x)\,dx$ diverges, so the **mean
+[PROB-05]: its tails decay so slowly that $E[|X|]=\int|x|f(x)\,dx$ diverges, so the **mean
 does not exist**. The law of large numbers has no $\mu$ to converge to, and indeed something
 striking happens.
 
@@ -921,7 +921,7 @@ mode whose limit you read quantiles off of ($1.96$ for a $95\%$ interval). Cruci
   reach for a robust statistic ([PROB-23]) instead of forcing the sample mean.
 - **The data are dependent or non-stationary.** Every result here was stated for i.i.d. (or
   at least vanishing-variance) sequences; the variance-of-the-sum step in @eq-mean-var used
-  independence ([PROB-8]). Strong dependence can break consistency outright or change the
+  independence ([PROB-08]). Strong dependence can break consistency outright or change the
   limiting variance, and you need the dependent-data limit theory (mixing conditions,
   time-series CLTs) that lives well downstream.
 - **You are tempted to add two convergent-in-distribution sequences.** As the

@@ -22,6 +22,10 @@ concurrency:
 jobs:
   render:
     runs-on: ubuntu-latest
+    env:
+      # Puts the repo root on PYTHONPATH so sitecustomize.py auto-loads in the
+      # Jupyter kernel and makes matplotlib mathtext tolerant of full LaTeX labels.
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

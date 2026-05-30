@@ -42,9 +42,9 @@ def ecdf(sample):
 > **Where this sits in the track.** This is the first of the two articles that close the
 > Probability Foundations track by building the **objects that sampling theory consumes**.
 > It rests directly on three earlier results and uses each of them by name. From
-> [PROB-2 *Random Variables*] it takes the **cumulative distribution function**
+> [PROB-02 *Random Variables*] it takes the **cumulative distribution function**
 > $F(x)=P(X\le x)$ as the one object that describes *any* random variable — here we learn
-> to *estimate* that object from data. From [PROB-8 *Independence and the i.i.d. Sample*]
+> to *estimate* that object from data. From [PROB-08 *Independence and the i.i.d. Sample*]
 > it takes the **i.i.d. sample**: $n$ draws from one distribution, independent and
 > identically distributed. From [PROB-11 *Bernoulli, Binomial & Negative-Binomial*] it
 > takes the fact that **a sum of independent indicator variables is Binomial**, which is
@@ -107,7 +107,7 @@ of that.
 Almost everything in statistics is a statement about a distribution we never see. A clinician
 wants the distribution of recovery times; an engineer wants the distribution of component
 lifetimes; an economist wants the distribution of household incomes. In each case there is a
-true $F$ — the function $F(x)=P(X\le x)$ from [PROB-2] that fully describes the random
+true $F$ — the function $F(x)=P(X\le x)$ from [PROB-02] that fully describes the random
 quantity — and in each case all we are handed is a finite, noisy sample drawn from it.
 
 For a long stretch of statistical history the only move available was to *assume the shape*.
@@ -247,7 +247,7 @@ to distinguish it from the true, unhatted $F$. The subscript $n$ records the sam
 because — crucially — $\hat F_n$ is itself random and changes with every new sample.
 
 Before trusting $\hat F_n$ as a stand-in for $F$, we should check it really *is* a CDF.
-Recall from [PROB-2] that a function qualifies as a cumulative distribution function exactly
+Recall from [PROB-02] that a function qualifies as a cumulative distribution function exactly
 when it has three properties: it is non-decreasing, it is right-continuous, and it tends to
 $0$ as $x\to-\infty$ and to $1$ as $x\to+\infty$. We verify all three, because a "distribution
 estimate" that was not a distribution would be a fraud.
@@ -293,7 +293,7 @@ Now fix a single threshold $x$ and ask the estimation question: *how good is the
 $\hat F_n(x)$ as a guess for the true number $F(x)$?* To answer it we must treat $\hat F_n(x)$
 as what it is — a random quantity, because the data are random — and find its distribution.
 
-Here is where [PROB-8] and [PROB-11] pay off. Consider one term of the sum,
+Here is where [PROB-08] and [PROB-11] pay off. Consider one term of the sum,
 $\mathbf 1\{X_i \le x\}$. It is a single yes/no event: "did the $i$-th draw land at or below
 $x$?" Its value is $1$ with probability $P(X_i\le x)$ and $0$ otherwise. But $X_i$ is drawn
 from $F$, so by the very definition of the CDF,
@@ -310,9 +310,9 @@ value a "success" when the point falls at or below $x$.
 Three facts about this collection of indicators, all imported by name from earlier articles:
 
 1. They are **identically distributed**: each $X_i$ comes from the same $F$, so each
-   indicator has the same success probability $F(x)$ ([PROB-8], the "identically distributed"
+   indicator has the same success probability $F(x)$ ([PROB-08], the "identically distributed"
    half of i.i.d.).
-2. They are **independent**: the draws $X_1,\dots,X_n$ are independent ([PROB-8], the
+2. They are **independent**: the draws $X_1,\dots,X_n$ are independent ([PROB-08], the
    "independent" half), and a function of $X_i$ alone (the indicator) inherits that
    independence — knowing whether $X_3$ fell below $x$ tells you nothing about whether $X_7$
    did.
@@ -354,12 +354,12 @@ Glivenko–Cantelli in @sec-gc controls.
 ## Mean and variance: unbiased, and shrinking like $1/n$ {#sec-mean-var}
 
 We now read the mean and variance of $\hat F_n(x)$ straight off the Binomial. From [PROB-11]
-(and [PROB-5], [PROB-6]) we have the two standard facts about a Binomial$(n,p)$ count: its
+(and [PROB-05], [PROB-06]) we have the two standard facts about a Binomial$(n,p)$ count: its
 mean is $np$ and its variance is $np(1-p)$. We will use them with $p=F(x)$, and we will also
 re-derive the variance one rung lower, from the indicators, so nothing is taken on faith.
 
 **The mean (unbiasedness).** Take the expectation of @eq-ecdf-as-binom. Expectation is linear
-([PROB-5]) and $n$ is a constant, so
+([PROB-05]) and $n$ is a constant, so
 
 $$
 \mathbb E\bigl[\hat F_n(x)\bigr]
@@ -379,7 +379,7 @@ $0/1$ indicator is just the probability it equals $1$; the average of $n$ copies
 is $F(x)$.)
 
 **The variance.** Take the variance of @eq-ecdf-as-binom. Pulling the constant $1/n$ out of a
-variance squares it ([PROB-6], $\operatorname{Var}(aX)=a^2\operatorname{Var}(X)$):
+variance squares it ([PROB-06], $\operatorname{Var}(aX)=a^2\operatorname{Var}(X)$):
 
 $$
 \operatorname{Var}\bigl(\hat F_n(x)\bigr)
@@ -394,7 +394,7 @@ $p=F(x)$. We can also reach @eq-variance from the indicators directly, which mak
 independence explicit. Each indicator $\mathbf 1\{X_i\le x\}$ is Bernoulli$(F(x))$ with
 variance $F(x)(1-F(x))$ ([PROB-11]: a Bernoulli$(p)$ has variance $p(1-p)$). Because the
 indicators are independent, **the variance of their sum is the sum of their variances**
-([PROB-8], the additivity of variance under independence):
+([PROB-08], the additivity of variance under independence):
 
 $$
 \operatorname{Var}\bigl(S_n(x)\bigr)
@@ -645,7 +645,7 @@ of the mean is exactly the familiar sample average.
 The mean functional is $T(F) = \int x\,dF(x)$, the expectation of $X$ under $F$. The empirical
 distribution $\hat F_n$ is the discrete distribution with probability $1/n$ at each $X_i$. The
 expectation under a discrete distribution is the sum of (value $\times$ probability) over its
-support ([PROB-5]). Therefore
+support ([PROB-05]). Therefore
 
 $$
 \hat\theta = T(\hat F_n)
@@ -918,7 +918,7 @@ plt.tight_layout()
 ## It needs the i.i.d. assumption it was built on {#sec-iid-needed}
 
 Every result here — unbiasedness, the Binomial variance, Glivenko–Cantelli, and the legality
-of resampling — rode on the sample being **i.i.d.** from a single $F$ ([PROB-8]). When that
+of resampling — rode on the sample being **i.i.d.** from a single $F$ ([PROB-08]). When that
 breaks, so do the guarantees, quietly:
 
 - **Dependence** (time series, spatial data, clustered observations). The indicators are no
@@ -960,7 +960,7 @@ summary:
 
 ::: {.callout-important title="Where you are in the track"}
 You arrived carrying four results and used each by name: the **CDF** as the universal
-descriptor of a random variable ([PROB-2]); the **i.i.d. sample** ([PROB-8]); the
+descriptor of a random variable ([PROB-02]); the **i.i.d. sample** ([PROB-08]); the
 **Binomial as a sum of independent Bernoullis** ([PROB-11]); and the **convergence
 vocabulary** ([PROB-21]) in which Glivenko–Cantelli is stated. This article turned the CDF
 into something *estimable from data* and, more consequentially, into something you can *sample

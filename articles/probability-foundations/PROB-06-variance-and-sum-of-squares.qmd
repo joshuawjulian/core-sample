@@ -30,7 +30,7 @@ FILL   = "#9fb3d1"     # shaded areas
 ```
 
 > **Where this sits in the track.** This article is the immediate sequel to
-> [PROB-5 *Expectation: The Long-Run Average*], which built the single number that says
+> [PROB-05 *Expectation: The Long-Run Average*], which built the single number that says
 > *where* a random variable lands on average — the expectation $\mathbb{E}[X]$ — and proved
 > its workhorse property, **linearity**. Expectation answers "where is the center?" The
 > obvious next question, and the one this article answers, is "**how far from the center do
@@ -38,9 +38,9 @@ FILL   = "#9fb3d1"     # shaded areas
 > **variance**. We define it, derive the computational shortcut every practitioner uses,
 > show why squaring the deviations (not taking their absolute value) is the analytically
 > forced choice rather than an arbitrary convention, and pull apart the population and
-> sample *sums of squares* that the Regression track ([REGR-3]) consumes by name. It
-> assumes [PROB-5] (expectation and its linearity) and, beneath that, [PROB-3]/[PROB-4]
-> (the pmf and pdf). It sets up [PROB-7 *Joint Distributions, Covariance & Correlation*]
+> sample *sums of squares* that the Regression track ([REGR-03]) consumes by name. It
+> assumes [PROB-05] (expectation and its linearity) and, beneath that, [PROB-03]/[PROB-04]
+> (the pmf and pdf). It sets up [PROB-07 *Joint Distributions, Covariance & Correlation*]
 > (covariance generalizes variance to *pairs*), [PROB-17 *Random Vectors & Covariance
 > Matrices*] (the covariance matrix is the vector version of this one number), and
 > [PROB-19 *Chebyshev's Inequality*] (which turns variance into a probability bound).
@@ -83,7 +83,7 @@ $\sigma = \sqrt{\operatorname{Var}(X)}$, which puts spread back into the units o
 Everything below orbits that box. The identity $\operatorname{Var}(X) = \mathbb{E}[X^2] -
 \mu^2$ will look like a piece of algebraic luck, but by the end you should read it as
 inevitable: it is just the expansion of a square, run through the linearity of expectation
-that [PROB-5] gave us. The factor of $a^2$ in the scaling law — not $a$, not $|a|$ — is the
+that [PROB-05] gave us. The factor of $a^2$ in the scaling law — not $a$, not $|a|$ — is the
 fingerprint of the square, and it is *why* variance behaves the way it does under
 standardization, under sums, and under the $\sqrt{n}$ shrinkage of a sample mean you will
 meet downstream.
@@ -97,7 +97,7 @@ come back here.
 
 ## Center is not enough {#sec-center-not-enough}
 
-[PROB-5] gave us the expectation: one number locating the center of a distribution. But the
+[PROB-05] gave us the expectation: one number locating the center of a distribution. But the
 center is silent about the most practically urgent feature of a random quantity — *how
 reliable it is.* A factory line whose parts average $10.00$ mm is worthless information to a
 machinist until they know whether the parts cluster within a hundredth of a millimetre or
@@ -131,7 +131,7 @@ plt.tight_layout()
 
 The square of the deviation did not arrive as an abstraction; it arrived as the
 *measurement error* of working astronomers and geodesists at the turn of the nineteenth
-century — the very same setting that produced least squares (the story told in [REGR-1]).
+century — the very same setting that produced least squares (the story told in [REGR-01]).
 Carl Friedrich Gauss, reconciling many noisy observations of a planet's position around
 1809, modeled each observation as the truth plus a random error and asked how to weigh
 errors against one another. His answer, the *normal* (Gaussian) law of errors, has the
@@ -163,18 +163,18 @@ conceptual probe on this topic, and there are four honest answers, each of which
 
 1. **The mean is the minimizer of mean *squared* deviation, not of mean absolute
    deviation.** Choosing the square makes $\mathbb{E}[X]$ — the center we already committed
-   to in [PROB-5] — the natural reference point. We prove this in @sec-mean-minimizes. (The
+   to in [PROB-05] — the natural reference point. We prove this in @sec-mean-minimizes. (The
    *median* minimizes mean absolute deviation, which is why absolute-deviation methods are
    median-based; see the aside there.)
 2. **Squares are differentiable; absolute values have a corner.** $|t|$ is not
    differentiable at $0$, so optimisation with it has no clean closed form. $t^2$ is smooth,
-   which is what lets calculus — and least squares ([REGR-1]) — produce formulas.
+   which is what lets calculus — and least squares ([REGR-01]) — produce formulas.
 3. **Variance is additive for independent variables; mean absolute deviation is not.** The
    identity $\operatorname{Var}(X+Y) = \operatorname{Var}(X)+\operatorname{Var}(Y)$ (under
    independence) has *no* analogue for absolute deviations. This additivity is the engine of
-   nearly everything downstream ([PROB-8], [PROB-19], the whole of regression inference).
+   nearly everything downstream ([PROB-08], [PROB-19], the whole of regression inference).
 4. **It matches the Gaussian error model**, the most common noise model in measurement,
-   where the squared deviation is exactly the quantity the likelihood penalises ([REGR-1]).
+   where the squared deviation is exactly the quantity the likelihood penalises ([REGR-01]).
 
 The honest catch you should volunteer: the very thing that makes the square analytically
 golden — its quadratic growth — also makes variance **hypersensitive to outliers and to
@@ -186,7 +186,7 @@ of the square, not just its benefits.
 # Intuition before symbols {#sec-intuition}
 
 Picture the distribution of $X$ as a pile of mass spread along the number line, and put a
-pin at the mean $\mu$ — the balance point [PROB-5] established. Spread asks: *on average,
+pin at the mean $\mu$ — the balance point [PROB-05] established. Spread asks: *on average,
 how far is the mass from that pin?*
 
 The naive measure is the **average signed deviation**, $\mathbb{E}[X-\mu]$. But this is
@@ -228,10 +228,10 @@ to return to scale.* The formal development just makes each step exact.
 
 ## Definition, and a refresher on the tools we carry in {#sec-def}
 
-We import two facts from [PROB-5], and we state them explicitly so nothing is assumed.
+We import two facts from [PROB-05], and we state them explicitly so nothing is assumed.
 
 **Imported fact 1 — the expectation.** For a discrete random variable $X$ with pmf $p(x) =
-P(X=x)$ (built in [PROB-3]), and for a continuous $X$ with pdf $f(x)$ (built in [PROB-4]),
+P(X=x)$ (built in [PROB-03]), and for a continuous $X$ with pdf $f(x)$ (built in [PROB-04]),
 $$
 \mathbb{E}[X] \;=\; \sum_{x} x\,p(x) \qquad\text{(discrete)}, \qquad
 \mathbb{E}[X] \;=\; \int_{-\infty}^{\infty} x\,f(x)\,dx \qquad\text{(continuous)}.
@@ -239,7 +239,7 @@ $$
 The expectation is the probability-weighted average of the values $X$ can take.
 
 **Imported fact 2 — the law of the unconscious statistician (LOTUS), and linearity.**
-[PROB-5] proved that for *any* function $g$, you do not need the distribution of $g(X)$ to
+[PROB-05] proved that for *any* function $g$, you do not need the distribution of $g(X)$ to
 compute its expectation — you weight $g(x)$ by the distribution of $X$:
 $$
 \mathbb{E}[g(X)] \;=\; \sum_{x} g(x)\,p(x) \qquad\text{or}\qquad \int g(x) f(x)\,dx,
@@ -422,7 +422,7 @@ $m(\mu)=\operatorname{Var}(X)$. $\qquad\blacksquare$
 This is a genuinely load-bearing result. It says the variance is the *irreducible* mean
 squared error of predicting $X$ by a single constant — the best you can do with a constant
 guess is to guess the mean, and what is left over is the variance. That sentence is the
-seed of the entire regression idea ([PROB-9] makes the conditional version, and [REGR-1]
+seed of the entire regression idea ([PROB-09] makes the conditional version, and [REGR-01]
 turns it into a line): when we are allowed to use a predictor instead of a constant, we are
 trying to beat this floor.
 
@@ -431,7 +431,7 @@ trying to beat this floor.
 deviation $\mathbb{E}[\,|X-c|\,]$?"* The **median**, not the mean — and we should *derive*
 this, not assert it, because it is the precise sense in which absolute deviation pairs with a
 different center than the square does. Take $X$ continuous with pdf $f$ and CDF $F(x) =
-P(X\le x)$ (the objects from [PROB-4]), and define the mean-absolute-deviation objective
+P(X\le x)$ (the objects from [PROB-04]), and define the mean-absolute-deviation objective
 $$
 a(c) = \mathbb{E}\bigl[\,|X-c|\,\bigr] = \int_{-\infty}^{\infty} |x-c|\,f(x)\,dx .
 $$
@@ -461,7 +461,7 @@ distances. That is exactly why squared deviation balances at the mean (the balan
 *mass times distance*) while absolute deviation balances at the median (the balance point of
 *mass alone*). Each penalty has its own natural center: squared deviation pairs with the mean
 (and hence with variance and least-squares regression); absolute deviation pairs with the
-median (and hence with robust, quantile-based methods, [REGR-1]'s robust alternatives).
+median (and hence with robust, quantile-based methods, [REGR-01]'s robust alternatives).
 Choosing the square is choosing the mean as your reference.
 :::
 
@@ -530,7 +530,7 @@ variance additive in general — $\operatorname{Var}(X+Y)$ is *not* $\operatorna
 \operatorname{Var}(Y)$ unless $X$ and $Y$ are uncorrelated, because of a cross term we have
 not met yet (it is the **covariance**, and the full identity $\operatorname{Var}(X+Y) =
 \operatorname{Var}(X)+\operatorname{Var}(Y)+2\operatorname{Cov}(X,Y)$ is derived in
-[PROB-7]). The reason variance fails to be linear is precisely the square in its definition:
+[PROB-07]). The reason variance fails to be linear is precisely the square in its definition:
 squaring a sum produces cross terms. Knowing *why* it fails — not just *that* it fails — is
 what separates a memorised rule from understanding.
 :::
@@ -612,7 +612,7 @@ The honest answer is **unbiasedness**, and we can derive it cleanly here using o
 already built, treating the data as a random sample $X_1,\dots,X_n$ drawn independently from
 a distribution with true mean $\mu$ and true variance $\sigma^2$.
 
-We will need one fact about *sums* of independent variables that belongs to [PROB-8] but
+We will need one fact about *sums* of independent variables that belongs to [PROB-08] but
 which we state and use explicitly so the chain is complete: for independent $X_1,\dots,X_n$,
 the variance of their sum is the sum of their variances, hence the **sample mean**
 $\bar X = \frac1n\sum X_i$ has
@@ -624,7 +624,7 @@ The mean of $\bar X$ is $\mu$ by linearity ($\mathbb{E}[\frac1n\sum X_i] = \frac
 @eq-scaling applied to the constant $1/n$ out front, combined with variance-adds-for-
 independents: $\operatorname{Var}(\frac1n\sum X_i) = \frac{1}{n^2}\sum
 \operatorname{Var}(X_i) = \frac{1}{n^2}\cdot n\sigma^2 = \sigma^2/n$. (We flag the
-additivity-under-independence as the one imported ingredient; it is built in [PROB-8], and we
+additivity-under-independence as the one imported ingredient; it is built in [PROB-08], and we
 are using only its statement.) Equation @eq-sample-mean-moments is itself worth carrying: the
 sample mean is *less variable than a single observation by a factor of $n$* — the
 $\sqrt{n}$-shrinkage of its standard deviation $\sigma/\sqrt{n}$ is the reason averages are
@@ -759,13 +759,13 @@ $$
 a clean "total = within + between" split, each term a non-negative sum of squares.
 
 This is the exact mechanism the Regression track requests under the name **SST = SSR + SSE**
-([REGR-3]). There, the total sum of squares of the response, $\sum (y_i - \bar y)^2$, splits
+([REGR-03]). There, the total sum of squares of the response, $\sum (y_i - \bar y)^2$, splits
 into the part the fitted line *explains* (regression sum of squares) plus the part it *leaves
 over* (the residual/error sum of squares). The reason such a split exists at all — the reason
 the cross term vanishes and the pieces add — is the same reason it vanished in our proof: the
 fitted values are built to make the residuals orthogonal to (uncorrelated with) the
 explained part, so the cross term is zero, and **squared quantities of orthogonal pieces
-add** (the Pythagorean theorem, in the geometry [REGR-1] and [PROB-7] develop). Absolute
+add** (the Pythagorean theorem, in the geometry [REGR-01] and [PROB-07] develop). Absolute
 deviations have *no* such decomposition; only the square does. That single fact — the square
 decomposes, the absolute value does not — is the deepest of the four reasons from @sec-why
 that statistics is built on squares, and it is why this article is a prerequisite for
@@ -839,7 +839,7 @@ print(f"Var(X) = {var:.4f} = 35/12 = {35/12:.4f};  SD = {sd:.4f}")
 ## Example 2 — a continuous variance by integration: the uniform on $[a,b]$ {#sec-uniform}
 
 For a continuous case where we can do the calculus in full, take $X \sim \text{Uniform}(a,b)$
-— the model of "a value equally likely to land anywhere in $[a,b]$" built in [PROB-4], with
+— the model of "a value equally likely to land anywhere in $[a,b]$" built in [PROB-04], with
 density $f(x) = 1/(b-a)$ on $[a,b]$ and zero outside. Bus arrival times within a known
 window, rounding errors, and the output of a good random-number generator on an interval all
 look like this. We will use the computational identity @eq-comp-identity because the integrals
@@ -955,7 +955,7 @@ $$
 f(x) = \frac{1}{\pi(1 + x^2)}, \qquad -\infty < x < \infty,
 $$
 a bell-shaped curve that looks innocuous — symmetric, peaked at zero — but whose tails decay
-only like $1/x^2$, far too slowly. [PROB-5] already flagged that the Cauchy has *no mean* (the
+only like $1/x^2$, far too slowly. [PROB-05] already flagged that the Cauchy has *no mean* (the
 defining integral $\int x f(x)\,dx$ does not converge). With no finite mean there is no $\mu$
 to deviate from, so the variance @eq-var-def is not even defined. Even for heavy-tailed
 distributions that *do* have a finite mean, the variance integral $\int (x-\mu)^2 f(x)\,dx$
@@ -1051,7 +1051,7 @@ summary to recite:
 
 - **Use variance / standard deviation** when the distribution has finite second moment and
   reasonably light tails, when you need a quantity that *adds* across independent sources
-  ([PROB-8]) or *decomposes* (ANOVA, regression $R^2$, [REGR-3]), and when you are working
+  ([PROB-08]) or *decomposes* (ANOVA, regression $R^2$, [REGR-03]), and when you are working
   inside the Gaussian-adjacent world where it is the natural and sufficient summary of spread
   ([PROB-13]). It is the only spread measure with the clean algebra of @sec-scaling and
   @sec-sum-of-squares, which is why all of classical statistics runs on it.
@@ -1065,18 +1065,18 @@ summary to recite:
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[PROB-5 *Expectation*]**, which gave the center $\mu = \mathbb{E}[X]$ and
+You arrived from **[PROB-05 *Expectation*]**, which gave the center $\mu = \mathbb{E}[X]$ and
 the linearity that powered every derivation here. This article added the *spread*: the
 variance $\operatorname{Var}(X) = \mathbb{E}[(X-\mu)^2]$, its computational shortcut
 @eq-comp-identity, its scaling law @eq-scaling, and the sum-of-squares structure
 @sec-sum-of-squares. From here the spine continues:
 
-- **[PROB-7 *Joint Distributions, Covariance & Correlation*]** — variance is the spread of
+- **[PROB-07 *Joint Distributions, Covariance & Correlation*]** — variance is the spread of
   *one* variable; **covariance** $\operatorname{Cov}(X,Y) = \mathbb{E}[(X-\mu_X)(Y-\mu_Y)]$ is
   the same idea for a *pair*, measuring how two move together. It completes the
   $\operatorname{Var}(X+Y)$ identity we deferred in @sec-scaling, and its scale-free cousin is
   the correlation coefficient.
-- **[PROB-8 *Independence & the i.i.d. Sample*]** — supplies the rigorous proof of the one
+- **[PROB-08 *Independence & the i.i.d. Sample*]** — supplies the rigorous proof of the one
   imported ingredient we flagged in @sec-n-minus-1: that variance *adds* for independent
   variables, hence $\operatorname{Var}(\bar X) = \sigma^2/n$ and the $\sqrt{n}$-shrinkage of
   the sample mean.
@@ -1089,9 +1089,9 @@ variance $\operatorname{Var}(X) = \mathbb{E}[(X-\mu)^2]$, its computational shor
   concentration guarantee, exactly the use Chebyshev invented it for (@sec-history).
 
 **Cross-track payoff.** The sum-of-squares decomposition of @sec-sum-of-squares is consumed
-by name in **[REGR-3 *How Good Is the Fit?*]** (the SST = SSR + SSE split and $R^2$), and the
+by name in **[REGR-03 *How Good Is the Fit?*]** (the SST = SSR + SSE split and $R^2$), and the
 "variance is mean squared error about the best constant" result of @thm-mean-minimizes is the
-scalar prototype of the conditional-expectation-as-best-predictor result of **[PROB-9]** that
+scalar prototype of the conditional-expectation-as-best-predictor result of **[PROB-09]** that
 all of regression rests on.
 :::
 
@@ -1106,10 +1106,10 @@ all of regression rests on.
   measures (MAD, IQR, trimmed estimators), P. J. Huber, *Robust Statistics* (1981) — the
   systematic case against the square when outliers are real.
 - **Open threads this article deliberately deferred.** *Why does variance* add *for
-  independent variables, and what is the cross term when they are not?* — [PROB-7]/[PROB-8].
+  independent variables, and what is the cross term when they are not?* — [PROB-07]/[PROB-08].
   *How does variance bound probabilities without knowing the distribution?* — Chebyshev,
   [PROB-19]. *What replaces a single variance when there are many correlated variables?* — the
   covariance matrix, [PROB-17]. *Is the sample variance the "best" estimator of $\sigma^2$, and
   what is its own variance?* — the sampling distribution of $s^2$ is a chi-square story,
   [PROB-15]. *Why exactly does the sum of squares split additively in regression?* — the
-  orthogonality/Pythagorean picture, [REGR-1] and [REGR-4].
+  orthogonality/Pythagorean picture, [REGR-01] and [REGR-04].

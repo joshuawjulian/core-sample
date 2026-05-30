@@ -11,31 +11,31 @@ This track is deliberately decomposed into many razor-focused articles. The spin
 ## The flow diagram
 
 ```
-                          [REGR-0] Why a Line? (the regression question)
+                          [REGR-00] Why a Line? (the regression question)
                                         │
                                         ▼
-                          [REGR-1] OLS, One Predictor (calculus derivation)
+                          [REGR-01] OLS, One Predictor (calculus derivation)
                                         │
                   ┌─────────────────────┼─────────────────────┐
                   ▼                                            ▼
-   [REGR-2] What the Line Assumes                    [REGR-3] How Good Is the Fit?
+   [REGR-02] What the Line Assumes                    [REGR-03] How Good Is the Fit?
    (the Gauss–Markov conditions)                 (R², residuals, RMSE)
                   │                                            │
                   └─────────────────────┬─────────────────────┘
                                         ▼
-                          [REGR-4] Regression as Projection
+                          [REGR-04] Regression as Projection
                           (geometry: ŷ = Hy, the hat matrix)   ◄── needs Geometry track
                                         │
                                         ▼
-                          [REGR-5] Multiple Regression (the normal equations in matrix form)
+                          [REGR-05] Multiple Regression (the normal equations in matrix form)
                                         │
               ┌─────────────────────────┼──────────────────────────┐
               ▼                          ▼                          ▼
-   [REGR-6] Sampling Distribution    [REGR-7] Multicollinearity      [REGR-8] Categorical &
+   [REGR-06] Sampling Distribution    [REGR-07] Multicollinearity      [REGR-08] Categorical &
    of β̂ (Gauss–Markov + var)     (when X'X goes bad)         Interaction Terms
               │                          │                   (encoding, design matrix)
               ▼                          │                          │
-   [REGR-9] Inference on Coefficients        │                          │
+   [REGR-09] Inference on Coefficients        │                          │
    (t, F, confidence/prediction          │                          │
     intervals, hypothesis tests)         │                          │
               │                          │                          │
@@ -96,117 +96,117 @@ This track is deliberately decomposed into many razor-focused articles. The spin
   └─────────────────────────────────────────────────────────────────────┘
 ```
 
-The three sub-branches (Regularization, GLM, Nonparametric) all hang off the same trunk (REGR-1–REGR-13) and can be read in parallel once the trunk is done. See the branching note at the end.
+The three sub-branches (Regularization, GLM, Nonparametric) all hang off the same trunk (REGR-01–REGR-13) and can be read in parallel once the trunk is done. See the branching note at the end.
 
 ---
 
 ## The trunk: building the line and understanding it
 
-### REGR-0 — Why a Line? The Regression Question
+### REGR-00 — Why a Line? The Regression Question
 1. **The one question:** What problem is regression actually solving when we "fit a line to data," and why a line first?
 2. **Scope / inside:**
    - The prediction-vs-explanation framing: estimating `E[Y | X]` as the thing we're after.
    - Why "draw the best line through the cloud" is ill-posed until we define *best* (sets up the loss-function choice).
    - Historical *why*: Galton's regression to the mean, Legendre/Gauss and least squares for astronomy/geodesy — the original motivating problem.
 3. **Assumes:** Only the floor (functions, a scatterplot, the idea of an average).
-4. **Sets up:** REGR-1 (commits to squared-error loss and derives the line).
+4. **Sets up:** REGR-01 (commits to squared-error loss and derives the line).
 5. **Depth:** short (~8–12). Motivational, light on derivation.
 
-### REGR-1 — Ordinary Least Squares, One Predictor
+### REGR-01 — Ordinary Least Squares, One Predictor
 1. **The one question:** Given one predictor, what straight line minimizes squared error, and exactly how do we derive its slope and intercept?
 2. **Scope / inside:**
    - Define the squared-error objective `S(β₀,β₁) = Σ(yᵢ − β₀ − β₁xᵢ)²`.
    - Full Calc-1 derivation: partial derivatives set to zero, solve the two normal equations, get `β̂₁ = Sxy/Sxx`, `β̂₀ = ȳ − β̂₁x̄`.
    - The decomposition of the answer in terms of covariance/variance; the fitted line passes through `(x̄, ȳ)`.
    - Worked examples on real bivariate data + the figure of the fitted line and residuals.
-3. **Assumes:** REGR-0; floor-level partial differentiation (built inline — "treat the other variable as constant," shown explicitly, since multivariable calc is above the floor and we only need its Calc-1 shadow here).
-4. **Sets up:** REGR-2, REGR-3, REGR-4. This is the true entry point.
+3. **Assumes:** REGR-00; floor-level partial differentiation (built inline — "treat the other variable as constant," shown explicitly, since multivariable calc is above the floor and we only need its Calc-1 shadow here).
+4. **Sets up:** REGR-02, REGR-03, REGR-04. This is the true entry point.
 5. **Depth:** medium (~12–20).
 
-### REGR-2 — What the Line Assumes: The Gauss–Markov Conditions
+### REGR-02 — What the Line Assumes: The Gauss–Markov Conditions
 1. **The one question:** Under what conditions on the errors is the least-squares line actually a good estimator, stated precisely?
 2. **Scope / inside:**
    - The model `Y = β₀ + β₁X + ε`; the four classical conditions (linearity, zero-mean errors, constant variance/homoscedasticity, uncorrelated errors), each stated and pictured.
    - What each condition buys and what its violation looks like in a residual plot (forward reference to REGR-10/REGR-11).
    - Distinguish "assumptions for unbiasedness" from "assumptions for efficiency" from "assumptions for inference" — a map the reader carries through the whole track.
-3. **Assumes:** REGR-1; **cross-track:** *expectation, variance, and covariance of a random variable* [Probability track]; *the idea of an estimator and bias* [Estimation & Inference track].
-4. **Sets up:** REGR-6 (Gauss–Markov theorem proper), REGR-10, REGR-11.
+3. **Assumes:** REGR-01; **cross-track:** *expectation, variance, and covariance of a random variable* [Probability track]; *the idea of an estimator and bias* [Estimation & Inference track].
+4. **Sets up:** REGR-06 (Gauss–Markov theorem proper), REGR-10, REGR-11.
 5. **Depth:** medium (~12–20).
 
-### REGR-3 — How Good Is the Fit? R², Residuals, and Error Measures
+### REGR-03 — How Good Is the Fit? R², Residuals, and Error Measures
 1. **The one question:** Once we have a line, how do we quantify how well it explains the data — and what do those numbers *not* tell us?
 2. **Scope / inside:**
    - The sum-of-squares identity `SST = SSR + SSE`, derived in full (the cross-term vanishes — show why).
    - `R²` as proportion of variance explained; its geometric meaning previewed; why `R²` always rises with more predictors (sets up adjusted `R²`).
    - RMSE/MAE as scale-bearing error measures; Anscombe's quartet as the honest edge case where the same `R²` hides wildly different realities.
-3. **Assumes:** REGR-1, REGR-2; **cross-track:** *variance as a sum of squares* [Probability track].
-4. **Sets up:** REGR-5 (adjusted R²), REGR-13 (model selection).
+3. **Assumes:** REGR-01, REGR-02; **cross-track:** *variance as a sum of squares* [Probability track].
+4. **Sets up:** REGR-05 (adjusted R²), REGR-13 (model selection).
 5. **Depth:** medium (~12–20).
 
-### REGR-4 — Regression as Projection: The Geometry of Least Squares
+### REGR-04 — Regression as Projection: The Geometry of Least Squares
 1. **The one question:** Why is least squares the *orthogonal projection* of the response vector onto the column space of the predictors, and why does that make it optimal?
 2. **Scope / inside:**
    - Reframe `y`, `ŷ`, residual `e` as vectors in ℝⁿ; the fitted vector is the projection of `y` onto `span(1, x)`.
    - Orthogonality of residuals to the column space ⇔ the normal equations — derive the equivalence both directions.
    - The hat matrix `H = X(XᵀX)⁻¹Xᵀ`, `ŷ = Hy`; `H` is the projection matrix (idempotent, symmetric — proven).
    - Why this picture makes multiple regression "the same idea in higher dimensions."
-3. **Assumes:** REGR-1; **cross-track (heavy):** *vector spaces, span, subspaces, inner product and orthogonality* and *orthogonal projection onto a subspace* [Geometry of Data / Applied Linear Algebra track]; *matrix inverse and transpose* [same].
-4. **Sets up:** REGR-5, REGR-6, REGR-10 (leverage = diagonal of H).
+3. **Assumes:** REGR-01; **cross-track (heavy):** *vector spaces, span, subspaces, inner product and orthogonality* and *orthogonal projection onto a subspace* [Geometry of Data / Applied Linear Algebra track]; *matrix inverse and transpose* [same].
+4. **Sets up:** REGR-05, REGR-06, REGR-10 (leverage = diagonal of H).
 5. **Depth:** deep (~20–30). **Split seam if needed:** cut after the orthogonality-↔-normal-equations equivalence; the hat matrix + idempotency could become a short companion ("The Hat Matrix") if the projection build runs long.
 
-### REGR-5 — Multiple Regression: The Normal Equations in Matrix Form
+### REGR-05 — Multiple Regression: The Normal Equations in Matrix Form
 1. **The one question:** How does least squares generalize to many predictors at once, and what is the closed-form solution `β̂ = (XᵀX)⁻¹Xᵀy`?
 2. **Scope / inside:**
    - The design matrix `X`; objective `‖y − Xβ‖²`; full matrix-calculus derivation of the normal equations `XᵀXβ̂ = Xᵀy` (gradient of a quadratic form, shown step by step).
-   - When `(XᵀX)⁻¹` exists (full column rank) and what it means when it doesn't (forward ref to REGR-7).
+   - When `(XᵀX)⁻¹` exists (full column rank) and what it means when it doesn't (forward ref to REGR-07).
    - Adjusted `R²` and the degrees-of-freedom bookkeeping.
    - Worked example with several real predictors; interpreting a coefficient as "holding the others fixed."
-3. **Assumes:** REGR-1, REGR-3, REGR-4; **cross-track:** *matrix multiplication, transpose, inverse, rank* and *gradient of a quadratic form / vector differentiation* [Applied Linear Algebra track]; the projection picture from REGR-4 carries the geometry.
-4. **Sets up:** REGR-6, REGR-7, REGR-8, REGR-9, and everything downstream (the matrix form is the lingua franca of the rest of the track).
+3. **Assumes:** REGR-01, REGR-03, REGR-04; **cross-track:** *matrix multiplication, transpose, inverse, rank* and *gradient of a quadratic form / vector differentiation* [Applied Linear Algebra track]; the projection picture from REGR-04 carries the geometry.
+4. **Sets up:** REGR-06, REGR-07, REGR-08, REGR-09, and everything downstream (the matrix form is the lingua franca of the rest of the track).
 5. **Depth:** deep (~20–30). **Split seam if needed:** vector-differentiation rules (`∂(βᵀAβ)/∂β`, `∂(bᵀβ)/∂β`) could be peeled into a tiny prerequisite or an appendix; cut there if the derivation crowds the examples.
 
 ---
 
 ## Statistical judgment: trusting the coefficients
 
-### REGR-6 — The Sampling Distribution of β̂ and the Gauss–Markov Theorem
+### REGR-06 — The Sampling Distribution of β̂ and the Gauss–Markov Theorem
 1. **The one question:** Treating the data as one draw, what is the distribution of the estimated coefficients, and in what precise sense is OLS the *best* linear unbiased estimator?
 2. **Scope / inside:**
    - `β̂` as a linear function of `y`; derive `E[β̂] = β` (unbiasedness) and `Var(β̂) = σ²(XᵀX)⁻¹`.
    - Statement and full proof of the **Gauss–Markov theorem** (OLS is BLUE) — the "no other linear unbiased estimator has smaller variance" argument.
-   - Estimating `σ²` with `s² = SSE/(n−p)`; why the divisor is `n−p` (degrees of freedom, tied back to REGR-4 geometry).
-3. **Assumes:** REGR-2, REGR-4, REGR-5; **cross-track:** *mean/variance of a random vector, covariance matrix* and *linear transformations of random vectors* [Probability track]; *unbiasedness and estimator efficiency* [Estimation & Inference track].
-4. **Sets up:** REGR-9 (inference), REGR-14 (ridge deliberately breaks unbiasedness for lower variance).
+   - Estimating `σ²` with `s² = SSE/(n−p)`; why the divisor is `n−p` (degrees of freedom, tied back to REGR-04 geometry).
+3. **Assumes:** REGR-02, REGR-04, REGR-05; **cross-track:** *mean/variance of a random vector, covariance matrix* and *linear transformations of random vectors* [Probability track]; *unbiasedness and estimator efficiency* [Estimation & Inference track].
+4. **Sets up:** REGR-09 (inference), REGR-14 (ridge deliberately breaks unbiasedness for lower variance).
 5. **Depth:** deep (~20–30).
 
-### REGR-7 — Multicollinearity: When XᵀX Goes Bad
+### REGR-07 — Multicollinearity: When XᵀX Goes Bad
 1. **The one question:** What happens to the fit and the coefficients when predictors are nearly linearly dependent, and how do we detect and respond to it?
 2. **Scope / inside:**
    - Geometric cause: near-collinear columns ⇒ `XᵀX` near-singular ⇒ exploded coefficient variance (tie to `Var(β̂) = σ²(XᵀX)⁻¹`).
    - Variance Inflation Factor, condition number; the honest example where coefficients flip sign with a tiny data change.
    - Remedies preview: drop/combine predictors, or shrink (forward ref to REGR-14 ridge as the principled fix).
-3. **Assumes:** REGR-5, REGR-6; **cross-track:** *eigenvalues / condition number of a matrix* [Applied Linear Algebra track].
+3. **Assumes:** REGR-05, REGR-06; **cross-track:** *eigenvalues / condition number of a matrix* [Applied Linear Algebra track].
 4. **Sets up:** REGR-14 (ridge as the cure).
 5. **Depth:** medium (~12–20).
 
-### REGR-8 — Categorical Predictors and Interaction Terms
+### REGR-08 — Categorical Predictors and Interaction Terms
 1. **The one question:** How do we put non-numeric predictors and "it depends on the combination" effects into a linear model honestly?
 2. **Scope / inside:**
-   - Dummy/one-hot encoding; the reference category and the dummy-variable trap (perfect collinearity with the intercept — ties to REGR-7).
+   - Dummy/one-hot encoding; the reference category and the dummy-variable trap (perfect collinearity with the intercept — ties to REGR-07).
    - Interaction terms as products of columns; interpreting them; why the design matrix stays linear *in the parameters*.
    - Worked example mixing continuous + categorical predictors with an interaction; visualizing differing slopes.
-3. **Assumes:** REGR-5; REGR-7 (for the dummy trap).
+3. **Assumes:** REGR-05; REGR-07 (for the dummy trap).
 4. **Sets up:** REGR-20 (basis functions generalize "build new columns"), REGR-26 (GAMs).
 5. **Depth:** medium (~12–20).
 
-### REGR-9 — Inference on Coefficients: t-tests, F-tests, and Intervals
+### REGR-09 — Inference on Coefficients: t-tests, F-tests, and Intervals
 1. **The one question:** How do we test whether a coefficient (or a group of them) matters, and build confidence and prediction intervals?
 2. **Scope / inside:**
    - The `t`-statistic for a single coefficient from `Var(β̂)` + estimated `σ²`; where the `t`-distribution and `n−p` df come from.
    - The `F`-test for nested models / overall significance; partial `F` for groups of coefficients.
    - Confidence interval for a mean response vs. **prediction interval** for a new observation — derive why the latter is wider.
    - The multiple-testing / p-hacking caution as the edge-of-applicability warning.
-3. **Assumes:** REGR-6; **cross-track:** *normal distribution, t- and F-distributions and where they arise* and *hypothesis testing, p-values, confidence intervals* [Estimation & Inference track].
+3. **Assumes:** REGR-06; **cross-track:** *normal distribution, t- and F-distributions and where they arise* and *hypothesis testing, p-values, confidence intervals* [Estimation & Inference track].
 4. **Sets up:** REGR-13 (model selection contrasts inference-based vs. predictive selection).
 5. **Depth:** deep (~20–30). **Split seam if needed:** cut after the single-coefficient `t`-test; "The F-test and Comparing Nested Models" can stand alone.
 
@@ -214,9 +214,9 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
 1. **The one question:** After fitting, how do we read the residuals to find where the model is lying, and which points are secretly steering the fit?
 2. **Scope / inside:**
    - Residual plots: detecting nonlinearity, heteroscedasticity, non-normality (QQ plots).
-   - **Leverage** as the diagonal of the hat matrix `H` (direct payoff from REGR-4); standardized/studentized residuals.
+   - **Leverage** as the diagonal of the hat matrix `H` (direct payoff from REGR-04); standardized/studentized residuals.
    - **Cook's distance** and influence; the honest example where one high-leverage outlier dominates everything.
-3. **Assumes:** REGR-4 (hat matrix), REGR-5, REGR-6; REGR-9 for studentization.
+3. **Assumes:** REGR-04 (hat matrix), REGR-05, REGR-06; REGR-09 for studentization.
 4. **Sets up:** REGR-11 (heteroscedasticity fix), the whole "when does this break" muscle for the rest of the track.
 5. **Depth:** medium (~12–20).
 
@@ -226,7 +226,7 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
    - Weighted least squares: re-derive the normal equations with a weight matrix `W`; `β̂ = (XᵀWX)⁻¹XᵀWy`.
    - Generalized least squares for correlated errors (covariance `Σ`); the whitening transformation that turns GLS back into OLS.
    - Heteroscedasticity-robust ("sandwich") standard errors as the fix when you can't model the variance.
-3. **Assumes:** REGR-6, REGR-10; **cross-track:** *positive-definite matrices and matrix square roots / Cholesky* [Applied Linear Algebra track].
+3. **Assumes:** REGR-06, REGR-10; **cross-track:** *positive-definite matrices and matrix square roots / Cholesky* [Applied Linear Algebra track].
 4. **Sets up:** REGR-18 (GLM's iteratively reweighted least squares is WLS in a loop).
 5. **Depth:** deep (~20–30).
 
@@ -236,7 +236,7 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
    - Assume Gaussian errors; write the likelihood; show maximizing it ⇒ minimizing SSE — OLS = Gaussian MLE, derived in full.
    - The MLE of `σ²` and why it differs from the unbiased `s²` (divisor `n` vs `n−p`).
    - Why this matters: it's the doorway to logistic/Poisson/GLM where there's no "sum of squares" to minimize.
-3. **Assumes:** REGR-5, REGR-6; **cross-track:** *likelihood, log-likelihood, and the MLE principle* [Estimation & Inference track]; *the Gaussian density* [Probability track].
+3. **Assumes:** REGR-05, REGR-06; **cross-track:** *likelihood, log-likelihood, and the MLE principle* [Estimation & Inference track]; *the Gaussian density* [Probability track].
 4. **Sets up:** REGR-14 (ridge = MAP / penalized likelihood), REGR-17–REGR-19 (GLMs are MLE), REGR-22 (smoothing-spline penalized likelihood).
 5. **Depth:** medium (~12–20).
 
@@ -246,7 +246,7 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
    - The bias–variance decomposition of expected prediction error, derived in full.
    - In-sample criteria: adjusted `R²`, Mallows' `Cp`, **AIC/BIC** (stated, with the likelihood link from REGR-12); out-of-sample: **cross-validation** (k-fold, LOOCV, and the LOOCV-via-hat-matrix shortcut).
    - Stepwise/subset selection and an honest warning about its instability (motivates regularization).
-3. **Assumes:** REGR-3, REGR-6, REGR-12; **cross-track:** *expected prediction error / risk* and *resampling* [Estimation & Inference track].
+3. **Assumes:** REGR-03, REGR-06, REGR-12; **cross-track:** *expected prediction error / risk* and *resampling* [Estimation & Inference track].
 4. **Sets up:** the entire Regularization sub-branch (REGR-14–REGR-16); the bandwidth/smoothing story (REGR-25).
 5. **Depth:** deep (~20–30). **Split seam if needed:** cut after the bias–variance decomposition; "Cross-Validation and Information Criteria" can be its own article.
 
@@ -257,10 +257,10 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
 ### REGR-14 — Ridge Regression: The Bias You Pay on Purpose
 1. **The one question:** How does adding an `ℓ₂` penalty cure ill-conditioning and reduce variance, and what does it cost?
 2. **Scope / inside:**
-   - Objective `‖y − Xβ‖² + λ‖β‖²`; derive `β̂_ridge = (XᵀX + λI)⁻¹Xᵀy` — note it's invertible even when `XᵀX` isn't (direct answer to REGR-7).
+   - Objective `‖y − Xβ‖² + λ‖β‖²`; derive `β̂_ridge = (XᵀX + λI)⁻¹Xᵀy` — note it's invertible even when `XᵀX` isn't (direct answer to REGR-07).
    - Bias–variance trade-off as `λ` grows; the shrinkage seen in the SVD/eigenbasis.
    - Bayesian reading: ridge = MAP with a Gaussian prior (ties to REGR-12); choosing `λ` by CV.
-3. **Assumes:** REGR-5, REGR-6, REGR-7, REGR-12, REGR-13; **cross-track:** *SVD / eigendecomposition* [Applied Linear Algebra]; *prior/posterior, MAP* [Estimation & Inference].
+3. **Assumes:** REGR-05, REGR-06, REGR-07, REGR-12, REGR-13; **cross-track:** *SVD / eigendecomposition* [Applied Linear Algebra]; *prior/posterior, MAP* [Estimation & Inference].
 4. **Sets up:** REGR-15, REGR-16.
 5. **Depth:** deep (~20–30).
 
@@ -325,10 +325,10 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
 ### REGR-20 — Polynomial and Basis-Function Regression (Still Linear in β)
 1. **The one question:** How do we fit curves while keeping all the linear-model machinery, by transforming the predictors instead of the parameters?
 2. **Scope / inside:**
-   - Polynomial features and general basis expansions `Σ βⱼ φⱼ(x)`; the key insight: still linear in `β`, so REGR-5–REGR-9 all apply unchanged.
+   - Polynomial features and general basis expansions `Σ βⱼ φⱼ(x)`; the key insight: still linear in `β`, so REGR-05–REGR-09 all apply unchanged.
    - Why high-degree polynomials behave badly (Runge phenomenon, wild tails) — the honest motivation for *local* basis functions.
    - Bias–variance as degree grows (ties to REGR-13).
-3. **Assumes:** REGR-5, REGR-8, REGR-13.
+3. **Assumes:** REGR-05, REGR-08, REGR-13.
 4. **Sets up:** REGR-21 (splines = better local bases).
 5. **Depth:** medium (~12–20).
 
@@ -338,7 +338,7 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
    - Truncated power basis and B-spline basis; continuity/smoothness constraints at knots, derived.
    - Natural cubic splines and why the linear-tail constraint tames the boundary.
    - Knot placement and count as the complexity dial; fit via the same least-squares solve.
-3. **Assumes:** REGR-20; **cross-track:** (none new beyond linear algebra from REGR-5).
+3. **Assumes:** REGR-20; **cross-track:** (none new beyond linear algebra from REGR-05).
 4. **Sets up:** REGR-22 (penalize instead of choosing knots).
 5. **Depth:** deep (~20–30).
 
@@ -346,7 +346,7 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
 1. **The one question:** What if instead of choosing knots we put a knot everywhere and penalize wiggliness — what curve does that produce?
 2. **Scope / inside:**
    - The penalized objective `Σ(yᵢ − f(xᵢ))² + λ∫f''(x)²dx`; the remarkable result that the minimizer is a natural cubic spline (stated, with the variational intuition built carefully).
-   - The smoother matrix `S_λ`; **effective degrees of freedom** as `trace(S_λ)` (echo of the hat matrix from REGR-4/REGR-10).
+   - The smoother matrix `S_λ`; **effective degrees of freedom** as `trace(S_λ)` (echo of the hat matrix from REGR-04/REGR-10).
    - Choosing `λ` by generalized cross-validation.
 3. **Assumes:** REGR-21, REGR-13; REGR-12 (penalized-likelihood reading); **cross-track:** *functionals and the calculus of variations, gently* [Optimization track] — built inline to the floor's level, flagged as the one place we touch above-floor calculus.
 4. **Sets up:** REGR-25 (smoothing parameter selection), REGR-26 (smooths inside GAMs).
@@ -358,7 +358,7 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
    - From "the conditional mean" to the Nadaraya–Watson estimator; kernels (Gaussian, Epanechnikov) and the bandwidth.
    - Derive it as locally-weighted least squares of *degree zero* (a local constant) — the bridge to REGR-24.
    - Boundary bias as the honest failure mode (the estimator flattens at the edges).
-3. **Assumes:** REGR-1, REGR-3; **cross-track:** *conditional expectation* [Probability track]; *kernels / weighting functions* (built inline).
+3. **Assumes:** REGR-01, REGR-03; **cross-track:** *conditional expectation* [Probability track]; *kernels / weighting functions* (built inline).
 4. **Sets up:** REGR-24, REGR-25.
 5. **Depth:** medium (~12–20).
 
@@ -386,9 +386,9 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
 1. **The one question:** How do we keep nonparametric flexibility in many dimensions by adding one-dimensional smooths instead of one joint smooth?
 2. **Scope / inside:**
    - The additive model `g(E[Y]) = β₀ + Σ fⱼ(xⱼ)`; fitting by **backfitting**; the GLM link reused (payoff from REGR-18) for non-Gaussian responses.
-   - Why additivity dodges the curse of dimensionality (from REGR-25) — and what it gives up (no interactions unless added explicitly, tie to REGR-8).
+   - Why additivity dodges the curse of dimensionality (from REGR-25) — and what it gives up (no interactions unless added explicitly, tie to REGR-08).
    - Interpretability as the headline strength; partial-dependence-style plots of each `fⱼ`.
-3. **Assumes:** REGR-8, REGR-18, REGR-22, REGR-25.
+3. **Assumes:** REGR-08, REGR-18, REGR-22, REGR-25.
 4. **Sets up:** Terminal node of the track — hands off to a Machine Learning / trees track (boosting, GAMs vs. gradient-boosted trees) and a Time Series track.
 5. **Depth:** deep (~20–30).
 
@@ -399,27 +399,27 @@ The three sub-branches (Regularization, GLM, Nonparametric) all hang off the sam
 These are pulled in at the points noted. Regression does **not** build them; they are named so the prerequisite chain (§1.4) is explicit.
 
 **From the Geometry of Data / Applied Linear Algebra track**
-- *Vector spaces, span, subspaces, inner products, orthogonality* — needed at **REGR-4**.
-- *Orthogonal projection onto a subspace* — needed at **REGR-4** (this is the spine of the geometric view).
-- *Matrix multiplication, transpose, inverse, rank* — needed at **REGR-5**.
-- *Gradient of a quadratic form / vector differentiation* (`∂(βᵀAβ)/∂β`) — needed at **REGR-5**.
-- *Eigenvalues, condition number of a matrix* — needed at **REGR-7**.
+- *Vector spaces, span, subspaces, inner products, orthogonality* — needed at **REGR-04**.
+- *Orthogonal projection onto a subspace* — needed at **REGR-04** (this is the spine of the geometric view).
+- *Matrix multiplication, transpose, inverse, rank* — needed at **REGR-05**.
+- *Gradient of a quadratic form / vector differentiation* (`∂(βᵀAβ)/∂β`) — needed at **REGR-05**.
+- *Eigenvalues, condition number of a matrix* — needed at **REGR-07**.
 - *Positive-definite matrices, matrix square root / Cholesky* — needed at **REGR-11**.
 - *Singular value decomposition / eigendecomposition* — needed at **REGR-14** (ridge shrinkage in the SVD basis).
 
 **From the Probability track**
-- *Expectation, variance, covariance of a random variable* — needed at **REGR-2**.
-- *Variance as a sum of squares* — needed at **REGR-3**.
-- *Mean/variance/covariance matrix of a random vector; linear transforms of random vectors* — needed at **REGR-6**.
-- *Normal (Gaussian) distribution and its density* — needed at **REGR-9, REGR-12**.
-- *t-, F-, and chi-squared distributions and where they arise* — needed at **REGR-9**.
+- *Expectation, variance, covariance of a random variable* — needed at **REGR-02**.
+- *Variance as a sum of squares* — needed at **REGR-03**.
+- *Mean/variance/covariance matrix of a random vector; linear transforms of random vectors* — needed at **REGR-06**.
+- *Normal (Gaussian) distribution and its density* — needed at **REGR-09, REGR-12**.
+- *t-, F-, and chi-squared distributions and where they arise* — needed at **REGR-09**.
 - *Bernoulli/binomial; Poisson; negative-binomial distributions* — needed at **REGR-17, REGR-19**.
 - *Exponential family of distributions* — needed at **REGR-18**.
-- *Conditional expectation `E[Y|X]`* — needed at **REGR-23** (and conceptually as early as REGR-0).
+- *Conditional expectation `E[Y|X]`* — needed at **REGR-23** (and conceptually as early as REGR-00).
 
 **From the Estimation & Inference track**
-- *Estimators, bias, efficiency* — needed at **REGR-2, REGR-6**.
-- *Hypothesis testing, p-values, confidence intervals* — needed at **REGR-9**.
+- *Estimators, bias, efficiency* — needed at **REGR-02, REGR-06**.
+- *Hypothesis testing, p-values, confidence intervals* — needed at **REGR-09**.
 - *Likelihood, log-likelihood, the MLE principle* — needed at **REGR-12**.
 - *Prior/posterior and MAP estimation* — needed at **REGR-14** (Bayesian reading of ridge).
 - *Expected prediction error / risk; cross-validation as a resampling method* — needed at **REGR-13**.
@@ -436,23 +436,23 @@ These are pulled in at the points noted. Regression does **not** build them; the
 
 The track is a **trunk plus three parallel sub-branches**, and that shape is deliberate.
 
-- **Trunk (REGR-0–REGR-13)** must be read in order. It ends at **REGR-13 (bias–variance + model selection)**, which is the natural fork: everything after REGR-13 is a different *answer* to "the simple linear model isn't enough."
+- **Trunk (REGR-00–REGR-13)** must be read in order. It ends at **REGR-13 (bias–variance + model selection)**, which is the natural fork: everything after REGR-13 is a different *answer* to "the simple linear model isn't enough."
 
 - **Three parallel branches off the trunk, readable in any order:**
-  - **Regularization (REGR-14–REGR-16)** — keep the linear model, *shrink* the coefficients. Branch trigger: REGR-7 (multicollinearity) + REGR-13 (overfitting). Closest sibling: feeds a future ML track.
+  - **Regularization (REGR-14–REGR-16)** — keep the linear model, *shrink* the coefficients. Branch trigger: REGR-07 (multicollinearity) + REGR-13 (overfitting). Closest sibling: feeds a future ML track.
   - **GLMs (REGR-17–REGR-19)** — keep linearity in the predictor, change the *response distribution*. Branch trigger: REGR-12 (the MLE reframing is the gateway).
   - **Nonparametric/flexible (REGR-20–REGR-26)** — abandon the global functional form, let the *data choose the curve*. Branch trigger: REGR-20 (basis functions) growing out of REGR-13's complexity question.
 
 - **The branches reconverge** at **REGR-26 (GAMs)**, which deliberately fuses the GLM link function (from the GLM branch) with smooth terms (from the nonparametric branch) — the single best place to end the track because it requires command of two branches at once.
 
-- **Natural earlier sub-split inside the trunk:** REGR-4 (geometry) and REGR-5 (matrix multiple regression) are the heaviest linear-algebra lift. If the cross-track Applied Linear Algebra prerequisites aren't yet written, REGR-4–REGR-6 form a coherent "linear-algebra-of-regression" mini-arc that can be drafted as a unit once those prerequisites land.
+- **Natural earlier sub-split inside the trunk:** REGR-04 (geometry) and REGR-05 (matrix multiple regression) are the heaviest linear-algebra lift. If the cross-track Applied Linear Algebra prerequisites aren't yet written, REGR-04–REGR-06 form a coherent "linear-algebra-of-regression" mini-arc that can be drafted as a unit once those prerequisites land.
 
 ---
 
 ### Design notes / opinionated calls
-- **REGR-0 is intentionally a short motivator, not a derivation** — it exists so the *why* (§1.1) has a home before the algebra of REGR-1, and so "regression to the mean" is demystified up front rather than left as folklore.
-- **Projection (REGR-4) comes before multiple regression (REGR-5) on purpose.** The geometry makes the matrix normal equations feel inevitable rather than dropped from the sky, and it pays off three more times (degrees of freedom in REGR-6, leverage in REGR-10, effective df in REGR-22).
+- **REGR-00 is intentionally a short motivator, not a derivation** — it exists so the *why* (§1.1) has a home before the algebra of REGR-01, and so "regression to the mean" is demystified up front rather than left as folklore.
+- **Projection (REGR-04) comes before multiple regression (REGR-05) on purpose.** The geometry makes the matrix normal equations feel inevitable rather than dropped from the sky, and it pays off three more times (degrees of freedom in REGR-06, leverage in REGR-10, effective df in REGR-22).
 - **The MLE article (REGR-12) is placed as a hinge, not an afterthought.** It is the single prerequisite that makes both the GLM branch and the regularization-as-MAP and smoothing-spline branches feel like one idea instead of three unrelated tricks.
 - **REGR-23 (kernel) before REGR-24 (local) and both before REGR-25 (bandwidth)** so that "the bandwidth is the real model" lands as a punchline the reader has already half-derived twice.
 
-This roadmap is **27 articles** (REGR-0–REGR-26). The trunk is 14, and each sub-branch is 3–7. Several deep articles (REGR-4, REGR-5, REGR-9, REGR-15, REGR-17, REGR-22) carry pre-marked split seams should they push the 30-page ceiling during drafting.
+This roadmap is **27 articles** (REGR-00–REGR-26). The trunk is 14, and each sub-branch is 3–7. Several deep articles (REGR-04, REGR-05, REGR-09, REGR-15, REGR-17, REGR-22) carry pre-marked split seams should they push the 30-page ceiling during drafting.

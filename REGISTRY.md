@@ -9,7 +9,7 @@ that does not yet exist, the ID is still reserved here so the link stays valid.
 ## Article-ID prefixes
 
 Every article has a global ID: a four-letter track prefix plus a number. Within a track,
-numbers run in track order (`REGR-0`, `REGR-1`, ...). A letter-prefixed number (`INFR-B4`)
+numbers run in track order (`REGR-00`, `REGR-01`, ...). A letter-prefixed number (`INFR-B4`)
 denotes a side-branch / sub-sequence within a track.
 
 | Prefix | Track                   |
@@ -23,7 +23,7 @@ denotes a side-branch / sub-sequence within a track.
 | UNSP   | Unsupervised Learning   |
 | CAUS   | Causal Inference        |
 
-Example IDs: `REGR-4`, `INFR-B4`.
+Example IDs: `REGR-04`, `INFR-B4`.
 
 ---
 
@@ -36,10 +36,10 @@ articles/<track-slug>/<ID>-<kebab-slug>.qmd
 ```
 
 - `<track-slug>` is the track's directory slug (table below).
-- `<ID>` is the global article ID (e.g. `REGR-1`).
+- `<ID>` is the global article ID (e.g. `REGR-01`).
 - `<kebab-slug>` is a short kebab-case description of the article.
 
-Example: `articles/regression/REGR-1-ols-one-predictor.qmd`.
+Example: `articles/regression/REGR-01-ols-one-predictor.qmd`.
 
 | Prefix | Track slug                |
 | ------ | ------------------------- |
@@ -126,8 +126,8 @@ Reference figures inline with `@fig-residuals`. Labels must start with `fig-`.
 To avoid two tracks deriving the same machinery, the following topics have a single owning
 article; every other track links to it rather than re-deriving.
 
-- **EM algorithm** — owned by **Unsupervised Learning** (`UNSP-5`). Other tracks (e.g.
-  mixture models, missing-data treatments) link to `UNSP-5`.
+- **EM algorithm** — owned by **Unsupervised Learning** (`UNSP-05`). Other tracks (e.g.
+  mixture models, missing-data treatments) link to `UNSP-05`.
 - **The kernel trick** — owned by **Classification** (`CLAS`), introduced alongside SVMs.
   Other tracks link to the SVM article rather than re-introducing kernels.
 - **Cross-method evaluation** — a future **Model-Evaluation** track is planned to absorb

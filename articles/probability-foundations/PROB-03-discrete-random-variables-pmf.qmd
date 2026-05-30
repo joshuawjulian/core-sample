@@ -30,17 +30,17 @@ STEM   = "#2b3a67"     # pmf stems
 ```
 
 > **Where this sits in the track.** This is the first of the two concrete kinds of random
-> variable, the left fork after [PROB-2 *Random Variables: Turning Outcomes into Numbers*].
-> PROB-2 built the random variable as a function $X:\Omega\to\mathbb{R}$ and named the one
+> variable, the left fork after [PROB-02 *Random Variables: Turning Outcomes into Numbers*].
+> PROB-02 built the random variable as a function $X:\Omega\to\mathbb{R}$ and named the one
 > object that describes *any* such variable — the cumulative distribution function
 > $F(x)=P(X\le x)$. Here we specialize to the case where $X$ lands on a **countable** set
 > of values, and we meet the object that makes that case computable: the **probability
-> mass function** $p(x)=P(X=x)$. We assume only [PROB-0 *What Is Probability?*] (sample
-> spaces and the Kolmogorov axioms) and [PROB-2]. It sets up [PROB-5 *Expectation*] (the
+> mass function** $p(x)=P(X=x)$. We assume only [PROB-00 *What Is Probability?*] (sample
+> spaces and the Kolmogorov axioms) and [PROB-02]. It sets up [PROB-05 *Expectation*] (the
 > long-run average is a sum *weighted by the mass*), and the named discrete distributions —
 > [PROB-11 *Bernoulli, Binomial & Negative-Binomial*] and [PROB-12 *The Poisson
 > Distribution*] — which are nothing but particular mass functions. The companion fork is
-> [PROB-4 *Continuous Random Variables*], where the continuum forces a density in place of
+> [PROB-04 *Continuous Random Variables*], where the continuum forces a density in place of
 > a mass.
 
 ## Abstract {.unnumbered}
@@ -52,7 +52,7 @@ how much **probability mass** sits on each value. This article builds that table
 the two properties that make a function a legitimate pmf ($p(x)\ge 0$ and $\sum_x p(x)=1$),
 and shows how *every* event probability — $P(X\le 3)$, $P(X\text{ is even})$, $P(2\le X<
 7)$ — is just a sum of mass over the values the event contains. We then make the pmf and
-the CDF of [PROB-2] two views of the same object: the CDF is the running total of the mass
+the CDF of [PROB-02] two views of the same object: the CDF is the running total of the mass
 (a sum), and the mass is the size of the CDF's jumps (a difference). The single claim this
 article defends is that **for a discrete variable there is nothing more to know than where
 the mass sits** — once you have the pmf, the CDF, every probability, and (next article) the
@@ -92,16 +92,16 @@ Keep one question in view for the whole article: **once we have turned random ou
 numbers, how do we actually compute the probability of anything we care about?** Every step
 below is an answer to a piece of that question. If a move feels arbitrary, return here.
 
-## What PROB-2 left us, and what it left undone
+## What PROB-02 left us, and what it left undone
 
-[PROB-2] performed the move that lets arithmetic touch chance: it defined a **random
+[PROB-02] performed the move that lets arithmetic touch chance: it defined a **random
 variable** as a function $X:\Omega\to\mathbb{R}$ that attaches a number to every outcome in
-the sample space $\Omega$ built in [PROB-0]. Roll two dice; the outcome is a pair like
+the sample space $\Omega$ built in [PROB-00]. Roll two dice; the outcome is a pair like
 $(3,5)$, but what we care about is the *total*, $X=8$. The variable $X$ is the rule
 "add the two faces." That rule turns the messy space of outcomes into plain numbers we can
 order, add, and average.
 
-PROB-2 also named the one descriptor that works for *every* random variable — discrete,
+PROB-02 also named the one descriptor that works for *every* random variable — discrete,
 continuous, or a hybrid — the **cumulative distribution function**
 $$
 F(x) = P(X \le x),
@@ -120,11 +120,11 @@ A random variable is called **discrete** when its possible values form a *counta
 either finite ($\{1,2,3,4,5,6\}$ for one die) or countably infinite ($\{0,1,2,3,\dots\}$ for
 a count with no fixed ceiling). "Countable" is the precise word for *listable*: you can put
 the values in a sequence $x_1,x_2,x_3,\dots$ and not miss any. (The integers are countable;
-the real numbers in $[0,1]$ are not — that is exactly the gap [PROB-4] must cross with a
+the real numbers in $[0,1]$ are not — that is exactly the gap [PROB-04] must cross with a
 density, and why this article and that one split.)
 
 The reason discreteness is the right place to start is that it lets us assign probability the
-way [PROB-0]'s axioms most naturally allow. Recall **Kolmogorov's axioms** from [PROB-0]:
+way [PROB-00]'s axioms most naturally allow. Recall **Kolmogorov's axioms** from [PROB-00]:
 $P(E)\ge 0$ for every event $E$; $P(\Omega)=1$; and for a sequence of *disjoint* events
 $E_1,E_2,\dots$,
 $$
@@ -145,9 +145,9 @@ payout that takes the values $\{-2.50, 0, 17.00\}$ is discrete (three values, fi
 variable that takes every value in the interval $[0,1]$ is *not* discrete (that interval is
 uncountable), even though every value is a perfectly ordinary number. The dividing line is
 listability, and it is the line that decides whether you describe the variable with a mass
-function (this article) or a density ([PROB-4]). Some variables are neither pure — a rainfall
+function (this article) or a density ([PROB-04]). Some variables are neither pure — a rainfall
 amount that is $0$ with positive probability but otherwise spreads over a continuum is a
-*mixture*; the CDF of [PROB-2] is what handles all three on equal footing.
+*mixture*; the CDF of [PROB-02] is what handles all three on equal footing.
 :::
 
 # Intuition before symbols {#sec-intuition}
@@ -228,14 +228,14 @@ $$
 p(x) = P(X = x) ,
 $$ {#eq-pmf-def}
 the probability that $X$ takes the exact value $x$. For values $x$ that $X$ cannot take, the
-event $\{X=x\}$ is empty, so $p(x)=P(\varnothing)=0$ by [PROB-0].
+event $\{X=x\}$ is empty, so $p(x)=P(\varnothing)=0$ by [PROB-00].
 :::
 
 Unpack every symbol in @eq-pmf-def, because each earns its place. The set $\mathcal{X}$ is
 the **support** of $X$ — the values that actually carry positive mass (made precise in
 @sec-support). The event "$X=x$" is shorthand for the set of outcomes $\omega\in\Omega$ for
 which the function $X$ returns the number $x$; formally $\{X=x\}=\{\omega\in\Omega: X(\omega)=x\}$,
-which is a genuine event in the sense of [PROB-0], so $P$ is allowed to act on it. The pmf is
+which is a genuine event in the sense of [PROB-00], so $P$ is allowed to act on it. The pmf is
 defined for *every* real $x$, but it is zero everywhere except on the countable support — the
 clay sits only at the lumps.
 
@@ -248,7 +248,7 @@ equal to the fixed number $x$." When several variables are in play we write $p_X
 ## The two defining properties — derived, not declared {#sec-properties}
 
 The Core asserts that a pmf satisfies $p(x)\ge 0$ and $\sum_x p(x)=1$. We do not declare
-these; we derive them from the Kolmogorov axioms of [PROB-0], because that is where their
+these; we derive them from the Kolmogorov axioms of [PROB-00], because that is where their
 authority comes from.
 
 ::: {#thm-pmf-props}
@@ -313,7 +313,7 @@ and sum to one. @thm-pmf-props says that check is *sufficient* — nothing else 
 not a separate rule. Each $p(x)$ is one term of a sum of non-negative numbers that totals
 exactly $1$, so no single term can exceed the total: $0\le p(x)\le 1$. Watch this carefully,
 because it is **the cleanest contrast with the continuous case**: a probability *density*
-([PROB-4]) routinely exceeds $1$, since a density is mass *per unit length*, not mass. A mass
+([PROB-04]) routinely exceeds $1$, since a density is mass *per unit length*, not mass. A mass
 is a probability and is capped at $1$; a density is not a probability and is not capped. Mixing
 the two up is the single most common conceptual error when crossing from this article to the
 next.
@@ -384,7 +384,7 @@ specializations cover almost everything you will ever compute:
 *"Why is $P(a\le X\le b)$ a sum here, but an integral for a continuous variable?"* Because the
 mass lives at *isolated points*. Probability "in a region" means "the probability assigned to
 the region," and for a discrete variable the region's probability is the sum of the point
-masses inside it — there is no width to integrate over, the clay sits at the lumps. In [PROB-4]
+masses inside it — there is no width to integrate over, the clay sits at the lumps. In [PROB-04]
 the probability is smeared continuously, so the analogous total is $\int_a^b f(x)\,dx$. The
 $\sum$ here and the $\int$ there are the *same idea* — total the probability in the region —
 under two different ways probability can be distributed. Seeing them as one idea, not two
@@ -393,7 +393,7 @@ formulas, is what an interviewer is probing.
 
 ## The CDF is the running sum; the pmf is the jump {#sec-cdf-pmf}
 
-We now make precise the right-hand picture of @fig-pmf-cdf: the pmf and the CDF of [PROB-2]
+We now make precise the right-hand picture of @fig-pmf-cdf: the pmf and the CDF of [PROB-02]
 are two views of one table, related by summing in one direction and differencing in the other.
 
 **From pmf to CDF (sum).** Apply @eq-event-sum with $A=(-\infty, x]$:
@@ -406,7 +406,7 @@ flat. So $F$ is a **step function**: flat stretches punctuated by upward jumps. 
 **right-continuous** — at a supported value $x_0$, the sum @eq-cdf-from-pmf already *includes*
 $p(x_0)$ (the inequality is $t\le x$, not $t<x$), so $F$ takes the post-jump value *at* $x_0$;
 this is exactly the filled-dot/open-dot convention in @fig-pmf-cdf. These are the three
-defining CDF properties from [PROB-2] — monotone, right-continuous, limits $0$ and $1$ —
+defining CDF properties from [PROB-02] — monotone, right-continuous, limits $0$ and $1$ —
 specialized to a step function.
 
 **From CDF to pmf (difference).** The mass at $x_0$ is the *height of the jump* there. Writing
@@ -440,15 +440,15 @@ $F$ has no jump — it is continuous there. $\qquad\blacksquare$
 @lem-jump is more than bookkeeping: it is the reason discreteness is *visible* in the CDF.
 A discrete variable's CDF is a pure staircase (all of its rise happens in jumps); a continuous
 variable's CDF rises smoothly with no jumps (every $P(X=x)=0$); a mixture has both. The shape
-of $F$ tells you which kind of variable you have, which is precisely the diagnostic [PROB-2]
-promised and the seam between this article and [PROB-4].
+of $F$ tells you which kind of variable you have, which is precisely the diagnostic [PROB-02]
+promised and the seam between this article and [PROB-04].
 
 ::: {.callout-tip title="You might be asked"}
 *"Given a CDF, how do you recover $P(X=3)$, $P(X<3)$, and $P(X\le 3)$ — and why are they
 different?"* Use the staircase. $P(X\le 3)=F(3)$ reads the step *at* $3$ (right-continuous, so
 $F(3)$ already includes the mass at $3$). $P(X<3)=F(3^-)$ reads the height *just before* the
 jump at $3$ — it *excludes* the mass at $3$. And $P(X=3)=F(3)-F(3^-)$ is the jump itself, the
-difference of the two. They differ by exactly $p(3)$. For a *continuous* variable ([PROB-4])
+difference of the two. They differ by exactly $p(3)$. For a *continuous* variable ([PROB-04])
 the point mass is $p(3)=P(X=3)=0$, so the jump height is zero and $F(3^-)=F(3)$; substituting
 that into the three expressions gives $P(X<3)=F(3^-)=F(3)=P(X\le 3)$ and $P(X=3)=F(3)-F(3^-)=0$
 — so all three collapse to the same number. That is precisely why the strict-vs-weak inequality
@@ -543,7 +543,7 @@ single most useful move in the whole subject, because it is what turns "what hap
 "what it cost me." A small game: pay \$1 to roll the *fair* die above's honest cousin (a fair
 six-sided die). You win \$5 on a $6$, win \$1 on a $5$, and otherwise win nothing. Let $X$ be
 your **net profit** in dollars (winnings minus the \$1 stake). Then $X$ is a discrete variable
-on three values, and we build its pmf from the die's pmf by the rule from [PROB-2]: the mass
+on three values, and we build its pmf from the die's pmf by the rule from [PROB-02]: the mass
 of a value of $X$ is the total mass of the outcomes that *map to* it.
 
 The fair die has $p(\text{face})=1/6$ each. Mapping faces to net profit:
@@ -571,13 +571,13 @@ print(f"P(loss)        = p(-1)        = {p_prof[0]:.3f}")
 The mass on $-1$ is the heaviest: you lose your stake two-thirds of the time, and the rare \$4
 win on a $6$ is what the game dangles to keep you playing. We are *not* yet computing whether
 the game is worth playing on average — that is **expectation**, $E[X]=\sum_x x\,p(x)$, the
-weighted sum of the values against this very mass, and it is the entire subject of [PROB-5].
+weighted sum of the values against this very mass, and it is the entire subject of [PROB-05].
 The point here is narrower and prior: the pmf of a transformed variable is built by *pooling
 the mass* of the outcomes that land on each new value. @fig-payout draws it.
 
 ```{python}
 #| label: fig-payout
-#| fig-cap: "The casino game's net-profit pmf. Each bar's height is the pooled mass of the die faces that produce that profit: four faces collapse onto a \\$1 loss (mass $2/3$), one face each onto break-even and a \\$4 win (mass $1/6$). The heavy mass on the loss is the house edge made visible — turning this picture into a single \"is it worth it?\" number is the job of expectation in [PROB-5]."
+#| fig-cap: "The casino game's net-profit pmf. Each bar's height is the pooled mass of the die faces that produce that profit: four faces collapse onto a \\$1 loss (mass $2/3$), one face each onto break-even and a \\$4 win (mass $1/6$). The heavy mass on the loss is the house edge made visible — turning this picture into a single \"is it worth it?\" number is the job of expectation in [PROB-05]."
 fig, ax = plt.subplots(figsize=(6.0, 3.8))
 bars = ax.bar(prof, p_prof, width=0.4, color=[LINE, GREY, ACCENT])
 for v, p in zip(prof, p_prof):
@@ -738,7 +738,7 @@ worth doing once until it is reflex.
 A "pmf" that does not satisfy @thm-pmf-props is not a pmf, and two corruptions are common in
 practice. **Negative mass** sneaks in when someone computes "probabilities" by an unconstrained
 fit or a subtraction and forgets the $p\ge0$ axiom — the result is meaningless, since a negative
-probability has no interpretation under [PROB-0]. **Mass that does not total one** appears when
+probability has no interpretation under [PROB-00]. **Mass that does not total one** appears when
 a sum is truncated (the arrivals tail of @sec-geometric, dropped) or double-counts an outcome;
 the cure is **renormalization** — divide every mass by the actual total $Z=\sum_x \tilde p(x)$
 so that $p(x)=\tilde p(x)/Z$ sums to one. Renormalization is legitimate *only* when the
@@ -751,7 +751,7 @@ wrong tool — not just inconvenient, but undefined in the form $P(X=x)$ — whe
 **continuous**. For a continuous variable, $P(X=x)=0$ for *every* single value (there are
 uncountably many values to share one unit of mass, so no individual point can hold a positive
 sliver), and a mass function would be identically zero, telling you nothing. That is precisely
-why [PROB-4] replaces the mass with a **density** $f(x)$ and the sum with an integral. The tell
+why [PROB-04] replaces the mass with a **density** $f(x)$ and the sum with an integral. The tell
 is in the CDF: if $F$ rises *smoothly* with no jumps, there is no mass to tabulate and you need a
 density; if $F$ is a staircase, the pmf is exactly right; if it has both jumps and smooth rises,
 the variable is a **mixture** and needs both. Trying to force a pmf onto a continuous variable —
@@ -759,7 +759,7 @@ or a density onto a discrete one — is the deepest version of using the wrong o
 
 ::: {.callout-warning title="Pitfall"}
 **A probability mass is a probability; a probability density is not.** A mass $p(x)$ is capped
-at $1$ and is read off directly as $P(X=x)$. A density $f(x)$ ([PROB-4]) can exceed $1$ and is
+at $1$ and is read off directly as $P(X=x)$. A density $f(x)$ ([PROB-04]) can exceed $1$ and is
 *not* a probability — only its integral over a region is. The symptoms look similar (both are
 non-negative, both "integrate/sum to one"), so the trap is to carry pmf intuition into the
 continuous world. The discriminator is always the same: discrete mass lives at points and you
@@ -776,11 +776,11 @@ summary:
   net payout taking finitely many values. The values are listable and probability sits on them.
 - **Do not use a pmf** for a genuinely continuous quantity — a time, a length, a temperature,
   a measured concentration — where every exact value has probability zero; reach for a *density*
-  ([PROB-4]). Beware the common *near*-discrete case: data recorded to two decimals *looks*
+  ([PROB-04]). Beware the common *near*-discrete case: data recorded to two decimals *looks*
   discrete but is a rounded continuous quantity, and is usually better modeled continuously.
 - **Watch for mixtures** — a quantity that is exactly zero with positive probability and
   otherwise continuous (rainfall, insurance claims, time-to-event with a spike at zero). Neither
-  a pure pmf nor a pure density fits; the CDF of [PROB-2] is the object that handles all three,
+  a pure pmf nor a pure density fits; the CDF of [PROB-02] is the object that handles all three,
   and you model the discrete spike and continuous part separately.
 
 The deepest version of the question is just "does probability sit at points or spread over a
@@ -790,19 +790,19 @@ continuum?" — and the CDF's jumps-vs-smoothness answers it.
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[PROB-2 *Random Variables*]**, which made $X$ a function on the sample space
+You arrived from **[PROB-02 *Random Variables*]**, which made $X$ a function on the sample space
 and named the universal descriptor $F(x)=P(X\le x)$. This article specialized to the
 **countable-valued** case and built its natural descriptor, the **probability mass function**
-$p(x)=P(X=x)$ — proving its two axioms from [PROB-0]'s countable additivity, showing every event
+$p(x)=P(X=x)$ — proving its two axioms from [PROB-00]'s countable additivity, showing every event
 probability is a sum of mass (@eq-event-sum), and tying the pmf to the CDF as jumps-and-running-
 sums (@lem-jump). From here the trunk continues:
 
-- **[PROB-4 *Continuous Random Variables*]** — the companion fork: when the values fill a
+- **[PROB-04 *Continuous Random Variables*]** — the companion fork: when the values fill a
   continuum, $P(X=x)=0$ and the mass becomes a **density** $f(x)$, the sum an **integral**. The
   jumps-vs-smoothness of the CDF is the seam between the two articles.
-- **[PROB-5 *Expectation*]** — the long-run average $E[X]=\sum_x x\,p(x)$ is the values weighted
+- **[PROB-05 *Expectation*]** — the long-run average $E[X]=\sum_x x\,p(x)$ is the values weighted
   by *this very mass*; the casino payout of @sec-payout is waiting for exactly this number to
-  decide whether the game is worth playing. Variance ([PROB-6]) is the next weighted sum.
+  decide whether the game is worth playing. Variance ([PROB-06]) is the next weighted sum.
 - **[PROB-11 *Bernoulli, Binomial & Negative-Binomial*]** and **[PROB-12 *The Poisson
   Distribution*]** — the named discrete distributions are nothing but particular mass functions;
   every one of them must pass the @thm-pmf-props check we built here (the geometric series of
@@ -817,14 +817,14 @@ sums (@lem-jump). From here the trunk continues:
   problem of points, and Jacob Bernoulli's *Ars Conjectandi* (1713), where counting the favorable
   arrangements *is* assigning mass. The modern footing — mass as a special case of a measure on a
   countable set, justified by countable additivity — is Kolmogorov's 1933 *Grundbegriffe*, the
-  same source as [PROB-0]'s axioms.
+  same source as [PROB-00]'s axioms.
 - **The unifying view this article deliberately deferred.** The pmf (sum) and the pdf (integral,
-  [PROB-4]) are two faces of one object: a *probability measure*, integrated against a *counting
+  [PROB-04]) are two faces of one object: a *probability measure*, integrated against a *counting
   measure* in the discrete case and against *Lebesgue measure* in the continuous case. That
   unification is measure-theoretic and lives above this track's floor; we flag it here so you know
   the $\sum$/$\int$ duality is not a coincidence but a single integral in disguise.
-- **Open threads.** *What single number summarizes where the mass sits?* — the mean, [PROB-5].
-  *How spread out is it?* — the variance, [PROB-6]. *What if two discrete variables vary together?*
-  — the joint pmf, [PROB-7]. *Where do real count distributions come from?* — the catalog,
+- **Open threads.** *What single number summarizes where the mass sits?* — the mean, [PROB-05].
+  *How spread out is it?* — the variance, [PROB-06]. *What if two discrete variables vary together?*
+  — the joint pmf, [PROB-07]. *Where do real count distributions come from?* — the catalog,
   [PROB-11]–[PROB-12], with the negative-binomial as the honest fix when a Poisson count is
   over-dispersed.

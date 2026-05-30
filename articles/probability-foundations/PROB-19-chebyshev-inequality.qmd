@@ -35,10 +35,10 @@ GREY   = "#6c757d"
 > sibling of [PROB-20 *Moment Generating and Characteristic Functions*]: where PROB-20
 > packages **all** of a distribution's moments into one transform, this article asks how
 > much you can already say about a distribution's **tails** knowing only its first two
-> moments — the mean and the variance. It assumes [PROB-5 *Expectation*] (the expectation
-> operator, its linearity, and the law of the unconscious statistician), [PROB-6
+> moments — the mean and the variance. It assumes [PROB-05 *Expectation*] (the expectation
+> operator, its linearity, and the law of the unconscious statistician), [PROB-06
 > *Variance, Standard Deviation, and Variance as a Sum of Squares*] (the definition
-> $\operatorname{Var}(X)=E[(X-\mu)^2]$ and the standard deviation), and [PROB-8
+> $\operatorname{Var}(X)=E[(X-\mu)^2]$ and the standard deviation), and [PROB-08
 > *Independence and the i.i.d. Sample*] (the variance-of-a-sum rule under independence,
 > which we need for the law-of-large-numbers sketch). Nothing above the Calc-1 floor is
 > assumed; the one integral we lean on is a Calc-1 integral of a nonnegative function over
@@ -149,7 +149,7 @@ that is the thread we hold for the rest of the article: the inequality exists to
 guarantee when you refuse to assume the shape.
 
 This is why the inequality is built the way it is. It uses the variance — the one spread
-summary that is *additive* across independent variables (from [PROB-8]) — because the goal
+summary that is *additive* across independent variables (from [PROB-08]) — because the goal
 was always to control the average of *many* independent things, where additivity makes the
 spread of the average collapse. Markov-then-Chebyshev is not an arbitrary chain; it is the
 shortest path from "a nonnegative thing rarely gets huge" to "the average rarely strays,"
@@ -253,7 +253,7 @@ nonnegative variables and not about all of them.
 
 Since @eq-pointwise holds for every outcome, it holds in expectation — expectation
 preserves inequalities, because averaging a quantity that is always $\le$ another averages
-to something $\le$ (this **monotonicity of expectation** is established in [PROB-5]; it
+to something $\le$ (this **monotonicity of expectation** is established in [PROB-05]; it
 follows because $X - a\,\mathbf 1\{X\ge a\} \ge 0$ pointwise and the expectation of a
 nonnegative variable is nonnegative). Taking $E[\cdot]$ of both sides of @eq-pointwise and
 using linearity to pull the constant $a$ out of the left side:
@@ -318,7 +318,7 @@ $$ {#eq-chebyshev-k}
 ::: {.proof}
 Define the new random variable $Y = (X-\mu)^2$. It is nonnegative for every outcome,
 because it is a square of a real number — so Markov applies to it. Its mean is, by the
-definition of variance from [PROB-6],
+definition of variance from [PROB-06],
 $$
 E[Y] = E\big[(X-\mu)^2\big] = \operatorname{Var}(X) = \sigma^2.
 $$
@@ -368,7 +368,7 @@ gives a *different*, sometimes worse, bound. Applying Markov to $|X-\mu|$ needs 
 the **mean absolute deviation**, which is a moment most problems do not hand you and which
 is not additive over independent sums. Squaring buys two things at once: it produces a
 quantity whose mean is the **variance** — the spread summary you usually *do* have and that
-*is* additive (from [PROB-8]) — and it makes far deviations cost quadratically, giving the
+*is* additive (from [PROB-08]) — and it makes far deviations cost quadratically, giving the
 characteristic $1/k^2$ decay instead of $1/k$. The quadratic penalty is also why Chebyshev
 plugs straight into the variance-shrinks-like-$1/n$ argument for the law of large numbers.
 :::
@@ -498,20 +498,20 @@ crushed variance directly into a vanishing tail probability.
 ## The variance of the sample mean {#sec-var-mean}
 
 Let $X_1, X_2, \dots, X_n$ be **independent and identically distributed** (i.i.d.) — the
-setting built in [PROB-8] — each with mean $\mu$ and variance $\sigma^2$. Their **sample
+setting built in [PROB-08] — each with mean $\mu$ and variance $\sigma^2$. Their **sample
 mean** is the random variable
 $$
 \bar X_n = \frac{1}{n}\sum_{i=1}^n X_i .
 $$
-We need its mean and variance. By linearity of expectation (from [PROB-5], which holds with
+We need its mean and variance. By linearity of expectation (from [PROB-05], which holds with
 or without independence),
 $$
 E[\bar X_n] = \frac1n \sum_{i=1}^n E[X_i] = \frac1n \cdot n\mu = \mu .
 $$
 So the sample mean is **centered on the truth** — its expectation is the very $\mu$ we are
-trying to pin down. For the variance we use the rule from [PROB-8] that the variance of a
+trying to pin down. For the variance we use the rule from [PROB-08] that the variance of a
 sum of **independent** variables is the sum of the variances, together with the scaling
-rule $\operatorname{Var}(aY) = a^2\operatorname{Var}(Y)$ from [PROB-6]:
+rule $\operatorname{Var}(aY) = a^2\operatorname{Var}(Y)$ from [PROB-06]:
 $$
 \operatorname{Var}(\bar X_n)
 = \operatorname{Var}\!\left(\frac1n \sum_{i=1}^n X_i\right)
@@ -525,7 +525,7 @@ divides the variance by $n$.** The spread of the average shrinks; its standard d
 falls like $\sigma/\sqrt n$. Independence is essential here: it is what lets the variance of
 the sum be the sum of the variances, with no covariance cross-terms surviving (the general
 $\operatorname{Var}(\sum X_i)$ with dependence carries $2\sum_{i<j}\operatorname{Cov}(X_i,X_j)$
-terms, from [PROB-7], which need not vanish).
+terms, from [PROB-07], which need not vanish).
 
 ## The weak law of large numbers, from Chebyshev {#sec-wlln}
 
@@ -772,7 +772,7 @@ Pulling the judgment together explicitly, as the goal demands.
   estimators.
 - Your data is **strongly dependent.** The WLLN derivation leaned on independence to get
   $\operatorname{Var}(\bar X_n) = \sigma^2/n$ (@sec-var-mean); under heavy dependence the
-  covariance cross-terms ([PROB-7]) keep the variance of the average from shrinking, and
+  covariance cross-terms ([PROB-07]) keep the variance of the average from shrinking, and
   the concentration argument stalls.
 
 ::: {.callout-warning title="Pitfall"}
@@ -805,8 +805,8 @@ variance, and pushed through to a weak law of large numbers.
   supplies the distribution-free LLN, the CLT supplies the sharp rate. This is the clean
   ownership seam the track was designed around — Probability builds the inequality and the
   convergence vocabulary; Inference builds the limit theorems on top.
-- **Backward links honored.** The variance-of-a-sum rule from [PROB-8] and the
-  variance-scaling rule from [PROB-6] are what made $\operatorname{Var}(\bar X_n) =
+- **Backward links honored.** The variance-of-a-sum rule from [PROB-08] and the
+  variance-scaling rule from [PROB-06] are what made $\operatorname{Var}(\bar X_n) =
   \sigma^2/n$, the single fact the whole concentration payoff rests on.
 :::
 

@@ -30,17 +30,17 @@ FILL   = "#9fb3d1"     # shaded area under a density
 ```
 
 > **Where this sits in the track.** This is the continuous half of the fork that opens at
-> [PROB-2 *Random Variables: Turning Outcomes into Numbers*], which built the one object
+> [PROB-02 *Random Variables: Turning Outcomes into Numbers*], which built the one object
 > that describes *any* random number — the **cumulative distribution function**
 > $F(x)=P(X\le x)$ — and previewed that distributions split into the **discrete** (jumps in
-> $F$) and the **continuous** (a smoothly rising $F$). Its sibling [PROB-3 *Discrete Random
+> $F$) and the **continuous** (a smoothly rising $F$). Its sibling [PROB-03 *Discrete Random
 > Variables: The Probability Mass Function*] handled the jumps with a probability *mass*
 > function. This article handles the smooth case: where every single value has probability
 > zero, yet probability is spread across a continuum like a *density* of mass along a wire.
 > We build the **probability density function** $f(x)=F'(x)$ from the Calculus-I
 > fundamental theorem, show why a density is not a probability, and derive the
-> change-of-variables rule for a monotone transform. It assumes [PROB-2] and floor-level
-> integration; it sets up [PROB-5 *Expectation*] (the integral $\int x f(x)\,dx$), the
+> change-of-variables rule for a monotone transform. It assumes [PROB-02] and floor-level
+> integration; it sets up [PROB-05 *Expectation*] (the integral $\int x f(x)\,dx$), the
 > continuous distribution catalog [PROB-13 *Normal*] and [PROB-14 *Gamma, Exponential &
 > Beta*], and the vector change-of-variables of [PROB-18].
 
@@ -90,7 +90,7 @@ an answer to a piece of that question. If a step ever feels arbitrary, come back
 
 ## The crack that the discrete picture cannot paper over
 
-The previous article, [PROB-3], handled a random variable that takes *countably many*
+The previous article, [PROB-03], handled a random variable that takes *countably many*
 values — a die's face, a count of defects, the number of heads in ten flips. There, life is
 easy: you assign each value $x$ a chunk of probability $p(x)=P(X=x)$, you insist those
 chunks are non-negative and sum to $1$, and the probability of any event is the sum of the
@@ -110,7 +110,7 @@ full because it is *the* reason densities exist.
 Pick any positive number $\varepsilon>0$, however tiny. Ask: how many values $x$ can have
 $P(X=x)\ge\varepsilon$? If there were $N$ such values, the total probability would be at
 least $N\varepsilon$, and since total probability cannot exceed $1$ (that is Kolmogorov's
-axiom $P(\Omega)=1$, built in [PROB-0]), we must have $N\varepsilon\le 1$, so
+axiom $P(\Omega)=1$, built in [PROB-00]), we must have $N\varepsilon\le 1$, so
 $N\le 1/\varepsilon$. That is a *finite* number. So **for each fixed $\varepsilon$, only
 finitely many values can have probability at least $\varepsilon$.**
 
@@ -132,7 +132,7 @@ If we want the probability to be spread *evenly* over the whole interval — no 
 $P(\Omega)=1$?"* This is the sharpest objection and you should have the answer ready. No:
 you cannot recover the total by "adding up" the point probabilities, because there are
 **uncountably many** of them, and Kolmogorov's additivity axiom only promises that
-probability adds over **countable** collections of disjoint events (see [PROB-0]). An
+probability adds over **countable** collections of disjoint events (see [PROB-00]). An
 uncountable sum of zeros is simply not a defined operation in the axioms — it is not "zero,"
 it is *undefined*. The total probability is recovered a different way, by **integration**,
 which is the limit of sums over finer and finer *partitions* (countably many pieces at each
@@ -284,7 +284,7 @@ proof.
 
 ## What "continuous" means, precisely {#sec-def-continuous}
 
-We first pin down the class of variables this article is about. From [PROB-2] we carry the
+We first pin down the class of variables this article is about. From [PROB-02] we carry the
 CDF and its universal properties, which we restate so the chain is explicit.
 
 ::: {#def-cdf}
@@ -293,7 +293,7 @@ CDF and its universal properties, which we restate so the chain is explicit.
 $$F(x)=P(X\le x),\qquad x\in\mathbb{R}.$$
 It satisfies, for every random variable: (i) it is *non-decreasing*; (ii)
 $\lim_{x\to-\infty}F(x)=0$ and $\lim_{x\to+\infty}F(x)=1$; (iii) it is *right-continuous*.
-These three are derived from Kolmogorov's axioms in [PROB-2].
+These three are derived from Kolmogorov's axioms in [PROB-02].
 :::
 
 A discrete variable's CDF is a *staircase*: flat, then a jump of height $p(x)$ at each value
@@ -315,7 +315,7 @@ practice is absolutely continuous and has a density. Holding to @def-continuous-
 on solid Calc-1 ground, because it makes the density a derivative, as we now show.
 
 ::: {.callout-note title="What we are importing, and where it is built"}
-We borrow one fact from [PROB-0]/[PROB-2]: that $F(x)=P(X\le x)$ is a legitimate
+We borrow one fact from [PROB-00]/[PROB-02]: that $F(x)=P(X\le x)$ is a legitimate
 probability of the event $\{X\le x\}$ and obeys the axioms. Everything else in this article
 is built here from that fact plus Calculus I. The measure-theoretic notion of "absolutely
 continuous" is named, not assumed; we use only its consequence — that $F$ is an integral of
@@ -374,7 +374,7 @@ $$P(a\le X\le b)=\int_a^b f(x)\,dx.$$
 ::: {.proof}
 The event $\{X\le b\}$ is the disjoint union of $\{X\le a\}$ and $\{a<X\le b\}$ (every
 outcome with $X\le b$ either has $X\le a$ or has $a<X\le b$, never both). By the additivity
-of probability over disjoint events ([PROB-0]),
+of probability over disjoint events ([PROB-00]),
 $$P(X\le b)=P(X\le a)+P(a<X\le b),$$
 so, rearranging and using the definition of $F$,
 $$P(a<X\le b)=P(X\le b)-P(X\le a)=F(b)-F(a).$$
@@ -438,7 +438,7 @@ $$\text{(non-negativity)}\quad f(x)\ge 0 \text{ for all } x,
 ::: {.proof}
 *Non-negativity is necessary.* The density is the slope of the CDF, $f=F'$, and $F$ is
 non-decreasing (a probability $P(X\le x)$ cannot shrink as $x$ grows, by monotonicity in
-[PROB-2]). The slope of a non-decreasing function is $\ge 0$ everywhere it exists, so
+[PROB-02]). The slope of a non-decreasing function is $\ge 0$ everywhere it exists, so
 $f\ge 0$.
 
 *Normalization is necessary.* The total area under $f$ is the probability that $X$ lands
@@ -737,7 +737,7 @@ Why is this the *edge*? Because the exponential's defining feature is **memoryle
 given that you have already waited $s$ minutes with no call, the probability of waiting at
 least $t$ more is the *same* as the original probability of waiting at least $t$ — the
 process "forgets" how long you have been waiting. We can show it directly from $F$, using the
-conditional-probability definition from [PROB-1], $P(A\mid B)=P(A\cap B)/P(B)$:
+conditional-probability definition from [PROB-01], $P(A\mid B)=P(A\cap B)/P(B)$:
 $$P(X>s+t \mid X>s)=\frac{P(X>s+t \text{ and } X>s)}{P(X>s)}
 =\frac{P(X>s+t)}{P(X>s)}
 =\frac{e^{-\lambda(s+t)}}{e^{-\lambda s}}
@@ -968,7 +968,7 @@ annual payout $X$ is **zero with substantial probability** (most years, no claim
 density — $P(X=0)>0$ contradicts @thm-point-zero — so the pure-density machinery of this
 article does not apply as-is. The honest fix is to model the atom and the continuous part
 separately (a "zero-inflated" or two-part model), or to use the CDF directly, which always
-exists ([PROB-2]). @fig-mixed shows such a CDF, with its tell-tale jump.
+exists ([PROB-02]). @fig-mixed shows such a CDF, with its tell-tale jump.
 
 ```{python}
 #| label: fig-mixed
@@ -1010,7 +1010,7 @@ soon want — like the mean $\int x f(x)\,dx$ — *do not exist* (the integral d
 $1$ (a legitimate density), but $\int |x| f(x)\,dx$ diverges, so it has no mean. Nothing in
 *this* article breaks — every interval still has a well-defined probability via
 @thm-interval — but it is an honest flag that "has a density" does not guarantee "has a
-mean." That boundary is exactly where [PROB-5 *Expectation*] picks up, and we hand it off
+mean." That boundary is exactly where [PROB-05 *Expectation*] picks up, and we hand it off
 there.
 
 ::: {.callout-tip title="You might be asked"}
@@ -1021,7 +1021,7 @@ summary you should be able to recite:
   length, mass, concentration, error), recorded at a resolution *fine* relative to its
   spread, with no value carrying special mass.
 - **Do not use it** when the variable is intrinsically discrete (counts, categories — use a
-  pmf, [PROB-3]); when a single value carries real probability (use a mixed/two-part model,
+  pmf, [PROB-03]); when a single value carries real probability (use a mixed/two-part model,
   @sec-mixed); or when the recording grid is coarse relative to the spread (the histogram
   is a few spikes — treat it as discrete).
 - **And remember the rate principle:** $f$ is probability *per unit width*, so it can
@@ -1049,13 +1049,13 @@ doing and why the CDF, not the density, is the object they hang everything on.
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[PROB-2 *Random Variables*]**, which built the CDF as the universal
+You arrived from **[PROB-02 *Random Variables*]**, which built the CDF as the universal
 descriptor of any random number and split the world into discrete and continuous. Its
-sibling **[PROB-3 *Discrete RVs: the pmf*]** handled the countable case with probability
+sibling **[PROB-03 *Discrete RVs: the pmf*]** handled the countable case with probability
 *mass*; this article handled the continuum with probability *density*, the two meeting at
 the same CDF. From here the trunk continues:
 
-- **[PROB-5 *Expectation: The Long-Run Average*]** — now that we can integrate against a
+- **[PROB-05 *Expectation: The Long-Run Average*]** — now that we can integrate against a
   density, the mean of a continuous variable is $E[X]=\int x f(x)\,dx$, the direct analogue
   of the discrete weighted sum. The Cauchy edge case of @sec-heavy-tails is exactly the
   divergence it must confront.
@@ -1087,7 +1087,7 @@ the same CDF. From here the trunk continues:
   probability course.
 - **Open threads this article deferred.** *What single number summarizes where a density
   sits, and when does it fail to exist?* — expectation and the Cauchy counterexample,
-  [PROB-5]. *How do densities of two variables combine?* — joint densities and the
-  double-integral version of @thm-interval, [PROB-7]. *Why is the bell curve's
+  [PROB-05]. *How do densities of two variables combine?* — joint densities and the
+  double-integral version of @thm-interval, [PROB-07]. *Why is the bell curve's
   normalizing constant $1/\sqrt{2\pi}$?* — the Gaussian integral, the one place this track
   spends a genuine double integral, [PROB-13].

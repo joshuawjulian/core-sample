@@ -1,0 +1,921 @@
+---
+title: "Linear Independence, Basis, and Dimension"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"    # data points / vectors
+ARROW  = "#c1121f"    # the highlighted arrow / dependent direction
+ACCENT = "#0a7d4d"    # highlights / independent directions
+GREY   = "#6c757d"
+```
+
+> **Where this sits in the track.** This is the fourth article in the **Geometry of
+> Data** track and the capstone of its first movement. It assumes
+> [GEOM-0 *What Is a Vector, Really?*] (a vector is a point, an arrow, and a row of data),
+> [GEOM-1 *Adding and Scaling*] (the linear combination $c_1\mathbf v_1 + \dots + c_k\mathbf v_k$
+> is the one move from which everything is built), and [GEOM-2 *Span and Subspaces*] (the
+> set of all linear combinations of some vectors is the subspace they reach). Here we ask
+> the question those three articles set up but did not answer: *which of the spanning
+> vectors are actually pulling weight, and how few do we really need?* It sets up
+> [GEOM-5 *Orthogonality and Orthonormal Bases*] (the nicest bases), [GEOM-12 *Rank and
+> the Four Fundamental Subspaces*] (rank is the dimension of the column space), and
+> [GEOM-14 *Eigenvalues and Eigenvectors*] (an eigenbasis is a basis chosen to make a map
+> transparent).
+
+## Abstract {.unnumbered}
+
+You have a handful of vectors and they span some subspace — a line, a plane, a flat in
+$\mathbb R^n$. Two questions remain, and they are the same question asked twice. *Is any
+one of these vectors redundant — already reachable from the others?* And *what is the
+smallest set that still reaches every point of the subspace?* The first question is
+**linear independence**; the second is **basis**; and the punchline that ties them
+together is **dimension** — the number of vectors in a basis, which we prove is the same
+no matter which basis you pick. This article defines all three from the single equation
+$c_1\mathbf v_1 + \dots + c_k\mathbf v_k = \mathbf 0$, reads each geometrically (no vector
+lies in the span of the others), proves the one theorem that makes "dimension" a
+well-defined number at all, and shows what coordinates *mean* once a basis is fixed. The
+single claim it defends: **a subspace has an intrinsic size, independent of how you
+describe it, and a basis is the most efficient possible description — exactly as many
+directions as the space has, with none wasted.** We close on the data reading that the
+rest of the series needs: a redundant feature is a linearly dependent column, and the
+number of features you actually have is the dimension of the space they span, not the
+count of columns in your table.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A set of vectors is **linearly independent** when the *only* way to combine them into the
+zero vector is to multiply every one of them by zero — no vector is secretly built from
+the others. A **basis** for a subspace is a linearly independent set that also spans it:
+**exactly enough directions to reach everything, and not one to spare.** Every basis of a
+given subspace has the *same number* of vectors, and that number is the subspace's
+**dimension** — its intrinsic size, the count of independent directions you can move in
+without leaving it.
+:::
+
+Everything below orbits that box. The two ideas — "spans the space" and "wastes nothing"
+— pull in opposite directions. Spanning wants *more* vectors (so you can reach more);
+independence wants *fewer* (so nothing is redundant). A basis is precisely where those two
+pressures balance, and dimension is the count at the balance point. The deepest claim, and
+the one that takes a real proof, is that this count is forced: you cannot describe a plane
+with a basis of two vectors and also with a basis of three. The plane *is* two-dimensional,
+and no honest description can pretend otherwise.
+
+# Why we are doing this: the redundancy problem {#sec-why}
+
+Keep one question in view for the whole article: **when does a collection of vectors carry
+redundant information, and what is the leanest collection that loses nothing?** Every
+definition and every proof below answers a piece of that.
+
+## What GEOM-2 left open
+
+[GEOM-2] handed us the *span*: given vectors $\mathbf v_1, \dots, \mathbf v_k$, the set of
+all linear combinations $c_1\mathbf v_1 + \dots + c_k\mathbf v_k$ is a subspace — a line, a
+plane, or some flat through the origin. But it also showed, in its closing edge case,
+something unsettling: **the number of vectors you start with need not match the dimension
+of what they reach.** Three vectors can span a mere plane if one of them lies flat in the
+plane of the other two. Two vectors can span only a line if they point along the same
+direction. The count of vectors is a property of *your description*; the size of the
+subspace is a property of *the subspace*. They are not the same, and conflating them is
+the source of a great deal of confusion in data analysis.
+
+This gap is not academic. It is the abstract skeleton of three concrete situations a data
+scientist meets constantly:
+
+- **A redundant feature.** You record a person's height in centimeters *and* in inches.
+  The second column is $2.54$ times the first — it adds a vector to your table but not a
+  direction to your data. Any model that tries to use both will choke (this is exact
+  multicollinearity, the failure mode [REGR-7] is built around).
+- **A constraint you did not notice.** Your features are the fractions of a budget spent on
+  food, rent, and "everything else." They sum to $1$ by construction, so the third is
+  $1$ minus the first two: one fewer independent direction than you have columns.
+- **The intrinsic dimension of data.** A dataset of $1000$ features may, because the
+  features are correlated, really live near a $20$-dimensional flat. Discovering that
+  number — the *true* count of independent directions — is the whole point of dimension
+  reduction (PCA, owned by Unsupervised Learning, built on the SVD of [GEOM-20]).
+
+In every case the question is the same: **how many of these directions are real, and which
+are echoes of the others?** Linear independence is the precise tool for answering it.
+
+## The history: how "dimension" became a number
+
+The intuition that a line is one-dimensional, a plane two, and space three is older than
+algebra — it is in Euclid, as the idea that a solid is bounded by surfaces, a surface by
+lines, a line by points. But that is a *picture*, not a definition, and it stops working
+the moment you cannot draw the space. What is the dimension of the set of solutions to
+three equations in seven unknowns? You cannot eyeball it.
+
+The arithmetic notion we use was forged in the nineteenth century. Hermann Grassmann, in
+his nearly unreadable 1844 *Ausdehnungslehre* ("Theory of Extension"), was the first to
+treat dimension as the number of independent quantities needed to specify a point, freed
+entirely from three-dimensional space. Around the same time the study of systems of linear
+equations — by Gauss, then sharpened by Cayley and Sylvester, who coined "matrix" in the
+1850s — made "how many equations are genuinely independent" a computational question. The
+synthesis, that the *count of independent directions is the same for every basis and
+therefore a property of the space itself*, is the theorem we prove in @sec-invariance. It
+is what licenses the single word "dimension." Without it, "dimension" would be an artifact
+of how you happened to write the space down — and the entire geometric program of this
+track, *where is this in space and what is it doing*, would have no firm ground to stand
+on.
+
+::: {.callout-tip title="You might be asked"}
+*"Why isn't 'dimension' just the number of vectors you were handed?"* Because that number
+is up to you — you can always hand over more vectors than you need, including redundant
+ones, and you can sometimes get away with fewer than you expected if some are wasted.
+Dimension has to be a property of the *subspace*, not of any particular list describing it.
+Making that precise — proving the count cannot depend on the list — is exactly what
+@thm-invariance does. An interviewer asking this is checking whether you know that
+"dimension" is an earned word, not a free one.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Picture three vectors in $\mathbb R^3$. Two cases.
+
+**Case A — they are independent.** $\mathbf v_1$ points along one direction, $\mathbf v_2$
+along a genuinely different one (not a stretch of $\mathbf v_1$), and $\mathbf v_3$ pokes
+*out of the plane* the first two define. To reach $\mathbf v_3$ you cannot stay inside that
+plane, so $\mathbf v_3$ is not built from $\mathbf v_1$ and $\mathbf v_2$. Each vector adds
+a direction the others could not reach. Together they span all of $\mathbb R^3$, and you
+need every one of them.
+
+**Case B — one is redundant.** Same $\mathbf v_1$ and $\mathbf v_2$, but now $\mathbf v_3$
+*lies flat in their plane* — it is some combination $\mathbf v_3 = 2\mathbf v_1 - \mathbf
+v_2$, say. It adds nothing: anything you could reach with all three, you could already
+reach with the first two. The three vectors span only a plane, not all of space. One
+direction is an echo.
+
+@fig-independence draws exactly these two cases. The whole of linear independence is the
+algebraic test that distinguishes them — that catches "$\mathbf v_3$ lies in the span of
+the others" without your having to *see* the picture, which matters enormously the moment
+the space has more than three dimensions and cannot be drawn at all.
+
+```{python}
+#| label: fig-independence
+#| fig-cap: "The geometric heart of independence in $\\mathbb R^3$. **Left (independent):** $\\mathbf v_3$ (red) lifts out of the plane spanned by $\\mathbf v_1,\\mathbf v_2$ (green), so it cannot be built from them — three real directions, spanning all of space. **Right (dependent):** $\\mathbf v_3$ lies *in* that plane ($\\mathbf v_3 = 2\\mathbf v_1 - \\mathbf v_2$), an echo of the others — only two real directions, spanning a mere plane. Linear independence is the algebra that tells these apart without needing to see them."
+
+def draw_vec(ax, v, color, label, lw=2.5):
+    ax.quiver(0, 0, 0, v[0], v[1], v[2], color=color, lw=lw,
+              arrow_length_ratio=0.12)
+    ax.text(v[0]*1.08, v[1]*1.08, v[2]*1.08, label, color=color, fontsize=11)
+
+v1 = np.array([1.6, 0.2, 0.0])
+v2 = np.array([0.3, 1.6, 0.0])
+
+fig = plt.figure(figsize=(8.6, 4.2))
+
+# Left: independent
+axL = fig.add_subplot(1, 2, 1, projection="3d")
+# faint plane of v1,v2
+ss, tt = np.meshgrid(np.linspace(-0.2, 1.1, 6), np.linspace(-0.2, 1.1, 6))
+PX = ss*v1[0] + tt*v2[0]; PY = ss*v1[1] + tt*v2[1]; PZ = ss*v1[2] + tt*v2[2]
+axL.plot_surface(PX, PY, PZ, color=GREY, alpha=0.18, linewidth=0)
+v3a = np.array([0.4, 0.4, 1.6])
+draw_vec(axL, v1, ACCENT, r"$\mathbf v_1$")
+draw_vec(axL, v2, ACCENT, r"$\mathbf v_2$")
+draw_vec(axL, v3a, ARROW, r"$\mathbf v_3$")
+axL.set_title("Independent: $\\mathbf v_3$ lifts off the plane")
+axL.set_xlim(0, 1.8); axL.set_ylim(0, 1.8); axL.set_zlim(0, 1.8)
+axL.set_xticks([]); axL.set_yticks([]); axL.set_zticks([])
+axL.view_init(elev=22, azim=-60)
+
+# Right: dependent
+axR = fig.add_subplot(1, 2, 2, projection="3d")
+axR.plot_surface(PX, PY, PZ, color=GREY, alpha=0.18, linewidth=0)
+v3b = 2*v1 - v2   # lies in the plane
+draw_vec(axR, v1, ACCENT, r"$\mathbf v_1$")
+draw_vec(axR, v2, ACCENT, r"$\mathbf v_2$")
+draw_vec(axR, v3b, ARROW, r"$\mathbf v_3$")
+axR.set_title("Dependent: $\\mathbf v_3$ lies in the plane")
+axR.set_xlim(0, 3.4); axR.set_ylim(-1.4, 1.8); axR.set_zlim(0, 1.8)
+axR.set_xticks([]); axR.set_yticks([]); axR.set_zticks([])
+axR.view_init(elev=22, azim=-60)
+plt.tight_layout()
+```
+
+The phrase to hold onto is *"no vector lies in the span of the others."* That is what
+independence means in pictures. The formal definition below looks different — it talks
+about combinations equal to zero — and the first real task is to prove the picture and the
+formula are the same statement.
+
+# The formal development {#sec-formal}
+
+## Linear independence, defined {#sec-li-def}
+
+We work inside $\mathbb R^n$ throughout, with vectors written in bold and scalars (ordinary
+real numbers) in plain type. Recall from [GEOM-1] that a **linear combination** of
+$\mathbf v_1, \dots, \mathbf v_k$ is any vector of the form $c_1\mathbf v_1 + \dots +
+c_k\mathbf v_k$, where the $c_i$ are scalars called the **coefficients** or **weights**.
+Recall too the **zero vector** $\mathbf 0 = (0, 0, \dots, 0)$, the origin, which every
+subspace contains.
+
+There is always *one* trivial way to combine any vectors into $\mathbf 0$: take every
+coefficient to be zero. We call $c_1\mathbf v_1 + \dots + c_k\mathbf v_k = \mathbf 0$ with
+$c_1 = c_2 = \dots = c_k = 0$ the **trivial combination**. It is uninteresting precisely
+because it always works, for any vectors whatsoever — it says nothing about *them*. The
+entire content of independence is whether there is *any other* way.
+
+::: {#def-independence}
+**Definition (linear independence).** The vectors $\mathbf v_1, \dots, \mathbf v_k$ are
+**linearly independent** if the equation
+
+$$
+c_1\mathbf v_1 + c_2\mathbf v_2 + \dots + c_k\mathbf v_k = \mathbf 0
+$$ {#eq-li}
+
+has *only* the trivial solution $c_1 = c_2 = \dots = c_k = 0$. If @eq-li has any solution
+in which at least one coefficient is nonzero, the vectors are **linearly dependent**, and
+such a nonzero solution is called a **dependence relation** among them.
+:::
+
+Read @eq-li as a question, not a statement: *across all choices of coefficients, is zero
+the only combination that lands on the origin?* "Yes, only the trivial one" is independence.
+"No, here is a combination with a nonzero coefficient that also lands on zero" is
+dependence, and that very combination is the evidence.
+
+::: {.callout-important title="The pivot: the coefficients are the unknowns"}
+As in the least-squares pivot of [REGR-1], notice *what is variable here*. The vectors
+$\mathbf v_1, \dots, \mathbf v_k$ are fixed, given. The unknowns we solve @eq-li *for* are
+the coefficients $c_1, \dots, c_k$. Independence is a statement about the **solution set
+of this homogeneous equation** — does it contain only the origin of coefficient-space, or
+more? Every test in this article reduces to solving @eq-li for the $c_i$.
+:::
+
+## The definition *is* the geometric picture {#sec-li-geometry}
+
+The definition mentions only "combinations equal to zero." The intuition of @sec-intuition
+spoke of "no vector lies in the span of the others." We now prove these are the same
+statement — no hand-waving, both directions.
+
+::: {#lem-li-equiv}
+**Lemma (the two faces of dependence).** For vectors $\mathbf v_1, \dots, \mathbf v_k$ with
+$k \ge 2$, the following are equivalent:
+
+1. The vectors are linearly *dependent* (there is a dependence relation, @eq-li with some
+   coefficient nonzero).
+2. At least one of the vectors can be written as a linear combination of the others — it
+   lies in their span.
+:::
+
+::: {.proof}
+We show each statement forces the other.
+
+**(1) $\Rightarrow$ (2).** Suppose there is a dependence relation
+$c_1\mathbf v_1 + \dots + c_k\mathbf v_k = \mathbf 0$ in which some coefficient is nonzero;
+say $c_j \neq 0$ for a particular index $j$. Isolate the $j$-th term by subtracting every
+other term from both sides:
+
+$$
+c_j\mathbf v_j = -\sum_{i \neq j} c_i\mathbf v_i .
+$$
+
+Because $c_j \neq 0$ we may divide both sides by it (a nonzero scalar has a reciprocal),
+giving
+
+$$
+\mathbf v_j = \sum_{i \neq j} \left(-\frac{c_i}{c_j}\right)\mathbf v_i .
+$$ {#eq-vj-from-others}
+
+The right-hand side is a linear combination of the *other* vectors, so $\mathbf v_j$ lies
+in their span. That is statement (2).
+
+**(2) $\Rightarrow$ (1).** Conversely, suppose some $\mathbf v_j$ is a combination of the
+others, $\mathbf v_j = \sum_{i \neq j} a_i\mathbf v_i$ for some scalars $a_i$. Move
+everything to one side by subtracting $\mathbf v_j$:
+
+$$
+\Bigl(\sum_{i \neq j} a_i\mathbf v_i\Bigr) - \mathbf v_j = \mathbf 0 .
+$$
+
+This is a combination of *all* the vectors equal to $\mathbf 0$, and the coefficient on
+$\mathbf v_j$ is $-1$, which is nonzero. So it is a dependence relation — statement (1).
+$\qquad\blacksquare$
+:::
+
+So @def-independence and the picture agree exactly: **dependent** means "one of them is a
+redundant echo of the others," and the dependence relation @eq-li is just that echo with
+everything moved to one side. @eq-vj-from-others is worth remembering — it is the recipe
+for reading *which* vector is redundant and *how* it is built, straight off the
+coefficients.
+
+One special case deserves a sentence, because it trips people up. A single nonzero vector
+$\mathbf v_1$ is always independent: $c_1\mathbf v_1 = \mathbf 0$ with $\mathbf v_1 \neq
+\mathbf 0$ forces $c_1 = 0$. But any set that *contains the zero vector* is automatically
+dependent — put coefficient $1$ on the zero vector and $0$ on everything else, and you get
+$\mathbf 0$ with a nonzero coefficient. The origin is the ultimate redundant direction: it
+points nowhere.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me the fastest check for whether two vectors are independent."* Two vectors are
+dependent if and only if one is a scalar multiple of the other — i.e. they are parallel
+(or antiparallel), lying on the same line through the origin. For exactly two vectors,
+@lem-li-equiv collapses to this: "$\mathbf v_2$ lies in the span of $\mathbf v_1$" just
+means $\mathbf v_2 = a\mathbf v_1$. So for *two* vectors, independence = "not parallel."
+For three or more there is no such shortcut — one vector can be a combination of two others
+without being a multiple of either — and you must actually solve @eq-li.
+:::
+
+## How you actually test it: solving the homogeneous system {#sec-li-test}
+
+Independence is defined by @eq-li, so testing it means solving @eq-li. Writing it out
+coordinate by coordinate turns it into a system of linear equations. Suppose each
+$\mathbf v_i \in \mathbb R^n$. The vector equation $c_1\mathbf v_1 + \dots + c_k\mathbf v_k
+= \mathbf 0$ is *one equation per coordinate* — $n$ scalar equations in the $k$ unknowns
+$c_1, \dots, c_k$. Stacking the vectors as the columns of a matrix $A = [\,\mathbf v_1 \mid
+\mathbf v_2 \mid \dots \mid \mathbf v_k\,]$ and the coefficients into a column $\mathbf c =
+(c_1, \dots, c_k)$, the whole thing is
+
+$$
+A\mathbf c = \mathbf 0 .
+$$ {#eq-Ac-zero}
+
+(That $A\mathbf c$ equals the combination $c_1\mathbf v_1 + \dots + c_k\mathbf v_k$ — a
+matrix times a vector is a weighted sum of the matrix's columns — is the central reading of
+matrix–vector multiplication, built in full in [GEOM-8]. We use only that fact here; the
+rest of matrix algebra is not needed yet.) So:
+
+> **The vectors are independent if and only if $A\mathbf c = \mathbf 0$ has only the
+> solution $\mathbf c = \mathbf 0$** — the homogeneous system has no nontrivial solution.
+
+We solve such a system by **Gaussian elimination**: row-reduce $A$ to a staircase
+(row-echelon) form and read off the solutions. The mechanics of elimination get their
+proper treatment in [GEOM-11]; here we need only its verdict, which is clean. After
+row-reducing, each column either has a leading entry of its staircase (a **pivot**) or it
+does not (a **free column**). A free column means its coefficient $c_i$ can be set to
+anything — a nontrivial solution exists — so:
+
+$$
+\text{independent} \iff \text{every column is a pivot column} \iff \text{no free variables.}
+$$
+
+This already yields a result you can use without any computation at all.
+
+::: {#thm-too-many}
+**Theorem (too many vectors must be dependent).** Any set of $k$ vectors in $\mathbb R^n$
+with $k > n$ is linearly dependent.
+:::
+
+::: {.proof}
+The matrix $A = [\,\mathbf v_1 \mid \dots \mid \mathbf v_k\,]$ has $n$ rows and $k$ columns.
+Row-reduction produces at most one pivot per row, so there are at most $n$ pivot columns.
+But there are $k > n$ columns in total, so at least $k - n \ge 1$ columns have no pivot —
+they are free columns. A free column gives a free variable, hence a nontrivial solution to
+$A\mathbf c = \mathbf 0$, hence a dependence relation. So the vectors are dependent.
+$\qquad\blacksquare$
+:::
+
+@thm-too-many is the first concrete payoff and it is purely about counting: **you cannot
+have more than $n$ independent directions in $\mathbb R^n$.** Five vectors in the plane
+$\mathbb R^2$? Dependent, guaranteed, before you look at a single number. This is the seed
+of the dimension bound we make exact in @sec-invariance.
+
+## Basis: spanning *and* independent {#sec-basis}
+
+We now have the two pressures from the Core, made precise. *Spanning* (from [GEOM-2]) is
+the demand that the vectors reach every point of the subspace: their span is all of it.
+*Independence* (@def-independence) is the demand that none is wasted. A basis is the set
+that does both.
+
+::: {#def-basis}
+**Definition (basis).** A set of vectors $\mathbf b_1, \dots, \mathbf b_m$ in a subspace
+$V$ is a **basis** for $V$ if
+
+1. they **span** $V$ — every vector in $V$ is some linear combination of them — and
+2. they are **linearly independent** — no dependence relation @eq-li among them except the
+   trivial one.
+:::
+
+A basis is therefore a spanning set with all the fat trimmed off, or equivalently a maximal
+independent set that still reaches everything. The two conditions are exactly the two
+opposing pressures meeting in the middle: condition 1 forbids "too few," condition 2 forbids
+"too many."
+
+The cleanest example is the **standard basis** of $\mathbb R^n$. Let $\mathbf e_i$ be the
+vector with a $1$ in position $i$ and $0$ everywhere else: $\mathbf e_1 = (1, 0, \dots, 0)$,
+$\mathbf e_2 = (0, 1, 0, \dots, 0)$, and so on. They span $\mathbb R^n$ because any
+$\mathbf x = (x_1, \dots, x_n)$ is visibly $x_1\mathbf e_1 + \dots + x_n\mathbf e_n$ — the
+coordinates *are* the coefficients. And they are independent because $c_1\mathbf e_1 + \dots
++ c_n\mathbf e_n = (c_1, \dots, c_n)$, which equals $\mathbf 0$ only when every $c_i = 0$.
+So $\{\mathbf e_1, \dots, \mathbf e_n\}$ is a basis of $\mathbb R^n$, the one you have been
+using implicitly since you first wrote a vector as a list of numbers.
+
+But it is *a* basis, not *the* basis — and this is the conceptual leap of the section.
+
+::: {#thm-unique-coords}
+**Theorem (unique coordinates).** If $\mathbf b_1, \dots, \mathbf b_m$ is a basis for $V$,
+then every $\mathbf x \in V$ has **exactly one** representation as a combination of the
+basis vectors:
+
+$$
+\mathbf x = c_1\mathbf b_1 + c_2\mathbf b_2 + \dots + c_m\mathbf b_m
+$$ {#eq-coords}
+
+for a unique list of scalars $(c_1, \dots, c_m)$, called the **coordinates of $\mathbf x$
+relative to the basis**.
+:::
+
+::: {.proof}
+*Existence* of some representation is immediate: the basis spans $V$, so by condition 1 of
+@def-basis any $\mathbf x \in V$ is *some* combination of the $\mathbf b_i$.
+
+*Uniqueness* is where independence earns its keep. Suppose $\mathbf x$ had two
+representations,
+
+$$
+\mathbf x = c_1\mathbf b_1 + \dots + c_m\mathbf b_m
+\qquad\text{and}\qquad
+\mathbf x = d_1\mathbf b_1 + \dots + d_m\mathbf b_m .
+$$
+
+Subtract the second from the first. The left side is $\mathbf x - \mathbf x = \mathbf 0$,
+and grouping the right side term by term,
+
+$$
+\mathbf 0 = (c_1 - d_1)\mathbf b_1 + (c_2 - d_2)\mathbf b_2 + \dots + (c_m - d_m)\mathbf b_m .
+$$
+
+This is a combination of the basis vectors equal to $\mathbf 0$. But the $\mathbf b_i$ are
+independent (condition 2 of @def-basis), so by @def-independence *every* coefficient must be
+zero: $c_i - d_i = 0$ for each $i$, i.e. $c_i = d_i$ for all $i$. The two representations
+were identical all along. $\qquad\blacksquare$
+:::
+
+This is *why* independence is in the definition of a basis at all. A merely-spanning set
+gives every vector *at least* one coordinate representation; adding independence makes it
+*exactly* one. Coordinates are only well-defined — only a genuine address for each point —
+when the describing set is independent. With a redundant vector around, the same point would
+have infinitely many "addresses," and "the coordinates of $\mathbf x$" would be meaningless.
+A basis is precisely the data structure that gives every point of a subspace one
+unambiguous address.
+
+::: {.callout-tip title="You might be asked"}
+*"What does it mean to 'change basis,' and why would you ever want to?"* @thm-unique-coords
+says coordinates are relative to a chosen basis — the *same* geometric point gets *different*
+coordinate lists in different bases. Changing basis means re-expressing every point's
+address in a new, more convenient set of directions while leaving the points themselves
+untouched. You want to when some basis makes the structure obvious: the eigenbasis of
+[GEOM-14] turns a complicated map into independent stretches along its own axes; the
+principal-component basis (Unsupervised Learning, on the SVD of [GEOM-20]) lines the axes
+up with the directions of greatest variance so the first few coordinates capture most of
+the data. The geometry never changes; only the description does.
+:::
+
+## Dimension: proving the count is forced {#sec-invariance}
+
+We can now reach the article's hardest and most important result. A subspace can have many
+different bases — the standard basis of $\mathbb R^2$ is $\{(1,0), (0,1)\}$, but $\{(1,1),
+(1,-1)\}$ is *also* a basis (independent, since neither is a multiple of the other, and
+spanning, as a short check confirms). They look nothing alike. Yet both have **two**
+vectors. Is that a coincidence, or a law?
+
+It is a law, and proving it is what makes "dimension" a legitimate word. The engine is the
+following lemma, the single most important counting fact in linear algebra.
+
+::: {#lem-steinitz}
+**Lemma (independent $\le$ spanning).** Suppose the vectors $\mathbf w_1, \dots, \mathbf
+w_p$ all lie in the span of $\mathbf u_1, \dots, \mathbf u_q$. If the $\mathbf w$'s are
+linearly independent, then $p \le q$. In words: **an independent set can never be larger
+than a spanning set of the same space.**
+:::
+
+::: {.proof}
+Each $\mathbf w_j$ lies in the span of the $\mathbf u_i$, so we can write every $\mathbf
+w_j$ as a combination of the $\mathbf u$'s, with some coefficients $a_{ij}$:
+
+$$
+\mathbf w_j = a_{1j}\mathbf u_1 + a_{2j}\mathbf u_2 + \dots + a_{qj}\mathbf u_q,
+\qquad j = 1, \dots, p .
+$$ {#eq-w-in-u}
+
+We will *suppose for contradiction that $p > q$* and derive a dependence relation among the
+$\mathbf w$'s, contradicting their independence.
+
+Consider an unknown combination of the $\mathbf w$'s set to zero,
+
+$$
+x_1\mathbf w_1 + x_2\mathbf w_2 + \dots + x_p\mathbf w_p = \mathbf 0 ,
+$$ {#eq-x-combo}
+
+and ask whether the unknowns $x_1, \dots, x_p$ can be anything other than all zero.
+Substitute each $\mathbf w_j$ from @eq-w-in-u into @eq-x-combo:
+
+$$
+\sum_{j=1}^{p} x_j \Bigl(\sum_{i=1}^{q} a_{ij}\mathbf u_i\Bigr) = \mathbf 0 .
+$$
+
+Swap the order of the two sums (a finite sum may be reordered freely) so as to collect the
+coefficient of each $\mathbf u_i$:
+
+$$
+\sum_{i=1}^{q} \Bigl(\underbrace{\sum_{j=1}^{p} a_{ij} x_j}_{\text{coefficient of } \mathbf u_i}\Bigr)\mathbf u_i = \mathbf 0 .
+$$
+
+This certainly holds if every one of those inner coefficients is zero. That is a system of
+$q$ equations — one for each $i$ — in the $p$ unknowns $x_1, \dots, x_p$:
+
+$$
+\sum_{j=1}^{p} a_{ij} x_j = 0, \qquad i = 1, \dots, q .
+$$ {#eq-homog-sys}
+
+Now count. @eq-homog-sys is a homogeneous linear system with $q$ equations and $p$
+unknowns, and we assumed $p > q$ — *more unknowns than equations.* A homogeneous system
+with more unknowns than equations always has a nontrivial solution: row-reduction yields at
+most $q$ pivots among the $p$ columns, leaving at least $p - q \ge 1$ free variables, each
+of which can be set nonzero (this is the same pivot-counting argument as in @thm-too-many).
+So there exist values $x_1, \dots, x_p$, *not all zero*, satisfying @eq-homog-sys — and
+hence, walking back up the chain, satisfying @eq-x-combo.
+
+But @eq-x-combo with not-all-zero $x_j$ is a *nontrivial* dependence relation among the
+$\mathbf w$'s. That contradicts the assumption that the $\mathbf w$'s are independent. The
+contradiction came solely from supposing $p > q$, so that supposition is false: $p \le q$.
+$\qquad\blacksquare$
+:::
+
+This lemma is the whole ballgame. Read it as a fundamental tension made quantitative: *you
+cannot fit more independent directions into a space than it takes vectors to span it.*
+Independence pushes the count down toward the true size; spanning pushes it up toward the
+true size; the lemma says independent never exceeds spanning. Apply it twice and the two
+pressures pin the number exactly.
+
+::: {#thm-invariance}
+**Theorem (invariance of dimension).** Any two bases of the same subspace $V$ have the same
+number of vectors.
+:::
+
+::: {.proof}
+Let $\mathbf b_1, \dots, \mathbf b_p$ and $\mathbf b'_1, \dots, \mathbf b'_q$ both be bases
+of $V$. Each is, by @def-basis, simultaneously independent *and* spanning.
+
+Apply @lem-steinitz once: the first basis is independent, and the second basis spans $V$
+(so the first set lies in the second's span). Therefore $p \le q$.
+
+Apply @lem-steinitz again with the roles swapped: the second basis is independent, and the
+first basis spans $V$. Therefore $q \le p$.
+
+From $p \le q$ and $q \le p$ we conclude $p = q$. $\qquad\blacksquare$
+:::
+
+Now — and only now — the word is earned.
+
+::: {#def-dimension}
+**Definition (dimension).** The **dimension** of a subspace $V$, written $\dim V$, is the
+number of vectors in any basis of $V$. By @thm-invariance this number does not depend on
+which basis is chosen, so it is a genuine property of $V$ itself. The dimension of the zero
+subspace $\{\mathbf 0\}$ is defined to be $0$ (its only "basis" is the empty set; it has no
+directions to move in).
+:::
+
+So a line through the origin has dimension $1$, a plane through the origin dimension $2$,
+all of $\mathbb R^n$ dimension $n$ (its standard basis has $n$ vectors), and the bound of
+@thm-too-many becomes the crisp statement $\dim V \le n$ for every subspace $V$ of $\mathbb
+R^n$. Dimension is the *intrinsic count of independent directions* — what Euclid pictured
+and Grassmann made arithmetic.
+
+::: {.callout-tip title="You might be asked"}
+*"If I have a spanning set that is too big, or an independent set that is too small, can I
+always fix it into a basis?"* Yes, both directions, and it is worth knowing why.
+**Trimming:** if a spanning set is dependent, @lem-li-equiv finds a vector that is a
+combination of the others; deleting it shrinks the set but not the span (you could already
+reach the deleted vector), so you can keep deleting until what remains is independent — a
+basis. **Extending:** if an independent set does not yet span $V$, there is a vector in $V$
+outside their span; adjoining it keeps the set independent (it cannot be a combination of
+the others, since it is outside their span — the contrapositive of @lem-li-equiv) and grows
+the span, so you can keep adjoining until you reach all of $V$. Both processes halt, because
+@lem-steinitz caps the size at $\dim V$. Every spanning set contains a basis; every
+independent set extends to one.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run these ideas on real, messy data — never a toy rigged to flatter the technique.
+The first example we carry through by hand so you watch the test breathe; the second pushes
+it to the honest edge.
+
+## Example 1 — a redundant feature in a data table {#sec-ex-redundant}
+
+This is the canonical data-science encounter with dependence. An analyst assembles a small
+feature table for a set of properties: the **floor area** in square meters, the same area
+in **square feet**, and the **number of rooms**. Treating each *feature* (column) as a
+vector in $\mathbb R^n$ — one entry per property — we ask: how many independent feature
+directions are really here?
+
+```{python}
+#| label: tbl-redundant
+#| echo: true
+import numpy as np
+
+# Six properties; three recorded features (columns).
+area_m2   = np.array([ 50.,  72.,  95., 110., 130., 60.])
+area_sqft = area_m2 * 10.7639          # the SAME area, different unit
+rooms     = np.array([  2.,   3.,   4.,   4.,   5.,  3.])
+
+A = np.column_stack([area_m2, area_sqft, rooms])   # columns = feature vectors
+print("feature matrix A (rows = properties, cols = features):")
+print(A)
+
+# Numerical rank = number of independent columns = dimension of their span.
+print("\nnumber of features (columns) :", A.shape[1])
+print("rank (independent directions):", np.linalg.matrix_rank(A))
+```
+
+The table has **three** feature columns, but the rank — the dimension of the space those
+columns span, which is exactly the maximum number of independent ones — comes back as
+**two**. One feature is an echo. We can see precisely which, and prove the dependence by
+hand. Square feet is square meters times the fixed conversion factor $10.7639$, so as
+*vectors*,
+
+$$
+\mathbf{a}_{\text{sqft}} = 10.7639\,\mathbf{a}_{\text{m}^2} .
+$$
+
+Rearranged into the dependence-relation form of @eq-li, with the room vector $\mathbf
+r$ getting coefficient zero,
+
+$$
+10.7639\,\mathbf{a}_{\text{m}^2} \;-\; 1\cdot\mathbf{a}_{\text{sqft}} \;+\; 0\cdot\mathbf r = \mathbf 0 ,
+$$
+
+a combination of the three feature vectors equal to $\mathbf 0$ with a *nonzero*
+coefficient ($-1$ on square feet). By @def-independence the three columns are linearly
+dependent, and by @lem-li-equiv one of them — the square-feet column — lies in the span of
+the others. It is a direction the data already had. @fig-redundant draws the three feature
+vectors restricted to two of the properties, so the collinearity of the two area columns is
+visible.
+
+```{python}
+#| label: fig-redundant
+#| fig-cap: "Why the rank is 2, not 3. Plotting each feature column using just two of the properties as coordinates, the two area features (square meters, green; square feet, red) lie on the *same line through the origin* — square feet is exactly $10.7639\\times$ square meters, so it adds no new direction. The room feature (blue) points off that line, a genuine second direction. Three columns, two independent directions: $\\dim(\\text{span}) = 2$."
+# Use properties 0 and 4 as the two coordinate axes for a 2D picture.
+i, j = 0, 4
+fig, ax = plt.subplots(figsize=(5.6, 5.2))
+
+def arrow(ax, v, color, label):
+    ax.annotate("", xy=(v[0], v[1]), xytext=(0, 0),
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=2.4))
+    ax.text(v[0]*1.04, v[1]*1.04, label, color=color, fontsize=11)
+
+am = np.array([area_m2[i],   area_m2[j]])
+af = np.array([area_sqft[i], area_sqft[j]]) / 10.7639   # rescaled to fit the frame
+ar = np.array([rooms[i],     rooms[j]])
+
+arrow(ax, am, ACCENT, r"area (m$^2$)")
+arrow(ax, af*0.78, ARROW, r"area (sqft, rescaled)")   # same direction as m^2
+arrow(ax, ar*22,  POINT, "rooms")
+# show the shared line through origin for the two area features
+t = np.linspace(-0.2, 1.25, 50)
+ax.plot(t*am[0], t*am[1], color=GREY, ls="--", lw=1.0, zorder=0,
+        label="shared direction of both area features")
+ax.set_xlim(-10, 140); ax.set_ylim(-10, 140)
+ax.set_xlabel(f"coordinate from property {i+1}")
+ax.set_ylabel(f"coordinate from property {j+1}")
+ax.set_title("Two area features share one direction")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+ax.set_aspect("equal")
+plt.tight_layout()
+```
+
+The practitioner lesson, which the rest of the series leans on hard: **the number of
+columns in your table is not the dimensionality of your data.** Here you have three columns
+but two directions. Feeding both area columns into a linear model is exact
+multicollinearity — the design matrix $X^\top X$ becomes singular and the fit has no unique
+solution, the disaster [REGR-7] is built around. The cure is to recognize the dependence
+and drop the redundant column, restoring an independent — hence basis-like — set of
+features.
+
+## Example 2 — the budget-share constraint (a subtler dependence) {#sec-ex-budget}
+
+The first example was a redundancy you could spot by eye. The second is the kind you cannot,
+because no single column is a multiple of another — the dependence is spread across three
+of them. Households report the fraction of spending going to **food**, **housing**, and
+**other**. These are shares, so by construction they sum to $1$ for every household. We add
+a constant **intercept** feature (a column of ones), as every regression silently does.
+
+```{python}
+#| label: tbl-budget
+#| echo: true
+rng = np.random.default_rng(3)
+n = 8
+food    = rng.uniform(0.20, 0.45, n)
+housing = rng.uniform(0.25, 0.50, n)
+other   = 1.0 - food - housing          # forced: the three shares sum to 1
+intercept = np.ones(n)                   # the constant feature regressions add
+
+B = np.column_stack([intercept, food, housing, other])
+print("columns: [intercept, food, housing, other]")
+print(np.round(B, 3))
+print("\nnumber of features (columns) :", B.shape[1])
+print("rank (independent directions):", np.linalg.matrix_rank(B))
+```
+
+Four columns, rank **three**. No column is a multiple of any other — food is not a scaled
+copy of housing — so the pairwise eyeball test of @sec-li-geometry is useless here. Yet a
+dependence relation exists, and we can write it down exactly. Since for every household
+$\text{food} + \text{housing} + \text{other} = 1$, and the intercept column is all ones,
+
+$$
+1\cdot\mathbf{intercept} \;-\; 1\cdot\mathbf{food} \;-\; 1\cdot\mathbf{housing} \;-\; 1\cdot\mathbf{other} = \mathbf 0 .
+$$
+
+Every coefficient is $\pm 1$ — all nonzero where it matters — so this is a genuine
+dependence relation among the four columns. The four features span only a *three*-dimensional
+space; one degree of freedom was spent the moment the shares were forced to sum to one. This
+is the famous **dummy-variable trap** in disguise: include a full set of mutually exclusive
+shares (or category indicators) *and* an intercept, and you have built an invisible
+dependence into your design. The fix is to drop one — any one — restoring independence, with
+the dropped category absorbed into the intercept as a baseline.
+
+The honest moral spanning both examples: **dependence is a property you must test for, not
+see.** In two columns you can spot it (parallel); in three or more, as @lem-li-equiv warned,
+a vector can be a combination of others without being a multiple of any single one, and only
+solving @eq-li — i.e. computing the rank — reveals it.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Linear independence is a *clean binary in exact arithmetic* — vectors are independent or
+they are not, full stop. The trouble is that real data and real computers do not live in
+exact arithmetic, and the binary frays at the edges. This section is the honest boundary.
+
+## Near-dependence: the binary becomes a dial {#sec-near-dependence}
+
+The definition asks whether @eq-li has *any* nonzero solution. But what if the only nonzero
+solutions are tiny — if the vectors are not parallel but *nearly* so? Mathematically they
+are independent; practically they may as well not be. @fig-near draws two vectors swinging
+from clearly independent toward nearly collinear, and tracks the smallest singular value of
+the matrix they form — the standard quantitative measure of "how close to dependent."
+
+```{python}
+#| label: fig-near
+#| fig-cap: "Independence is exact; near-dependence is a dial. As the angle between two unit vectors shrinks from $90^\\circ$ toward $0^\\circ$ (left to right, top), they remain technically independent until the instant they coincide — but the smallest singular value $\\sigma_{\\min}$ of the matrix $[\\mathbf v_1\\mid\\mathbf v_2]$ (bottom) slides toward zero, the continuous measure of how nearly dependent they are. At tiny angles the pair is independent in theory and useless in practice: this is the geometry of multicollinearity and ill-conditioning."
+angles = np.array([90, 60, 30, 12, 4])   # degrees between the two vectors
+fig, axes = plt.subplots(2, 1, figsize=(7.2, 6.0),
+                         gridspec_kw={"height_ratios": [1.1, 1]})
+
+# Top: the vector pairs at a few angles
+axT = axes[0]
+offsets = np.linspace(0, 9, len(angles))
+for k, (deg, off) in enumerate(zip(angles, offsets)):
+    th = np.deg2rad(deg)
+    v1 = np.array([1.0, 0.0])
+    v2 = np.array([np.cos(th), np.sin(th)])
+    axT.annotate("", xy=(off+v1[0], v1[1]), xytext=(off, 0),
+                 arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.2))
+    axT.annotate("", xy=(off+v2[0], v2[1]), xytext=(off, 0),
+                 arrowprops=dict(arrowstyle="-|>", color=ARROW, lw=2.2))
+    axT.text(off+0.1, -0.28, f"{deg}°", fontsize=10, color=GREY)
+axT.set_xlim(-0.5, 11); axT.set_ylim(-0.5, 1.3)
+axT.set_yticks([]); axT.set_xticks([])
+axT.set_title("Two vectors, shrinking angle (independent until they coincide)")
+axT.set_aspect("equal")
+
+# Bottom: smallest singular value vs angle (a continuous closeness-to-dependence)
+fine = np.linspace(90, 1, 200)
+smin = []
+for deg in fine:
+    th = np.deg2rad(deg)
+    M = np.column_stack([[1.0, 0.0], [np.cos(th), np.sin(th)]])
+    smin.append(np.linalg.svd(M, compute_uv=False).min())
+axB = axes[1]
+axB.plot(fine, smin, color=POINT)
+axB.scatter(angles, [np.linalg.svd(np.column_stack(
+    [[1.0,0.0],[np.cos(np.deg2rad(d)), np.sin(np.deg2rad(d))]]),
+    compute_uv=False).min() for d in angles], color=ARROW, zorder=3, s=40)
+axB.set_xlabel("angle between the vectors (degrees)")
+axB.set_ylabel(r"smallest singular value $\sigma_{\min}$")
+axB.set_title(r"$\sigma_{\min}\to 0$ as the pair approaches dependence")
+axB.invert_xaxis()
+plt.tight_layout()
+```
+
+The lesson: in applied work the question is rarely "are these *exactly* dependent?" but
+"are they *close enough* to dependent to wreck the computation?" That closeness is measured
+by the **condition number** and the smallest singular value, the subjects of [GEOM-26] and
+[GEOM-20]. The clean binary of @def-independence is the limiting case; the dial is what you
+actually live with. Recognizing that near-dependence is as dangerous as exact dependence —
+and that `numpy.linalg.matrix_rank` decides the binary by *thresholding* that dial at a
+tolerance — is the difference between a textbook understanding and a working one.
+
+## When `matrix_rank` lies to you {#sec-rank-lies}
+
+Because the rank routine thresholds singular values, its answer depends on the threshold,
+and on floating-point arithmetic that never represents a number like $10.7639$ exactly.
+The next snippet shows the trap: a matrix that is *exactly* rank-deficient in intent can
+read as full-rank, and a near-dependent matrix can flip its reported rank as you nudge the
+tolerance.
+
+```{python}
+#| label: fig-rank-tol
+#| echo: true
+#| fig-cap: "Reported rank is a thresholding decision, not a fact of nature. A matrix whose third column is the first plus $10^{-9}$ times noise is *mathematically* full rank, but its reported rank drops from 3 to 2 as the tolerance crosses the noise scale. Whenever you call `matrix_rank` on real data you are choosing where on this staircase to stand."
+rng = np.random.default_rng(0)
+base = rng.normal(size=(20, 2))
+# third column = first column + tiny noise: nearly, not exactly, dependent
+col3 = base[:, [0]] + 1e-9 * rng.normal(size=(20, 1))
+M = np.hstack([base, col3])
+
+tols = np.logspace(-12, -6, 60)
+ranks = [np.linalg.matrix_rank(M, tol=t) for t in tols]
+
+fig, ax = plt.subplots(figsize=(6.4, 3.6))
+ax.step(tols, ranks, where="post", color=POINT)
+ax.set_xscale("log")
+ax.set_xlabel("rank tolerance"); ax.set_ylabel("reported rank")
+ax.set_yticks([1, 2, 3])
+ax.set_title("The same matrix has different 'rank' at different tolerances")
+plt.tight_layout()
+print("reported rank at tol=1e-12:", np.linalg.matrix_rank(M, tol=1e-12))
+print("reported rank at tol=1e-7 :", np.linalg.matrix_rank(M, tol=1e-7))
+```
+
+::: {.callout-warning title="Pitfall"}
+**Never treat a computed rank as ground truth about independence.** `numpy.linalg.matrix_rank`
+counts singular values above a tolerance; change the tolerance and the answer can change.
+Exactly-dependent columns can read as independent (rounding lifts a zero singular value off
+zero), and near-dependent columns are *reported* independent while being numerically
+useless. The honest tools are the singular values themselves ([GEOM-20]) and the condition
+number ([GEOM-26]) — a *spectrum* of closeness-to-dependence — not a single integer. The
+integer is a convenience that has discarded exactly the borderline information you most
+need.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When is the linear-independence framework the right tool, and when is it the wrong one?"*
+The honest summary:
+
+- **Use it** to reason about whether features carry distinct information, to find and remove
+  exact redundancies (duplicate units, dummy-variable traps, sum-to-one constraints), and as
+  the foundation for *every* downstream notion of "how many real directions are here" — rank
+  ([GEOM-12]), the four subspaces, the dimension of a solution set.
+- **Do not lean on the bare binary** when data are noisy or measured: real features are
+  almost never *exactly* dependent, so "independent / dependent" is too crude. Reach instead
+  for the continuous measures — singular values, condition number, variance inflation factors
+  in regression — that quantify *how close* to dependence you are.
+- **And remember the boundary:** linear independence sees only *linear* redundancy. Two
+  features can be perfectly predictable from each other through a *nonlinear* relationship
+  (say $y = x^2$) and still be linearly independent — the framework will call them
+  independent because no straight-line combination collapses them. Independence is a
+  statement about linear structure only.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-2 *Span and Subspaces*]**, which built the set of places a handful
+of vectors can reach and flagged that the count of vectors need not match the size of that
+set. This article closed that gap: **independence** says which vectors pull their weight,
+a **basis** is the leanest full description, and **dimension** is the forced count of
+independent directions — the first genuinely *invariant* number the track has produced.
+With Movement I (vectors, combinations, span, independence) complete, the trunk forks:
+
+- **[GEOM-4 *The Dot Product*]** and **[GEOM-5 *Orthogonality and Orthonormal Bases*]** —
+  among all bases, the *orthonormal* ones (mutually perpendicular, unit length) are the
+  nicest, because then the coordinates of @thm-unique-coords are just dot products. This
+  article said *a* basis exists and is efficient; GEOM-5 builds the *best* kind.
+- **[GEOM-12 *Rank and the Four Fundamental Subspaces*]** — the rank we computed in the
+  worked examples is *defined* as the dimension of the column space, and the rank–nullity
+  theorem is dimension-counting (@lem-steinitz, @thm-invariance) made into the master
+  bookkeeping identity for a matrix.
+- **[GEOM-14 *Eigenvalues and Eigenvectors*]** — eigenvectors, when there are enough of
+  them, form a basis (@def-basis) chosen so a matrix acts by simple scaling along each
+  basis direction; whether such a basis *exists* is exactly an independence question.
+- **Downstream, into [REGR-7]:** exact linear dependence among predictors is perfect
+  multicollinearity (Example 1, Example 2); the near-dependence dial of @sec-near-dependence
+  is the practical version that ridge regression and the condition number tame.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary source.** Hermann Grassmann, *Die lineale Ausdehnungslehre* (1844, revised
+  1862) — the first treatment of dimension as the number of independent quantities, decades
+  ahead of its time and famously hard to read; the modern definitions in this article are
+  its descendants, cleaned up by the twentieth-century axiomatization of vector spaces.
+- **The counting lemma.** @lem-steinitz is the *Steinitz exchange lemma* (Ernst Steinitz,
+  1913), the result from which the invariance of dimension — and most of finite-dimensional
+  linear algebra's counting — flows. Worth knowing by name.
+- **Open threads this article deliberately deferred.** *How do we actually compute a basis
+  and rank reliably?* — via QR or the SVD, not naive elimination, for the numerical reasons
+  of @sec-rank-lies; built in [GEOM-7] and [GEOM-20]. *What is the cleanest possible basis?*
+  — an orthonormal one, [GEOM-5]. *How does dimension partition a matrix's input and output
+  space?* — the four fundamental subspaces and rank–nullity, [GEOM-12]. *And the question
+  underneath dimension reduction:* given data that only *nearly* lives in a low-dimensional
+  flat, what is its *effective* dimension? — the SVD's singular values answer it ([GEOM-20]),
+  and Unsupervised Learning's PCA turns that answer into a statistical method.

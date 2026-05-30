@@ -30,12 +30,12 @@ FILL   = "#9fb3d1"     # shaded areas
 ```
 
 > **Where this sits in the track.** This article is the second sequel to
-> [PROB-7 *Joint Distributions, Covariance & Correlation*]. Its sibling, [PROB-8
+> [PROB-07 *Joint Distributions, Covariance & Correlation*]. Its sibling, [PROB-08
 > *Independence and the i.i.d. Sample*], asked what it means for two random variables to
 > carry *no* information about each other. This article asks the opposite and far more
 > common question: when they *do* carry information, exactly how does learning the value of
 > one reshape the distribution of the other? We take the event-level conditioning of
-> [PROB-1 *Conditional Probability, Independence & Bayes' Rule*] — $P(A\mid B) =
+> [PROB-01 *Conditional Probability, Independence & Bayes' Rule*] — $P(A\mid B) =
 > P(A\cap B)/P(B)$ — and lift it to the random-variable level, producing the **conditional
 > pmf/pdf** $f_{Y\mid X}(y\mid x) = f_{X,Y}(x,y)/f_X(x)$. From there we build the
 > **conditional expectation** $\mathbb{E}[Y\mid X=x]$, watch it become a *function of the
@@ -45,10 +45,10 @@ FILL   = "#9fb3d1"     # shaded areas
 > **law of total variance** $\operatorname{Var}(Y)=\mathbb{E}\!\left[\operatorname{Var}(Y\mid
 > X)\right]+\operatorname{Var}\!\left(\mathbb{E}[Y\mid X]\right)$. We finish by proving the
 > result the entire Regression track stands on: **$\mathbb{E}[Y\mid X]$ is the best
-> predictor of $Y$ from $X$ in mean-squared error.** It assumes [PROB-1] (conditioning of
-> events), [PROB-5] (expectation and its linearity), and [PROB-7] (joint and marginal
+> predictor of $Y$ from $X$ in mean-squared error.** It assumes [PROB-01] (conditioning of
+> events), [PROB-05] (expectation and its linearity), and [PROB-07] (joint and marginal
 > distributions, covariance). It sets up Regression's founding premise that to regress is
-> to estimate $\mathbb{E}[Y\mid X]$ ([REGR-0], [REGR-23]), the Bayes-optimal classifier in
+> to estimate $\mathbb{E}[Y\mid X]$ ([REGR-00], [REGR-23]), the Bayes-optimal classifier in
 > Classification, and the conditioning that Causal Inference runs on.
 
 ## Abstract {.unnumbered}
@@ -94,7 +94,7 @@ answer to a piece of that question. If a step ever feels arbitrary, come back he
 
 ## The marginal answer is the wrong answer once you have data
 
-[PROB-5] gave us $\mathbb{E}[Y]$, the long-run average of a random variable taken over its
+[PROB-05] gave us $\mathbb{E}[Y]$, the long-run average of a random variable taken over its
 *entire* distribution — the best one-number summary when we know nothing else. But in almost
 every real problem we *do* know something else. A doctor predicting a patient's blood
 pressure does not use the population average; she uses the average *for patients of that age,
@@ -116,14 +116,14 @@ probability. It is implicit in the seventeenth-century correspondence of Pascal 
 over interrupted games of chance — "given that the score now stands at 2–1, how should the
 pot be split?" is a conditional-expectation question. It was made explicit by Thomas Bayes
 (published posthumously, 1763) and Pierre-Simon Laplace, whose *Théorie analytique des
-probabilités* (1812) is shot through with conditional reasoning about observations. [PROB-1]
+probabilités* (1812) is shot through with conditional reasoning about observations. [PROB-01]
 told that story for *events*: $P(A\mid B)=P(A\cap B)/P(B)$, "restrict the sample space to
 $B$ and renormalize."
 
 What changed in the early twentieth century — and what this article is really about — is the
 realization that conditioning is most powerful when the thing we condition on is itself a
 *random variable* that we let vary. Andrey Kolmogorov, in the same 1933 monograph that gave
-us the axioms (built in [PROB-0]), defined conditional expectation as a random variable in
+us the axioms (built in [PROB-00]), defined conditional expectation as a random variable in
 its own right. That is the leap from "the average eruption length given a $73$-minute wait is
 $3.9$ minutes" (a number) to "the average eruption length *as a function of* the wait" (a
 random object that inherits its randomness from the wait). The whole modern apparatus of
@@ -147,7 +147,7 @@ cleanly you have answered the hardest question most interviewers know to ask her
 Picture the joint distribution of two variables as a cloud of points in the plane — $X$
 horizontal, $Y$ vertical. The *marginal* distribution of $Y$ is what you see if you squash
 the whole cloud onto the vertical axis, forgetting $X$ entirely (this is the "integrate $X$
-out" picture from [PROB-7]).
+out" picture from [PROB-07]).
 
 Conditioning refuses to squash. Instead it **cuts a thin vertical slice** of the cloud at
 $X=x$ and asks only about the points in that slice. Those points have their own spread of
@@ -196,13 +196,13 @@ land on* is random — and the rest is bookkeeping.
 ## Notation and the standing setup {#sec-notation}
 
 We carry two random variables $X$ and $Y$ defined on the same sample space (built in
-[PROB-0]), with a known **joint distribution** (from [PROB-7]). To keep both the discrete and
+[PROB-00]), with a known **joint distribution** (from [PROB-07]). To keep both the discrete and
 continuous stories on the page, we will state each definition in both forms. We write:
 
 - $p_{X,Y}(x,y) = P(X=x,\,Y=y)$ for the **joint pmf** (discrete case), and
   $f_{X,Y}(x,y)$ for the **joint pdf** (continuous case).
 - $p_X(x)=P(X=x)$ and $f_X(x)$ for the **marginals** of $X$, recovered from the joint by
-  summing or integrating out $Y$ (the operation derived in [PROB-7]):
+  summing or integrating out $Y$ (the operation derived in [PROB-07]):
   $$
   p_X(x) = \sum_{y} p_{X,Y}(x,y), \qquad
   f_X(x) = \int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dy .
@@ -210,16 +210,16 @@ continuous stories on the page, we will state each definition in both forms. We 
   (The discrete sum runs over every value $y$ that $Y$ can take; the integral runs over the
   whole real line.) Symmetrically $p_Y(y),f_Y(y)$ are the marginals of $Y$.
 
-Throughout, $\mathbb{E}[\cdot]$ is expectation as defined in [PROB-5] — a sum weighted by the
+Throughout, $\mathbb{E}[\cdot]$ is expectation as defined in [PROB-05] — a sum weighted by the
 pmf in the discrete case, an integral weighted by the pdf in the continuous case — and
 $\operatorname{Var}(\cdot)=\mathbb{E}[(\cdot-\mathbb{E}[\cdot])^2]$ is variance from
-[PROB-6]. Nothing above the Calc-1 floor is assumed; the one genuinely multivariable object,
+[PROB-06]. Nothing above the Calc-1 floor is assumed; the one genuinely multivariable object,
 the double integral, is used only as "integrate in $y$, then integrate in $x$," which we
 spell out the first time it appears.
 
 ## The conditional distribution {#sec-cond-dist}
 
-We rebuild [PROB-1]'s event conditioning at the variable level. Recall the event definition:
+We rebuild [PROB-01]'s event conditioning at the variable level. Recall the event definition:
 for events $A,B$ with $P(B)>0$,
 $$
 P(A\mid B) = \frac{P(A\cap B)}{P(B)} .
@@ -248,7 +248,7 @@ $$ {#eq-cond-pmf}
 
 The vertical bar reads "given." We must check this is an honest pmf — that for each fixed $x$
 it is non-negative and sums to $1$ over $y$, the two defining properties of a pmf from
-[PROB-3]. Non-negativity is immediate: numerator and denominator are both probabilities, so
+[PROB-03]. Non-negativity is immediate: numerator and denominator are both probabilities, so
 both are $\ge 0$, and the denominator is $>0$ by assumption. For the sum, fix $x$ and add
 over all $y$, pulling the constant $p_X(x)$ out of the sum (it does not depend on $y$):
 $$
@@ -268,14 +268,14 @@ probability distribution in its own right.
 
 Here we hit the one subtlety this article must handle honestly: when $Y$ (and $X$) are
 continuous, $P(X=x)=0$ for every single $x$ — there is *no* probability in any individual
-slice (this is the $P(X=x)=0$ fact derived in [PROB-4]). So @eq-event-cond divides $0/0$ and
+slice (this is the $P(X=x)=0$ fact derived in [PROB-04]). So @eq-event-cond divides $0/0$ and
 is meaningless verbatim. We cannot condition on a probability-zero event by the elementary
 recipe.
 
 The resolution is a limit, and we run it rather than assert it. Condition not on the
 zero-width event $\{X=x\}$ but on a *thin strip* $\{x \le X \le x+\Delta\}$ of width $\Delta>0$,
 which has positive probability. By the event definition and the density-as-area fact from
-[PROB-4] (probability is the integral of the density),
+[PROB-04] (probability is the integral of the density),
 $$
 P\bigl(Y\le y \;\big|\; x \le X \le x+\Delta\bigr)
 = \frac{P(Y\le y,\; x\le X\le x+\Delta)}{P(x\le X\le x+\Delta)}
@@ -326,13 +326,13 @@ sum/integrate over $y$ (it gives $1$); summing over $x$ instead is meaningless a
 error. A second, subtler trap: $f_{Y\mid X}(y\mid x)$ and $f_{X\mid Y}(x\mid y)$ are *not*
 the same object — they have different denominators ($f_X$ versus $f_Y$) and answer different
 questions. Confusing them is the random-variable form of the prosecutor's fallacy from
-[PROB-1].
+[PROB-01].
 :::
 
 ### The multiplication rule and the chain rule {#sec-mult-rule}
 
 Rearranging @eq-cond-pdf by multiplying both sides by $f_X(x)$ gives the **multiplication
-rule** for densities, the variable-level version of [PROB-1]'s chain rule:
+rule** for densities, the variable-level version of [PROB-01]'s chain rule:
 $$
 f_{X,Y}(x,y) = f_X(x)\,f_{Y\mid X}(y\mid x) = f_Y(y)\,f_{X\mid Y}(x\mid y) .
 $$ {#eq-mult-rule}
@@ -340,14 +340,14 @@ $$ {#eq-mult-rule}
 *the joint is the marginal of one variable times the conditional of the other.* This is the
 factorization that builds joint models one variable at a time, and equating the two
 right-hand sides is exactly **Bayes' rule** for densities,
-$f_{X\mid Y}(x\mid y) = f_X(x)f_{Y\mid X}(y\mid x)/f_Y(y)$, lifting [PROB-1]'s event Bayes to
+$f_{X\mid Y}(x\mid y) = f_X(x)f_{Y\mid X}(y\mid x)/f_Y(y)$, lifting [PROB-01]'s event Bayes to
 the random-variable level. We will not pursue inference here (that is the Statistical
 Inference track's job), but it is worth seeing that the entire Bayesian machine is one
 rearrangement of @eq-cond-pdf away.
 
 ::: {.callout-tip title="You might be asked"}
 *"What does the conditional distribution become if $X$ and $Y$ are independent?"* Independence
-([PROB-8]) means the joint factors as $f_{X,Y}(x,y)=f_X(x)f_Y(y)$. Substitute into
+([PROB-08]) means the joint factors as $f_{X,Y}(x,y)=f_X(x)f_Y(y)$. Substitute into
 @eq-cond-pdf: $f_{Y\mid X}(y\mid x) = f_X(x)f_Y(y)/f_X(x) = f_Y(y)$. The conditional collapses
 to the marginal — conditioning on $X$ tells you *nothing* new about $Y$, which is precisely
 the meaning of independence. The slices in @fig-slices would all have the same centre and the
@@ -358,7 +358,7 @@ variables are dependent.
 ## Conditional expectation as a number {#sec-cond-exp-number}
 
 Once $f_{Y\mid X}(\cdot\mid x)$ is a genuine distribution, it has a mean — computed by the
-ordinary expectation recipe of [PROB-5], but using the conditional distribution as the
+ordinary expectation recipe of [PROB-05], but using the conditional distribution as the
 weighting instead of the marginal.
 
 ::: {#def-cond-exp}
@@ -373,13 +373,13 @@ $$ {#eq-cond-exp}
 
 This is one number for each $x$ — the balance point of the slice in @fig-slices. It is
 exactly $\mathbb{E}[Y]$ with the marginal weighting swapped for the conditional weighting, so
-every property of expectation from [PROB-5] carries over slice-by-slice. In particular
+every property of expectation from [PROB-05] carries over slice-by-slice. In particular
 **conditional expectation is linear**: for constants $a,b$ and a fixed $x$,
 $$
 \mathbb{E}[aY+bZ\mid X=x] = a\,\mathbb{E}[Y\mid X=x] + b\,\mathbb{E}[Z\mid X=x] ,
 $$
 because @eq-cond-exp is a sum/integral and linearity of sums/integrals is inherited directly
-(the proof is identical to the marginal one in [PROB-5], with $f_{Y\mid X}(\cdot\mid x)$ in
+(the proof is identical to the marginal one in [PROB-05], with $f_{Y\mid X}(\cdot\mid x)$ in
 place of $f_Y$). We will lean on this repeatedly.
 
 ### A worked number, by hand {#sec-byhand-number}
@@ -444,7 +444,7 @@ deterministic function: feed it a number $x$, get a number back.
 Here is the leap. $X$ is a *random variable* — nature has not yet revealed its value. What,
 then, is $m(X)$? It is a function of a random variable, and a function of a random variable is
 **itself a random variable** (this is exactly the "$g(X)$ is a random variable" fact from
-[PROB-5], used to define $\mathbb{E}[g(X)]$). We give it a name.
+[PROB-05], used to define $\mathbb{E}[g(X)]$). We give it a name.
 
 ::: {#def-cond-exp-rv}
 **Definition (conditional expectation as a random variable).** The **conditional expectation
@@ -526,12 +526,12 @@ over $Y$ within each slice.
 
 ::: {.proof}
 We prove the continuous case; the discrete case is identical with sums replacing integrals.
-Start from the right-hand side as defined in [PROB-5], $\mathbb{E}[Y]=\int y\,f_Y(y)\,dy$, but
+Start from the right-hand side as defined in [PROB-05], $\mathbb{E}[Y]=\int y\,f_Y(y)\,dy$, but
 it is cleaner to start from the left and arrive at it, so that nothing is assumed.
 
 The outer expectation averages the random variable $m(X)=\mathbb{E}[Y\mid X]$ over the
 distribution of $X$. By the definition of expectation of a function of $X$ (the law of the
-unconscious statistician from [PROB-5], $\mathbb{E}[g(X)]=\int g(x)f_X(x)\,dx$), with
+unconscious statistician from [PROB-05], $\mathbb{E}[g(X)]=\int g(x)f_X(x)\,dx$), with
 $g(x)=m(x)$:
 $$
 \mathbb{E}\bigl[\mathbb{E}[Y\mid X]\bigr]
@@ -561,7 +561,7 @@ in our case at the floor's level: the total absolute integral is
 $\int\!\int |y|\, f_{X,Y}(x,y)\,dy\,dx$, and running the very same conditional-times-marginal
 collapse on $|y|$ that we are about to run on $y$ turns it into $\int |y|\, f_Y(y)\,dy =
 \mathbb{E}[|Y|]$, which is finite precisely because we assumed $\mathbb{E}[Y]$ finite (an
-expectation is finite exactly when the expectation of the absolute value is — [PROB-5]). With
+expectation is finite exactly when the expectation of the absolute value is — [PROB-05]). With
 the integrand absolutely integrable, swapping the order cannot change the total, so the move is
 legal. (The general Fubini–Tonelli theorem itself is a result of measure-theoretic analysis,
 above this series' floor and outside every track here; we do not derive it, we only verify its
@@ -576,7 +576,7 @@ of $Y$: integrating the joint over all $x$ gives $f_Y(y)$. Hence
 $$
 = \int_{-\infty}^{\infty} y\, f_Y(y)\,dy = \mathbb{E}[Y] ,
 $$
-the last equality being the definition of $\mathbb{E}[Y]$ from [PROB-5]. $\qquad\blacksquare$
+the last equality being the definition of $\mathbb{E}[Y]$ from [PROB-05]. $\qquad\blacksquare$
 :::
 
 The proof is nothing but "the joint is the conditional times the marginal, so integrating in
@@ -613,8 +613,8 @@ $$
 = \mathbb{E}[Y^2\mid X=x] - \bigl(\mathbb{E}[Y\mid X=x]\bigr)^2 ,
 $$ {#eq-cond-var}
 the second equality being the computational identity $\operatorname{Var}=\mathbb{E}[Y^2]-(\mathbb{E}
-Y)^2$ from [PROB-6], applied inside the slice (it holds there because, as noted in
-@sec-cond-exp-number, all of [PROB-6]'s algebra carries over with the conditional weighting).
+Y)^2$ from [PROB-06], applied inside the slice (it holds there because, as noted in
+@sec-cond-exp-number, all of [PROB-06]'s algebra carries over with the conditional weighting).
 Letting $x$ vary gives the random variable $\operatorname{Var}(Y\mid X)$, a function of $X$
 just as $\mathbb{E}[Y\mid X]$ was.
 
@@ -628,12 +628,12 @@ $$ {#eq-total-var}
 :::
 
 ::: {.proof}
-Every step uses only the computational variance identity from [PROB-6] and the law of total
+Every step uses only the computational variance identity from [PROB-06] and the law of total
 expectation @eq-total-exp just proved. Write $\mu = \mathbb{E}[Y]$ and abbreviate the random
 variable $m(X)=\mathbb{E}[Y\mid X]$.
 
 **Step 1 — expand the two pieces with the computational identity.** Apply
-$\operatorname{Var}(W)=\mathbb{E}[W^2]-(\mathbb{E}[W])^2$ (from [PROB-6]) to each term on the
+$\operatorname{Var}(W)=\mathbb{E}[W^2]-(\mathbb{E}[W])^2$ (from [PROB-06]) to each term on the
 right of @eq-total-var.
 
 For the first term, take the *expectation over $X$* of the conditional variance
@@ -687,7 +687,7 @@ The interpretation is worth memorizing because it recurs everywhere downstream:
   the spread *of the group means* as $X$ moves them around.
 
 This is the population ancestor of the **ANOVA** decomposition and of the $R^2$ "fraction of
-variance explained" that Regression's [REGR-3] makes empirical: knowing $X$ helps exactly to
+variance explained" that Regression's [REGR-03] makes empirical: knowing $X$ helps exactly to
 the extent that the group means move (the second term is large) relative to the residual
 scatter (the first term). @fig-total-var draws both pieces on one cloud.
 
@@ -768,7 +768,7 @@ $$
 \bigl(Y-g(X)\bigr)^2
 = \bigl(Y-m(X)\bigr)^2 + 2\bigl(Y-m(X)\bigr)\bigl(m(X)-g(X)\bigr) + \bigl(m(X)-g(X)\bigr)^2 .
 $$
-Take expectations of both sides; by linearity of expectation ([PROB-5]) the expectation of a
+Take expectations of both sides; by linearity of expectation ([PROB-05]) the expectation of a
 sum is the sum of expectations:
 $$
 \mathbb{E}\bigl[(Y-g(X))^2\bigr]
@@ -852,8 +852,8 @@ line is the one minimizing $\mathbb{E}[(m(X)-(\beta_0+\beta_1 X))^2]$ — i.e. O
 **best linear approximation to the true conditional-mean curve $m(x)$**, the straight line
 closest to $m$ in mean square. When $m$ really is linear, that approximation is exact and OLS
 targets $\mathbb{E}[Y\mid X]$ itself; when $m$ curves, OLS targets its best linear shadow,
-which is why the residual plots in [REGR-1] reveal curvature. This is the precise sense in
-which [REGR-0]'s slogan "regression estimates $\mathbb{E}[Y\mid X]$" is both true and in need
+which is why the residual plots in [REGR-01] reveal curvature. This is the precise sense in
+which [REGR-00]'s slogan "regression estimates $\mathbb{E}[Y\mid X]$" is both true and in need
 of the qualifier "within the model class you chose."
 :::
 
@@ -864,7 +864,7 @@ machinery strains.
 
 ## Example 1 — Old Faithful: the conditional mean is the regression curve {#sec-faithful}
 
-Return to the Old Faithful geyser from [REGR-1], which pairs the *waiting time* before an
+Return to the Old Faithful geyser from [REGR-01], which pairs the *waiting time* before an
 eruption with that eruption's *duration*. We compute the conditional mean of duration given
 waiting time directly from the data — by *binning* waiting time and averaging duration within
 each bin, which is the empirical version of "slice and average." Overlaid is the population
@@ -930,13 +930,13 @@ S = \sum_{i=1}^{N} X_i ,
 $$
 where even the *number of terms* is random. We want $\mathbb{E}[S]$ and $\operatorname{Var}(S)$.
 The trick — and it is the canonical use of both laws — is to **condition on $N$**, because once
-$N$ is fixed the sum has a fixed number of terms and [PROB-5]/[PROB-8] handle it.
+$N$ is fixed the sum has a fixed number of terms and [PROB-05]/[PROB-08] handle it.
 
 Suppose claims arrive with $\mathbb{E}[N]=\mu_N$, $\operatorname{Var}(N)=\sigma_N^2$, the
 $X_i$ are i.i.d. with mean $\mu_X$ and variance $\sigma_X^2$, and the $X_i$ are independent of
 $N$. Condition on $N=n$. Then $S=\sum_{i=1}^n X_i$ is an ordinary sum of $n$ i.i.d. terms, so
-by linearity of expectation ([PROB-5]) and the additivity of variance under independence
-([PROB-8]),
+by linearity of expectation ([PROB-05]) and the additivity of variance under independence
+([PROB-08]),
 $$
 \mathbb{E}[S\mid N=n] = n\,\mu_X ,
 \qquad
@@ -946,7 +946,7 @@ As functions of the random $N$ these are $\mathbb{E}[S\mid N]=N\mu_X$ and
 $\operatorname{Var}(S\mid N)=N\sigma_X^2$. Now apply the two laws.
 
 By the **law of total expectation** @eq-total-exp, averaging $\mathbb{E}[S\mid N]=N\mu_X$ over
-$N$ (and pulling the constant $\mu_X$ out of the expectation by [PROB-5]'s linearity):
+$N$ (and pulling the constant $\mu_X$ out of the expectation by [PROB-05]'s linearity):
 $$
 \mathbb{E}[S] = \mathbb{E}[\,N\mu_X\,] = \mu_X\,\mathbb{E}[N] = \mu_X\,\mu_N .
 $$ {#eq-wald-mean}
@@ -958,7 +958,7 @@ $$
 = \mathbb{E}[\,N\sigma_X^2\,] + \operatorname{Var}(\,N\mu_X\,)
 = \sigma_X^2\,\mu_N + \mu_X^2\,\sigma_N^2 ,
 $$ {#eq-rs-var}
-where the last step used $\mathbb{E}[N\sigma_X^2]=\sigma_X^2\mu_N$ and, from [PROB-6]'s
+where the last step used $\mathbb{E}[N\sigma_X^2]=\sigma_X^2\mu_N$ and, from [PROB-06]'s
 $\operatorname{Var}(aN)=a^2\operatorname{Var}(N)$, $\operatorname{Var}(N\mu_X)=\mu_X^2\sigma_N^2$.
 The variance of the total has *two* sources: the variability in claim *sizes* (first term) and
 the variability in the *number* of claims (second term) — the law of total variance making the
@@ -1003,7 +1003,7 @@ This is the law of total expectation/variance doing the work it was built for.
 ## Example 3 — the edge of applicability: a heavy tail breaks $\mathbb{E}[Y\mid X]$ {#sec-edge}
 
 The machinery of this article quietly assumes the relevant means and variances *exist* — the
-integrals in @eq-cond-exp and @eq-cond-var converge to finite numbers. [PROB-5] already warned
+integrals in @eq-cond-exp and @eq-cond-var converge to finite numbers. [PROB-05] already warned
 that some distributions (heavy-tailed ones, the Cauchy being the headline case) have no finite
 mean at all. When the conditional distribution is that wild, $\mathbb{E}[Y\mid X=x]$ is *not a
 number*, the best-predictor theorem has no target, and squared-error prediction is the wrong
@@ -1101,15 +1101,15 @@ not the same as the errors carrying no information about $X$.
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from [PROB-7 *Joint Distributions, Covariance & Correlation*] (the joint
-distribution and marginals this article slices) by way of [PROB-1 *Conditional Probability*]
-(event-level conditioning, lifted here to random variables) and [PROB-5 *Expectation*]
+You arrived from [PROB-07 *Joint Distributions, Covariance & Correlation*] (the joint
+distribution and marginals this article slices) by way of [PROB-01 *Conditional Probability*]
+(event-level conditioning, lifted here to random variables) and [PROB-05 *Expectation*]
 (the averaging machinery and its linearity). This article is the **hinge** of the Probability
 track: it builds the object that the supervised tracks downstream are all secretly estimating.
 
 From here:
 
-- **Regression.** [REGR-0] and [REGR-1] open by *asserting* that regression estimates
+- **Regression.** [REGR-00] and [REGR-01] open by *asserting* that regression estimates
   $\mathbb{E}[Y\mid X]$; @thm-best-predictor is the theorem that makes the assertion rigorous,
   and the "best *linear* approximation" reading (interview box, @sec-best-predictor) is exactly
   what OLS computes. [REGR-23] (kernel/nonparametric regression) estimates the curve $m(x)$
@@ -1137,7 +1137,7 @@ From here:
   *is* the cross-term-vanishes property at the heart of @thm-best-predictor: conditional
   expectation is the **orthogonal projection** of $Y$ onto the functions of $X$, in the
   geometry where squared error is squared distance. The projection view is taken up for
-  regression in [REGR-4].
+  regression in [REGR-04].
 - **Open threads deliberately deferred.** *How do we estimate $m(x)$ from a finite sample
   without assuming its shape?* — nonparametric regression, [REGR-23]. *What if the loss is not
   squared error?* — conditional quantiles and quantile regression, flagged in @sec-edge. *What

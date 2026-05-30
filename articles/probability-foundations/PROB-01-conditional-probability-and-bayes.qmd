@@ -31,22 +31,22 @@ SETB   = "#d98b2b"     # event B
 ```
 
 > **Where this sits in the track.** This is the second article of the **Probability
-> Foundations** track. It assumes only [PROB-0 *What Is Probability? Sample Spaces and the
+> Foundations** track. It assumes only [PROB-00 *What Is Probability? Sample Spaces and the
 > Axioms*] — the sample space $\Omega$, events as subsets, and Kolmogorov's three axioms
 > (non-negativity, $P(\Omega)=1$, countable additivity), from which we derived the
 > complement rule, monotonicity, and inclusion–exclusion. Nothing above the Calculus-I
 > floor is assumed. This article answers the next question every later article needs: **how
 > does a probability change when we learn that something happened, and how do we invert that
 > relationship?** It builds **conditional probability**, **independence**, the **law of
-> total probability**, and **Bayes' rule**. It sets up [PROB-8 *Independence and the i.i.d.
-> Sample*] (independence lifted from events to random variables), [PROB-9 *Conditional
+> total probability**, and **Bayes' rule**. It sets up [PROB-08 *Independence and the i.i.d.
+> Sample*] (independence lifted from events to random variables), [PROB-09 *Conditional
 > Distributions and Conditional Expectation*] (conditioning at the random-variable level),
 > and [PROB-12 *The Poisson Distribution*] (built on independence). Cross-track, naive-Bayes
 > classification, Bayesian inference, and causal reasoning all consume what we build here.
 
 ## Abstract {.unnumbered}
 
-Probability as built in [PROB-0] answers questions about an experiment *before* it is run.
+Probability as built in [PROB-00] answers questions about an experiment *before* it is run.
 But information arrives: a test comes back positive, a card is revealed, a sensor fires.
 **Conditional probability** is the machine for updating a probability in light of what we
 have learned, and it is the single most leveraged idea in applied probability. This article
@@ -99,7 +99,7 @@ below answers a piece of that.
 
 ## The problem the axioms left open
 
-[PROB-0] gave us a fixed probability $P(A)$ for each event, computed before the experiment
+[PROB-00] gave us a fixed probability $P(A)$ for each event, computed before the experiment
 runs. That is enough to ask "what is the chance this fair die shows a six?" — answer $1/6$,
 settled before the roll. But almost no real question is static. A doctor does not ask "what
 is the chance a random person has this disease?"; she asks "what is the chance *this patient*
@@ -136,7 +136,7 @@ learn in the direction reality forces on us — backward, from evidence to cause
 ::: {.callout-tip title="You might be asked"}
 *"Why not just define $P(A\mid B)$ directly, instead of as a ratio?"* Because the ratio is
 forced, not chosen — it is the *only* definition that keeps conditioning consistent with the
-[PROB-0] axioms (we show in @sec-defn that $P(\cdot\mid B)$ is itself a genuine probability,
+[PROB-00] axioms (we show in @sec-defn that $P(\cdot\mid B)$ is itself a genuine probability,
 and the ratio is what makes it so) and that matches the frequentist meaning "among the runs
 where $B$ happened, what fraction also had $A$." Define it any other way and either it stops
 obeying the axioms or it stops matching long-run frequencies. The interviewer is checking
@@ -145,7 +145,7 @@ whether you see conditioning as a *derived, forced* construction, not a fresh ax
 
 # Intuition before symbols {#sec-intuition}
 
-Carry forward the one picture from [PROB-0]: **probability is normalized area**, with the
+Carry forward the one picture from [PROB-00]: **probability is normalized area**, with the
 whole sample space $\Omega$ a region of total area $1$ and each event a sub-region whose area
 *is* its probability. Conditioning has an equally simple picture on top of that.
 
@@ -206,7 +206,7 @@ other way, so I flip the ratio using the multiplication rule." Keep the zoom in 
 
 We proceed in dependency order: the definition and its first consequence (it is a genuine
 probability), then the multiplication and chain rules, independence, the law of total
-probability, and finally Bayes' rule. Every step rests only on the [PROB-0] axioms and the
+probability, and finally Bayes' rule. Every step rests only on the [PROB-00] axioms and the
 results derived there.
 
 ## The definition, and why it is forced {#sec-defn}
@@ -221,11 +221,11 @@ $$ {#eq-conditional}
 The vertical bar $\mid$ is read "given"; it is *not* division — the division is the fraction
 on the right. The requirement $P(B) > 0$ is essential: conditioning on something we assigned
 zero probability would divide by zero, and "given an impossible event" has no meaning. (The
-case $P(B)=0$ with continuous variables is handled differently and is built in [PROB-9]; here
+case $P(B)=0$ with continuous variables is handled differently and is built in [PROB-09]; here
 $B$ always has positive probability.)
 :::
 
-The symbol $A\cap B$ is the intersection from [PROB-0]: the event that $A$ **and** $B$ both
+The symbol $A\cap B$ is the intersection from [PROB-00]: the event that $A$ **and** $B$ both
 occur. So @eq-conditional says: the updated chance of $A$ is the chance that *both* happened,
 as a fraction of the chance that the thing we conditioned on happened.
 
@@ -234,7 +234,7 @@ both promised in @sec-why.
 
 **First — it is the only thing consistent with the axioms.** Once we declare that learning
 $B$ makes $B$ the new sample space, the updated probability $Q(A) := P(A\mid B)$ must itself
-obey Kolmogorov's three axioms ([PROB-0])— otherwise "updating" would produce an incoherent
+obey Kolmogorov's three axioms ([PROB-00])— otherwise "updating" would produce an incoherent
 probability. Let us verify that @eq-conditional delivers exactly that, treating $B$ as the
 new universe. We check all three axioms.
 
@@ -246,7 +246,7 @@ new universe. We check all three axioms.
   events $A_1\cap B, A_2\cap B, \dots$ are *also* pairwise disjoint — if $A_i\cap A_j =
   \varnothing$ then certainly $(A_i\cap B)\cap(A_j\cap B)\subseteq A_i\cap A_j = \varnothing$.
   Also $\left(\bigcup_i A_i\right)\cap B = \bigcup_i (A_i\cap B)$ by the distributive law of
-  sets (verified by outcome-chasing in [PROB-0]). So
+  sets (verified by outcome-chasing in [PROB-00]). So
   $$
   Q\!\left(\bigcup_i A_i\right)
   = \frac{P\!\left(\bigcup_i (A_i\cap B)\right)}{P(B)}
@@ -271,7 +271,7 @@ $$
 \;\xrightarrow[\;n\to\infty\;]{}\; \frac{P(A\cap B)}{P(B)},
 $$
 since each relative frequency tends to its probability (the long-run-frequency reading from
-[PROB-0]; that the limits exist is the Law of Large Numbers, owned by the Inference track and
+[PROB-00]; that the limits exist is the Law of Large Numbers, owned by the Inference track and
 built on the Chebyshev inequality of [PROB-19]). The limit is exactly @eq-conditional. So the
 ratio is not an arbitrary choice — it is *both* the unique axiom-consistent rescaling *and*
 the long-run fraction the word "given" plainly means.
@@ -331,7 +331,7 @@ $$
 Now $A_n\mid C$ is precisely $P(A_n\mid A_1\cap\cdots\cap A_{n-1})$ — the last factor of
 @eq-chain. And $P(C) = P(A_1\cap\cdots\cap A_{n-1})$, to which the inductive hypothesis
 applies (its conditioning intersection $P(A_1\cap\cdots\cap A_{n-2})\ge P(C) > 0$ by
-monotonicity from [PROB-0], so the hypothesis is valid), expanding it into the first $n-1$
+monotonicity from [PROB-00], so the hypothesis is valid), expanding it into the first $n-1$
 factors of @eq-chain:
 $$
 P(C) = P(A_1)\,P(A_2\mid A_1)\cdots P(A_{n-1}\mid A_1\cap\cdots\cap A_{n-2}).
@@ -386,7 +386,7 @@ $P(B\mid A)=P(B)$ when $P(A)>0$: independence is mutual, as it must be.
 ### The classic confusion: independent is *not* mutually exclusive {#sec-disjoint-indep}
 
 This is the single most-tested point in the topic, and the source of endless error. **Mutually
-exclusive** (disjoint, from [PROB-0]) means $A\cap B = \varnothing$: $A$ and $B$ *cannot both
+exclusive** (disjoint, from [PROB-00]) means $A\cap B = \varnothing$: $A$ and $B$ *cannot both
 happen*. **Independent** means $P(A\cap B) = P(A)P(B)$: knowing one happened does not change
 the other's probability. These are not the same — in fact, for events of positive probability
 they are nearly *opposite*.
@@ -399,7 +399,7 @@ they are maximally dependent.
 
 ::: {.proof}
 Since $A\cap B=\varnothing$, we have $P(A\cap B) = P(\varnothing) = 0$ ($P(\varnothing)=0$ was
-derived in [PROB-0]). For independence we would need $P(A\cap B)=P(A)P(B)$, i.e.
+derived in [PROB-00]). For independence we would need $P(A\cap B)=P(A)P(B)$, i.e.
 $0 = P(A)P(B)$. But $P(A)>0$ and $P(B)>0$ make the product strictly positive,
 $P(A)P(B) > 0 \ne 0$. So the independence equation fails, and the events are dependent.
 
@@ -477,7 +477,7 @@ $P(A\cap B\cap C)=P(A)P(B)P(C)$.
 That the triple equation does not follow from the three pairwise ones is shown by a concrete
 counterexample, worked in @sec-pairwise below. The takeaway you should carry into an exam:
 **"pairwise independent" and "mutually independent" are different**, and i.i.d. samples
-([PROB-8]) demand the full mutual version.
+([PROB-08]) demand the full mutual version.
 
 ## The law of total probability {#sec-total}
 
@@ -508,10 +508,10 @@ $$
 A = A\cap\Omega = A\cap\left(\bigcup_{i=1}^n B_i\right) = \bigcup_{i=1}^n (A\cap B_i),
 $$
 where the last step is the distributive law of sets (intersecting $A$ with a union is the
-union of the intersections; verified by outcome-chasing in [PROB-0]). These pieces
+union of the intersections; verified by outcome-chasing in [PROB-00]). These pieces
 $A\cap B_1, \dots, A\cap B_n$ are pairwise disjoint, inherited from the $B_i$: if
 $B_i\cap B_j=\varnothing$ then $(A\cap B_i)\cap(A\cap B_j)\subseteq B_i\cap B_j=\varnothing$.
-So finite additivity ([PROB-0]) applies:
+So finite additivity ([PROB-00]) applies:
 $$
 P(A) = P\!\left(\bigcup_{i=1}^n (A\cap B_i)\right) = \sum_{i=1}^n P(A\cap B_i).
 $$
@@ -526,7 +526,7 @@ which is @eq-total. $\qquad\blacksquare$
 In words: to find the overall probability of $A$, ask "how likely is $A$ *within* each
 scenario?" ($P(A\mid B_i)$), weight each by how likely that scenario is ($P(B_i)$), and add.
 The simplest useful case is the two-scenario partition $\{B, B^c\}$ (an event and its
-complement always partition $\Omega$, from [PROB-0]):
+complement always partition $\Omega$, from [PROB-00]):
 $$
 P(A) = P(A\mid B)\,P(B) + P(A\mid B^c)\,P(B^c).
 $$ {#eq-total2}
@@ -907,10 +907,10 @@ Conditioning and Bayes' rule are nearly universal, so the applicability question
   answer. When the prior is genuinely unknown and contested, the posterior is too — and that is
   a feature, not a bug, but it means Bayes does not manufacture certainty from nothing.
 - **Independence is the assumption to audit.** Computing joint probabilities by multiplying
-  marginals (the spam filter, i.i.d. samples in [PROB-8]) requires independence that is usually
+  marginals (the spam filter, i.i.d. samples in [PROB-08]) requires independence that is usually
   at best approximate. Use it when the dependence is weak or when you only need a *ranking*
-  (classification); reach for a dependence-aware model (joint distributions in [PROB-7],
-  conditional distributions in [PROB-9], logistic regression downstream) when you need
+  (classification); reach for a dependence-aware model (joint distributions in [PROB-07],
+  conditional distributions in [PROB-09], logistic regression downstream) when you need
   calibrated joint probabilities.
 - **When conditioning is the wrong frame entirely.** If you actually want a *causal* effect —
   "what happens to $Y$ if I *intervene* and set $X$?" — conditioning $P(Y\mid X)$ is **not** the
@@ -951,14 +951,14 @@ knowing the derivation is knowing what they compute and why.
 This article sits one step above the ground floor, and conditioning is the hinge the rest of
 the track swings on:
 
-- **It came from [PROB-0 *What Is Probability?*]** — conditioning is *restriction of the
+- **It came from [PROB-00 *What Is Probability?*]** — conditioning is *restriction of the
   sample space* plus *renormalization*, and we proved the conditional is itself a probability
-  on the restricted world using the very axioms [PROB-0] established. It also settles the
-  disjoint-versus-independent confusion [PROB-0] flagged.
-- **[PROB-8 *Independence and the i.i.d. Sample*]** lifts the event-independence of @sec-independence
+  on the restricted world using the very axioms [PROB-00] established. It also settles the
+  disjoint-versus-independent confusion [PROB-00] flagged.
+- **[PROB-08 *Independence and the i.i.d. Sample*]** lifts the event-independence of @sec-independence
   to *random variables* and to the i.i.d. assumption every downstream track leans on; the
   pairwise-versus-mutual subtlety (@sec-pairwise) becomes the precise content of "i.i.d."
-- **[PROB-9 *Conditional Distributions and Conditional Expectation*]** rebuilds conditioning
+- **[PROB-09 *Conditional Distributions and Conditional Expectation*]** rebuilds conditioning
   at the random-variable level — $f(y\mid x)$ and $E[Y\mid X]$ — including the delicate case
   $P(B)=0$ we set aside in @def-conditional, and is where Bayes' rule becomes Bayesian
   *updating of distributions*.
@@ -989,7 +989,7 @@ ends and causation begins.
   analyses of *R v. Sally Clark*) shows @sec-prosecutor playing out with real consequences;
   worth reading for how a swapped conditional convicts the innocent.
 - **Open threads this article deliberately deferred.** *Conditioning on a probability-zero
-  event* (continuous $B$) — handled by densities in [PROB-9]. *Independence of random
-  variables and the i.i.d. assumption* — [PROB-8]. *Bayesian updating of an entire
+  event* (continuous $B$) — handled by densities in [PROB-09]. *Independence of random
+  variables and the i.i.d. assumption* — [PROB-08]. *Bayesian updating of an entire
   distribution* rather than a single event — Inference E4. *When conditioning is not the same
   as intervening* — the Causal Inference track.

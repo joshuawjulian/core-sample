@@ -36,11 +36,11 @@ def normal_pdf(x, mu=0.0, sigma=1.0):
 ```
 
 > **Where this sits in the track.** This is the fourth stop in the **distribution
-> catalog** of the Probability Foundations track. It assumes [PROB-4 *Continuous Random
+> catalog** of the Probability Foundations track. It assumes [PROB-04 *Continuous Random
 > Variables: the Probability Density Function*] for what a density *is* and how
-> $P(a\le X\le b)=\int_a^b f$ recovers probabilities; [PROB-5 *Expectation*] and
-> [PROB-6 *Variance*] for how we compute a mean and a variance from a density; and
-> [PROB-8 *Independence and the i.i.d. Sample*] for the rule that the joint density of
+> $P(a\le X\le b)=\int_a^b f$ recovers probabilities; [PROB-05 *Expectation*] and
+> [PROB-06 *Variance*] for how we compute a mean and a variance from a density; and
+> [PROB-08 *Independence and the i.i.d. Sample*] for the rule that the joint density of
 > independent variables factors. We touch exactly one tool above the Calculus-I floor —
 > a single *double* integral evaluated in *polar coordinates* (the Gaussian-integral
 > trick) — and we build it on the page rather than assume it, flagging it as it arrives.
@@ -48,7 +48,7 @@ def normal_pdf(x, mu=0.0, sigma=1.0):
 > out of normals; [PROB-17–PROB-18 *Random Vectors* and *Linear Transforms*], where the
 > bell curve becomes the multivariate normal; and [PROB-20 *Moment Generating
 > Functions*], which re-derives several facts proved here by hand. Downstream it is
-> consumed almost everywhere: by [REGR-2] and [REGR-9] (the Gaussian error model and its
+> consumed almost everywhere: by [REGR-02] and [REGR-09] (the Gaussian error model and its
 > inference) and across the Statistical Inference track.
 
 ## Abstract {.unnumbered}
@@ -103,7 +103,7 @@ it. If a step ever feels arbitrary, come back here.
 
 The bell curve was not discovered by staring at heights or test scores. It came out of
 the same eighteenth-century problem that produced least squares (the origin story of
-[REGR-1]): astronomers and surveyors had **many noisy measurements of one quantity** —
+[REGR-01]): astronomers and surveyors had **many noisy measurements of one quantity** —
 the position of a comet, the length of a meridian arc — that refused to agree. They needed
 a principled answer to two questions: how are these measurement *errors* distributed, and
 given the disagreeing numbers, what is the best single estimate?
@@ -123,7 +123,7 @@ $\exp(-(x-\mu)^2/2\sigma^2)$ — the average is the most-likely value precisely 
 follow this curve and no other. That is why it is called the *Gaussian*, and why it is
 welded to the method of least squares: minimizing squared error *is* finding the
 most-likely line under Gaussian noise, the equivalence we derived step by step in
-@sec-why-gaussian of [REGR-1]. Pierre-Simon Laplace then connected it to averaging in
+@sec-why-gaussian of [REGR-01]. Pierre-Simon Laplace then connected it to averaging in
 general, the seed of the Central Limit Theorem.
 
 So the *why* is baked into the formula from birth. The curve exists to model the scatter
@@ -194,7 +194,7 @@ plt.tight_layout()
 
 The whole formal job of the article is now visible. We have a *shape*,
 $\exp(-(x-\mu)^2/2\sigma^2)$. To make it a legitimate probability density it must enclose
-total area $1$ ([PROB-4]). So we must find the one number $c$ for which
+total area $1$ ([PROB-04]). So we must find the one number $c$ for which
 $c\int_{-\infty}^{\infty}\exp(-(x-\mu)^2/2\sigma^2)\,dx = 1$. Computing that integral —
 which has no elementary antiderivative and so cannot be done by the Calc-1 method of
 finding an antiderivative — is the central technical event of the article, and it is where
@@ -419,14 +419,14 @@ satisfying: the $\pi$ is geometric, not probabilistic.
 
 We named the parameter $\mu$ "the mean" in @def-normal, but a name is not a proof. The
 expectation of a continuous random variable is $E[X]=\int_{-\infty}^{\infty}x f(x)\,dx$
-([PROB-5]). We compute it.
+([PROB-05]). We compute it.
 
 ::: {#thm-mean}
 **Theorem (mean of the normal).** If $X\sim\mathcal N(\mu,\sigma^2)$ then $E[X]=\mu$.
 :::
 
 ::: {.proof}
-By definition of expectation for a continuous variable ([PROB-5]),
+By definition of expectation for a continuous variable ([PROB-05]),
 $$
 E[X]=\int_{-\infty}^{\infty} x\,\frac{1}{\sqrt{2\pi\sigma^2}}
    \exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr)dx.
@@ -469,7 +469,7 @@ made arithmetic.
 ## $\sigma^2$ really is the variance {#sec-variance}
 
 Likewise we must earn the name "variance." The variance is
-$\operatorname{Var}(X)=E[(X-\mu)^2]$ ([PROB-6]). The computation needs one genuine tool
+$\operatorname{Var}(X)=E[(X-\mu)^2]$ ([PROB-06]). The computation needs one genuine tool
 beyond the last — **integration by parts** — which is a Calc-1 technique, so we state it
 and use it openly.
 
@@ -479,7 +479,7 @@ $\operatorname{Var}(X)=\sigma^2$.
 :::
 
 ::: {.proof}
-By definition ([PROB-6]) and the same substitution $z=(x-\mu)/\sigma$ (now $(x-\mu)^2$
+By definition ([PROB-06]) and the same substitution $z=(x-\mu)/\sigma$ (now $(x-\mu)^2$
 becomes $\sigma^2 z^2$, and the constant collapses to $1/\sqrt{2\pi}$ as before):
 $$
 \operatorname{Var}(X)=E\bigl[(X-\mu)^2\bigr]
@@ -549,7 +549,7 @@ $$ {#eq-standardize}
 
 ::: {.proof}
 We find the density of $Z$ by going through its CDF — the cleanest fully-explicit route
-for a monotone transform ([PROB-4]). For any number $z$,
+for a monotone transform ([PROB-04]). For any number $z$,
 $$
 F_Z(z)=P(Z\le z)=P\!\Bigl(\frac{X-\mu}{\sigma}\le z\Bigr)
 =P\bigl(X\le \mu+\sigma z\bigr)=F_X(\mu+\sigma z),
@@ -627,15 +627,15 @@ We first prove the **means and variances add** — which holds even more general
 then prove the harder part, that the *shape stays normal*.
 
 That the parameters add needs no normality at all. For *any* random variables,
-expectation is linear ([PROB-5]), so $E[X_1+X_2]=E[X_1]+E[X_2]=\mu_1+\mu_2$. And for
-*independent* variables the variance of a sum is the sum of the variances ([PROB-8]),
+expectation is linear ([PROB-05]), so $E[X_1+X_2]=E[X_1]+E[X_2]=\mu_1+\mu_2$. And for
+*independent* variables the variance of a sum is the sum of the variances ([PROB-08]),
 $\operatorname{Var}(X_1+X_2)=\operatorname{Var}(X_1)+\operatorname{Var}(X_2)=\sigma_1^2+\sigma_2^2$.
 So *whatever* $X_1+X_2$ turns out to be, its mean and variance are pinned. The real content
 of the theorem is that the sum is again **normal** — that the shape survives.
 
 ::: {.proof}
 **Setup.** The density of a sum of independent continuous variables is the **convolution**
-of their densities ([PROB-8]): if $S=X_1+X_2$, then for the value $S=s$, we sum over all
+of their densities ([PROB-08]): if $S=X_1+X_2$, then for the value $S=s$, we sum over all
 the ways $X_1=t$ and $X_2=s-t$ can combine,
 $$
 f_S(s)=\int_{-\infty}^{\infty} f_{X_1}(t)\,f_{X_2}(s-t)\,dt.
@@ -763,7 +763,7 @@ F_Y(y)=P(aX+b\le y)=P\!\Bigl(X\ge \frac{y-b}{a}\Bigr)=1-F_X\!\Bigl(\frac{y-b}{a}
 $$
 where the last step used $P(X\ge c)=1-P(X<c)=1-F_X(c)$ (the event $X<c$ and $X\ge c$
 partition the line, and $P(X<c)=F_X(c)$ for a continuous variable, since the single point
-$c$ carries no probability, [PROB-4]). Differentiate in $y$; the chain rule again brings
+$c$ carries no probability, [PROB-04]). Differentiate in $y$; the chain rule again brings
 down the inner derivative $1/a$, and the leading $1$ differentiates to $0$:
 $$
 f_Y(y)=-\,f_X\!\Bigl(\frac{y-b}{a}\Bigr)\cdot\frac1a .
@@ -799,8 +799,8 @@ which is *exactly* the normal density @eq-density with mean $a\mu+b$ and varianc
 $a^2\sigma^2$. Hence $aX+b\sim\mathcal N(a\mu+b,\ a^2\sigma^2)$ — the shape is not merely
 inferred from its mean and variance, it is read straight off the density. (As a consistency
 check, those parameters match the model-free identities $E[aX+b]=a\mu+b$ by linearity
-([PROB-5]) and $\operatorname{Var}(aX+b)=a^2\sigma^2$ by the scaling rule for variance
-([PROB-6]); the derivation above is what additionally certifies the result is *normal*.)
+([PROB-05]) and $\operatorname{Var}(aX+b)=a^2\sigma^2$ by the scaling rule for variance
+([PROB-06]); the derivation above is what additionally certifies the result is *normal*.)
 
 **The i.i.d. mean.** Each $X_i\sim\mathcal N(\mu,\sigma^2)$ and they are independent;
 summing $n$ of them, @thm-closure (applied $n-1$ times, folding in one more independent
@@ -815,7 +815,7 @@ $$
 
 That last result is the quiet workhorse of all of inference: the sample mean of normal data
 is *itself* normal, centered at the true $\mu$, with its spread shrinking like
-$\sigma/\sqrt n$. The $\sqrt n$ — not $n$ — is exactly the rate flagged back in [PROB-8].
+$\sigma/\sqrt n$. The $\sqrt n$ — not $n$ — is exactly the rate flagged back in [PROB-08].
 @fig-closure shows the closure property and this shrinking in action.
 
 ```{python}
@@ -1208,7 +1208,7 @@ able to recite:
 
 The CLT needs a **finite variance**. If the pieces being summed have infinite variance — the
 Cauchy distribution is the canonical case, with tails so heavy that $E[X^2]$ and even
-$E[|X|]$ diverge (the boundary example flagged back in [PROB-5]) — then averaging does **not**
+$E[|X|]$ diverge (the boundary example flagged back in [PROB-05]) — then averaging does **not**
 produce a normal. A sample mean of Cauchy variables is *itself* Cauchy, no matter how large
 $n$ is; the averaging never tames it. This is the precise statement of the CLT's fine print:
 the bell curve is the fixed point of averaging *only* when the second moment is finite. When
@@ -1219,7 +1219,7 @@ world of this article.
 
 ::: {.callout-important title="Where you are in the track"}
 You arrived from the discrete catalog — [PROB-11 *Bernoulli, Binomial, Negative-Binomial*]
-and [PROB-12 *Poisson*] — and from the continuous-density groundwork of [PROB-4]. This
+and [PROB-12 *Poisson*] — and from the continuous-density groundwork of [PROB-04]. This
 article built the first and most important *continuous named distribution* end to end:
 its constant ([PROB-13] @sec-gaussian-integral), its moments, its standardization, and the
 closure property that makes it the backbone of statistics. From here the catalog and the
@@ -1234,11 +1234,11 @@ vector/limit spine both continue:
   samples flows through here.
 - **[PROB-17 *Random Vectors* ] and [PROB-18 *Linear Transforms*]** — the bell curve in
   many dimensions: the **multivariate normal**, where @thm-closure becomes "linear maps of a
-  Gaussian vector are Gaussian," the workhorse of [REGR-6].
+  Gaussian vector are Gaussian," the workhorse of [REGR-06].
 - **[PROB-20 *Moment Generating Functions*]** — re-proves @thm-closure in three lines using
   the normal's MGF $e^{\mu t+\sigma^2 t^2/2}$, and supplies the transform machinery the CLT
   proof needs.
-- **Across the tracks:** the Gaussian error model of [REGR-2]/[REGR-9], and essentially all
+- **Across the tracks:** the Gaussian error model of [REGR-02]/[REGR-09], and essentially all
   of Statistical Inference, run on the facts proved here.
 :::
 
@@ -1248,7 +1248,7 @@ vector/limit spine both continue:
   the bell curve first appears as the large-$n$ binomial approximation; Carl Friedrich
   Gauss, *Theoria Motus Corporum Coelestium* (1809), which derived the curve as the unique
   error law making the arithmetic mean the most-likely estimate, welding it to least squares
-  ([REGR-1]); Pierre-Simon Laplace, who connected it to general averaging (the proto-CLT).
+  ([REGR-01]); Pierre-Simon Laplace, who connected it to general averaging (the proto-CLT).
 - **The honest-tails classic.** Benoit Mandelbrot and the long literature on heavy tails in
   finance is the permanent antidote to @sec-returns; Nassim Taleb's *The Black Swan* is the
   popular sermon on the same point — the normal's thin tails as a source of real-world ruin.

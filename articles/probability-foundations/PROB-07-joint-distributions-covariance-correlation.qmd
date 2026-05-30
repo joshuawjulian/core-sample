@@ -31,13 +31,13 @@ PURPLE = "#6a4c93"
 
 > **Where this sits in the track.** This is the seventh stop in **Probability
 > Foundations**, the root track of the series. It assumes you have read
-> [PROB-5 *Expectation: The Long-Run Average*] — where $E[X]$, the **law of the
+> [PROB-05 *Expectation: The Long-Run Average*] — where $E[X]$, the **law of the
 > unconscious statistician** $E[g(X)]$, and the all-important **linearity of
-> expectation** were built — and [PROB-6 *Variance, Standard Deviation, and
+> expectation** were built — and [PROB-06 *Variance, Standard Deviation, and
 > Variance as a Sum of Squares*], where $\operatorname{Var}(X)=E[(X-\mu)^2]$ and
 > the computational identity $\operatorname{Var}(X)=E[X^2]-(E[X])^2$ were derived.
 > Until now every random variable has lived alone. Here we put **two** of them in
-> the same room and ask how they move together. It sets up [PROB-8 *Independence
+> the same room and ask how they move together. It sets up [PROB-08 *Independence
 > and the i.i.d. Sample*] (where zero covariance and independence finally part
 > ways for good), [PROB-17 *Random Vectors, Mean Vectors, and Covariance
 > Matrices*] (the covariance of this article becomes a *matrix*), and
@@ -119,7 +119,7 @@ but *how strongly*, on a scale he could compare from one pair of traits to anoth
 collaborator Karl Pearson sharpened Galton's "co-relation" into the formula we still use:
 the **correlation coefficient**. The covariance is the un-normalized engine inside it.
 
-Why was the existing toolkit inadequate? [PROB-6] gave us variance, a number for how much
+Why was the existing toolkit inadequate? [PROB-06] gave us variance, a number for how much
 *one* variable spreads. But variance is blind to a second variable. If you only ever
 square deviations of $X$ by themselves, you can never detect that $X$'s deviations tend to
 come paired with $Y$'s deviations. The fix is almost obvious in hindsight: instead of
@@ -187,7 +187,7 @@ formula is just that sentence written in symbols.
 # The joint distribution {#sec-joint}
 
 Before covariance we need the object it averages over: the joint distribution. We treat
-the discrete and continuous cases in parallel, exactly as [PROB-3] and [PROB-4] did for one
+the discrete and continuous cases in parallel, exactly as [PROB-03] and [PROB-04] did for one
 variable, because covariance will be defined identically for both.
 
 ## The discrete case: the joint pmf {#sec-joint-pmf}
@@ -202,14 +202,14 @@ the probability that $X$ takes the value $x$ *and* $Y$ takes the value $y$ on th
 draw.
 :::
 
-Two properties follow directly from the probability axioms (built in [PROB-0]). First, each
+Two properties follow directly from the probability axioms (built in [PROB-00]). First, each
 value is a probability, so $p_{X,Y}(x,y)\ge 0$. Second, summing over **every** pair of
 values must account for all the probability, because on any draw *some* pair $(x,y)$
 occurs:
 $$
 \sum_{x}\sum_{y} p_{X,Y}(x,y) = 1.
 $$ {#eq-joint-pmf-norm}
-This is the two-dimensional version of [PROB-3]'s $\sum_x p(x)=1$; the only change is a
+This is the two-dimensional version of [PROB-03]'s $\sum_x p(x)=1$; the only change is a
 second summation index for the second variable.
 
 A joint pmf over finitely many values is most honestly displayed as a **table**, one row
@@ -247,7 +247,7 @@ the crux of why the joint object exists.** The marginals are sums of the joint t
 different tables can produce the same row-sums and column-sums. Reconstructing the joint
 from the marginals would be like recovering a matrix from only its row and column totals —
 hopeless without more information. The one exception is **independence**, where
-$p_{X,Y}(x,y)=p_X(x)\,p_Y(y)$ exactly; that special factoring is the subject of [PROB-8].
+$p_{X,Y}(x,y)=p_X(x)\,p_Y(y)$ exactly; that special factoring is the subject of [PROB-08].
 The general inadequacy of marginals is precisely the gap covariance was invented to start
 filling.
 :::
@@ -255,7 +255,7 @@ filling.
 ## The continuous case: the joint pdf {#sec-joint-pdf}
 
 When $X$ and $Y$ are continuous, probability is spread over the plane as a *density*, the
-direct analogue of the single-variable pdf from [PROB-4].
+direct analogue of the single-variable pdf from [PROB-04].
 
 ::: {#def-joint-pdf}
 **Definition (joint probability density function).** A function $f_{X,Y}(x,y)\ge 0$ is the
@@ -302,13 +302,13 @@ $[x, x+dx]$. The probability that $X$ lands in it, regardless of $Y$, is the int
 the joint density over the infinite vertical strip above that interval:
 $P(x\le X\le x+dx)=\int_{-\infty}^{\infty}\big(\int_x^{x+dx} f_{X,Y}\,dx'\big)dy \approx
 \big(\int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dy\big)\,dx$. Matching this against the
-single-variable defining relation $P(x\le X\le x+dx)\approx f_X(x)\,dx$ from [PROB-4]
+single-variable defining relation $P(x\le X\le x+dx)\approx f_X(x)\,dx$ from [PROB-04]
 identifies $f_X(x)=\int_{-\infty}^{\infty} f_{X,Y}(x,y)\,dy$, which is @eq-marginal-pdf.
 
 ## The joint CDF: the one object that works for both {#sec-joint-cdf}
 
 Just as the single-variable CDF $F(x)=P(X\le x)$ described discrete, continuous, and mixed
-variables uniformly in [PROB-2], a **joint CDF** does the same for pairs.
+variables uniformly in [PROB-02], a **joint CDF** does the same for pairs.
 
 ::: {#def-joint-cdf}
 **Definition (joint CDF).** The **joint cumulative distribution function** of $(X,Y)$ is
@@ -322,7 +322,7 @@ probability mass in the lower-left quadrant anchored at $(x,y)$.
 In the continuous case the joint CDF is the running double integral of the density,
 $F_{X,Y}(x,y)=\int_{-\infty}^{x}\int_{-\infty}^{y} f_{X,Y}(s,t)\,dt\,ds$, and conversely the
 density is recovered by differentiating once in each variable,
-$f_{X,Y}=\partial^2 F_{X,Y}/\partial x\,\partial y$ — the two-dimensional shadow of [PROB-4]'s
+$f_{X,Y}=\partial^2 F_{X,Y}/\partial x\,\partial y$ — the two-dimensional shadow of [PROB-04]'s
 "the pdf is the derivative of the CDF." We will not lean on the joint CDF much in this
 article (covariance is computed from the pmf/pdf via expectation), but it is the object
 that makes "joint distribution" precise for *any* pair of random variables, and it is what
@@ -332,7 +332,7 @@ the empirical version in [PROB-22] estimates.
 
 Covariance is an expectation, so we first need the expectation of a function $g(X,Y)$ of
 *both* variables. This is the two-variable **law of the unconscious statistician**, and it
-extends [PROB-5]'s one-variable rule in the only way it could.
+extends [PROB-05]'s one-variable rule in the only way it could.
 
 ::: {#thm-lotus2}
 **Theorem (LOTUS, two variables).** For a function $g$ of two random variables,
@@ -351,14 +351,14 @@ of it — we prove the discrete case in full rather than wave at it.
 
 ::: {.proof}
 Write $W=g(X,Y)$ for the output random variable, and let $w$ range over the distinct values
-$W$ can take. By the [PROB-5] definition of expectation applied to $W$ directly,
+$W$ can take. By the [PROB-05] definition of expectation applied to $W$ directly,
 $$
 E[W] = \sum_{w} w\,P(W=w).
 $$
 This is the "conscious" computation: it needs the distribution of the output $W$, which is
 exactly what we want to avoid finding. To eliminate it, expand the event $\{W=w\}$ into the
 input pairs that produce it. The pairs $(x,y)$ with $g(x,y)=w$ are mutually exclusive (a
-single draw lands on one pair), so by the countable additivity of [PROB-0],
+single draw lands on one pair), so by the countable additivity of [PROB-00],
 $$
 P(W=w) = \sum_{(x,y)\,:\,g(x,y)=w} p_{X,Y}(x,y).
 $$
@@ -378,11 +378,11 @@ $$
 which is the theorem. The continuous statement is the identical argument with the partition
 into level sets handled by integration in place of the countable sum (the measure-theoretic
 bookkeeping that makes "partition by the value of $g$" rigorous for densities is owned by
-[PROB-4]'s machinery); the formula it yields is the displayed integral.
+[PROB-04]'s machinery); the formula it yields is the displayed integral.
 $\qquad\blacksquare$
 :::
 
-The only change from the one-variable LOTUS of [PROB-5] is the second summation/integration
+The only change from the one-variable LOTUS of [PROB-05] is the second summation/integration
 index — the grouping-by-output argument is word-for-word the same.
 
 One immediate, load-bearing consequence: **linearity of expectation extends to several
@@ -397,7 +397,7 @@ $bE[Y]$. Therefore
 $$
 \boxed{\,E[aX+bY] = aE[X] + bE[Y].\,}
 $$ {#eq-linearity}
-This held in [PROB-5] for functions of *one* variable; we have just confirmed it survives
+This held in [PROB-05] for functions of *one* variable; we have just confirmed it survives
 intact for a linear combination of *two*, and crucially it required **no assumption that
 $X$ and $Y$ are independent**. We will lean on @eq-linearity constantly.
 
@@ -413,7 +413,7 @@ $$
 $$ {#eq-cov-def}
 :::
 
-Hold @eq-cov-def against the definition of variance from [PROB-6],
+Hold @eq-cov-def against the definition of variance from [PROB-06],
 $\operatorname{Var}(X)=E[(X-\mu_X)^2]=E[(X-\mu_X)(X-\mu_X)]$. They are the **same formula**;
 covariance simply pairs $X$'s deviation with $Y$'s instead of with its own. This is the
 single most useful fact to carry: **variance is covariance of a variable with itself.**
@@ -423,13 +423,13 @@ $$
 = \operatorname{Var}(X).
 $$ {#eq-cov-is-var}
 
-Everything we proved about variance in [PROB-6] is therefore a special case of what we are
+Everything we proved about variance in [PROB-06] is therefore a special case of what we are
 about to prove about covariance.
 
 ## The computational identity {#sec-cov-shortcut}
 
 Computing covariance straight from @eq-cov-def means first finding both means, then
-forming deviations. There is a shortcut that mirrors [PROB-6]'s
+forming deviations. There is a shortcut that mirrors [PROB-06]'s
 $\operatorname{Var}(X)=E[X^2]-(E[X])^2$, and we derive it with every step shown. Start by
 expanding the product inside the expectation with ordinary FOIL:
 $$
@@ -456,7 +456,7 @@ $$ {#eq-cov-shortcut}
 
 Read it: covariance is the **average of the product minus the product of the averages**.
 Setting $Y=X$ recovers $\operatorname{Var}(X)=E[X^2]-(E[X])^2$ exactly, confirming the
-shortcut is the honest generalization of the [PROB-6] one. We will use @eq-cov-shortcut for
+shortcut is the honest generalization of the [PROB-06] one. We will use @eq-cov-shortcut for
 every numerical example because it needs only three ordinary expectations: $E[XY]$, $E[X]$,
 $E[Y]$.
 
@@ -588,7 +588,7 @@ $$
 \operatorname{Var}(X+Y)=\operatorname{Var}(X)+\operatorname{Var}(Y),
 $$
 "variances add." This is the seed of why the sample mean's variance shrinks like $1/n$ — a
-result [PROB-8] develops in full for i.i.d. sums and that powers every confidence interval
+result [PROB-08] develops in full for i.i.d. sums and that powers every confidence interval
 downstream.
 
 **The general sum of $n$ terms.** Applying @eq-cov-bilinear-general to
@@ -636,7 +636,7 @@ $$
 = \frac{\operatorname{Cov}(X,Y)}{\sqrt{\operatorname{Var}(X)}\,\sqrt{\operatorname{Var}(Y)}},
 $$ {#eq-corr-def}
 where $\sigma_X=\sqrt{\operatorname{Var}(X)}$ and $\sigma_Y=\sqrt{\operatorname{Var}(Y)}$ are
-the standard deviations from [PROB-6].
+the standard deviations from [PROB-06].
 :::
 
 First, confirm the units cancel and the scale-dependence dies. Under any rescaling
@@ -652,7 +652,7 @@ Pearson needed.
 ## Correlation lives in $[-1,1]$ {#sec-corr-bound}
 
 The defining property of correlation is its bound, and it has a clean proof that uses
-nothing heavier than "a variance is never negative" (from [PROB-6], since variance is an
+nothing heavier than "a variance is never negative" (from [PROB-06], since variance is an
 average of squares).
 
 ::: {#thm-corr-bound}
@@ -667,7 +667,7 @@ the sign of $b$.
 
 ::: {.proof}
 **Step 1 — standardize.** Let $X^* = (X-\mu_X)/\sigma_X$ and $Y^*=(Y-\mu_Y)/\sigma_Y$ be the
-standardized variables (the z-scores from [PROB-6]). Each has mean $0$ and variance $1$: by
+standardized variables (the z-scores from [PROB-06]). Each has mean $0$ and variance $1$: by
 shift- and scale-rules, $E[X^*]=0$ and
 $\operatorname{Var}(X^*)=\operatorname{Var}(X)/\sigma_X^2=1$, likewise for $Y^*$. Their
 covariance is the correlation itself, because by bilinearity (properties 3 and 5),
@@ -734,7 +734,7 @@ plt.tight_layout()
 
 ::: {.callout-tip title="You might be asked"}
 *"What is the relationship between correlation and the slope of a regression line?"* If you
-regress $Y$ on $X$ by least squares (the subject of [REGR-1]), the slope is
+regress $Y$ on $X$ by least squares (the subject of [REGR-01]), the slope is
 $\hat\beta_1 = \operatorname{Cov}(X,Y)/\operatorname{Var}(X)$. To connect it to
 $\rho=\operatorname{Cov}(X,Y)/(\sigma_X\sigma_Y)$, solve the latter for the covariance,
 $\operatorname{Cov}(X,Y)=\rho\,\sigma_X\sigma_Y$, and substitute into the slope, using
@@ -807,7 +807,7 @@ Walk the arithmetic the code printed, plugging straight into the boxed formulas.
 - **Covariance.** By @eq-cov-shortcut,
   $\operatorname{Cov}(X,Y)=E[XY]-E[X]E[Y]=`{python} f"{EXY:.2f}"`-(`{python} f"{EX:.2f}"`)(`{python} f"{EY:.2f}"`)=`{python} f"{covXY:.3f}"`$.
   Positive, as it must be: umbrellas come out *when* it rains.
-- **Correlation.** Each variance is $p(1-p)$ for an indicator (the [PROB-6]/[PROB-11]
+- **Correlation.** Each variance is $p(1-p)$ for an indicator (the [PROB-06]/[PROB-11]
   result), and dividing the covariance by $\sigma_X\sigma_Y$ gives
   $\rho=`{python} f"{rho:.3f}"`$ — a strong but imperfect positive correlation, sensibly
   short of 1 because the link is real but not deterministic.
@@ -833,7 +833,7 @@ $$
 The density is unchanged when we swap the names $x$ and $y$ (since $x+y=y+x$), so the same
 integral with the roles reversed gives $f_Y(y)=\int_0^1(x+y)\,dx = y+\tfrac12$.
 
-**Mean of $X$** (a [PROB-5] integral against the marginal):
+**Mean of $X$** (a [PROB-05] integral against the marginal):
 $$
 E[X] = \int_0^1 x\big(x+\tfrac12\big)\,dx = \int_0^1\big(x^2 + \tfrac{x}{2}\big)\,dx
 = \tfrac13 + \tfrac14 = \tfrac{7}{12}.
@@ -953,7 +953,7 @@ Covariance measures **linear** co-movement. A relationship can be perfectly
 The cleanest counterexample. Let $X$ be uniform on $[-1,1]$ — density $f(x)=\tfrac12$ on
 $[-1,1]$ and zero elsewhere — and set $Y=X^2$. Then $Y$ is *completely determined* by $X$;
 knowing $X$ tells you $Y$ exactly. We need two moments of $X$, both computed directly from
-the [PROB-5] integral $E[X^k]=\int_{-1}^{1} x^k\cdot\tfrac12\,dx$ rather than asserted:
+the [PROB-05] integral $E[X^k]=\int_{-1}^{1} x^k\cdot\tfrac12\,dx$ rather than asserted:
 $$
 E[X] = \int_{-1}^{1}\! x\cdot\tfrac12\,dx = \tfrac12\Big[\tfrac{x^2}{2}\Big]_{-1}^{1}
 = \tfrac12\Big(\tfrac12-\tfrac12\Big) = 0,
@@ -993,7 +993,7 @@ plt.tight_layout()
 
 ::: {.callout-warning title="Pitfall"}
 **"Uncorrelated" is strictly weaker than "independent."** Independence means the joint
-factors, $f_{X,Y}=f_X f_Y$ (the subject of [PROB-8]), and it implies zero covariance — but
+factors, $f_{X,Y}=f_X f_Y$ (the subject of [PROB-08]), and it implies zero covariance — but
 **the converse is false.** Zero covariance only rules out a *linear* relationship; it is
 blind to curves, U-shapes, and any symmetric nonlinear dependence. A correlation of $0$ is
 not a certificate of "no relationship"; it is a certificate of "no *straight-line*
@@ -1017,7 +1017,7 @@ listening for.
 
 ## Correlation is not causation, and not the whole relationship {#sec-not-causation}
 
-Two further honest boundaries, both flagged by Anscombe-style reasoning in [REGR-1] and
+Two further honest boundaries, both flagged by Anscombe-style reasoning in [REGR-01] and
 worth stating in probability terms here.
 
 First, a nonzero correlation is a statement about the *joint distribution*, not about
@@ -1034,7 +1034,7 @@ products that weight far points heavily.
 
 ```{python}
 #| label: fig-anscombe-style
-#| fig-cap: "Correlation is a lossy, outlier-sensitive summary. **Left:** a genuine moderate linear relationship. **Middle:** pure noise with one extreme outlier that *manufactures* a spurious strong correlation out of nothing. **Right:** a clean strong relationship that one outlier *destroys*. All three carry information the single number $\\rho$ cannot. The lesson matches [REGR-1]'s Anscombe quartet: never trust a correlation without seeing the cloud."
+#| fig-cap: "Correlation is a lossy, outlier-sensitive summary. **Left:** a genuine moderate linear relationship. **Middle:** pure noise with one extreme outlier that *manufactures* a spurious strong correlation out of nothing. **Right:** a clean strong relationship that one outlier *destroys*. All three carry information the single number $\\rho$ cannot. The lesson matches [REGR-01]'s Anscombe quartet: never trust a correlation without seeing the cloud."
 rng = np.random.default_rng(20)
 fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.6))
 
@@ -1082,26 +1082,26 @@ should know its scope is exactly that — no wider.
 
 The boundary case worth seeing once: covariance can also be **undefined**. The whole edifice
 rests on $E[XY]$, $E[X]$, $E[Y]$, and the variances *existing* (being finite). For
-heavy-tailed variables — the Cauchy preview from [PROB-5], where even the mean fails to
+heavy-tailed variables — the Cauchy preview from [PROB-05], where even the mean fails to
 exist — covariance and correlation are simply not defined, and any software that returns a
 number is reporting an artifact of the finite sample, not a population quantity. This is the
-same honesty [PROB-5] insisted on for the expectation itself: the summary exists only when
+same honesty [PROB-05] insisted on for the expectation itself: the summary exists only when
 the integrals converge.
 
 # Connections and where to go next {#sec-connections}
 
 ::: {.callout-important title="Where you are in the track"}
-You arrived from **[PROB-5 *Expectation*]** (which gave linearity and LOTUS) and
-**[PROB-6 *Variance*]** (which gave $\operatorname{Var}=E[X^2]-(E[X])^2$ and standard
+You arrived from **[PROB-05 *Expectation*]** (which gave linearity and LOTUS) and
+**[PROB-06 *Variance*]** (which gave $\operatorname{Var}=E[X^2]-(E[X])^2$ and standard
 deviation). This article put two variables in one joint object, defined their covariance and
 correlation, and proved the variance-of-a-sum identity. From here the track continues:
 
-- **[PROB-8 *Independence and the i.i.d. Sample*]** — the converse half of @sec-zero-cov:
+- **[PROB-08 *Independence and the i.i.d. Sample*]** — the converse half of @sec-zero-cov:
   *independence* (joint factors into marginals) implies zero covariance, and we make
   rigorous exactly when the implication does **not** reverse. The i.i.d. case turns
   @eq-var-sum-n into the "$\operatorname{Var}$ of a sum $=$ sum of variances" that gives the
   sample mean its $1/n$ shrink.
-- **[PROB-9 *Conditional Distributions and Conditional Expectation*]** — instead of
+- **[PROB-09 *Conditional Distributions and Conditional Expectation*]** — instead of
   *summarizing* the link with one number, fully describe the distribution of $Y$ *given* a
   value of $X$, and meet $E[Y\mid X]$, the best predictor.
 - **[PROB-17 *Random Vectors, Mean Vectors, and Covariance Matrices*]** — stack many
@@ -1114,8 +1114,8 @@ correlation, and proved the variance-of-a-sum identity. From here the track cont
   $\operatorname{Cov}(AX+b)=A\Sigma A^\top$.
 
 **Cross-track payoff.** Regression reads the slope as
-$\operatorname{Cov}(X,Y)/\operatorname{Var}(X)$ ([REGR-1]) and the variance of its estimates
-through @eq-var-sum ([REGR-6]); the Geometry-of-Data track reinterprets the covariance as a
+$\operatorname{Cov}(X,Y)/\operatorname{Var}(X)$ ([REGR-01]) and the variance of its estimates
+through @eq-var-sum ([REGR-06]); the Geometry-of-Data track reinterprets the covariance as a
 **Gram matrix** / inner product; Unsupervised Learning diagonalizes the covariance matrix in
 **PCA**. The little inequality $|\operatorname{Cov}|\le\sigma_X\sigma_Y$ proved in
 @thm-corr-bound is the probabilistic Cauchy–Schwarz those tracks lean on.
@@ -1134,7 +1134,7 @@ through @eq-var-sum ([REGR-6]); the Geometry-of-Data track reinterprets the cova
   the vector-space vocabulary.
 - **Open threads this article deliberately deferred.** *When does uncorrelated finally mean
   independent?* — under joint normality, [PROB-13]/[PROB-17]. *How do we describe the
-  relationship beyond one number?* — conditional distributions and $E[Y\mid X]$, [PROB-9].
+  relationship beyond one number?* — conditional distributions and $E[Y\mid X]$, [PROB-09].
   *What if the linear measure misses the dependence?* — rank correlations and mutual
   information, touched in @sec-alternatives and pursued in the inference and
   information-theoretic literature. *How does covariance become a matrix we can rotate?* —

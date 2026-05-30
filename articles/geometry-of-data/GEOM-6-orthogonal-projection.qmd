@@ -1,0 +1,1111 @@
+---
+title: "Orthogonal Projection onto a Subspace"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # vectors / data
+HILITE = "#c1121f"   # the highlighted vector / quantity (projection, line)
+ACCENT = "#0a7d4d"   # residual / orthogonality highlights
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5,
+             label_offset=(0.0, 0.0)):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0), zorder=z)
+    if label is not None:
+        ax.text(head[0] + label_offset[0], head[1] + label_offset[1], label,
+                color=color, fontsize=13, ha="center", va="center")
+```
+
+> **Where this sits in the track.** This is the **keystone** of the Geometry of Data
+> track — the single operation the rest of the series leans on hardest. It assumes
+> [GEOM-2 *Span and Subspaces*] (a subspace is the set of all linear combinations of
+> some vectors — a line or plane through the origin), [GEOM-3 *Linear Independence,
+> Basis, and Dimension*] (a basis is a minimal spanning set, and "independent columns"
+> means no redundancy), and especially [GEOM-4 *The Dot Product*] and [GEOM-5
+> *Orthogonality and Orthonormal Bases*], which gave us length
+> $\lVert\mathbf{x}\rVert=\sqrt{\mathbf{x}^\top\mathbf{x}}$, the angle relation
+> $\mathbf{x}^\top\mathbf{y}=\lVert\mathbf{x}\rVert\lVert\mathbf{y}\rVert\cos\theta$, and
+> the meaning of *perpendicular* ($\mathbf{x}^\top\mathbf{y}=0$). We use matrix notation
+> for $A$, $A^\top$, and $(A^\top A)^{-1}$ lightly here; the full algebra of matrices as
+> maps is built in [GEOM-8]–[GEOM-11], and we will name every matrix fact we borrow so the
+> geometry stays self-contained. It sets up [GEOM-7 *Gram–Schmidt and QR*] (an
+> orthonormal basis makes projection trivial), [GEOM-12 *The Four Subspaces*], and
+> [GEOM-20]–[GEOM-21] (the SVD and pseudoinverse, the numerically stable projection). Most
+> directly, it is the article that **Regression's least-squares geometry stands on** —
+> [REGR-4 *Regression as Projection*] and [REGR-5 *Multiple Regression*] are this article
+> wearing statistical clothes.
+
+## Abstract {.unnumbered}
+
+You have a point $\mathbf{b}$ in $\mathbb{R}^n$ and a subspace $S$ — a line, a plane, or
+their higher-dimensional cousins — and $\mathbf{b}$ does not lie in $S$. Which point of
+$S$ is *closest* to $\mathbf{b}$? This article defends one claim: the answer is found by
+**dropping a perpendicular**, and that single geometric instruction determines everything.
+We derive projection onto a single vector from scratch, prove the residual is orthogonal
+to that vector, then generalize: projecting onto the span of the columns of a matrix $A$
+forces the residual to be orthogonal to *every* column, which is exactly the matrix
+equation $A^\top(\mathbf{b}-A\hat{\mathbf{c}})=\mathbf{0}$ — the **normal equations**
+$A^\top A\,\hat{\mathbf{c}}=A^\top\mathbf{b}$. Solving them produces the **projection
+matrix** $P = A(A^\top A)^{-1}A^\top$, which we prove is symmetric and idempotent
+($P^2=P$). We close the loop by proving that the perpendicular foot is genuinely the
+*nearest* point — so "least distance" and "right angle" are the same condition. This is
+why least squares is projection, why the residual is orthogonal to the fit, and why
+$P^2=P$ means "projecting twice changes nothing."
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Given a point $\mathbf{b}$ and a subspace $S$, the closest point of $S$ to $\mathbf{b}$ is
+the **orthogonal projection** $\hat{\mathbf{b}}$ — the foot of the perpendicular dropped
+from $\mathbf{b}$ onto $S$. Its defining property is not "it is closest" but the *reason*
+it is closest: the leftover piece, the **residual** $\mathbf{r}=\mathbf{b}-\hat{\mathbf{b}}$,
+is **orthogonal to all of $S$**. When $S$ is the column space of a matrix $A$ with
+independent columns, that orthogonality condition is the **normal equations** $A^\top
+A\,\hat{\mathbf{c}}=A^\top\mathbf{b}$, and the projection is computed by the matrix
+$$P = A(A^\top A)^{-1}A^\top,\qquad \hat{\mathbf{b}}=P\mathbf{b}.$$
+$P$ is **symmetric** and **idempotent** ($P^2=P$): it carves $\mathbf{b}$ into the part
+inside $S$ and the part perpendicular to it, and projecting an already-projected vector
+does nothing.
+:::
+
+Everything below orbits that box. The matrix $P=A(A^\top A)^{-1}A^\top$ will look, at
+first, like a formula you would have to memorize. By the end it should feel forced: it is
+the *unique* operator that keeps whatever already lies in $S$, annihilates whatever is
+perpendicular to $S$, and does so by the only rule geometry allows — drop a perpendicular.
+The phrase "least squares = projection," which the Regression track treats as its founding
+idea, will turn out to be a one-line consequence of the closest-point theorem we prove in
+@sec-closest.
+
+# Why we are here: the problem that forces projection {#sec-why}
+
+Keep one question in view for the whole article: **when a point lies outside a subspace,
+what is the most faithful stand-in for it that the subspace can offer, and why is "drop a
+perpendicular" the answer?** Every derivation below is an answer to some piece of that.
+
+## The over-determined problem, told geometrically
+
+The historical engine is the same one that drove [REGR-1]: astronomy and geodesy around
+1800. Gauss and Legendre had *more measurements than unknowns*. A surveyor measuring the
+shape of the Earth, or an astronomer fixing a comet's orbit, collects dozens of noisy
+readings to pin down a handful of parameters. Written as a linear system $A\mathbf{c} =
+\mathbf{b}$ — where $\mathbf{c}$ holds the unknown parameters, the columns of $A$ encode
+the model, and $\mathbf{b}$ holds the measurements — there are more rows (equations) than
+columns (unknowns). Such a system is **over-determined**, and the ugly truth is that it
+usually has **no solution at all**: no choice of $\mathbf{c}$ makes $A\mathbf{c}$ equal
+$\mathbf{b}$ exactly, because the noisy measurements are mutually inconsistent.
+
+Here is the geometric translation, and it is the whole reason this article exists. The set
+of *all* vectors of the form $A\mathbf{c}$ — every linear combination of the columns of
+$A$ — is a subspace, the **column space** $\mathcal{C}(A)$ (built in [GEOM-2] as the span
+of the columns). Saying "$A\mathbf{c}=\mathbf{b}$ has no solution" is saying, in pictures,
+that **$\mathbf{b}$ does not lie in the column space**. The measurement vector floats
+*outside* the flat sheet of everything the model can produce.
+
+::: {.callout-tip title="You might be asked"}
+*"Why can't we just solve $A\mathbf{c}=\mathbf{b}$ — isn't that what linear algebra is
+for?"* Because in the over-determined regime the equation is a lie: there is no exact
+$\mathbf{c}$. You have, say, $1000$ equations and $3$ unknowns; three numbers cannot
+satisfy a thousand independent constraints. The honest move is to *give up on equality*
+and instead ask for the $\mathbf{c}$ that makes $A\mathbf{c}$ **as close as possible** to
+$\mathbf{b}$. "As close as possible," measured by ordinary Euclidean distance, is exactly
+the projection problem. Insisting on an exact solve where none exists is the beginner's
+error; replacing it with "closest reachable point" is the entire idea of least squares.
+:::
+
+So we abandon exact equality and ask the next-best question: **of all points $A\mathbf{c}$
+the model can reach — all points in the column space — which one is nearest to
+$\mathbf{b}$?** That nearest reachable point is the orthogonal projection of $\mathbf{b}$
+onto $\mathcal{C}(A)$, and the leftover gap $\mathbf{b} - A\hat{\mathbf{c}}$ is the part of
+the data the model simply cannot explain. Minimizing the *length* of that gap is least
+squares; finding the *foot of the perpendicular* is projection; and the punchline of this
+article is that **they are the same thing.**
+
+## Why "perpendicular" is the right notion of closest
+
+Before any algebra, why should the closest point be the foot of a *perpendicular*? Picture
+yourself standing at $\mathbf{b}$, off the floor, and you must touch the floor (a plane
+$S$). The shortest reach is straight down — the perpendicular. Any slanted reach is longer,
+because a slanted segment and the straight-down segment form a right triangle whose
+*hypotenuse* is the slanted reach, and the hypotenuse is always the longest side
+(Pythagoras, which lives in [GEOM-4]). The perpendicular is the one leg; everything else
+is a hypotenuse. We will turn this picture into a proof in @sec-closest, but hold onto it:
+**right angle = shortest distance** is not a coincidence, it is Pythagoras.
+
+# Intuition before symbols {#sec-intuition}
+
+Start in the simplest possible setting: $S$ is a single line through the origin, the set of
+all scalar multiples of one vector $\mathbf{a}$. We want to write any point $\mathbf{b}$ as
+
+$$
+\mathbf{b} = \underbrace{\hat{\mathbf{b}}}_{\text{along } \mathbf{a}}
+            + \underbrace{\mathbf{r}}_{\perp\, \mathbf{a}},
+$$
+
+splitting $\mathbf{b}$ into "the shadow it casts along the line" plus "the part sticking
+out perpendicular." The shadow $\hat{\mathbf{b}}$ is some multiple $c\mathbf{a}$ of the
+direction; the leftover $\mathbf{r}=\mathbf{b}-c\mathbf{a}$ must be perpendicular to
+$\mathbf{a}$. That one perpendicularity requirement will pin down the single number $c$.
+@fig-line-intuition shows the picture that the algebra of @sec-line is going to formalize.
+
+```{python}
+#| label: fig-line-intuition
+#| fig-cap: "Projecting a point $\\mathbf{b}$ onto the line spanned by $\\mathbf{a}$. The projection $\\hat{\\mathbf{b}}=c\\mathbf{a}$ is the shadow $\\mathbf{b}$ casts along the line; the residual $\\mathbf{r}=\\mathbf{b}-\\hat{\\mathbf{b}}$ (green) joins the foot of the perpendicular to $\\mathbf{b}$ and meets the line at a right angle. The number $c$ is whatever makes that angle exactly $90^\\circ$ — nothing else."
+a = np.array([3.0, 1.0])
+b = np.array([1.5, 2.6])
+c = (a @ b) / (a @ a)
+bhat = c * a
+
+fig, ax = plt.subplots(figsize=(6.0, 4.2))
+# the line spanned by a
+t = np.linspace(-0.4, 1.6, 50)
+ax.plot(t * a[0], t * a[1], color=GREY, lw=1.4, ls="--", zorder=1)
+draw_vec(ax, (0, 0), a, color=VEC, label=r"$\mathbf{a}$", label_offset=(0.25, -0.15))
+draw_vec(ax, (0, 0), b, color=HILITE, label=r"$\mathbf{b}$", label_offset=(0.0, 0.25))
+draw_vec(ax, (0, 0), bhat, color=ACCENT, lw=2.0)
+ax.annotate("", xy=b, xytext=bhat,
+            arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.2, ls=":"))
+ax.text(bhat[0] + 0.15, bhat[1] - 0.35, r"$\hat{\mathbf{b}}=c\mathbf{a}$",
+        color=ACCENT, fontsize=12)
+ax.text((bhat[0]+b[0])/2 + 0.15, (bhat[1]+b[1])/2, r"$\mathbf{r}$",
+        color=ACCENT, fontsize=13)
+# right-angle marker at the foot
+d1 = (a / np.linalg.norm(a)) * 0.28
+d2 = ((b - bhat) / np.linalg.norm(b - bhat)) * 0.28
+corner = bhat
+ax.plot([corner[0]+d1[0], corner[0]+d1[0]+d2[0], corner[0]+d2[0]],
+        [corner[1]+d1[1], corner[1]+d1[1]+d2[1], corner[1]+d2[1]],
+        color=GREY, lw=1.2)
+ax.set_xlim(-0.6, 4.2); ax.set_ylim(-0.6, 3.2)
+ax.set_aspect("equal"); ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title("Projection onto a line: shadow plus perpendicular leftover")
+plt.tight_layout()
+```
+
+Then we climb. Replace the line by a plane (two independent directions), then by any
+subspace (a matrix's worth of directions). The split is always the same — *in the subspace*
+plus *perpendicular to it* — and the requirement that pins it down is always the same — the
+residual is perpendicular to **every** direction that spans the subspace. The only thing
+that grows is the bookkeeping, and matrices are exactly the bookkeeping device built for it.
+
+# Formal development I: projection onto a line {#sec-line}
+
+We do the one-dimensional case completely, because every later case is this case repeated
+once per basis direction.
+
+## Setting up the one unknown
+
+::: {#def-proj-line}
+**Definition (projection onto a line).** Let $\mathbf{a}\in\mathbb{R}^n$ be a nonzero
+vector, spanning the line $S=\{t\mathbf{a} : t\in\mathbb{R}\}$. The **orthogonal
+projection** of a point $\mathbf{b}\in\mathbb{R}^n$ onto $S$ is the vector
+$\hat{\mathbf{b}}=c\,\mathbf{a}$ whose residual $\mathbf{r}=\mathbf{b}-c\mathbf{a}$ is
+orthogonal to $\mathbf{a}$:
+$$
+\mathbf{a}^\top(\mathbf{b}-c\mathbf{a}) = 0.
+$$ {#eq-line-orth}
+:::
+
+Why is this the right definition and not, say, "the multiple of $\mathbf{a}$ closest to
+$\mathbf{b}$"? It is both — and we will *prove* they coincide in @sec-closest. For now we
+take orthogonality as the defining instruction (it is the one that turns into clean
+algebra) and earn the "closest" interpretation later.
+
+## Solving for the one number
+
+Everything is one equation, @eq-line-orth, in one unknown $c$. Expand the dot product
+using its linearity — $\mathbf{a}^\top(\mathbf{u}+\mathbf{v})=\mathbf{a}^\top\mathbf{u}+
+\mathbf{a}^\top\mathbf{v}$ and $\mathbf{a}^\top(c\mathbf{a})=c(\mathbf{a}^\top\mathbf{a})$,
+both established in [GEOM-4]:
+
+$$
+\mathbf{a}^\top(\mathbf{b}-c\mathbf{a})
+= \mathbf{a}^\top\mathbf{b} - c\,\mathbf{a}^\top\mathbf{a} = 0.
+$$
+
+Solve for $c$. Because $\mathbf{a}\neq\mathbf{0}$, its squared length
+$\mathbf{a}^\top\mathbf{a}=\lVert\mathbf{a}\rVert^2$ is strictly positive (a sum of squares
+that is zero only for the zero vector — [GEOM-4]), so we may divide by it:
+
+$$
+c = \frac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}.
+$$ {#eq-line-c}
+
+Therefore the projection is
+
+$$
+\boxed{\;\hat{\mathbf{b}}
+= c\,\mathbf{a}
+= \frac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}\,\mathbf{a}.\;}
+$$ {#eq-line-proj}
+
+Read the formula slowly, because every piece carries meaning. The scalar
+$\mathbf{a}^\top\mathbf{b}$ measures how much of $\mathbf{b}$ points along $\mathbf{a}$
+(it is $\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta$ by the angle relation of
+[GEOM-4], so it grows with the alignment of $\mathbf{b}$ to $\mathbf{a}$). Dividing by
+$\mathbf{a}^\top\mathbf{a}=\lVert\mathbf{a}\rVert^2$ rescales for the *length* of
+$\mathbf{a}$, so the answer does not change if we replace $\mathbf{a}$ by $2\mathbf{a}$ —
+the line is the same, so the projection must be the same. Let us verify that invariance,
+since it is exactly the kind of check that confirms the formula is geometric and not an
+accident of scaling.
+
+::: {.callout-tip title="You might be asked"}
+*"Does the projection depend on how long $\mathbf{a}$ is?"* It must not — a line does not
+know the length of the arrow you used to describe it. Replace $\mathbf{a}$ by $k\mathbf{a}$
+for any $k\neq 0$ in @eq-line-proj:
+$$
+\frac{(k\mathbf{a})^\top\mathbf{b}}{(k\mathbf{a})^\top(k\mathbf{a})}\,(k\mathbf{a})
+= \frac{k\,\mathbf{a}^\top\mathbf{b}}{k^2\,\mathbf{a}^\top\mathbf{a}}\,(k\mathbf{a})
+= \frac{k^2}{k^2}\cdot\frac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}\,\mathbf{a}
+= \frac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}\,\mathbf{a}.
+$$
+The $k$'s cancel exactly: two factors upstairs (one from the dot product, one from the
+trailing $\mathbf{a}$) against two downstairs. The projection depends only on the
+*direction* of $\mathbf{a}$, as a geometric quantity must. If $\mathbf{a}$ is already a
+unit vector ($\mathbf{a}^\top\mathbf{a}=1$), the formula collapses to
+$\hat{\mathbf{b}}=(\mathbf{a}^\top\mathbf{b})\,\mathbf{a}$ — the coordinate-as-dot-product
+rule from [GEOM-5]. This is the first hint that *orthonormal* bases make projection
+trivial, the theme [GEOM-7] develops.
+:::
+
+## The residual is orthogonal — by construction, and let us check it
+
+We built $c$ precisely so that @eq-line-orth holds, so orthogonality is true by
+construction. But it is worth confirming directly, because the same computation reappears
+in every higher dimension. The residual is
+
+$$
+\mathbf{r} = \mathbf{b} - \hat{\mathbf{b}}
+           = \mathbf{b} - \frac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}\,\mathbf{a}.
+$$
+
+Take its dot product with $\mathbf{a}$:
+
+$$
+\mathbf{a}^\top\mathbf{r}
+= \mathbf{a}^\top\mathbf{b}
+  - \frac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}\,\mathbf{a}^\top\mathbf{a}
+= \mathbf{a}^\top\mathbf{b} - \mathbf{a}^\top\mathbf{b} = 0.
+$$
+
+The scalar $\dfrac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}$ multiplied by
+$\mathbf{a}^\top\mathbf{a}$ cancels the denominator, leaving $\mathbf{a}^\top\mathbf{b}$,
+which subtracts off the first term. The residual is orthogonal to $\mathbf{a}$, hence to
+the entire line $S$ (any point of $S$ is $t\mathbf{a}$, and
+$(t\mathbf{a})^\top\mathbf{r}=t\,\mathbf{a}^\top\mathbf{r}=0$). The decomposition
+$\mathbf{b}=\hat{\mathbf{b}}+\mathbf{r}$ has split $\mathbf{b}$ cleanly into a part on the
+line and a part perpendicular to it — exactly the orthogonal-complement decomposition
+promised in [GEOM-5].
+
+## A line projection as a matrix {#sec-line-matrix}
+
+We can already package @eq-line-proj as a matrix, which previews the general formula. Write
+$\hat{\mathbf{b}}$ regrouping the scalar:
+
+$$
+\hat{\mathbf{b}}
+= \mathbf{a}\,\frac{\mathbf{a}^\top\mathbf{b}}{\mathbf{a}^\top\mathbf{a}}
+= \frac{\mathbf{a}\,\mathbf{a}^\top}{\mathbf{a}^\top\mathbf{a}}\,\mathbf{b}
+= P\mathbf{b},
+\qquad
+P = \frac{\mathbf{a}\mathbf{a}^\top}{\mathbf{a}^\top\mathbf{a}}.
+$$ {#eq-line-P}
+
+One subtlety earns a sentence, because it is the kind of thing that trips up a rusty
+reader. The numerator $\mathbf{a}\mathbf{a}^\top$ is an **outer product**: a column vector
+times a row vector, which produces an $n\times n$ *matrix*, not a scalar. The denominator
+$\mathbf{a}^\top\mathbf{a}$ is an **inner product**: a row times a column, a single number.
+So $P$ is a matrix divided by a number — an $n\times n$ matrix. Contrast this with the
+order $\mathbf{a}^\top\mathbf{a}$ (number) versus $\mathbf{a}\mathbf{a}^\top$ (matrix): in
+matrix multiplication the *order* decides the shape, a fact developed fully in [GEOM-9].
+We will see in @sec-P-properties that this $P$ is symmetric and idempotent, the
+fingerprints of every projection matrix.
+
+# Formal development II: projection onto a subspace {#sec-subspace}
+
+Now the real thing. Replace the single direction $\mathbf{a}$ by a whole subspace $S$,
+described as the column space of a matrix.
+
+## The setup, and the one geometric demand {#sec-setup}
+
+Let $S\subseteq\mathbb{R}^n$ be a subspace spanned by $k$ vectors
+$\mathbf{a}_1,\dots,\mathbf{a}_k$, which we **assume linearly independent** (no redundancy;
+in the rank-deficient case the formula below needs the pseudoinverse — see @sec-rank-def
+and [GEOM-21]). Stack them as the columns of an $n\times k$ matrix
+
+$$
+A = \begin{bmatrix} \mathbf{a}_1 & \mathbf{a}_2 & \cdots & \mathbf{a}_k \end{bmatrix}.
+$$
+
+Then the subspace $S$ *is* the column space $\mathcal{C}(A)$: every point of $S$ is a
+linear combination $c_1\mathbf{a}_1+\cdots+c_k\mathbf{a}_k$, and stacking the coefficients
+into $\mathbf{c}=(c_1,\dots,c_k)^\top$, that combination is exactly the matrix–vector
+product $A\mathbf{c}$ — "$A$ times $\mathbf{c}$ is a weighted sum of the columns of $A$"
+(this reading of $A\mathbf{c}$ is the central fact of [GEOM-8]; here we just use it).
+
+So the projection $\hat{\mathbf{b}}$, being a point of $S$, equals $A\hat{\mathbf{c}}$ for
+some coefficient vector $\hat{\mathbf{c}}\in\mathbb{R}^k$ that we must find. The residual is
+
+$$
+\mathbf{r} = \mathbf{b} - \hat{\mathbf{b}} = \mathbf{b} - A\hat{\mathbf{c}}.
+$$
+
+The single geometric demand — the entire content of "orthogonal projection" — is that
+**the residual is perpendicular to the whole subspace $S$.** A residual is perpendicular to
+all of $S$ exactly when it is perpendicular to each spanning vector, because if
+$\mathbf{r}\perp\mathbf{a}_j$ for every $j$, then for any combination
+$\mathbf{s}=\sum_j c_j\mathbf{a}_j\in S$ we get $\mathbf{s}^\top\mathbf{r}=\sum_j
+c_j(\mathbf{a}_j^\top\mathbf{r})=\sum_j c_j\cdot 0 = 0$. So the demand is the $k$
+conditions
+
+$$
+\mathbf{a}_j^\top(\mathbf{b}-A\hat{\mathbf{c}}) = 0,\qquad j=1,\dots,k.
+$$ {#eq-k-conditions}
+
+## Stacking the $k$ conditions into the normal equations {#sec-normal}
+
+We have $k$ scalar equations, @eq-k-conditions, one per column. Stacking $k$ scalar
+equations is exactly what a matrix product does, and recognizing this is the crux. The row
+vector $\mathbf{a}_j^\top$ is the $j$-th *row* of $A^\top$ (transposing $A$ turns its
+columns into rows — [GEOM-10]). So stacking the $k$ numbers
+$\mathbf{a}_1^\top\mathbf{r},\dots,\mathbf{a}_k^\top\mathbf{r}$ into a column is precisely
+the matrix–vector product $A^\top\mathbf{r}$:
+
+$$
+A^\top\mathbf{r}
+= \begin{bmatrix} \mathbf{a}_1^\top\mathbf{r} \\ \vdots \\ \mathbf{a}_k^\top\mathbf{r} \end{bmatrix}
+= \begin{bmatrix} 0 \\ \vdots \\ 0 \end{bmatrix}
+= \mathbf{0}.
+$$
+
+So the $k$ orthogonality conditions @eq-k-conditions collapse into one tidy matrix
+equation, the geometric heart of everything:
+
+$$
+A^\top(\mathbf{b} - A\hat{\mathbf{c}}) = \mathbf{0}.
+$$ {#eq-normal-geom}
+
+Read it in English first: *$A^\top$ times the residual is zero* — the residual is
+orthogonal to every column of $A$. Now expand it. Distribute $A^\top$ across the
+subtraction ($A^\top(\mathbf{u}-\mathbf{v})=A^\top\mathbf{u}-A^\top\mathbf{v}$, the
+linearity of matrix multiplication — [GEOM-8]):
+
+$$
+A^\top\mathbf{b} - A^\top A\,\hat{\mathbf{c}} = \mathbf{0},
+$$
+
+and move the second term to the other side:
+
+$$
+\boxed{\;A^\top A\,\hat{\mathbf{c}} = A^\top\mathbf{b}.\;}
+$$ {#eq-normal}
+
+These are the **normal equations**. The word *normal* means *perpendicular*, not ordinary
+— it records that we built them by demanding the residual be normal (at right angles) to
+the column space. They are a square $k\times k$ linear system: $A^\top A$ is $k\times k$
+(a $k\times n$ matrix times an $n\times k$ matrix), and $A^\top\mathbf{b}$ is a length-$k$
+column. We have converted an unsolvable $n\times k$ over-determined system
+$A\mathbf{c}=\mathbf{b}$ into a solvable $k\times k$ square one — *that* is the payoff of
+projecting.
+
+::: {.callout-tip title="You might be asked"}
+*"In one breath, where do the normal equations come from?"* From a single sentence:
+**the residual is orthogonal to every column of $A$.** Written out, "orthogonal to every
+column" is "$A^\top(\mathbf{b}-A\hat{\mathbf{c}})=\mathbf{0}$," which rearranges to $A^\top
+A\hat{\mathbf{c}}=A^\top\mathbf{b}$. If you can say that sentence and turn it into that
+equation on a whiteboard, you have demonstrated that you understand least squares
+geometrically and not as a memorized formula. This is the [REGR-4]/[REGR-5] content in its
+purest, statistics-free form: there $\mathbf{b}=\mathbf{y}$ (the response), $A=X$ (the
+design matrix), and @eq-normal is $X^\top X\hat{\boldsymbol\beta}=X^\top\mathbf{y}$.
+:::
+
+## Solving them: when is $A^\top A$ invertible? {#sec-invertible}
+
+To solve @eq-normal for $\hat{\mathbf{c}}$ we want to invert $A^\top A$. We cannot assert
+this is possible — we must earn it. The claim is that **$A^\top A$ is invertible exactly
+when the columns of $A$ are linearly independent**, which is the assumption we made in
+@sec-setup. We prove the direction we need (independent columns $\Rightarrow$ invertible);
+the converse is in @sec-rank-def.
+
+::: {#lem-AtA}
+**Lemma.** If the columns of $A$ are linearly independent, then the $k\times k$ matrix
+$A^\top A$ is invertible.
+:::
+
+::: {.proof}
+A square matrix is invertible if and only if the only vector it sends to zero is the zero
+vector — i.e. its null space is trivial (this characterization is established in [GEOM-11];
+geometrically, a map with a trivial null space crushes nothing, so it can be undone). So we
+show: if $A^\top A\,\mathbf{v}=\mathbf{0}$, then $\mathbf{v}=\mathbf{0}$.
+
+Suppose $A^\top A\,\mathbf{v}=\mathbf{0}$. The trick is to multiply on the left by
+$\mathbf{v}^\top$, turning the matrix equation into a statement about a *length*:
+
+$$
+\mathbf{v}^\top A^\top A\,\mathbf{v} = \mathbf{v}^\top\mathbf{0} = 0.
+$$
+
+Now read the left side as a length. Group it as $(A\mathbf{v})^\top(A\mathbf{v})$ — legal
+because $\mathbf{v}^\top A^\top = (A\mathbf{v})^\top$ (the transpose of a product reverses
+order, $(A\mathbf{v})^\top=\mathbf{v}^\top A^\top$, from [GEOM-10]). So
+
+$$
+(A\mathbf{v})^\top(A\mathbf{v}) = \lVert A\mathbf{v}\rVert^2 = 0.
+$$
+
+A squared length is zero only when the vector itself is zero ([GEOM-4]), so
+$A\mathbf{v}=\mathbf{0}$. But $A\mathbf{v}$ is the linear combination
+$v_1\mathbf{a}_1+\cdots+v_k\mathbf{a}_k$ of the columns of $A$. Linear independence of the
+columns means the *only* combination equal to zero is the one with all coefficients zero
+([GEOM-3]). Hence $\mathbf{v}=\mathbf{0}$. The null space of $A^\top A$ is therefore
+trivial, so $A^\top A$ is invertible. $\qquad\blacksquare$
+:::
+
+With invertibility secured, we solve @eq-normal by left-multiplying by $(A^\top A)^{-1}$:
+
+$$
+\hat{\mathbf{c}} = (A^\top A)^{-1}A^\top\mathbf{b}.
+$$ {#eq-chat}
+
+And the projection itself, $\hat{\mathbf{b}}=A\hat{\mathbf{c}}$, is
+
+$$
+\boxed{\;\hat{\mathbf{b}} = A(A^\top A)^{-1}A^\top\,\mathbf{b} = P\mathbf{b},
+\qquad P = A(A^\top A)^{-1}A^\top.\;}
+$$ {#eq-P}
+
+This is the **projection matrix**. We can record the central result formally.
+
+::: {#thm-projection}
+**Theorem (orthogonal projection onto a column space).** Let $A$ be an $n\times k$ matrix
+with linearly independent columns spanning the subspace $S=\mathcal{C}(A)$. For any
+$\mathbf{b}\in\mathbb{R}^n$, there is a unique point $\hat{\mathbf{b}}\in S$ whose residual
+$\mathbf{b}-\hat{\mathbf{b}}$ is orthogonal to $S$, namely
+$$
+\hat{\mathbf{b}} = P\mathbf{b},\qquad P = A(A^\top A)^{-1}A^\top,
+$$
+and $\hat{\mathbf{b}}$ is the **closest point of $S$ to $\mathbf{b}$** in Euclidean
+distance.
+:::
+
+::: {.proof}
+*Existence and the formula:* @sec-setup through @sec-invertible. The orthogonality demand
+@eq-normal-geom is equivalent to the normal equations @eq-normal; @lem-AtA makes $A^\top A$
+invertible under the independence hypothesis, so @eq-chat gives a coefficient vector
+$\hat{\mathbf{c}}$ and hence the point $\hat{\mathbf{b}}=A\hat{\mathbf{c}}=P\mathbf{b}$,
+whose residual is orthogonal to $S$ by construction.
+
+*Uniqueness:* suppose two points $\hat{\mathbf{b}}_1,\hat{\mathbf{b}}_2\in S$ both have
+residuals orthogonal to $S$. Their difference
+$\mathbf{d}=\hat{\mathbf{b}}_1-\hat{\mathbf{b}}_2$ lies in $S$ (a subspace is closed under
+subtraction — [GEOM-2]). It also equals the difference of the two residuals,
+$(\mathbf{b}-\hat{\mathbf{b}}_2)-(\mathbf{b}-\hat{\mathbf{b}}_1)$, a difference of two
+vectors each orthogonal to $S$, hence itself orthogonal to $S$. So $\mathbf{d}$ is in $S$
+*and* orthogonal to $S$, which forces $\mathbf{d}^\top\mathbf{d}=0$ (a vector orthogonal to
+itself has zero length), so $\mathbf{d}=\mathbf{0}$ and the two points coincide.
+
+*Closest point:* proved separately in @sec-closest. $\qquad\blacksquare$
+:::
+
+::: {.callout-warning title="Pitfall"}
+**Do not literally form $(A^\top A)^{-1}$ and multiply it out.** The formula
+$P=A(A^\top A)^{-1}A^\top$ is the right object to *reason* with, but it is the wrong thing
+to *compute* with. Two reasons. First, explicitly inverting a matrix is slower and less
+accurate than solving the linear system @eq-normal directly — "solve, don't invert" is a
+rule we make precise in [GEOM-26]. Second, and worse, forming $A^\top A$ **squares the
+condition number** of the problem: if the columns of $A$ are nearly dependent (near
+collinear), $A^\top A$ is dangerously close to singular and the answer dissolves into
+floating-point noise. The professional route is a **QR** factorization ([GEOM-7]) or the
+**SVD** ([GEOM-20]–[GEOM-21]), which project without ever forming $A^\top A$. The normal
+equations are the cleanest *derivation* and a fine computation on well-behaved data; they
+are not the algorithm you ship.
+:::
+
+# The projection matrix is symmetric and idempotent {#sec-P-properties}
+
+The matrix $P$ has two algebraic fingerprints that *are* its geometry. We prove both, then
+read off what each means. Throughout, $P=A(A^\top A)^{-1}A^\top$, and we abbreviate
+$M=A^\top A$ (a symmetric, invertible $k\times k$ matrix).
+
+We need two transpose facts, both from [GEOM-10] and both restated here so nothing is
+implicit: $(XY)^\top = Y^\top X^\top$ (transpose reverses a product) and
+$(X^{-1})^\top = (X^\top)^{-1}$ (transpose and inverse commute). We also need that
+$M=A^\top A$ is symmetric, i.e. $M^\top=M$: indeed $M^\top=(A^\top A)^\top = A^\top
+(A^\top)^\top = A^\top A = M$, using $(A^\top)^\top=A$.
+
+## Symmetry: $P^\top = P$
+
+::: {#lem-sym}
+**Lemma.** $P^\top = P$.
+:::
+
+::: {.proof}
+Transpose $P=A\,M^{-1}A^\top$ by reversing the order of the three factors and transposing
+each:
+
+$$
+P^\top
+= \bigl(A\,M^{-1}A^\top\bigr)^\top
+= (A^\top)^\top\,(M^{-1})^\top\,A^\top
+= A\,(M^{-1})^\top\,A^\top.
+$$
+
+Now $(M^{-1})^\top = (M^\top)^{-1}$, and since $M$ is symmetric ($M^\top=M$) this is just
+$M^{-1}$. Substituting,
+
+$$
+P^\top = A\,M^{-1}A^\top = P. \qquad\blacksquare
+$$
+:::
+
+What does symmetry *mean* geometrically? It is the statement that projection respects the
+dot product evenhandedly: $(P\mathbf{x})^\top\mathbf{y} = \mathbf{x}^\top(P\mathbf{y})$ for
+all $\mathbf{x},\mathbf{y}$ (because $(P\mathbf{x})^\top\mathbf{y}=\mathbf{x}^\top
+P^\top\mathbf{y}=\mathbf{x}^\top P\mathbf{y}$). An *oblique* projection — one that drops to
+the subspace along some slanted direction instead of straight down — would still be
+idempotent but would **not** be symmetric. Symmetry is exactly the algebraic signature of
+the angle being a *right* angle. This matters: in [REGR-11] (weighted/generalized least
+squares) the relevant projection is oblique with respect to the ordinary dot product, and
+losing symmetry is the visible sign that the geometry has changed.
+
+## Idempotence: $P^2 = P$
+
+::: {#lem-idem}
+**Lemma.** $P^2 = P$.
+:::
+
+::: {.proof}
+Multiply $P$ by itself and watch the middle collapse:
+
+$$
+P^2 = \bigl(A\,M^{-1}A^\top\bigr)\bigl(A\,M^{-1}A^\top\bigr)
+    = A\,M^{-1}\,\underbrace{(A^\top A)}_{=\,M}\,M^{-1}A^\top.
+$$
+
+The middle three factors are $M^{-1}\,M\,M^{-1}$. Since $M^{-1}M=I$ (the identity, by
+definition of the inverse), this is $I\,M^{-1}=M^{-1}$. Hence
+
+$$
+P^2 = A\,M^{-1}A^\top = P. \qquad\blacksquare
+$$
+:::
+
+Idempotence is the cleanest geometric statement in the article: **projecting a vector that
+already lies in the subspace does nothing.** If $\mathbf{x}\in S$ then $\mathbf{x}$ is its
+own closest point in $S$, so $P\mathbf{x}=\mathbf{x}$; and any output $P\mathbf{b}$ already
+lies in $S$, so applying $P$ a second time returns it unchanged — that is precisely
+$P(P\mathbf{b})=P\mathbf{b}$, i.e. $P^2=P$. Conversely, on the perpendicular part: a vector
+$\mathbf{w}$ orthogonal to $S$ projects to $\mathbf{0}$ (its closest point in $S$ is the
+origin). So $P$ keeps the in-subspace part of $\mathbf{b}$ and deletes the perpendicular
+part — it *is* the decomposition $\mathbf{b}=\hat{\mathbf{b}}+\mathbf{r}$ rendered as an
+operator.
+
+::: {.callout-tip title="You might be asked"}
+*"What are the eigenvalues of a projection matrix?"* Only $0$ and $1$ — and you can see why
+without computing a characteristic polynomial. From $P^2=P$, any eigenvalue $\lambda$ with
+eigenvector $\mathbf{v}\neq\mathbf{0}$ satisfies $P\mathbf{v}=\lambda\mathbf{v}$, so
+$P^2\mathbf{v}=\lambda^2\mathbf{v}$; but $P^2=P$ means $P^2\mathbf{v}=P\mathbf{v}=
+\lambda\mathbf{v}$, hence $\lambda^2\mathbf{v}=\lambda\mathbf{v}$, i.e.
+$(\lambda^2-\lambda)\mathbf{v}=\mathbf{0}$. Since $\mathbf{v}\neq\mathbf{0}$ we need
+$\lambda^2=\lambda$, so $\lambda\in\{0,1\}$. The eigenvectors with $\lambda=1$ are the
+vectors already in $S$ (projection leaves them fixed); those with $\lambda=0$ are the
+vectors perpendicular to $S$ (projection kills them). The number of $1$'s — the rank of
+$P$, also its **trace** — equals $\dim S = k$. This is the eigen-picture the spectral
+theorem ([GEOM-16]) and the SVD ([GEOM-20]) will reuse.
+:::
+
+## The complementary projection $I - P$
+
+If $P$ keeps the part of $\mathbf{b}$ inside $S$, then $I-P$ keeps the part perpendicular
+to $S$ — the residual operator. Indeed $\mathbf{r}=\mathbf{b}-\hat{\mathbf{b}}=
+\mathbf{b}-P\mathbf{b}=(I-P)\mathbf{b}$. It is itself a projection: it is symmetric
+($(I-P)^\top=I-P^\top=I-P$) and idempotent ($(I-P)^2 = I-2P+P^2 = I-2P+P = I-P$, using
+$P^2=P$). It projects onto the **orthogonal complement** $S^\perp$ — everything
+perpendicular to $S$ ([GEOM-5]). The pair $(P,\,I-P)$ splits all of $\mathbb{R}^n$ into
+$S\oplus S^\perp$, the orthogonal decomposition that underlies the Pythagorean accounting
+of the next section.
+
+# The foot of the perpendicular really is the closest point {#sec-closest}
+
+We have been *calling* $\hat{\mathbf{b}}$ the closest point; now we prove it. This is the
+clause of @thm-projection we deferred, and it is the bridge to "least squares = minimize
+distance."
+
+::: {#thm-closest}
+**Theorem (best approximation).** Let $\hat{\mathbf{b}}=P\mathbf{b}$ be the orthogonal
+projection of $\mathbf{b}$ onto $S$. Then for *every other* point $\mathbf{s}\in S$,
+$$
+\lVert \mathbf{b}-\mathbf{s}\rVert \;>\; \lVert\mathbf{b}-\hat{\mathbf{b}}\rVert.
+$$
+The projection is strictly the nearest point of $S$ to $\mathbf{b}$.
+:::
+
+::: {.proof}
+Pick any $\mathbf{s}\in S$ with $\mathbf{s}\neq\hat{\mathbf{b}}$. Split the gap
+$\mathbf{b}-\mathbf{s}$ by inserting and removing $\hat{\mathbf{b}}$:
+
+$$
+\mathbf{b}-\mathbf{s}
+= \underbrace{(\mathbf{b}-\hat{\mathbf{b}})}_{=\,\mathbf{r}}
++ \underbrace{(\hat{\mathbf{b}}-\mathbf{s})}_{=\,\mathbf{d}}.
+$$
+
+Examine the two pieces. The first, $\mathbf{r}=\mathbf{b}-\hat{\mathbf{b}}$, is the
+residual — orthogonal to all of $S$ by construction. The second,
+$\mathbf{d}=\hat{\mathbf{b}}-\mathbf{s}$, is a difference of two points of $S$, hence lies
+*in* $S$ (subspaces are closed under subtraction — [GEOM-2]). Therefore $\mathbf{r}$ and
+$\mathbf{d}$ are **orthogonal** to each other: $\mathbf{r}^\top\mathbf{d}=0$, because
+$\mathbf{r}$ is perpendicular to everything in $S$ and $\mathbf{d}\in S$.
+
+Now take the squared length of the sum and use the **Pythagorean theorem in $n$
+dimensions** ([GEOM-5]): when two vectors are orthogonal, the squared length of their sum
+is the sum of their squared lengths. (For completeness, the one-line reason:
+$\lVert\mathbf{r}+\mathbf{d}\rVert^2 = (\mathbf{r}+\mathbf{d})^\top(\mathbf{r}+\mathbf{d})
+= \mathbf{r}^\top\mathbf{r} + 2\mathbf{r}^\top\mathbf{d} + \mathbf{d}^\top\mathbf{d}$, and
+the cross term $2\mathbf{r}^\top\mathbf{d}$ vanishes by orthogonality.) Hence
+
+$$
+\lVert \mathbf{b}-\mathbf{s}\rVert^2
+= \lVert\mathbf{r}\rVert^2 + \lVert\mathbf{d}\rVert^2
+= \lVert\mathbf{b}-\hat{\mathbf{b}}\rVert^2 + \lVert\hat{\mathbf{b}}-\mathbf{s}\rVert^2.
+$$
+
+Since $\mathbf{s}\neq\hat{\mathbf{b}}$, the term $\lVert\hat{\mathbf{b}}-\mathbf{s}\rVert^2$
+is strictly positive, so
+
+$$
+\lVert \mathbf{b}-\mathbf{s}\rVert^2
+> \lVert\mathbf{b}-\hat{\mathbf{b}}\rVert^2,
+$$
+
+and taking square roots (a strictly increasing operation on nonnegative numbers) gives the
+claim. $\qquad\blacksquare$
+:::
+
+This proof is the keystone of the keystone. Notice what it says: the squared distance from
+$\mathbf{b}$ to *any* trial point $\mathbf{s}$ splits, by Pythagoras, into a fixed piece
+(the residual length, which no choice of $\mathbf{s}$ can shrink) plus a movable piece (the
+in-subspace distance $\lVert\hat{\mathbf{b}}-\mathbf{s}\rVert^2$, which is minimized — to
+zero — only by taking $\mathbf{s}=\hat{\mathbf{b}}$). Choosing the perpendicular foot
+zeroes out the only part you control. **That is why minimizing squared distance and
+dropping a perpendicular are the same act.** @fig-pythagoras draws this right triangle.
+
+```{python}
+#| label: fig-pythagoras
+#| fig-cap: "The closest-point theorem is the Pythagorean theorem. For any trial point $\\mathbf{s}$ in the subspace $S$ (here a line), the gap $\\mathbf{b}-\\mathbf{s}$ is the hypotenuse of a right triangle whose legs are the residual $\\mathbf{r}=\\mathbf{b}-\\hat{\\mathbf{b}}$ (perpendicular to $S$) and the in-subspace displacement $\\hat{\\mathbf{b}}-\\mathbf{s}$. The hypotenuse is longest exactly when $\\mathbf{s}\\ne\\hat{\\mathbf{b}}$; it is shortest, equal to the leg $\\mathbf{r}$, only at $\\mathbf{s}=\\hat{\\mathbf{b}}$."
+a = np.array([3.0, 0.6])
+b = np.array([1.2, 2.7])
+bhat = (a @ b)/(a @ a) * a
+s = bhat - 0.55 * a / np.linalg.norm(a)   # another point on the line
+
+fig, ax = plt.subplots(figsize=(6.2, 4.2))
+t = np.linspace(-0.3, 1.5, 50)
+ax.plot(t*a[0], t*a[1], color=GREY, lw=1.4, ls="--", zorder=1)
+ax.text(1.5*a[0]-0.2, 1.5*a[1]+0.1, r"$S$", color=GREY, fontsize=13)
+ax.scatter(*b, color=HILITE, s=60, zorder=5)
+ax.text(b[0]-0.05, b[1]+0.22, r"$\mathbf{b}$", color=HILITE, fontsize=13)
+ax.scatter(*bhat, color=ACCENT, s=55, zorder=5)
+ax.text(bhat[0]+0.05, bhat[1]-0.32, r"$\hat{\mathbf{b}}$", color=ACCENT, fontsize=13)
+ax.scatter(*s, color=VEC, s=55, zorder=5)
+ax.text(s[0]-0.15, s[1]-0.32, r"$\mathbf{s}$", color=VEC, fontsize=13)
+# triangle
+ax.plot([b[0], bhat[0]], [b[1], bhat[1]], color=ACCENT, lw=2.4)   # residual leg
+ax.plot([bhat[0], s[0]], [bhat[1], s[1]], color=VEC, lw=2.4)      # in-subspace leg
+ax.plot([b[0], s[0]], [b[1], s[1]], color=HILITE, lw=2.4, ls=":") # hypotenuse
+ax.text((b[0]+bhat[0])/2+0.12, (b[1]+bhat[1])/2, r"$\mathbf{r}$", color=ACCENT, fontsize=13)
+ax.text((b[0]+s[0])/2-0.25, (b[1]+s[1])/2+0.1, r"$\mathbf{b}-\mathbf{s}$", color=HILITE, fontsize=11)
+# right angle marker at bhat
+d1 = (a/np.linalg.norm(a))*0.22; d2 = ((b-bhat)/np.linalg.norm(b-bhat))*0.22
+ax.plot([bhat[0]+d1[0], bhat[0]+d1[0]+d2[0], bhat[0]+d2[0]],
+        [bhat[1]+d1[1], bhat[1]+d1[1]+d2[1], bhat[1]+d2[1]], color=GREY, lw=1.1)
+ax.set_xlim(-0.5, 4.5); ax.set_ylim(-0.4, 3.2)
+ax.set_aspect("equal"); ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$")
+ax.set_title("Right angle $\\Rightarrow$ shortest distance, by Pythagoras")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Is the closest-point problem a calculus problem or a geometry problem?"* Both, and seeing
+the equivalence is the point. The calculus route minimizes
+$f(\mathbf{c})=\lVert\mathbf{b}-A\mathbf{c}\rVert^2$ by setting its gradient to zero; the
+gradient is $\nabla f = 2A^\top(A\mathbf{c}-\mathbf{b})$, and $\nabla f=\mathbf{0}$ is
+*exactly* the normal equations @eq-normal (this gradient is derived in full in [GEOM-25],
+and it is the same computation that [REGR-1] does by hand for one predictor). The geometry
+route — @thm-closest — never differentiates anything; it splits a right triangle and
+invokes Pythagoras. The two give the identical system because "the directional derivative
+of squared distance is zero in every in-subspace direction" *is* "the residual is
+perpendicular to every in-subspace direction." Calculus and geometry are describing one
+condition in two dialects.
+:::
+
+# Worked examples {#sec-examples}
+
+Three examples, escalating in dimension and honesty. The first we verify by hand; the last
+sits at the edge of applicability, where projection strains.
+
+## Example 1 — projecting onto a plane in $\mathbb{R}^3$ {#sec-ex-plane}
+
+Take the plane $S$ spanned by $\mathbf{a}_1=(1,0,1)^\top$ and $\mathbf{a}_2=(0,1,1)^\top$,
+and the external point $\mathbf{b}=(2,3,0)^\top$. The two spanning vectors are independent
+(neither is a multiple of the other), so @thm-projection applies. We find the closest point
+of the plane to $\mathbf{b}$.
+
+```{python}
+#| label: ex-plane
+A = np.array([[1.0, 0.0],
+              [0.0, 1.0],
+              [1.0, 1.0]])
+b = np.array([2.0, 3.0, 0.0])
+
+AtA = A.T @ A
+Atb = A.T @ b
+chat = np.linalg.solve(AtA, Atb)     # solve the normal equations, don't invert
+bhat = A @ chat
+r = b - bhat
+
+print("A^T A =\n", AtA)
+print("A^T b =", Atb)
+print("chat (coefficients) =", chat)
+print("bhat (projection)   =", bhat)
+print("residual r          =", r)
+print("check A^T r = 0 ?    =", A.T @ r, " (orthogonal to both columns)")
+print("dist to b           =", np.linalg.norm(r))
+```
+
+Walk the arithmetic by hand to confirm the code is doing exactly @sec-normal. First
+$A^\top A$: its entries are the pairwise dot products of the columns. $\mathbf{a}_1^\top
+\mathbf{a}_1 = 1+0+1 = 2$, $\mathbf{a}_1^\top\mathbf{a}_2 = 0+0+1 = 1$, and
+$\mathbf{a}_2^\top\mathbf{a}_2 = 0+1+1 = 2$, so
+
+$$
+A^\top A = \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix},
+\qquad
+A^\top\mathbf{b} = \begin{bmatrix} \mathbf{a}_1^\top\mathbf{b} \\ \mathbf{a}_2^\top\mathbf{b}\end{bmatrix}
+= \begin{bmatrix} 2+0+0 \\ 0+3+0 \end{bmatrix}
+= \begin{bmatrix} 2 \\ 3 \end{bmatrix}.
+$$
+
+The normal equations @eq-normal are $\begin{bmatrix}2&1\\1&2\end{bmatrix}\hat{\mathbf{c}}
+= \begin{bmatrix}2\\3\end{bmatrix}$. Invert the $2\times 2$ (its determinant is
+$2\cdot2-1\cdot1=3$):
+
+$$
+\hat{\mathbf{c}}
+= \frac{1}{3}\begin{bmatrix}2&-1\\-1&2\end{bmatrix}\begin{bmatrix}2\\3\end{bmatrix}
+= \frac{1}{3}\begin{bmatrix}4-3\\-2+6\end{bmatrix}
+= \frac{1}{3}\begin{bmatrix}1\\4\end{bmatrix}
+= \begin{bmatrix}1/3\\4/3\end{bmatrix},
+$$
+
+matching the printed `chat`. The projection is
+$\hat{\mathbf{b}}=A\hat{\mathbf{c}}=\tfrac13\mathbf{a}_1+\tfrac43\mathbf{a}_2
+=(\tfrac13,\,\tfrac43,\,\tfrac53)^\top$, and the residual is
+$\mathbf{b}-\hat{\mathbf{b}}=(\tfrac53,\tfrac53,-\tfrac53)^\top$. The printed check
+$A^\top\mathbf{r}=\mathbf{0}$ confirms the residual is perpendicular to *both* spanning
+directions — the geometric heart of @sec-normal made numerical. @fig-plane3d draws it.
+
+```{python}
+#| label: fig-plane3d
+#| fig-cap: "Projection onto a plane in $\\mathbb{R}^3$. The point $\\mathbf{b}$ (red) sits off the plane $S=\\mathrm{span}(\\mathbf{a}_1,\\mathbf{a}_2)$. Its projection $\\hat{\\mathbf{b}}$ (green) is the foot of the perpendicular; the residual $\\mathbf{r}$ (green dotted) meets the plane at a right angle and is orthogonal to every direction lying in it. Of all points on the plane, $\\hat{\\mathbf{b}}$ is the one nearest $\\mathbf{b}$."
+fig = plt.figure(figsize=(6.6, 5.0))
+ax = fig.add_subplot(111, projection="3d")
+# plane mesh from the two spanning vectors
+ss = np.linspace(-0.6, 2.2, 12); tt = np.linspace(-0.4, 2.0, 12)
+SS, TT = np.meshgrid(ss, tt)
+PX = SS*A[0,0] + TT*A[0,1]
+PY = SS*A[1,0] + TT*A[1,1]
+PZ = SS*A[2,0] + TT*A[2,1]
+ax.plot_surface(PX, PY, PZ, alpha=0.25, color=PALE, linewidth=0)
+# spanning vectors
+for col, name, off in [(A[:,0], r"$\mathbf{a}_1$", 0.1), (A[:,1], r"$\mathbf{a}_2$", 0.1)]:
+    ax.quiver(0,0,0, *col, color=VEC, lw=2.0, arrow_length_ratio=0.12)
+    ax.text(col[0], col[1], col[2]+off, name, color=VEC, fontsize=12)
+# b, bhat, residual
+ax.quiver(0,0,0, *b, color=HILITE, lw=2.4, arrow_length_ratio=0.10)
+ax.text(b[0], b[1], b[2]+0.15, r"$\mathbf{b}$", color=HILITE, fontsize=13)
+ax.scatter(*bhat, color=ACCENT, s=55)
+ax.text(bhat[0], bhat[1], bhat[2]-0.45, r"$\hat{\mathbf{b}}$", color=ACCENT, fontsize=13)
+ax.plot([b[0],bhat[0]],[b[1],bhat[1]],[b[2],bhat[2]], color=ACCENT, lw=2.2, ls=":")
+ax.set_xlabel("$x_1$"); ax.set_ylabel("$x_2$"); ax.set_zlabel("$x_3$")
+ax.set_title("Dropping a perpendicular onto a plane")
+ax.view_init(elev=20, azim=-60)
+plt.tight_layout()
+```
+
+## Example 2 — least squares is projection: fitting a line through data {#sec-ex-leastsq}
+
+This is the example the whole track is built to reach. We have $n$ data points $(t_i,y_i)$
+and want the best straight line $y\approx \beta_0 + \beta_1 t$. In the language of this
+article, that is asking for the projection of the response vector
+$\mathbf{y}=(y_1,\dots,y_n)^\top$ onto the column space of the **design matrix**
+
+$$
+A = \begin{bmatrix} 1 & t_1 \\ 1 & t_2 \\ \vdots & \vdots \\ 1 & t_n \end{bmatrix},
+\qquad \mathbf{c} = \begin{bmatrix}\beta_0\\\beta_1\end{bmatrix},
+$$
+
+because $A\mathbf{c}$ is the vector of fitted values $\beta_0 + \beta_1 t_i$. There is no
+$\mathbf{c}$ making $A\mathbf{c}=\mathbf{y}$ exactly — the points are not collinear, so
+$\mathbf{y}$ lies *outside* the (two-dimensional) column space — and the projection finds
+the closest reachable fitted-value vector. We use a real, mildly noisy relationship: the
+amount of stretch in a spring versus the load hung on it (Hooke's-law territory), where the
+linear model is genuinely appropriate.
+
+```{python}
+#| label: fig-leastsq
+#| fig-cap: "Least squares **is** projection. **Left:** load–extension data for a spring with the OLS line $\\hat y=\\hat\\beta_0+\\hat\\beta_1 t$, computed by solving the normal equations $A^\\top A\\hat{\\mathbf{c}}=A^\\top\\mathbf{y}$. **Right:** the residuals $y_i-\\hat y_i$. Their plain sum is zero (column $\\mathbf 1$ of $A$) and their $t$-weighted sum is zero (column $\\mathbf t$): that is $A^\\top(\\mathbf{y}-A\\hat{\\mathbf{c}})=\\mathbf 0$, the residual orthogonal to both columns. The fit is the projection of $\\mathbf y$ onto the plane spanned by $\\mathbf 1$ and $\\mathbf t$."
+rng = np.random.default_rng(3)
+t = np.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0])   # load (N)
+y = 0.8 + 1.7 * t + rng.normal(0, 0.35, size=t.size)               # extension (cm)
+
+A = np.column_stack([np.ones_like(t), t])     # design matrix [1, t]
+chat = np.linalg.solve(A.T @ A, A.T @ y)       # normal equations
+yhat = A @ chat
+resid = y - yhat
+
+ts = np.linspace(t.min()-0.3, t.max()+0.3, 100)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.scatter(t, y, color=VEC, s=42, zorder=3, label="data $(t_i,y_i)$")
+axL.plot(ts, chat[0] + chat[1]*ts, color=HILITE,
+         label=fr"$\hat y={chat[0]:.2f}+{chat[1]:.2f}\,t$")
+for ti, yi, hi in zip(t, y, yhat):
+    axL.plot([ti, ti], [yi, hi], color=GREY, lw=1.2)
+axL.set_xlabel("load $t$ (N)"); axL.set_ylabel("extension $y$ (cm)")
+axL.set_title(r"Fit = projection of $y$ onto span$(\mathbf{1},\mathbf{t})$")
+axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+axR.axhline(0, color=GREY, lw=1.2)
+axR.scatter(t, resid, color=VEC, s=42, zorder=3)
+for ti, ri in zip(t, resid):
+    axR.plot([ti, ti], [0, ri], color=GREY, lw=1.2)
+axR.set_xlabel("load $t$ (N)"); axR.set_ylabel("residual")
+axR.set_title("Residuals: orthogonal to both columns")
+plt.tight_layout()
+
+print(f"chat = [beta0, beta1] = {chat}")
+print(f"sum of residuals          = {resid.sum(): .3e}   (= 1^T r, col of ones)")
+print(f"sum of t_i * residual_i   = {np.sum(t*resid): .3e}   (= t^T r, col t)")
+print(f"||residual|| (fit error)  = {np.linalg.norm(resid):.4f}")
+```
+
+The two printed checks are the normal equations made flesh. The first column of $A$ is the
+all-ones vector $\mathbf{1}$, and $\mathbf{1}^\top\mathbf{r}=\sum_i r_i$ — its being zero
+says the residuals balance, which is the first normal equation of [REGR-1]. The second
+column is $\mathbf{t}$, and $\mathbf{t}^\top\mathbf{r}=\sum_i t_i r_i = 0$ is the second.
+Together they are $A^\top\mathbf{r}=\mathbf{0}$ — the residual orthogonal to the column
+space. **This is the entire content of [REGR-4 *Regression as Projection*].** The vertical
+segments in the left panel are residuals; their squared lengths sum to
+$\lVert\mathbf{r}\rVert^2$, which @thm-closest guarantees is the smallest achievable. The
+one-predictor closed forms of [REGR-1] ($\hat\beta_1=S_{ty}/S_{tt}$, etc.) are exactly the
+solution of this $2\times2$ system — the same answer, derived by calculus there and by
+geometry here.
+
+## Example 3 (edge of applicability) — near-collinear columns and the limits of the normal equations {#sec-ex-collinear}
+
+Here is the honest boundary. The formula $P=A(A^\top A)^{-1}A^\top$ is exact when the
+columns of $A$ are independent, but it degrades — badly — when they are *nearly* dependent,
+and dissolves entirely when they are exactly dependent. We build a design matrix whose two
+predictors are almost the same direction (an extreme but common situation: two features
+that measure nearly the same thing — height in inches and height in centimeters, say), and
+watch the geometry strain.
+
+```{python}
+#| label: fig-collinear
+#| fig-cap: "The edge of applicability. Two predictor columns that point in almost the same direction (angle $\\approx 0.6^\\circ$). The column space they span is a thin sliver of a plane; projecting onto it is geometrically well-defined, but recovering the *coefficients* $\\hat{\\mathbf c}$ is wildly unstable. The bar chart shows how a tiny perturbation of $\\mathbf b$ (relative size $10^{-3}$) swings the recovered coefficients enormously, even though the projection $\\hat{\\mathbf b}$ itself barely moves. This is why the normal equations are the wrong *algorithm* near collinearity."
+rng = np.random.default_rng(0)
+n = 50
+a1 = rng.normal(size=n)
+a1 /= np.linalg.norm(a1)
+# a2 almost equal to a1, tiny independent component
+perp = rng.normal(size=n); perp -= (perp @ a1) * a1; perp /= np.linalg.norm(perp)
+eps = 0.01
+a2 = a1 + eps * perp
+a2 /= np.linalg.norm(a2)
+A = np.column_stack([a1, a2])
+
+b = a1 * 1.0 + a2 * 0.5 + 0.3 * perp + 0.05 * rng.normal(size=n)
+db = 1e-3 * rng.normal(size=n)              # tiny perturbation of b
+
+c0 = np.linalg.solve(A.T @ A, A.T @ b)
+c1 = np.linalg.solve(A.T @ A, A.T @ (b + db))
+bhat0 = A @ c0; bhat1 = A @ (c1)
+
+angle = np.degrees(np.arccos(np.clip(a1 @ a2, -1, 1)))
+kappa = np.linalg.cond(A.T @ A)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+idx = np.arange(2)
+ax.bar(idx-0.18, c0, width=0.36, color=VEC, label=r"coefficients for $\mathbf{b}$")
+ax.bar(idx+0.18, c1, width=0.36, color=HILITE,
+       label=r"coefficients for $\mathbf{b}+\delta\mathbf{b}$")
+ax.set_xticks(idx); ax.set_xticklabels([r"$\hat c_1$", r"$\hat c_2$"])
+ax.set_ylabel("recovered coefficient")
+ax.set_title(f"Tiny data change, huge coefficient swing (angle $\\approx${angle:.1f}$^\\circ$)")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+
+print(f"angle between columns      = {angle:.3f} degrees")
+print(f"cond(A^T A)                = {kappa:.3e}")
+print(f"coeffs for b               = {c0}")
+print(f"coeffs for b + db          = {c1}   (delta b ~ 1e-3)")
+print(f"||change in coeffs||       = {np.linalg.norm(c1-c0):.4f}")
+print(f"||change in projection||   = {np.linalg.norm(bhat1-bhat0):.4e}  (barely moves!)")
+```
+
+Read the contrast carefully, because it separates "knows the formula" from "knows when it
+fails." The **projection itself is fine**: $\hat{\mathbf{b}}$ barely moves when we jiggle
+$\mathbf{b}$, because projecting onto a subspace is a geometrically stable operation
+($\lVert P\rVert = 1$ — projection never magnifies). What is *not* fine is recovering the
+**coefficients** $\hat{\mathbf{c}}$: because the two columns nearly coincide, many very
+different coefficient vectors produce almost the same point in the column space, so a tiny
+change in $\mathbf{b}$ flings the coefficients around. The culprit is the condition number
+of $A^\top A$ (printed above, enormous), and forming $A^\top A$ *squares* the conditioning
+of $A$ — the precise warning of the Pitfall in @sec-invertible.
+
+::: {.callout-warning title="Pitfall"}
+**Collinearity does not break the projection — it breaks the coefficients.** When features
+are nearly redundant, the closest point $\hat{\mathbf{b}}$ (the *prediction*) remains well
+determined, but the weights $\hat{\mathbf{c}}$ that produce it (the *interpretation*)
+become unreliable, sign-flippable, and explosively sensitive. If you only need predictions,
+you may not care; if you need to *interpret* the coefficients, you are in trouble. This is
+exactly the multicollinearity story of [REGR-7], and the remedies live downstream: drop or
+combine redundant columns; use **ridge** regression ($A^\top A+\lambda I$, which un-squashes
+the smallest eigenvalues — [REGR-14]); or solve via **QR**/**SVD** ([GEOM-7], [GEOM-20]–[GEOM-21])
+and use the **pseudoinverse** (@sec-rank-def) to pick the minimum-norm coefficient among the
+many that fit equally well.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+@thm-projection carries one structural assumption — independent columns — and a couple of
+silent ones. We make all of them explicit.
+
+## Rank-deficient $A$: when $A^\top A$ is not invertible {#sec-rank-def}
+
+If the columns of $A$ are linearly *dependent* — some column is a combination of the others
+— then by the contrapositive of @lem-AtA, $A^\top A$ is **singular**, the inverse in
+@eq-P does not exist, and the normal equations @eq-normal have *infinitely many* solutions
+$\hat{\mathbf{c}}$. (Concretely: if $A\mathbf{v}=\mathbf{0}$ for some
+$\mathbf{v}\neq\mathbf{0}$, then $\hat{\mathbf{c}}$ and $\hat{\mathbf{c}}+\mathbf{v}$ give
+the same fitted point, since $A(\hat{\mathbf{c}}+\mathbf{v})=A\hat{\mathbf{c}}$.)
+
+But notice what does *not* fail: the **projection** $\hat{\mathbf{b}}$ is still unique. The
+closest point of the subspace to $\mathbf{b}$ does not care how we coordinatize the
+subspace; the *point* is determined, only its *coordinates* are not. The clean fix is to
+choose, among all coefficient vectors producing $\hat{\mathbf{b}}$, the one of smallest
+length — the **minimum-norm least-squares solution** — and the object that delivers it is
+the **Moore–Penrose pseudoinverse** $A^+$, with $\hat{\mathbf{c}}=A^+\mathbf{b}$ and
+$\hat{\mathbf{b}}=AA^+\mathbf{b}$, where $AA^+$ is the genuine projection matrix even when
+$A$ is rank-deficient. The pseudoinverse is constructed from the SVD and is the subject of
+[GEOM-21]; for now the takeaway is that **projection always exists; the closed form
+$P=A(A^\top A)^{-1}A^\top$ is the special case where the columns are independent.**
+
+## "Orthogonal" is relative to the dot product you chose {#sec-oblique}
+
+We have been measuring length and angle with the standard dot product
+$\mathbf{x}^\top\mathbf{y}$. Everything — "perpendicular," "closest," symmetry of $P$ —
+is relative to *that* choice. If the right notion of distance is a *weighted* one, say
+$\mathbf{x}^\top W\mathbf{y}$ for some positive-definite weight matrix $W$ (which arises
+whenever measurements have unequal reliability or are correlated), then the closest point
+changes, and the projection that delivers it,
+$P_W = A(A^\top W A)^{-1}A^\top W$, is idempotent but **no longer symmetric** in the
+ordinary sense — it is an *oblique* projection from the standard viewpoint. This is the
+geometry behind **generalized least squares** ([REGR-11]) and **whitening** ([GEOM-19]).
+The lesson: projection is not absolute; it is defined by an inner product, and changing the
+inner product changes the perpendicular.
+
+::: {.callout-tip title="You might be asked"}
+*"If the columns of $A$ are already orthonormal, what is $P$?"* It collapses beautifully.
+Orthonormal columns mean $A^\top A = I$ (each column has unit length, distinct columns are
+perpendicular — [GEOM-5]), so $P=A(A^\top A)^{-1}A^\top = A\,I^{-1}A^\top = AA^\top$. No
+inverse to compute, no conditioning to worry about, and the coefficients are just dot
+products: $\hat c_j = \mathbf{a}_j^\top\mathbf{b}$. This is precisely why we *manufacture*
+orthonormal bases — the **Gram–Schmidt** process and the **QR** factorization of [GEOM-7]
+exist to replace the messy $A$ by an orthonormal $Q$ spanning the same space, turning
+$P=A(A^\top A)^{-1}A^\top$ into the trivial, stable $P=QQ^\top$. The projection is
+unchanged (same subspace, same closest point); only the arithmetic and its numerical
+behavior improve.
+:::
+
+## What projection cannot tell you
+
+Two honest non-failures worth stating, because interviewers probe them. First, projection
+finds the closest point *in the subspace you handed it*; if the subspace is the wrong model
+(a line where the truth curves), the projection is still computed flawlessly and is still
+useless — exactly the nonlinearity failure of [REGR-1], now visible as "you projected onto
+a column space that cannot represent the signal." Second, the residual length
+$\lVert\mathbf{r}\rVert$ tells you *how much* of $\mathbf{b}$ the subspace fails to capture,
+but not *why*; diagnosing that is the work of residual analysis ([REGR-3], [REGR-10]).
+Projection is a precise answer to a narrow question — nearest point — and it is silent on
+whether that was the right question.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-5 *Orthogonality and Orthonormal Bases*]**, which gave the
+$S\oplus S^\perp$ decomposition and the Pythagorean theorem we leaned on in @thm-closest,
+and from **[GEOM-4 *The Dot Product*]**, the source of every length and angle here. This
+article is the **keystone**: it is the single operation the rest of the series reuses most.
+From here the track continues:
+
+- **[GEOM-7 *Gram–Schmidt and QR*]** — manufacture an orthonormal basis so projection
+  becomes the trivial, stable $P=QQ^\top$. Gram–Schmidt is *this article's* line projection
+  applied repeatedly, one direction at a time.
+- **[GEOM-12 *The Four Fundamental Subspaces*]** — the residual orthogonal to the column
+  space is the statement $\mathcal{C}(A)^\perp = \mathcal{N}(A^\top)$; this article is the
+  first appearance of that pairing.
+- **[GEOM-20]–[GEOM-21 *SVD and the Pseudoinverse*]** — the numerically sound, always-defined
+  projection, which handles the rank-deficient case of @sec-rank-def and discharges the
+  collinearity edge of @sec-ex-collinear.
+- **[GEOM-25 *Gradient and Hessian of a Quadratic Form*]** — the calculus route to the
+  normal equations: $\nabla\lVert\mathbf{b}-A\mathbf{c}\rVert^2 = 2A^\top(A\mathbf{c}-\mathbf{b})$,
+  set to zero, *is* @eq-normal.
+
+And it feeds directly into **Regression**: **[REGR-4 *Regression as Projection*]** and
+**[REGR-5 *Multiple Regression*]** are this article with $\mathbf{b}=\mathbf{y}$ and $A=X$.
+The normal equations @eq-normal are their $X^\top X\hat{\boldsymbol\beta}=X^\top\mathbf{y}$.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Legendre's 1805 least-squares appendix and Gauss's 1809 *Theoria
+  Motus* are the historical origin; the *geometric* reading — least squares as orthogonal
+  projection — was crystallized in the twentieth century and is the organizing idea of
+  Gilbert Strang's *Introduction to Linear Algebra* (the "projection is the heart of
+  applied linear algebra" framing of this whole track).
+- **The clean abstraction.** The closest-point theorem (@thm-closest) is the finite-dimensional
+  case of the **Hilbert projection theorem**, which says the same thing for closed subspaces
+  of any inner-product space — the foundation of Fourier series (projecting a function onto
+  sines and cosines) and of conditional expectation in probability (projecting a random
+  variable onto a $\sigma$-algebra). The geometry you learned here is *literally* the same;
+  only the inner product changes.
+- **Open threads deliberately deferred.** *How do we project stably when columns are nearly
+  dependent?* — QR and SVD, [GEOM-7] and [GEOM-20]. *What if the right distance is weighted?*
+  — oblique projection and GLS, [REGR-11]. *What is the projection of a random variable?* —
+  conditional expectation, owned by the Probability/Inference tracks, but it is exactly this
+  picture with $\mathrm{Cov}$ as the inner product.

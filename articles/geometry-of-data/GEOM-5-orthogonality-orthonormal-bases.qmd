@@ -1,0 +1,1110 @@
+---
+title: "Orthogonality and Orthonormal Bases"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"    # data points / generic vectors
+ARROW  = "#c1121f"    # the highlighted arrow / first basis direction
+ACCENT = "#0a7d4d"    # highlights / second orthogonal direction
+GREY   = "#6c757d"
+PURPLE = "#6a4c93"    # third direction / complement
+```
+
+> **Where this sits in the track.** This is the fifth article in the **Geometry of Data**
+> track and the second half of its length-and-angle movement. It assumes
+> [GEOM-3 *Linear Independence, Basis, and Dimension*] (a basis is a minimal spanning set;
+> dimension is the invariant count of directions a subspace has) and, above all,
+> [GEOM-4 *The Dot Product: Length and Angle*], which gave us the dot product
+> $\mathbf x^\top\mathbf y = \sum_i x_i y_i$, the norm $\lVert\mathbf x\rVert =
+> \sqrt{\mathbf x^\top\mathbf x}$ as length, and the angle relation
+> $\mathbf x^\top\mathbf y = \lVert\mathbf x\rVert\lVert\mathbf y\rVert\cos\theta$. Here we
+> follow the single most consequential special case of that angle relation — $\theta =
+> 90^\circ$, where the dot product is zero — all the way to the bottom. It sets up the
+> keystone [GEOM-6 *Orthogonal Projection onto a Subspace*] (the split this article proves
+> *exists and is unique* is the object GEOM-6 computes), [GEOM-7 *Gram–Schmidt and QR*]
+> (the machine that manufactures the orthonormal bases we praise here), and
+> [GEOM-16 *Symmetric Matrices and the Spectral Theorem*] (whose payoff is an orthonormal
+> eigenbasis — the best of both worlds).
+
+## Abstract {.unnumbered}
+
+Two vectors are **orthogonal** when their dot product is zero — the coordinate-free
+fingerprint of a right angle, valid in any number of dimensions. This article takes that
+one equation, $\mathbf x^\top\mathbf y = 0$, and follows it to three destinations the
+rest of the series leans on. First, the **generalized Pythagorean theorem**: when
+vectors are orthogonal their squared lengths simply add, $\lVert\mathbf
+x+\mathbf y\rVert^2 = \lVert\mathbf x\rVert^2 + \lVert\mathbf y\rVert^2$ — derived, not
+asserted. Second, the **orthonormal basis**: a basis of mutually perpendicular unit
+vectors, in which the coordinate of any vector along a basis direction is *just a dot
+product*, $c_i = \mathbf q_i^\top\mathbf x$ — no linear system to solve, ever. Third, the
+**orthogonal complement** and the **orthogonal decomposition theorem**: every vector
+splits in exactly one way into a part lying in a chosen subspace and a part perpendicular
+to it. The single claim this article defends is that **orthogonality turns geometry into
+arithmetic** — angles, lengths, coordinates, and the all-important "nearest point in a
+subspace" computation all collapse into dot products the moment a basis is orthonormal.
+That collapse is why orthonormal bases are the coordinate systems every numerical method
+in this series secretly wants to be working in.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+**Orthogonal** means dot product zero: $\mathbf x^\top\mathbf y = 0$ is the
+coordinate-free statement of "at right angles," and it makes sense in $\mathbb R^n$ for
+any $n$, far past anything you can draw. Two consequences make orthogonality the most
+useful relationship in linear algebra. (1) Perpendicular pieces **don't interfere**: their
+squared lengths add (Pythagoras), so a vector's total energy is the sum of its energies
+along orthogonal directions. (2) In an **orthonormal basis** — perpendicular unit vectors
+— finding a vector's coordinates stops being a linear system and becomes a list of dot
+products, $c_i = \mathbf q_i^\top\mathbf x$. Everything else in this article, and the
+projection machinery of the entire series, is built from those two facts.
+:::
+
+Everything below orbits that box. Hold onto one image: an orthonormal basis is a set of
+perfectly square, perfectly aligned measuring sticks. Reading a vector's coordinates is
+then no harder than reading a ruler — you lay each stick alongside the vector and the dot
+product tells you how far it reaches. The moment the sticks are skewed or unequal (a
+general basis), reading a coordinate requires *untangling* the others, which is a linear
+system. The whole article is the story of why "perpendicular and unit length" buys you
+out of that entanglement.
+
+# Why we are here: the tyranny of a skewed grid {#sec-why}
+
+Keep one question in view for the whole article: **why do we go to the trouble of
+demanding that a basis be orthonormal, when any basis already describes the space
+perfectly well?** Every derivation below is, at bottom, an answer to that question.
+
+## What came before, and why it was not enough
+
+By [GEOM-3] we already have everything we *need* to describe a subspace: pick a basis —
+any linearly independent spanning set — and every vector in the space has a unique list of
+coordinates relative to it. That sounds like the end of the story. It is not, and the
+reason is purely practical.
+
+Suppose your basis is $\{\mathbf v_1,\mathbf v_2\}$ in the plane, and you are handed a
+vector $\mathbf x$. Its coordinates $(c_1, c_2)$ are the unique numbers with
+$\mathbf x = c_1\mathbf v_1 + c_2\mathbf v_2$. To *find* them you must solve that vector
+equation — two scalar equations in the two unknowns $c_1, c_2$. With a general basis the
+equations are coupled: $c_1$ cannot be read off without simultaneously pinning down $c_2$,
+because $\mathbf v_1$ has a "shadow" along $\mathbf v_2$ and vice versa. Solve a $2\times2$
+system every time you want a coordinate; in $n$ dimensions, an $n\times n$ system.
+
+This is the tyranny of a skewed grid. Think of a sheet of graph paper that someone has
+sheared sideways and stretched unevenly: to say where a point is, you cannot just glance
+along one axis, because moving along one ruler also drags you along the other. The grid
+*works*, but it fights you. @fig-skewed-vs-square makes the contrast concrete.
+
+```{python}
+#| label: fig-skewed-vs-square
+#| fig-cap: "Two coordinate systems for the same point $\\mathbf{x}$ (black). **Left:** a skewed, unequal basis $\\{\\mathbf{v}_1,\\mathbf{v}_2\\}$. To find the coordinates you must solve a coupled $2\\times2$ system — the dashed construction lines that locate $\\mathbf{x}$ on this grid are not perpendicular to the axes, so neither coordinate can be read in isolation. **Right:** an orthonormal basis $\\{\\mathbf{q}_1,\\mathbf{q}_2\\}$. The construction lines *are* perpendicular drops onto each axis, so each coordinate is a single, independent measurement — exactly the dot product $\\mathbf{q}_i^\\top\\mathbf{x}$ we derive in @sec-coords."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
+
+# ---- Left: skewed basis ----
+v1 = np.array([1.6, 0.4])
+v2 = np.array([0.5, 1.3])
+# target point in skewed coords (c1, c2) = (1.4, 1.1)
+c1, c2 = 1.4, 1.1
+x = c1 * v1 + c2 * v2
+# draw skewed grid
+for c in np.arange(-1, 4):
+    axL.plot(*np.array([c*v1 - 1*v2, c*v1 + 3*v2]).T, color=GREY, lw=0.7, alpha=0.5)
+    axL.plot(*np.array([-1*v1 + c*v2, 3*v1 + c*v2]).T, color=GREY, lw=0.7, alpha=0.5)
+axL.annotate("", xy=v1, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ARROW, lw=2.2))
+axL.annotate("", xy=v2, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.2))
+axL.plot([c1*v1[0], x[0]], [c1*v1[1], x[1]], color=GREY, ls="--", lw=1.4)
+axL.plot([c2*v2[0], x[0]], [c2*v2[1], x[1]], color=GREY, ls="--", lw=1.4)
+axL.scatter(*x, color="black", s=60, zorder=5)
+axL.text(*(v1 + [0.05, -0.18]), r"$\mathbf{v}_1$", color=ARROW, fontsize=12)
+axL.text(*(v2 + [-0.32, 0.02]), r"$\mathbf{v}_2$", color=ACCENT, fontsize=12)
+axL.text(*(x + [0.08, 0.05]), r"$\mathbf{x}$", fontsize=12)
+axL.set_title("Skewed basis: coordinates are coupled")
+axL.set_xlim(-0.5, 3.6); axL.set_ylim(-0.5, 3.0); axL.set_aspect("equal")
+
+# ---- Right: orthonormal basis ----
+q1 = np.array([1.0, 0.0])
+q2 = np.array([0.0, 1.0])
+xo = np.array([2.2, 1.6])
+for c in np.arange(-1, 5):
+    axR.axvline(c, color=GREY, lw=0.7, alpha=0.5)
+    axR.axhline(c, color=GREY, lw=0.7, alpha=0.5)
+axR.annotate("", xy=q1, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ARROW, lw=2.2))
+axR.annotate("", xy=q2, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.2))
+axR.plot([xo[0], xo[0]], [0, xo[1]], color=GREY, ls="--", lw=1.4)
+axR.plot([0, xo[0]], [xo[1], xo[1]], color=GREY, ls="--", lw=1.4)
+axR.scatter(*xo, color="black", s=60, zorder=5)
+axR.text(*(q1 + [0.02, -0.22]), r"$\mathbf{q}_1$", color=ARROW, fontsize=12)
+axR.text(*(q2 + [-0.34, 0.0]), r"$\mathbf{q}_2$", color=ACCENT, fontsize=12)
+axR.text(*(xo + [0.08, 0.05]), r"$\mathbf{x}$", fontsize=12)
+axR.set_title("Orthonormal basis: read each coordinate alone")
+axR.set_xlim(-0.5, 3.6); axR.set_ylim(-0.5, 3.0); axR.set_aspect("equal")
+plt.tight_layout()
+```
+
+## The fix, and the historical thread
+
+The fix is to insist the axes be **mutually perpendicular and of unit length** — an
+*orthonormal* basis. Then the cross-talk vanishes: moving along one axis does not move you
+along any other, so each coordinate becomes an independent measurement. That is exactly
+the Cartesian coordinate system Descartes drew in 1637 — perpendicular axes, equal units —
+and the reason it became the default picture of space is precisely the one we are about to
+make rigorous: it is the grid in which measurement is trivial.
+
+The deeper historical engine is the same one that drove [REGR-1] and will drive the
+keystone [GEOM-6]: **Fourier**, in the early 1800s, found that a complicated periodic
+signal could be written as a sum of sines and cosines, and that the coefficient of each
+sine was obtained by a single integral — a continuous dot product — *against that sine
+alone*, with no interference from the others. That miracle ("just integrate against the
+basis function to get its coefficient") is nothing but the orthonormal-coordinate formula
+$c_i = \mathbf q_i^\top\mathbf x$ in an infinite-dimensional space. Sines and cosines are
+orthogonal. The entire edifice of Fourier analysis, signal processing, and the
+eigenbases of [GEOM-16] rests on the small, sturdy fact that orthogonal directions do not
+interfere. We are building that fact from the floor.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just always use the standard basis $\mathbf e_1,\dots,\mathbf e_n$? It is already
+orthonormal."* For describing all of $\mathbb R^n$, you often can. But two situations force
+a *different* orthonormal basis on you. (1) You are working **inside a subspace** — a plane
+in $\mathbb R^3$, the column space of a data matrix in $\mathbb R^n$ — and the standard
+axes do not lie in it; you need an orthonormal basis *of that subspace*, which Gram–Schmidt
+([GEOM-7]) builds. (2) The natural directions of a problem are not the coordinate axes:
+the principal axes of a data cloud, the eigenvectors of a symmetric matrix ([GEOM-16]). In
+both cases we want the *computational comfort* of an orthonormal basis aligned with the
+geometry of the problem, not with the arbitrary axes the data happened to be recorded in.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Two pictures carry the entire article; meet them before any algebra.
+
+**Picture one: perpendicular pieces do not interfere.** Walk 3 metres east, then 4 metres
+north. How far are you from the start? Not 7 — the directions are perpendicular, so the
+trip east contributes *nothing* to your northward progress and vice versa. The distances
+combine through the hypotenuse: $\sqrt{3^2+4^2}=5$. That is the Pythagorean theorem, and
+its real content is independence of perpendicular directions: each axis carries its own
+displacement, and the squared total is the sum of the squared parts. Replace "east/north"
+with "any two orthogonal vectors in $\mathbb R^n$" and the same statement holds — that is
+@sec-pythagoras.
+
+**Picture two: a coordinate is a shadow.** Stand a vector $\mathbf x$ up and shine a light
+straight down onto a unit axis $\mathbf q$. The length of the shadow $\mathbf x$ casts on
+that axis is how far $\mathbf x$ reaches in the $\mathbf q$ direction — its coordinate. From
+[GEOM-4], the length of that shadow is exactly $\mathbf q^\top\mathbf x$ (because
+$\mathbf q^\top\mathbf x = \lVert\mathbf q\rVert\lVert\mathbf x\rVert\cos\theta =
+\lVert\mathbf x\rVert\cos\theta$ when $\mathbf q$ is a unit vector, and
+$\lVert\mathbf x\rVert\cos\theta$ is precisely the adjacent side — the shadow length). When
+the axes are mutually perpendicular, the shadows do not contaminate one another: the shadow
+on $\mathbf q_1$ ignores $\mathbf q_2$ entirely. So we can collect all the coordinates one
+shadow at a time, independently. That is the whole reason @sec-coords works.
+
+@fig-shadow shows the shadow picture for a single axis; keep it in mind, because the
+coordinate formula and the projection of [GEOM-6] are both just "measure the shadow."
+
+```{python}
+#| label: fig-shadow
+#| fig-cap: "A coordinate is the length of a shadow. The vector $\\mathbf{x}$ (black) casts a perpendicular shadow onto the unit direction $\\mathbf{q}$ (red). The shadow's signed length is $\\mathbf{q}^\\top\\mathbf{x} = \\lVert\\mathbf{x}\\rVert\\cos\\theta$ — this single number is $\\mathbf{x}$'s coordinate along $\\mathbf{q}$. The dashed segment, from the tip of $\\mathbf{x}$ down to the axis, meets $\\mathbf{q}$ at a right angle: that perpendicularity is what makes the shadow the *correct* measure of reach, and it is the seed of orthogonal projection (GEOM-6)."
+fig, ax = plt.subplots(figsize=(6.0, 4.2))
+q = np.array([1.0, 0.0])
+x = np.array([2.3, 1.7])
+proj_len = q @ x
+foot = proj_len * q
+ax.annotate("", xy=3.2*q, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ARROW, lw=2.0))
+ax.annotate("", xy=x, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color="black", lw=2.2))
+ax.plot([x[0], foot[0]], [x[1], foot[1]], color=GREY, ls="--", lw=1.6)
+ax.scatter(*foot, color=ACCENT, s=55, zorder=5)
+# right-angle marker
+r = 0.16
+ax.plot([foot[0]-r, foot[0]-r, foot[0]], [foot[1], foot[1]+r, foot[1]+r], color=GREY, lw=1.1)
+ax.text(*(x + [0.05, 0.05]), r"$\mathbf{x}$", fontsize=13)
+ax.text(2.7, -0.22, r"$\mathbf{q}$", color=ARROW, fontsize=13)
+ax.text(foot[0]-0.05, -0.32, r"$\mathbf{q}^\top\mathbf{x}$", color=ACCENT, fontsize=12)
+ax.annotate(r"$\theta$", xy=(0.45, 0.12), fontsize=12)
+ax.set_xlim(-0.4, 3.4); ax.set_ylim(-0.5, 2.2); ax.set_aspect("equal")
+ax.set_title("The coordinate of $\\mathbf{x}$ along $\\mathbf{q}$ is its shadow")
+plt.tight_layout()
+```
+
+# The formal development {#sec-formal}
+
+We build in four stages: define orthogonality, prove it forces linear independence,
+prove the Pythagorean theorem, then define orthonormal bases and harvest the
+coordinate formula. The final stage — the orthogonal complement and the decomposition
+theorem — is the bridge to the keystone.
+
+## Orthogonality, defined {#sec-def-orth}
+
+::: {#def-orthogonal}
+**Definition (orthogonal vectors).** Two vectors $\mathbf x,\mathbf y\in\mathbb R^n$ are
+**orthogonal**, written $\mathbf x\perp\mathbf y$, when their dot product is zero:
+$$
+\mathbf x \perp \mathbf y \quad\Longleftrightarrow\quad \mathbf x^\top\mathbf y
+= \sum_{i=1}^n x_i y_i = 0 .
+$$ {#eq-def-orth}
+:::
+
+Two things deserve immediate comment, because they are exactly the questions a careful
+reader raises.
+
+First, **why is this the right definition of "perpendicular"?** It is not a fresh
+assumption — it is forced by the angle relation we already proved in [GEOM-4],
+$$
+\mathbf x^\top\mathbf y = \lVert\mathbf x\rVert\,\lVert\mathbf y\rVert\cos\theta ,
+$$ {#eq-angle}
+where $\theta\in[0,\pi]$ is the angle between the two arrows. For nonzero vectors,
+$\lVert\mathbf x\rVert>0$ and $\lVert\mathbf y\rVert>0$, so the right-hand side of
+@eq-angle is zero **exactly when** $\cos\theta = 0$, i.e. exactly when $\theta = 90^\circ$.
+So @eq-def-orth says nothing more nor less than "the angle between them is a right angle."
+The merit of writing it as $\mathbf x^\top\mathbf y = 0$ rather than "$\theta = 90^\circ$"
+is that the dot product is a finite sum of products of coordinates — it is *computable* and
+makes sense in $\mathbb R^{100}$, where "the angle looks like $90^\circ$" means nothing
+visual. Orthogonality is how we *do* right angles in dimensions we cannot see.
+
+Second, **the zero vector is orthogonal to everything**, including itself: if
+$\mathbf x = \mathbf 0$ then $\mathbf 0^\top\mathbf y = \sum_i 0\cdot y_i = 0$ for every
+$\mathbf y$. This is a harmless edge convention — $\mathbf 0$ has no direction, so it can be
+declared "at right angles" to all directions without contradiction — but we flag it because
+one theorem below will need to *exclude* the zero vector explicitly.
+
+::: {.callout-tip title="You might be asked"}
+*"Is orthogonality the same as linear independence?"* No — and confusing them is a classic
+slip. Orthogonality is *stronger*. Orthogonal (nonzero) vectors are always linearly
+independent (we prove this next, in @thm-orth-indep), but independent vectors need not be
+orthogonal — the skewed basis $\{\mathbf v_1,\mathbf v_2\}$ of @fig-skewed-vs-square is
+independent yet plainly not perpendicular. Independence says "none is a combination of the
+others"; orthogonality says "they meet at right angles." Every orthogonal set is
+independent; the converse fails. The whole point of Gram–Schmidt ([GEOM-7]) is to *upgrade*
+a merely-independent basis into an orthonormal one.
+:::
+
+## Orthogonal sets are automatically independent {#sec-orth-indep}
+
+We jumped ahead and claimed orthogonality implies independence. We owe a proof. First the
+object.
+
+::: {#def-orth-set}
+**Definition (orthogonal set).** A set of vectors $\{\mathbf u_1,\dots,\mathbf u_k\}$ in
+$\mathbb R^n$ is an **orthogonal set** if every distinct pair is orthogonal:
+$\mathbf u_i^\top\mathbf u_j = 0$ whenever $i\neq j$. If in addition every vector has unit
+length, $\lVert\mathbf u_i\rVert = 1$ for all $i$, the set is **orthonormal**.
+:::
+
+A compact way to write both conditions at once uses the **Kronecker delta** $\delta_{ij}$,
+which is $1$ when $i=j$ and $0$ when $i\neq j$. An orthonormal set is exactly one with
+$$
+\mathbf u_i^\top\mathbf u_j = \delta_{ij}
+= \begin{cases} 1 & i = j,\\ 0 & i\neq j.\end{cases}
+$$ {#eq-kron}
+The diagonal case $i=j$ reads $\mathbf u_i^\top\mathbf u_i = \lVert\mathbf u_i\rVert^2 = 1$
+(unit length), and the off-diagonal case $i\neq j$ reads $\mathbf u_i^\top\mathbf u_j = 0$
+(mutual orthogonality). One equation, both requirements. We will use @eq-kron constantly.
+
+::: {#thm-orth-indep}
+**Theorem (orthogonal $\Rightarrow$ independent).** Any orthogonal set of **nonzero**
+vectors $\{\mathbf u_1,\dots,\mathbf u_k\}$ is linearly independent.
+:::
+
+::: {.proof}
+By the definition of linear independence from [GEOM-3], we must show that the only way to
+combine the vectors into the zero vector is with all-zero coefficients. So suppose some
+scalars $c_1,\dots,c_k$ satisfy
+$$
+c_1\mathbf u_1 + c_2\mathbf u_2 + \dots + c_k\mathbf u_k = \mathbf 0 .
+$$
+We will show every $c_j$ must be $0$. The trick is the entire moral of the article: **probe
+the equation by dotting it with one basis vector at a time, and orthogonality kills every
+term but one.** Fix any index $j$ and take the dot product of both sides with $\mathbf u_j$.
+The dot product is linear in its second argument (proved in [GEOM-4]:
+$\mathbf u_j^\top(\mathbf a + \mathbf b) = \mathbf u_j^\top\mathbf a + \mathbf u_j^\top\mathbf b$
+and $\mathbf u_j^\top(c\,\mathbf a) = c\,\mathbf u_j^\top\mathbf a$), so it distributes across
+the sum:
+$$
+\mathbf u_j^\top\bigl(c_1\mathbf u_1 + \dots + c_k\mathbf u_k\bigr)
+= c_1\,\mathbf u_j^\top\mathbf u_1 + c_2\,\mathbf u_j^\top\mathbf u_2 + \dots
++ c_k\,\mathbf u_j^\top\mathbf u_k
+= \mathbf u_j^\top\mathbf 0 = 0 .
+$$
+Now invoke orthogonality. In that sum, every term $c_i\,\mathbf u_j^\top\mathbf u_i$ with
+$i\neq j$ has $\mathbf u_j^\top\mathbf u_i = 0$ and vanishes. The *only* survivor is the
+$i=j$ term, $c_j\,\mathbf u_j^\top\mathbf u_j$. So the whole equation collapses to
+$$
+c_j\,\mathbf u_j^\top\mathbf u_j = 0,
+\qquad\text{i.e.}\qquad
+c_j\,\lVert\mathbf u_j\rVert^2 = 0 ,
+$$
+using $\mathbf u_j^\top\mathbf u_j = \lVert\mathbf u_j\rVert^2$ from [GEOM-4]. Here is where
+we spend the *nonzero* hypothesis: $\mathbf u_j\neq\mathbf 0$ means
+$\lVert\mathbf u_j\rVert^2 > 0$, so we may divide by it, forcing $c_j = 0$. The index $j$
+was arbitrary, so $c_1 = c_2 = \dots = c_k = 0$. The only combination giving $\mathbf 0$ is
+the trivial one, which is precisely linear independence. $\qquad\blacksquare$
+:::
+
+This little proof is worth more than its modest theorem. The move "dot the equation with
+$\mathbf u_j$ and watch all but one term die" is the engine of the coordinate formula
+(@sec-coords), the projection formula (GEOM-6), and Fourier coefficients alike. Learn it
+once here; you will see it for the rest of the series.
+
+::: {.callout-tip title="You might be asked"}
+*"You said orthogonal vectors are independent. Does the converse hold — must independent
+vectors be orthogonal?"* No, and the asymmetry is the reason orthonormal bases are special
+rather than automatic. There are infinitely many independent bases of a plane, but only
+the perpendicular-unit ones earn the computational gifts below. @thm-orth-indep is a
+one-way street: orthogonality is a *bonus structure* on top of independence, and most
+bases do not have it until you manufacture it (Gram–Schmidt, [GEOM-7]).
+:::
+
+## The generalized Pythagorean theorem {#sec-pythagoras}
+
+We now prove "picture one": perpendicular pieces do not interfere, so their squared
+lengths add. This is the engine behind decompositions of variance, the bias–variance
+identity, and the least-squares residual bookkeeping, and it is a two-line consequence of
+expanding a norm.
+
+::: {#thm-pythagoras}
+**Theorem (Pythagoras in $\mathbb R^n$).** If $\mathbf x\perp\mathbf y$ then
+$$
+\lVert\mathbf x + \mathbf y\rVert^2 = \lVert\mathbf x\rVert^2 + \lVert\mathbf y\rVert^2 .
+$$ {#eq-pythagoras}
+More generally, if $\{\mathbf u_1,\dots,\mathbf u_k\}$ is an orthogonal set then
+$$
+\Bigl\lVert \sum_{i=1}^k \mathbf u_i \Bigr\rVert^2 = \sum_{i=1}^k \lVert\mathbf u_i\rVert^2 .
+$$ {#eq-pythagoras-general}
+:::
+
+::: {.proof}
+Start from the definition of the norm via the dot product, $\lVert\mathbf v\rVert^2 =
+\mathbf v^\top\mathbf v$ (this *is* the norm, from [GEOM-4]), applied to
+$\mathbf v = \mathbf x + \mathbf y$. The dot product distributes over addition in each slot
+— exactly the FOIL expansion, valid because $\mathbf a^\top\mathbf b$ is linear in both
+arguments (GEOM-4):
+$$
+\lVert\mathbf x + \mathbf y\rVert^2
+= (\mathbf x + \mathbf y)^\top(\mathbf x + \mathbf y)
+= \mathbf x^\top\mathbf x + \mathbf x^\top\mathbf y + \mathbf y^\top\mathbf x
++ \mathbf y^\top\mathbf y .
+$$
+The dot product is **symmetric**, $\mathbf x^\top\mathbf y = \mathbf y^\top\mathbf x$
+(both equal $\sum_i x_i y_i$; proved in GEOM-4), so the two cross terms are equal and
+combine:
+$$
+\lVert\mathbf x + \mathbf y\rVert^2
+= \lVert\mathbf x\rVert^2 + 2\,\mathbf x^\top\mathbf y + \lVert\mathbf y\rVert^2 .
+$$ {#eq-norm-expand}
+This identity holds for *any* two vectors — it is the law of cosines in disguise, since
+$2\mathbf x^\top\mathbf y = 2\lVert\mathbf x\rVert\lVert\mathbf y\rVert\cos\theta$ by
+@eq-angle. Now impose orthogonality: $\mathbf x\perp\mathbf y$ means
+$\mathbf x^\top\mathbf y = 0$, so the entire cross term disappears, leaving
+$\lVert\mathbf x+\mathbf y\rVert^2 = \lVert\mathbf x\rVert^2 + \lVert\mathbf y\rVert^2$,
+which is @eq-pythagoras.
+
+For the general case @eq-pythagoras-general, expand the squared norm of the sum the same
+way. Writing $\mathbf s = \sum_{i} \mathbf u_i$,
+$$
+\Bigl\lVert\sum_{i=1}^k\mathbf u_i\Bigr\rVert^2
+= \Bigl(\sum_{i=1}^k\mathbf u_i\Bigr)^{\!\top}\Bigl(\sum_{j=1}^k\mathbf u_j\Bigr)
+= \sum_{i=1}^k\sum_{j=1}^k \mathbf u_i^\top\mathbf u_j ,
+$$
+where the last step multiplies out the two sums into all $k^2$ pairwise dot products
+(distributivity again). Split that double sum into its diagonal terms ($i = j$) and its
+off-diagonal terms ($i\neq j$):
+$$
+\sum_{i=1}^k\sum_{j=1}^k \mathbf u_i^\top\mathbf u_j
+= \underbrace{\sum_{i=1}^k \mathbf u_i^\top\mathbf u_i}_{i=j}
++ \underbrace{\sum_{i\neq j}\mathbf u_i^\top\mathbf u_j}_{i\neq j} .
+$$
+By orthogonality every off-diagonal $\mathbf u_i^\top\mathbf u_j$ (with $i\neq j$) is zero,
+so the second sum is $0$, and each diagonal term is
+$\mathbf u_i^\top\mathbf u_i = \lVert\mathbf u_i\rVert^2$. What remains is
+$\sum_{i=1}^k \lVert\mathbf u_i\rVert^2$, which is @eq-pythagoras-general.
+$\qquad\blacksquare$
+:::
+
+Equation @eq-norm-expand is worth keeping in its own right: it says the squared length of a
+sum is the sum of the squared lengths *plus a cross term* $2\mathbf x^\top\mathbf y$, and
+**orthogonality is exactly the condition that erases the cross term**. The picture is in
+@fig-pythagoras: when the legs are perpendicular, the hypotenuse closes the right triangle
+and the classical $a^2+b^2=c^2$ is recovered; when they are not, the cross term measures
+how far from a right angle we are.
+
+```{python}
+#| label: fig-pythagoras
+#| fig-cap: "The generalized Pythagorean theorem, drawn. **Left:** $\\mathbf{x}\\perp\\mathbf{y}$. The sum $\\mathbf{x}+\\mathbf{y}$ (black) is the hypotenuse of a right triangle, and $\\lVert\\mathbf{x}+\\mathbf{y}\\rVert^2=\\lVert\\mathbf{x}\\rVert^2+\\lVert\\mathbf{y}\\rVert^2$ holds exactly. **Right:** when the angle is *not* $90^\\circ$, the triangle is no longer right; the squared hypotenuse picks up the cross term $2\\mathbf{x}^\\top\\mathbf{y}$ of @eq-norm-expand, which is positive for an acute angle (the hypotenuse is longer than Pythagoras would predict)."
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.0))
+
+def draw_triangle(ax, x, y, title):
+    s = x + y
+    ax.annotate("", xy=x, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ARROW, lw=2.2))
+    ax.annotate("", xy=s, xytext=x, arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.2))
+    ax.annotate("", xy=s, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color="black", lw=2.4))
+    ax.text(*(x*0.5 + [0.0, -0.28]), r"$\mathbf{x}$", color=ARROW, fontsize=13)
+    ax.text(*(x + y*0.5 + [0.1, 0.0]), r"$\mathbf{y}$", color=ACCENT, fontsize=13)
+    ax.text(*(s*0.5 + [-0.45, 0.18]), r"$\mathbf{x}+\mathbf{y}$", fontsize=12)
+    ax.set_title(title)
+    ax.set_aspect("equal")
+
+x = np.array([3.0, 0.0]); y = np.array([0.0, 2.0])
+draw_triangle(axL, x, y, "Orthogonal: $a^2+b^2=c^2$")
+# right-angle marker
+axL.plot([3.0-0.22, 3.0-0.22, 3.0], [0, 0.22, 0.22], color=GREY, lw=1.1)
+axL.set_xlim(-0.4, 3.4); axL.set_ylim(-0.4, 2.4)
+
+x2 = np.array([3.0, 0.0]); y2 = np.array([-1.1, 2.0])
+draw_triangle(axR, x2, y2, "Not orthogonal: cross term appears")
+axR.set_xlim(-0.6, 3.4); axR.set_ylim(-0.4, 2.4)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Where does this Pythagorean identity actually show up in data science?"* Constantly,
+usually disguised. In least squares ([REGR-4], [GEOM-6]) the data vector splits into a
+fitted part and an orthogonal residual part, and @eq-pythagoras becomes the **decomposition
+of total sum of squares** $\text{TSS} = \text{ESS} + \text{RSS}$ — the $R^2$ identity is
+Pythagoras. In probability, the variance of a sum of *uncorrelated* random variables is the
+sum of their variances; "uncorrelated" is orthogonality in the inner-product space of
+mean-zero random variables, and that variance identity is again @eq-pythagoras-general. The
+bias–variance decomposition is a third instance. Each time, the headline is the same:
+*orthogonal contributions add in squared magnitude*.
+:::
+
+## Orthonormal bases and the coordinate-as-dot-product formula {#sec-coords}
+
+Now the payoff promised in the Core. An **orthonormal basis** of a subspace $W$ is a basis
+of $W$ that is also an orthonormal set: a maximal collection of perpendicular unit vectors
+spanning $W$. (By @thm-orth-indep the orthonormality already guarantees independence, so
+"orthonormal set that spans $W$" automatically *is* a basis — we get independence for
+free.) The reason these are the golden coordinate systems is the following formula.
+
+::: {#thm-onb-coords}
+**Theorem (coordinates in an orthonormal basis).** Let $\{\mathbf q_1,\dots,\mathbf q_k\}$
+be an orthonormal basis of a subspace $W$, and let $\mathbf x\in W$. Then the unique
+coordinates of $\mathbf x$ in this basis are dot products:
+$$
+\mathbf x = \sum_{i=1}^k c_i\,\mathbf q_i,
+\qquad\text{with}\qquad
+c_i = \mathbf q_i^\top\mathbf x .
+$$ {#eq-onb-coords}
+:::
+
+::: {.proof}
+Because $\{\mathbf q_i\}$ is a basis of $W$ and $\mathbf x\in W$, [GEOM-3] guarantees that
+*some* unique coefficients $c_1,\dots,c_k$ exist with $\mathbf x = \sum_{i} c_i\mathbf q_i$.
+We do not yet know their values — that is what we are solving for. Use the same probe as in
+@thm-orth-indep: dot both sides with a fixed basis vector $\mathbf q_j$ and let
+orthonormality flatten the sum. By linearity of the dot product in its second argument,
+$$
+\mathbf q_j^\top\mathbf x
+= \mathbf q_j^\top\Bigl(\sum_{i=1}^k c_i\,\mathbf q_i\Bigr)
+= \sum_{i=1}^k c_i\,\bigl(\mathbf q_j^\top\mathbf q_i\bigr)
+= \sum_{i=1}^k c_i\,\delta_{ji} ,
+$$
+where the last equality is the orthonormality condition @eq-kron:
+$\mathbf q_j^\top\mathbf q_i = \delta_{ji}$. Now $\delta_{ji}$ is $0$ for every term except
+$i=j$, where it is $1$. So the entire sum collapses to its single surviving term,
+$$
+\mathbf q_j^\top\mathbf x = c_j\cdot 1 = c_j .
+$$
+That is exactly @eq-onb-coords: the $j$-th coordinate is the dot product
+$\mathbf q_j^\top\mathbf x$. Since $j$ was arbitrary, every coordinate is obtained this way.
+$\qquad\blacksquare$
+:::
+
+Stop and appreciate what just happened, because it is the entire reason the word
+"orthonormal" carries weight. In a general basis, finding $(c_1,\dots,c_k)$ means
+**solving a $k\times k$ linear system** — the coefficients are entangled because the basis
+vectors have shadows on each other. In an orthonormal basis the entanglement is gone:
+each $c_i$ is read off *independently* with a single dot product, no system, no matrix
+inverse, no interference. The cost drops from "solve a system" to "compute $k$ dot
+products," and — more importantly for stability ([GEOM-26]) — there is no inverse to be
+ill-conditioned. This is the computational gold the Core advertised.
+
+A companion identity falls straight out and is worth stating, because it is Pythagoras
+wearing coordinates.
+
+::: {#thm-parseval}
+**Theorem (Parseval / length from coordinates).** With $\{\mathbf q_i\}$ orthonormal and
+$\mathbf x = \sum_{i} c_i\mathbf q_i$ as in @eq-onb-coords,
+$$
+\lVert\mathbf x\rVert^2 = \sum_{i=1}^k c_i^2 = \sum_{i=1}^k (\mathbf q_i^\top\mathbf x)^2 .
+$$ {#eq-parseval}
+:::
+
+::: {.proof}
+Apply the general Pythagorean theorem @eq-pythagoras-general to the orthogonal pieces
+$\mathbf u_i = c_i\mathbf q_i$ (they are orthogonal because the $\mathbf q_i$ are, and
+scaling does not change a right angle):
+$$
+\lVert\mathbf x\rVert^2 = \Bigl\lVert\sum_i c_i\mathbf q_i\Bigr\rVert^2
+= \sum_{i=1}^k \lVert c_i\mathbf q_i\rVert^2
+= \sum_{i=1}^k c_i^2\,\lVert\mathbf q_i\rVert^2
+= \sum_{i=1}^k c_i^2 ,
+$$
+where $\lVert c_i\mathbf q_i\rVert^2 = c_i^2\lVert\mathbf q_i\rVert^2$ uses the
+scaling rule for norms ($\lVert c\mathbf v\rVert = |c|\,\lVert\mathbf v\rVert$, from
+GEOM-4), and the final step uses $\lVert\mathbf q_i\rVert = 1$. Substituting
+$c_i = \mathbf q_i^\top\mathbf x$ gives the right-hand form. $\qquad\blacksquare$
+:::
+
+@eq-parseval says the squared length of a vector equals the sum of the squares of its
+orthonormal coordinates — the $n$-dimensional Pythagoras for $n$ perpendicular legs. In
+Fourier language it is "the energy of a signal equals the sum of the energies of its
+frequency components"; in statistics it underlies why an orthonormal change of basis
+preserves total variance. It is the same theorem dressed for different occasions.
+
+::: {.callout-tip title="You might be asked"}
+*"If I have a matrix $Q$ whose columns are orthonormal, what makes it so convenient?"* Two
+facts, both restatements of @eq-kron. Stack the orthonormal vectors as the columns of an
+$n\times k$ matrix $Q = [\,\mathbf q_1\ \cdots\ \mathbf q_k\,]$. The $(i,j)$ entry of the
+product $Q^\top Q$ is the dot product of column $i$ with column $j$ — i.e.
+$\mathbf q_i^\top\mathbf q_j = \delta_{ij}$ — so $Q^\top Q = I_k$, the $k\times k$ identity.
+That single equation $Q^\top Q = I$ *is* orthonormal columns, and it is why the coordinate
+formula @eq-onb-coords reads, in matrix form, $\mathbf c = Q^\top\mathbf x$: applying
+$Q^\top$ is reading off all the dot-product coordinates at once. When $Q$ is square
+($k=n$) it is called an **orthogonal matrix**, and then $Q^\top Q = I$ also gives
+$Q^{-1} = Q^\top$ — the inverse is free, just the transpose. The full matrix-algebra
+development of this is [GEOM-10]/[GEOM-11]; here we have derived its geometric content from
+the dot product alone.
+:::
+
+@fig-onb-3d shows the coordinate formula working in three dimensions, where you can still
+just barely see it.
+
+```{python}
+#| label: fig-onb-3d
+#| fig-cap: "Coordinates as dot products in $\\mathbb R^3$. An orthonormal basis $\\{\\mathbf{q}_1,\\mathbf{q}_2,\\mathbf{q}_3\\}$ (red, green, purple) and a vector $\\mathbf{x}$ (black). Each coordinate $c_i=\\mathbf{q}_i^\\top\\mathbf{x}$ is computed independently — no system to solve — and reconstructs $\\mathbf{x}$ exactly as $c_1\\mathbf{q}_1+c_2\\mathbf{q}_2+c_3\\mathbf{q}_3$. The printout confirms the reconstruction and Parseval's identity $\\lVert\\mathbf{x}\\rVert^2=\\sum c_i^2$ to machine precision."
+# Build an orthonormal basis of R^3 via QR of a random matrix (Gram-Schmidt under the hood).
+rng = np.random.default_rng(3)
+Q, _ = np.linalg.qr(rng.standard_normal((3, 3)))
+q1, q2, q3 = Q[:, 0], Q[:, 1], Q[:, 2]
+x = np.array([1.4, -0.8, 1.1])
+c = Q.T @ x                      # coordinates = dot products, all at once
+
+fig = plt.figure(figsize=(6.2, 5.0))
+ax = fig.add_subplot(111, projection="3d")
+O = np.zeros(3)
+for v, col, lab in [(q1, ARROW, r"$\mathbf{q}_1$"), (q2, ACCENT, r"$\mathbf{q}_2$"),
+                    (q3, PURPLE, r"$\mathbf{q}_3$")]:
+    ax.quiver(*O, *v, color=col, lw=2.2, arrow_length_ratio=0.12)
+    ax.text(*(v*1.12), lab, color=col, fontsize=12)
+ax.quiver(*O, *x, color="black", lw=2.6, arrow_length_ratio=0.1)
+ax.text(*(x*1.05), r"$\mathbf{x}$", fontsize=13)
+ax.set_xlim(-1.3, 1.6); ax.set_ylim(-1.3, 1.6); ax.set_zlim(-1.3, 1.6)
+ax.set_xlabel("axis 1"); ax.set_ylabel("axis 2"); ax.set_zlabel("axis 3")
+ax.set_title("Each coordinate is one dot product")
+ax.view_init(elev=22, azim=35)
+plt.tight_layout()
+
+recon = c[0]*q1 + c[1]*q2 + c[2]*q3
+print(f"coordinates c = q_i^T x      : {np.round(c, 4)}")
+print(f"reconstruction error          : {np.linalg.norm(recon - x):.2e}  (≈ 0)")
+print(f"||x||^2                        : {x @ x:.6f}")
+print(f"sum c_i^2  (Parseval)          : {c @ c:.6f}")
+print(f"Q^T Q (should be identity):\n{np.round(Q.T @ Q, 6)}")
+```
+
+## The orthogonal complement and the decomposition theorem {#sec-complement}
+
+The final stage is the bridge to the keystone [GEOM-6]. So far we have worked *inside* a
+subspace. Now we ask how a subspace sits inside the whole space — and the answer is the
+single fact least squares stands on.
+
+::: {#def-complement}
+**Definition (orthogonal complement).** Let $W$ be a subspace of $\mathbb R^n$. Its
+**orthogonal complement**, written $W^\perp$ (read "$W$ perp"), is the set of all vectors
+orthogonal to *every* vector in $W$:
+$$
+W^\perp = \{\,\mathbf z\in\mathbb R^n : \mathbf z^\top\mathbf w = 0 \text{ for all }
+\mathbf w\in W\,\} .
+$$ {#eq-def-complement}
+:::
+
+A picture nails it: if $W$ is a plane through the origin in $\mathbb R^3$, then $W^\perp$
+is the single line through the origin perpendicular to that plane — the plane's normal
+direction. If $W$ is a line, $W^\perp$ is the whole perpendicular plane. In each case $W$
+and $W^\perp$ together "use up" all the directions of the space, and they share only the
+origin. @fig-complement draws the plane-and-normal case.
+
+Two quick facts make $W^\perp$ usable, and we prove both rather than wave at them.
+
+::: {#lem-complement-basics}
+**Lemma.** (a) $W^\perp$ is a subspace of $\mathbb R^n$. (b) To check that a vector
+$\mathbf z$ lies in $W^\perp$, it suffices to check $\mathbf z^\top\mathbf w_i = 0$ against
+a *basis* $\{\mathbf w_1,\dots,\mathbf w_m\}$ of $W$, not against every vector of $W$.
+:::
+
+::: {.proof}
+**(a)** A subspace must contain $\mathbf 0$ and be closed under addition and scalar
+multiplication ([GEOM-2]). First, $\mathbf 0\in W^\perp$ because
+$\mathbf 0^\top\mathbf w = 0$ for all $\mathbf w$. Next, take
+$\mathbf z_1,\mathbf z_2\in W^\perp$ and any scalars $a,b$. For every $\mathbf w\in W$,
+linearity of the dot product gives
+$$
+(a\mathbf z_1 + b\mathbf z_2)^\top\mathbf w
+= a\,(\mathbf z_1^\top\mathbf w) + b\,(\mathbf z_2^\top\mathbf w)
+= a\cdot 0 + b\cdot 0 = 0 ,
+$$
+so $a\mathbf z_1 + b\mathbf z_2\in W^\perp$. Closure holds; $W^\perp$ is a subspace.
+
+**(b)** If $\mathbf z^\top\mathbf w = 0$ for all $\mathbf w\in W$ then in particular it
+holds for the basis vectors, so that direction is trivial. Conversely, suppose
+$\mathbf z^\top\mathbf w_i = 0$ for each basis vector $\mathbf w_i$. Any $\mathbf w\in W$ is
+some combination $\mathbf w = \sum_{i=1}^m a_i\mathbf w_i$ (that is what "basis" means), and
+then
+$$
+\mathbf z^\top\mathbf w = \mathbf z^\top\Bigl(\sum_{i=1}^m a_i\mathbf w_i\Bigr)
+= \sum_{i=1}^m a_i\,(\mathbf z^\top\mathbf w_i) = \sum_{i=1}^m a_i\cdot 0 = 0 .
+$$
+So orthogonality to the basis propagates to orthogonality to all of $W$. Checking $m$ dot
+products suffices. $\qquad\blacksquare$
+:::
+
+Part (b) is the practical workhorse — it means "perpendicular to a plane" can be verified
+against two spanning vectors instead of the infinitely many vectors of the plane, and it is
+exactly the trick the normal equations of [GEOM-6] use ("residual orthogonal to every
+column" rather than "to the whole column space"). Now the theorem the keystone is built on.
+
+::: {#thm-decomposition}
+**Theorem (orthogonal decomposition).** Let $W$ be a subspace of $\mathbb R^n$. Then every
+vector $\mathbf x\in\mathbb R^n$ can be written in **exactly one** way as
+$$
+\mathbf x = \mathbf w + \mathbf z,
+\qquad \mathbf w\in W,\quad \mathbf z\in W^\perp .
+$$ {#eq-decomp}
+The piece $\mathbf w$ is called the **orthogonal projection** of $\mathbf x$ onto $W$.
+:::
+
+::: {.proof}
+There are two claims — *existence* (such a split is possible) and *uniqueness* (there is
+only one). We prove both constructively, and the construction is exactly the coordinate
+formula @eq-onb-coords, which is why this article had to come before GEOM-6.
+
+**Existence.** Let $k = \dim W$. Choose an orthonormal basis
+$\{\mathbf q_1,\dots,\mathbf q_k\}$ of $W$. (Such a basis *exists*: any subspace has a basis
+by [GEOM-3], and Gram–Schmidt, [GEOM-7], converts any basis into an orthonormal one — we
+flag that machine here and build it next in the track; nothing in this proof needs its
+internals, only that an orthonormal basis of $W$ exists.) Define
+$$
+\mathbf w = \sum_{i=1}^k (\mathbf q_i^\top\mathbf x)\,\mathbf q_i ,
+\qquad
+\mathbf z = \mathbf x - \mathbf w .
+$$
+By construction $\mathbf w$ is a linear combination of the $\mathbf q_i$, so
+$\mathbf w\in W$, and $\mathbf x = \mathbf w + \mathbf z$ trivially. The work is showing
+$\mathbf z\in W^\perp$. By @lem-complement-basics(b) it is enough to check $\mathbf z$ is
+orthogonal to each basis vector $\mathbf q_j$. Compute, using linearity and then
+orthonormality $\mathbf q_j^\top\mathbf q_i = \delta_{ji}$:
+$$
+\mathbf q_j^\top\mathbf z
+= \mathbf q_j^\top\mathbf x - \mathbf q_j^\top\mathbf w
+= \mathbf q_j^\top\mathbf x - \sum_{i=1}^k (\mathbf q_i^\top\mathbf x)\,
+  \underbrace{(\mathbf q_j^\top\mathbf q_i)}_{=\,\delta_{ji}}
+= \mathbf q_j^\top\mathbf x - (\mathbf q_j^\top\mathbf x) = 0 .
+$$
+(The sum collapsed to its single $i=j$ term, $(\mathbf q_j^\top\mathbf x)\cdot 1$, the same
+probe as always.) So $\mathbf z\perp\mathbf q_j$ for every $j$, hence $\mathbf z\in W^\perp$.
+The split exists.
+
+**Uniqueness.** Suppose $\mathbf x$ had *two* such splits,
+$$
+\mathbf x = \mathbf w_1 + \mathbf z_1 = \mathbf w_2 + \mathbf z_2,
+\qquad \mathbf w_1,\mathbf w_2\in W,\quad \mathbf z_1,\mathbf z_2\in W^\perp .
+$$
+Rearrange the equality $\mathbf w_1 + \mathbf z_1 = \mathbf w_2 + \mathbf z_2$ into
+$$
+\underbrace{\mathbf w_1 - \mathbf w_2}_{\text{call it }\mathbf d}
+= \underbrace{\mathbf z_2 - \mathbf z_1}_{\text{same vector }\mathbf d} .
+$$
+The left side is a difference of vectors in $W$, so $\mathbf d\in W$ (a subspace is closed
+under subtraction). The right side is a difference of vectors in $W^\perp$, so the *same*
+vector $\mathbf d\in W^\perp$. A vector lying in both $W$ and $W^\perp$ must be orthogonal
+to itself: $\mathbf d\in W^\perp$ means $\mathbf d$ is orthogonal to everything in $W$, and
+$\mathbf d\in W$, so in particular $\mathbf d^\top\mathbf d = 0$. But
+$\mathbf d^\top\mathbf d = \lVert\mathbf d\rVert^2$, and the only vector with zero length is
+$\mathbf 0$ (from GEOM-4: $\lVert\mathbf d\rVert = 0\Rightarrow\mathbf d=\mathbf 0$). Hence
+$\mathbf d = \mathbf 0$, which forces $\mathbf w_1 = \mathbf w_2$ and
+$\mathbf z_1 = \mathbf z_2$. The two splits were the same; the decomposition is unique.
+$\qquad\blacksquare$
+:::
+
+This is the theorem the rest of the series cashes in. The keystone [GEOM-6] will ask: given
+a point $\mathbf x$ and a subspace $W$, what is the *closest* point of $W$ to $\mathbf x$?
+@thm-decomposition already names the answer — it is $\mathbf w$, the in-$W$ piece — and
+the perpendicular piece $\mathbf z$ is the *residual*, the part of $\mathbf x$ that $W$
+cannot reach. GEOM-6 proves $\mathbf w$ is genuinely the nearest point (using Pythagoras,
+@eq-pythagoras, on the residual) and packages the computation as the projection matrix. We
+have built the foundation; the building goes up next door.
+
+```{python}
+#| label: fig-complement
+#| fig-cap: "Orthogonal decomposition in $\\mathbb R^3$. The subspace $W$ is a plane through the origin (grey); its orthogonal complement $W^\\perp$ is the normal line (purple). An arbitrary vector $\\mathbf{x}$ (black) splits uniquely as $\\mathbf{x}=\\mathbf{w}+\\mathbf{z}$: the in-plane part $\\mathbf{w}\\in W$ (green) and the perpendicular part $\\mathbf{z}\\in W^\\perp$ (red), which meet $W$ at a right angle. $\\mathbf{w}$ is the closest point of the plane to $\\mathbf{x}$ — the projection the keystone GEOM-6 computes."
+rng = np.random.default_rng(1)
+# Plane W = span(w1, w2), orthonormalized
+B = rng.standard_normal((3, 2))
+Qw, _ = np.linalg.qr(B)          # orthonormal basis of the plane
+n = np.cross(Qw[:, 0], Qw[:, 1]) # normal direction
+n = n / np.linalg.norm(n)
+x = np.array([1.0, 1.3, 1.6])
+w = Qw @ (Qw.T @ x)              # in-plane part
+z = x - w                        # perpendicular part
+
+fig = plt.figure(figsize=(6.4, 5.2))
+ax = fig.add_subplot(111, projection="3d")
+# draw plane patch
+s = np.linspace(-1.8, 1.8, 2)
+S, T = np.meshgrid(s, s)
+P = (S[..., None]*Qw[:, 0] + T[..., None]*Qw[:, 1])
+ax.plot_surface(P[..., 0], P[..., 1], P[..., 2], color=GREY, alpha=0.18, linewidth=0)
+O = np.zeros(3)
+ax.quiver(*O, *x, color="black", lw=2.6, arrow_length_ratio=0.08)
+ax.quiver(*O, *w, color=ACCENT, lw=2.4, arrow_length_ratio=0.1)
+ax.quiver(*w, *z, color=ARROW, lw=2.2, arrow_length_ratio=0.15)
+ax.quiver(*O, *(1.7*n), color=PURPLE, lw=2.0, arrow_length_ratio=0.12, alpha=0.9)
+ax.text(*(x*1.04), r"$\mathbf{x}$", fontsize=13)
+ax.text(*(w*1.05 + [0, 0, -0.15]), r"$\mathbf{w}\in W$", color=ACCENT, fontsize=12)
+ax.text(*((w + z*0.5) + [0.12, 0.0, 0.0]), r"$\mathbf{z}\in W^\perp$", color=ARROW, fontsize=12)
+ax.text(*(1.75*n), r"$W^\perp$", color=PURPLE, fontsize=12)
+ax.text(1.4, -1.6, -0.2, r"$W$", color=GREY, fontsize=13)
+ax.set_xlim(-1.8, 1.8); ax.set_ylim(-1.8, 1.8); ax.set_zlim(-1.2, 2.0)
+ax.set_xlabel("axis 1"); ax.set_ylabel("axis 2"); ax.set_zlabel("axis 3")
+ax.set_title("$\\mathbf{x} = \\mathbf{w} + \\mathbf{z}$, the unique split")
+ax.view_init(elev=20, azim=-60)
+plt.tight_layout()
+
+print(f"w . z  (should be 0, w perp z) : {w @ z:.2e}")
+print(f"||x||^2                         : {x @ x:.4f}")
+print(f"||w||^2 + ||z||^2  (Pythagoras) : {w @ w + z @ z:.4f}")
+```
+
+The printout under @fig-complement is worth a sentence: it verifies $\mathbf w^\top\mathbf z
+= 0$ (the two pieces really are perpendicular) and that
+$\lVert\mathbf x\rVert^2 = \lVert\mathbf w\rVert^2 + \lVert\mathbf z\rVert^2$ — the
+decomposition obeys Pythagoras, because $\mathbf w\perp\mathbf z$. The split and the
+Pythagorean theorem are the same geometry seen from two angles.
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on real, honest data — including one case at the edge, where
+"orthonormal" is the wrong thing to demand and the technique strains.
+
+## Example 1 — orthonormal coordinates beat a skewed basis, in numbers {#sec-ex-skewed}
+
+The abstract claim of @sec-coords is that an orthonormal basis turns a coordinate-finding
+*linear solve* into a list of dot products. Let us watch that happen on a concrete plane in
+$\mathbb R^4$ and confirm the two routes agree.
+
+Take a subspace $W\subset\mathbb R^4$ spanned by two genuinely non-perpendicular vectors —
+say two correlated feature directions. We want the coordinates of a vector $\mathbf x\in W$
+in (a) the original skewed basis, which requires solving a $2\times2$ system, and (b) an
+orthonormal basis of the *same* plane, which requires only dot products.
+
+```{python}
+#| label: fig-ex-skewed
+#| fig-cap: "Two bases for the same plane $W\\subset\\mathbb R^4$. The skewed basis $\\{\\mathbf{v}_1,\\mathbf{v}_2\\}$ requires solving a $2\\times2$ linear system to recover coordinates; the orthonormal basis $\\{\\mathbf{q}_1,\\mathbf{q}_2\\}$ (built by QR from the same two vectors) recovers them with two dot products via @eq-onb-coords. The bar chart shows that the *reconstructed* vector is identical either way — the geometry is the same; only the bookkeeping cost differs. The printout confirms both routes return $\\mathbf{x}$ exactly."
+# A skewed (non-orthogonal) basis of a plane in R^4
+v1 = np.array([2.0, 1.0, 0.0, 1.0])
+v2 = np.array([1.0, 2.0, 1.0, 0.0])
+V = np.column_stack([v1, v2])
+
+# A target vector that lives in the plane: x = 1.5 v1 - 0.7 v2
+true_coeffs = np.array([1.5, -0.7])
+x = V @ true_coeffs
+
+# Route A: skewed basis -> solve the 2x2 normal-style system (V^T V) c = V^T x
+A = V.T @ V
+c_skew = np.linalg.solve(A, V.T @ x)     # coupled solve
+
+# Route B: orthonormal basis of the SAME plane via QR (Gram-Schmidt under the hood)
+Q, _ = np.linalg.qr(V)                    # Q columns span the same plane, orthonormal
+c_onb = Q.T @ x                           # just dot products, no system
+
+recon_skew = V @ c_skew
+recon_onb = Q @ c_onb
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+idx = np.arange(4)
+width = 0.27
+ax.bar(idx - width, x, width, color=POINT, label=r"$\mathbf{x}$ (target)")
+ax.bar(idx, recon_skew, width, color=ARROW, label="from skewed coords (solve)")
+ax.bar(idx + width, recon_onb, width, color=ACCENT, label="from ON coords (dot products)")
+ax.set_xticks(idx); ax.set_xticklabels([f"comp {i+1}" for i in idx])
+ax.set_ylabel("value"); ax.set_title("Same reconstruction, two bookkeeping costs")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print("Skewed basis (need a 2x2 solve):")
+print(f"  V^T V = \n{np.round(A, 3)}    <- off-diagonal {A[0,1]:.2f} != 0, basis is coupled")
+print(f"  coords c_skew = {np.round(c_skew, 4)}   reconstruction err = {np.linalg.norm(recon_skew - x):.2e}")
+print("Orthonormal basis (just dot products):")
+print(f"  Q^T Q = \n{np.round(Q.T @ Q, 6)}   <- identity, basis is decoupled")
+print(f"  coords c_onb  = {np.round(c_onb, 4)}   reconstruction err = {np.linalg.norm(recon_onb - x):.2e}")
+```
+
+Read the two printouts side by side. For the skewed basis, $V^\top V$ has a nonzero
+off-diagonal entry — that number *is* the cross-talk between $\mathbf v_1$ and
+$\mathbf v_2$, and it is exactly why route A had to solve the system
+$(V^\top V)\mathbf c = V^\top\mathbf x$ rather than read coordinates off directly. For the
+orthonormal basis, $Q^\top Q = I$ — no off-diagonal, no cross-talk — so route B's
+coordinates are literally the entries of $Q^\top\mathbf x$, no solve. Both routes
+reconstruct $\mathbf x$ to machine precision, because they describe the *same* plane; the
+only difference is the labor and the numerical conditioning. In two dimensions the saving
+is invisible; in the hundreds of dimensions of a real design matrix it is the difference
+between a stable, fast computation and an ill-conditioned one ([GEOM-26]).
+
+## Example 2 — a real orthonormal basis you use every day: the DCT and image patches {#sec-ex-dct}
+
+Here is an orthonormal basis that powers a technology in your pocket. JPEG compression
+slices an image into $8\times8$ blocks of pixels and re-expresses each block in the
+**discrete cosine transform (DCT)** basis — a set of $64$ fixed "cosine pattern" vectors
+that are *mutually orthogonal*. The whole reason JPEG can compute each coefficient with one
+dot product (and then throw the small ones away) is the orthonormal-coordinate formula
+@eq-onb-coords. We will build a $1$-D version, which is honest and fully visible, and verify
+the orthonormality and the coordinate formula directly.
+
+```{python}
+#| label: fig-dct
+#| fig-cap: "The DCT-II basis for signals of length $N=8$ — eight mutually orthogonal cosine patterns of increasing frequency (top, scaled to unit length). **Bottom left:** the Gram matrix $Q^\\top Q$ of the eight basis vectors is the identity to machine precision (white = 1 on the diagonal, near-black = 0 off it): they form an *orthonormal* basis. **Bottom right:** a sample signal (black) and its reconstruction (green dashed) from coordinates computed purely as dot products $c_i=\\mathbf{q}_i^\\top\\mathbf{x}$ — exact, no linear solve. This is JPEG's coordinate step in one dimension."
+N = 8
+# DCT-II basis vectors, normalized to unit length (an orthonormal basis of R^8)
+Q = np.zeros((N, N))
+for k in range(N):
+    col = np.cos(np.pi * (np.arange(N) + 0.5) * k / N)
+    Q[:, k] = col / np.linalg.norm(col)
+
+# A sample signal (a smooth ramp + a wiggle) and its DCT coordinates
+xsig = np.array([3.0, 3.4, 3.9, 4.1, 3.6, 2.8, 2.3, 2.5])
+coords = Q.T @ xsig               # coordinates = dot products
+recon = Q @ coords                # reconstruct
+
+fig = plt.figure(figsize=(9.0, 6.2))
+gs = fig.add_gridspec(2, 2, height_ratios=[1.1, 1.0])
+
+# top: the basis patterns
+axt = fig.add_subplot(gs[0, :])
+for k in range(N):
+    axt.plot(np.arange(N), Q[:, k] + 0.0*k, marker="o", ms=3, lw=1.4, alpha=0.9,
+             label=f"freq {k}")
+axt.set_title("The eight orthonormal DCT basis vectors (cosine patterns)")
+axt.set_xlabel("sample index"); axt.set_ylabel("amplitude")
+axt.legend(ncol=4, fontsize=8, framealpha=0.9)
+
+# bottom left: Gram matrix
+axg = fig.add_subplot(gs[1, 0])
+im = axg.imshow(Q.T @ Q, cmap="gray_r", vmin=0, vmax=1)
+axg.set_title(r"$Q^\top Q = I$ (orthonormal)")
+axg.set_xlabel("j"); axg.set_ylabel("i")
+fig.colorbar(im, ax=axg, fraction=0.046, pad=0.04)
+
+# bottom right: signal + reconstruction
+axs = fig.add_subplot(gs[1, 1])
+axs.plot(np.arange(N), xsig, color="black", marker="o", lw=2.0, label="signal $\\mathbf{x}$")
+axs.plot(np.arange(N), recon, color=ACCENT, ls="--", marker="s", ms=4, lw=1.8,
+         label="reconstructed")
+axs.set_title("Reconstruct from dot-product coords")
+axs.set_xlabel("sample index"); axs.set_ylabel("value")
+axs.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"max |Q^T Q - I|              : {np.abs(Q.T @ Q - np.eye(N)).max():.2e}  (orthonormal)")
+print(f"reconstruction error         : {np.linalg.norm(recon - xsig):.2e}  (exact)")
+print(f"||x||^2                       : {xsig @ xsig:.4f}")
+print(f"sum of coords^2 (Parseval)    : {coords @ coords:.4f}")
+print(f"DCT coordinates               : {np.round(coords, 3)}")
+```
+
+Three things to notice, each a theorem from @sec-formal made visible. The Gram matrix
+$Q^\top Q$ is the identity (the cosine patterns are orthonormal — @def-orth-set), so the
+coordinates come from dot products with *no solve* (@thm-onb-coords), and the squared
+length of the signal equals the sum of the squared coordinates (Parseval, @eq-parseval —
+the two energy numbers in the printout match). The compression payoff, which belongs to a
+signal-processing course rather than this article, is that for natural images most of those
+$64$ coordinates are tiny and can be coarsely quantized or dropped — but *that we can read,
+zero, and reconstruct each coordinate independently* is purely the orthonormality we proved
+here.
+
+## Example 3 — the edge of applicability: when orthogonality is the wrong demand {#sec-ex-edge}
+
+An honest article shows where the tool strains. Orthonormal bases are not free, and they
+are not always what you want. Here is the most important honest caveat, made concrete.
+
+Consider two real data features that are **strongly correlated** — say height in
+centimetres and height in inches recorded with slight rounding, or two near-duplicate
+sensor channels. As directions in the space of observations they point *almost the same
+way*: the angle between them is tiny, far from $90^\circ$. You might be tempted to
+orthogonalize them (Gram–Schmidt) to get the computational comfort we have been praising.
+Watch what happens.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: "The edge: orthogonalizing nearly-parallel directions is numerically violent. Two feature vectors $\\mathbf{a},\\mathbf{b}$ point almost the same way (angle $\\approx 2.6^\\circ$, left). Gram–Schmidt subtracts $\\mathbf{a}$'s shadow from $\\mathbf{b}$ to make the second orthonormal vector $\\mathbf{q}_2$ (right, purple): because the shadow is almost all of $\\mathbf{b}$, $\\mathbf{q}_2$ is the *tiny leftover difference*, hugely amplified to unit length. Its direction is dominated by noise/rounding in the data — the orthonormal basis exists, but $\\mathbf{q}_2$ is meaningless. This is the geometric face of multicollinearity and ill-conditioning."
+rng = np.random.default_rng(42)
+base = np.array([3.0, 2.0])
+a = base + np.array([0.0, 0.0])
+b = base * 1.0 + np.array([0.10, 0.18])     # nearly parallel to a
+ang = np.degrees(np.arccos((a @ b) / (np.linalg.norm(a) * np.linalg.norm(b))))
+
+# Gram-Schmidt: q1 from a, q2 from b minus its shadow on q1
+q1 = a / np.linalg.norm(a)
+b_shadow = (q1 @ b) * q1
+b_perp = b - b_shadow
+q2 = b_perp / np.linalg.norm(b_perp)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.2))
+for ax in (axL, axR):
+    ax.set_aspect("equal"); ax.set_xlim(-0.6, 3.8); ax.set_ylim(-0.6, 2.8)
+
+axL.annotate("", xy=a, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ARROW, lw=2.4))
+axL.annotate("", xy=b, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2.4))
+axL.text(*(a + [0.05, -0.2]), r"$\mathbf{a}$", color=ARROW, fontsize=13)
+axL.text(*(b + [0.05, 0.12]), r"$\mathbf{b}$", color=ACCENT, fontsize=13)
+axL.set_title(f"Two near-parallel features (angle {ang:.1f}$^\\circ$)")
+
+axR.annotate("", xy=q1, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=ARROW, lw=2.4))
+axR.annotate("", xy=b, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=GREY, lw=1.6))
+axR.annotate("", xy=b, xytext=b_shadow, arrowprops=dict(arrowstyle="-|>", color=PURPLE, lw=1.6))
+axR.annotate("", xy=q2, xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=PURPLE, lw=2.6))
+axR.text(*(q1 + [0.05, -0.22]), r"$\mathbf{q}_1$", color=ARROW, fontsize=12)
+axR.text(*(q2 + [-0.5, 0.08]), r"$\mathbf{q}_2$ (amplified leftover)", color=PURPLE, fontsize=10)
+axR.text(*(b + [0.05, 0.12]), r"$\mathbf{b}$", color=GREY, fontsize=12)
+axR.set_title("Gram–Schmidt: $\\mathbf{q}_2$ is the fragile remainder")
+plt.tight_layout()
+
+print(f"angle between a and b           : {ang:.2f} degrees (far from 90)")
+print(f"||b - shadow|| (the leftover)   : {np.linalg.norm(b_perp):.4f}  (tiny)")
+print(f"||b||                            : {np.linalg.norm(b):.4f}")
+print(f"q2 = leftover / ||leftover||, so a small perturbation of b swings q2's direction wildly")
+```
+
+The orthonormal basis $\{\mathbf q_1,\mathbf q_2\}$ *exists* — the theorems of this article
+never lied. But $\mathbf q_2$ was manufactured by subtracting almost all of $\mathbf b$ away
+and then blowing the tiny remainder up to unit length. A whisker of measurement noise in
+$\mathbf b$ would point that remainder in an entirely different direction. So the
+orthonormal coordinates of any vector along $\mathbf q_2$ are numerically untrustworthy.
+
+**The honest lesson, and what you reach for instead.** Orthonormality is a property of the
+*basis you choose*, not of the data, and forcing it onto nearly-dependent directions does
+not create information that was not there — it just relocates the instability into one
+fragile basis vector. When features are near-collinear, the right responses are not "make
+them orthogonal and proceed" but: **regularize** (ridge regression adds $\lambda I$ to
+stabilize the solve — [REGR-7], [REGR-14]), **drop or combine** the redundant feature, or
+use the **SVD** ([GEOM-20], [GEOM-21]), which exposes exactly which directions are
+well-determined and which are noise by their singular values, and lets you discard the
+fragile ones honestly. The condition number that quantifies all of this is [GEOM-26]. The
+orthonormal-basis machinery is golden when the directions you orthogonalize are genuinely
+distinct; it is a trap when they are not, and a good practitioner checks the angle (or the
+singular values) before trusting the result.
+
+# Failure modes and boundaries {#sec-failure}
+
+Collecting the honest edges, several of which the examples already exposed.
+
+::: {.callout-warning title="Pitfall"}
+**An orthonormal basis exists for any subspace, but computing one is not always
+trustworthy.** Three traps, in order of how often they bite:
+
+1. **Near-collinear directions (Example 3).** Orthogonalizing nearly-parallel vectors
+   produces a legitimate orthonormal basis whose later vectors are dominated by noise. The
+   basis is mathematically valid and numerically worthless. Diagnose with the angle between
+   the vectors, or — at scale — the condition number / singular values ([GEOM-26],
+   [GEOM-20]). Fix by regularizing, dropping features, or using the SVD.
+2. **"Orthogonal" $\neq$ "uncorrelated" unless you centre first.** In statistics, two data
+   vectors are *uncorrelated* when their **mean-centred** versions are orthogonal, not the
+   raw vectors. Two all-positive features can have a large dot product (hence look far from
+   orthogonal) yet be statistically uncorrelated once their means are removed. Know which
+   space you are in — raw $\mathbb R^n$ or the mean-centred subspace — before reading
+   "orthogonal" as "unrelated." (Covariance geometry is Probability's to own; the warning
+   is geometric.)
+3. **Orthonormal $\neq$ orthogonal.** An *orthogonal set* only requires perpendicularity;
+   an *orthonormal set* also requires unit length. The coordinate formula
+   $c_i = \mathbf q_i^\top\mathbf x$ needs the *normal* part — for a merely orthogonal
+   (not normalized) basis the formula is $c_i = (\mathbf u_i^\top\mathbf x)/\lVert\mathbf
+   u_i\rVert^2$, with the extra denominator. Forgetting the normalization silently rescales
+   every coordinate.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When is it worth converting to an orthonormal basis, and when is it a waste?"* Convert
+when you will **reuse** the basis for many coordinate computations or projections (a fixed
+DCT/Fourier basis, a fixed orthonormal basis of a model's column space) — the one-time
+Gram–Schmidt/QR cost is amortized and every subsequent coordinate is a cheap, stable dot
+product. Do **not** bother when (a) you need coordinates in one specific, meaningful
+non-orthogonal basis (the original features carry interpretation that orthogonalizing
+destroys), or (b) the directions are near-collinear, where orthogonalization manufactures a
+fragile basis (Example 3). And note that for the single most common task — projecting onto
+a subspace for least squares — you do not *need* an explicit orthonormal basis at all; the
+normal equations of [GEOM-6] work in the original basis, and an orthonormal basis is the
+*optional* upgrade that makes the projection $P = QQ^\top$ instead of
+$P = A(A^\top A)^{-1}A^\top$. Cheaper and stabler, but a choice, not a requirement.
+:::
+
+One more boundary worth stating plainly, because it is a common source of confusion. The
+decomposition theorem @thm-decomposition is about **orthogonal** complements with respect
+to the **standard** dot product. If you change the inner product — weight some coordinates
+more than others, as generalized least squares does with a covariance matrix ([REGR-11],
+[GEOM-19]) — then "orthogonal" changes meaning, and the perpendicular complement rotates
+with it. The geometry of this article is correct for *whatever* inner product you fix at
+the start, but you must fix one; "orthogonal" is always *orthogonal with respect to a chosen
+inner product*, never an absolute.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-4 *The Dot Product*]**, which gave length, angle, and the relation
+$\mathbf x^\top\mathbf y = \lVert\mathbf x\rVert\lVert\mathbf y\rVert\cos\theta$. This
+article followed the special case $\theta = 90^\circ$ to three results — Pythagoras,
+orthonormal coordinates as dot products, and the unique orthogonal decomposition. From
+here:
+
+- **[GEOM-6 *Orthogonal Projection onto a Subspace*]** — the keystone. It takes the in-$W$
+  piece $\mathbf w$ of @thm-decomposition, proves it is the *nearest* point of $W$ to
+  $\mathbf x$ (via Pythagoras on the residual), and builds the projection matrix. Least
+  squares ([REGR-4], [REGR-5]) *is* this projection.
+- **[GEOM-7 *Gram–Schmidt and the QR Decomposition*]** — the machine that builds the
+  orthonormal bases we assumed exist here, one projection at a time, and the $A = QR$
+  factorization that bookkeeps it. The existence step of @thm-decomposition is discharged
+  in full there.
+- **[GEOM-16 *Symmetric Matrices and the Spectral Theorem*]** — the deepest payoff: a real
+  symmetric matrix has an *orthonormal* eigenbasis, so the spectral decomposition
+  $A = Q\Lambda Q^\top$ inherits every gift of this article. PCA, quadratic forms, and
+  second-order optimization all live in that orthonormal eigenbasis.
+- **[GEOM-20 *The Singular Value Decomposition*]** — every matrix maps one orthonormal
+  basis to another, scaled; the SVD is that statement made into a factorization. The
+  near-collinear failure of Example 3 is read off its singular values.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The historical thread.** Fourier's 1822 *Théorie analytique de la chaleur* is the
+  origin of "compute each coefficient by an independent integral against the basis
+  function" — the coordinate formula @eq-onb-coords in an infinite-dimensional inner-product
+  space. Gram (1883) and Schmidt (1907) gave the orthogonalization process that [GEOM-7]
+  builds; the abstraction to general inner-product (Hilbert) spaces is Hilbert and von
+  Neumann's, where Parseval's identity @eq-parseval becomes the defining feature of an
+  orthonormal basis.
+- **The one idea to carry forward.** *Orthogonality turns geometry into arithmetic by
+  killing cross terms.* Every theorem here — independence, Pythagoras, dot-product
+  coordinates, unique decomposition — is the same observation: when directions meet at right
+  angles, the term $\mathbf u_i^\top\mathbf u_j$ vanishes for $i\neq j$, and a tangle of
+  coupled quantities falls apart into independent ones. Keep that single mechanism in view
+  and the rest of the linear-algebra track stops being a list of tricks.
+- **Open threads deliberately deferred.** *How do we actually manufacture an orthonormal
+  basis from a given one?* — Gram–Schmidt, [GEOM-7]. *How do we compute the nearest point in
+  a subspace, and is it really nearest?* — projection, [GEOM-6]. *Which matrices come with a
+  ready-made orthonormal basis attached?* — the symmetric ones, [GEOM-16]. *What is the
+  right orthonormal basis for a non-standard (weighted) inner product?* — generalized least
+  squares and whitening, [REGR-11] and [GEOM-19].

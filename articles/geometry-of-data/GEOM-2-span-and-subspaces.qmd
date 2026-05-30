@@ -1,0 +1,948 @@
+---
+title: "Span and Subspaces"
+subtitle: "Core Sample · Geometry of Data"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# One restrained visual style for every figure in this article, matched to the
+# rest of the Geometry-of-Data track.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+VEC    = "#2b3a67"   # the spanning vectors themselves
+SPAN   = "#c1121f"   # the span (reachable set)
+ACCENT = "#0a7d4d"   # highlights / target points
+GREY   = "#6c757d"
+PALE   = "#9fb3d1"
+
+
+def draw_vec(ax, tail, head, color=VEC, lw=2.4, label=None, z=5):
+    """Draw a 2-D arrow from tail to head with a clean head."""
+    ax.annotate("", xy=head, xytext=tail,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
+                                shrinkA=0, shrinkB=0), zorder=z)
+    if label is not None:
+        mid = 0.5 * (np.asarray(tail) + np.asarray(head))
+        ax.text(head[0], head[1], label, color=color, fontsize=12,
+                ha="left", va="bottom")
+```
+
+> **Where this sits in the track.** This is the third article in the **Geometry of
+> Data** track and the first to ask a question about *whole sets* of vectors rather
+> than one at a time. It assumes [GEOM-0 *What Is a Vector, Really?*] — that a vector
+> is simultaneously an arrow, a list of numbers in $\mathbb{R}^n$, and one row of a
+> dataset — and [GEOM-1 *Adding and Scaling: The Linear Combination*], which gave us
+> the only two operations linear algebra permits and packaged them into the **linear
+> combination** $c_1\mathbf{v}_1 + \cdots + c_k\mathbf{v}_k$. Here we ask what happens
+> when we turn those coefficients loose and let them range over *every* real number.
+> The reachable set we get is the **span**, and the shape it always forms is a
+> **subspace**. This sets up [GEOM-3 *Linear Independence, Basis, and Dimension*]
+> (which spanning sets carry no redundancy), [GEOM-6 *Orthogonal Projection*] (we
+> always project onto a subspace), and [GEOM-12 *The Four Fundamental Subspaces*] (the
+> column space and null space are spans and subspaces by construction).
+
+## Abstract {.unnumbered}
+
+Hand someone a few vectors and the two operations from [GEOM-1] — add, and scale by any
+real number — and ask: *exactly which points can they now reach?* The answer is the
+**span**, the set of all linear combinations of the given vectors. This article shows
+that the span is never an arbitrary blob: it is always a flat sheet through the origin —
+a point, a line, a plane, or a higher-dimensional analogue — a structure we name a
+**subspace**. We define a subspace by two closure properties, prove the span always
+satisfies them, and prove that *every* subspace is the span of some set of vectors, so
+the two ideas are two faces of one object. The single claim the article defends is that
+**the dimension of the span is decided by the vectors' geometric relationships, not by
+how many of them you were handed** — three vectors can span a plane, two can span a line,
+and recognizing when "more vectors" buys you "no more reach" is the linear-algebra core
+of multicollinearity, the failure mode that haunts regression.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **span** of a set of vectors is *everywhere you can get to* by adding and scaling
+them — the set of all their linear combinations. That reachable set is never ragged: it
+is always a **subspace**, a flat region that must pass through the origin and is sealed
+shut under addition and scaling (combine two of its points, or stretch one, and you never
+leave it). How *big* the span is — a line, a plane, a 3-D solid — is set by how the
+vectors point relative to one another, **not** by how many you have. Extra vectors that
+already lie inside what you can reach add nothing.
+:::
+
+Everything below orbits that box. Two ideas live in it, and they turn out to be the same
+idea seen from two directions. **Span** is constructive — *start from vectors, build the
+reachable set.* **Subspace** is descriptive — *here is a set; is it closed and flat?* We
+will prove that every span is a subspace (@thm-span-is-subspace) and that every subspace
+is a span (@thm-subspace-is-span), which is why the track uses the words almost
+interchangeably from here on. Hold onto the last sentence of the box especially: it is
+the seed of @sec-collinear, where two vectors that *look* like they should fill a plane
+collapse to a line — the geometry behind a regression that refuses to give a stable
+answer.
+
+# Why we are here: the problem of "what can I build?" {#sec-why}
+
+Keep one question in view for the whole article: **given the raw materials, what is the
+complete set of things I can build, and what shape does that set have?** Every definition
+and proof below is an answer to some piece of that question.
+
+## The question is older than linear algebra
+
+The span question predates the vocabulary we use for it by a long way. When a 19th-century
+surveyor fixed a location by combining measured displacements — *so far east, so far
+north* — he was implicitly asking which points on the map were reachable from a base
+station using his available directions of travel. When a chemist asked whether a target
+compound could be assembled from a given set of reactant species in fixed proportions, the
+arithmetic of "how many of each" is exactly the arithmetic of linear combinations, and the
+question "can I make this product at all?" is the question "is this target *in the span* of
+my reactants?" The recurring pattern is always the same: a fixed set of building blocks, a
+rule for combining them (scale each, then add), and a question about **reach**.
+
+Hermann Grassmann, in his 1844 *Ausdehnungslehre* ("Theory of Extension"), was the first
+to abstract this pattern away from any particular physical setting. He studied collections
+of "extensive quantities" closed under combination and recognized that the *structure* —
+not the surveyor's displacements or the chemist's reactants — was the real object of
+study. Giuseppe Peano sharpened it into the modern axioms in 1888, and by the early
+twentieth century "the set of all linear combinations" and "a set closed under combination"
+had crystallized into **span** and **subspace**. We inherit Grassmann's insight directly:
+the moment you have building blocks and a combination rule, the set of reachable things has
+a rigid, predictable shape, and naming that shape is most of the battle.
+
+## Why this matters for data, right now
+
+In [GEOM-0] we committed to reading a data table geometrically: each of the $p$ feature
+columns is a direction in space, and each of the $n$ rows is a point. The span question is
+then immediate and unavoidable. The columns of a data matrix are vectors; **the set of all
+their linear combinations is the set of every outcome a linear model could ever predict.**
+When we later fit a regression, the fitted values $\hat{\mathbf{y}}$ are forced to live in
+the span of the predictor columns — that is *all* a linear model can produce. Whether a
+target vector $\mathbf{y}$ can be hit exactly, or only approached, is precisely the
+question "is $\mathbf{y}$ in the span of the columns?" And the dimension of that span — how
+much genuinely independent information the columns carry — is the difference between a
+model that estimates cleanly and one that cannot tell two of its own coefficients apart.
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, why should a working data scientist care about span and subspaces?"*
+Because the span of your feature columns is the entire universe of predictions a linear
+model can make, and the *dimension* of that span is how much non-redundant information your
+features actually carry. When two features are (nearly) linear combinations of others, the
+span does not grow, the model has fewer real degrees of freedom than columns, and
+coefficients become unstable — that is **multicollinearity** ([REGR-7]), and it *is* the
+span collapsing. Everything geometric about why a design matrix is "rank-deficient" is in
+this article.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formal definitions, build the picture with your hands. We are in the plane
+$\mathbb{R}^2$ or in space $\mathbb{R}^3$, and we have a small handful of arrows planted at
+the origin. The rule from [GEOM-1] lets us do exactly two things to them: **stretch or flip
+any arrow by a real factor** (scalar multiplication) and **lay arrows tip-to-tail and read
+off the resulting arrow** (addition). The span is the answer to "sweep every dial": let
+every scaling factor run over all real numbers, add the results in every combination, and
+mark every point you can land on.
+
+Start with **one nonzero vector** $\mathbf{v}$. The only moves are $c\mathbf{v}$ for a real
+number $c$. As $c$ runs from $-\infty$ to $+\infty$, the tip of $c\mathbf{v}$ traces out
+the entire **line through the origin** in the direction of $\mathbf{v}$ — both ways, and
+through the origin itself (at $c=0$). One vector spans a line.
+
+Now take **two vectors** $\mathbf{v}_1, \mathbf{v}_2$. A combination $c_1\mathbf{v}_1 +
+c_2\mathbf{v}_2$ has two independent dials. If the two arrows point in genuinely different
+directions, sweeping both dials fills an entire **plane through the origin**. But — and
+this is the whole drama of the article — if $\mathbf{v}_2$ happens to point along the *same
+line* as $\mathbf{v}_1$ (say $\mathbf{v}_2 = 2\mathbf{v}_1$), then every combination
+$c_1\mathbf{v}_1 + c_2\mathbf{v}_2 = (c_1 + 2c_2)\mathbf{v}_1$ is *still just a multiple of
+$\mathbf{v}_1$*. The second dial buys you nothing. Two vectors, but only a line. @fig-spans
+shows both outcomes side by side.
+
+```{python}
+#| label: fig-spans
+#| fig-cap: "What a span looks like in the plane. **Left:** one vector $\\mathbf{v}$ spans the line of all its multiples $c\\mathbf{v}$ (red), passing through the origin both ways. **Center:** two vectors pointing in different directions span the *entire plane* — every point is reachable, shown by the shaded fill and a sample combination $1.5\\mathbf{v}_1 - 0.5\\mathbf{v}_2$ (green). **Right:** two vectors on the same line ($\\mathbf{v}_2 = 1.8\\,\\mathbf{v}_1$) span only that line — the second vector adds no reach. The number of vectors does not decide the size of the span; their directions do."
+fig, axes = plt.subplots(1, 3, figsize=(9.4, 3.5))
+
+# --- Left: one vector spans a line ---
+ax = axes[0]
+v = np.array([1.4, 0.9])
+ts = np.linspace(-2.4, 2.4, 50)
+line = np.outer(ts, v)
+ax.plot(line[:, 0], line[:, 1], color=SPAN, lw=2.2, label=r"span$\{\mathbf{v}\}$")
+draw_vec(ax, (0, 0), v, color=VEC, label=r"$\mathbf{v}$")
+ax.set_title("one vector: a line")
+ax.set_xlim(-3.5, 3.5); ax.set_ylim(-3, 3)
+
+# --- Center: two independent vectors span the plane ---
+ax = axes[1]
+v1 = np.array([1.6, 0.4])
+v2 = np.array([0.3, 1.5])
+ax.fill([-4, 4, 4, -4], [-4, -4, 4, 4], color=SPAN, alpha=0.10)
+combo = 1.5 * v1 - 0.5 * v2
+draw_vec(ax, (0, 0), v1, color=VEC, label=r"$\mathbf{v}_1$")
+draw_vec(ax, (0, 0), v2, color=VEC, label=r"$\mathbf{v}_2$")
+draw_vec(ax, (0, 0), combo, color=ACCENT)
+ax.text(combo[0], combo[1], r"$1.5\mathbf{v}_1-0.5\mathbf{v}_2$",
+        color=ACCENT, fontsize=9, ha="right", va="top")
+ax.set_title("two directions: the plane")
+ax.set_xlim(-3.5, 3.5); ax.set_ylim(-3, 3)
+
+# --- Right: two collinear vectors span only a line ---
+ax = axes[2]
+v1 = np.array([1.4, 0.9])
+v2 = 1.8 * v1
+ax.plot(line[:, 0], line[:, 1], color=SPAN, lw=2.2)
+draw_vec(ax, (0, 0), v2, color=PALE, label=r"$\mathbf{v}_2=1.8\mathbf{v}_1$")
+draw_vec(ax, (0, 0), v1, color=VEC, label=r"$\mathbf{v}_1$")
+ax.set_title("two collinear: still a line")
+ax.set_xlim(-3.5, 3.5); ax.set_ylim(-3, 3)
+
+for ax in axes:
+    ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+    ax.set_aspect("equal"); ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+Three observations from the picture will become the formal content of the article, so name
+them now:
+
+1. **Every span contains the origin.** Set all the dials to zero and you are back at
+   $\mathbf{0}$. There is no way to build a span that floats off the origin.
+2. **A span is flat and has no edges.** It is a line, a plane, a 3-D solid through the
+   origin — never a curve, never a half-plane, never a region with a boundary. You can
+   always step further along it or combine two of its points and stay inside.
+3. **The size of a span is bounded by the number of vectors but decided by their
+   directions.** $k$ vectors can span *at most* a $k$-dimensional region, and exactly $k$
+   only when none of them is reachable from the others. Redundant directions cost you
+   dimension.
+
+The rest of the article makes each of these precise and proves it. We start with span
+(the construction), define subspace (the shape), prove they coincide, and then spend the
+back half on the honest edge case in observation 3 — the collapse that data scientists
+meet as multicollinearity.
+
+# The formal development {#sec-formal}
+
+## Linear combinations, recalled precisely {#sec-recall}
+
+We lean on one object from [GEOM-1], restated here so nothing is implicit. Throughout,
+**vectors are columns in $\mathbb{R}^n$** (an ordered list of $n$ real numbers, written
+vertically), boldface denotes a vector, and lowercase italics denote real-number scalars.
+
+::: {#def-lincomb}
+**Definition (linear combination).** Given vectors $\mathbf{v}_1,\dots,\mathbf{v}_k \in
+\mathbb{R}^n$ and real scalars $c_1,\dots,c_k \in \mathbb{R}$, the vector
+
+$$
+c_1\mathbf{v}_1 + c_2\mathbf{v}_2 + \cdots + c_k\mathbf{v}_k
+\;=\; \sum_{j=1}^{k} c_j \mathbf{v}_j
+$$ {#eq-lincomb}
+
+is a **linear combination** of the $\mathbf{v}_j$ with **coefficients** (or **weights**)
+$c_j$. The sum and the scalar multiples are taken **componentwise**: the $i$-th entry of
+the result is $\sum_{j=1}^k c_j (\mathbf{v}_j)_i$, where $(\mathbf{v}_j)_i$ is the $i$-th
+entry of $\mathbf{v}_j$.
+:::
+
+Two facts about @eq-lincomb, both established in [GEOM-1], are the only algebra we need and
+we will invoke them by name:
+
+- **Closure of the combination form.** Adding two linear combinations of the same vectors,
+  or scaling one, produces another linear combination of those same vectors — because
+  componentwise addition and scalar multiplication of real numbers stay real. We re-derive
+  exactly this when we prove @thm-span-is-subspace, so it is not assumed silently.
+- **The zero combination.** Taking every $c_j = 0$ gives $\sum_j 0\cdot\mathbf{v}_j =
+  \mathbf{0}$, the zero vector (all entries zero). This is the single fact behind "every
+  span contains the origin."
+
+## Span: the set of everything reachable {#sec-span-def}
+
+::: {#def-span}
+**Definition (span).** The **span** of vectors $\mathbf{v}_1,\dots,\mathbf{v}_k \in
+\mathbb{R}^n$ is the set of *all* their linear combinations:
+
+$$
+\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}
+\;=\;
+\Bigl\{\, \sum_{j=1}^{k} c_j \mathbf{v}_j \;:\; c_1,\dots,c_k \in \mathbb{R} \,\Bigr\}.
+$$ {#eq-span}
+
+A vector $\mathbf{w}$ **is in the span** (we write $\mathbf{w} \in
+\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$) if and only if there exist real
+coefficients $c_1,\dots,c_k$ with $\mathbf{w} = \sum_j c_j \mathbf{v}_j$.
+:::
+
+Read the set-builder notation in @eq-span slowly, because it carries the entire idea. The
+expression to the left of the colon, $\sum_j c_j \mathbf{v}_j$, is the *shape* of a typical
+element. The condition to the right of the colon, "$c_1,\dots,c_k \in \mathbb{R}$," says
+the coefficients range over **all** real numbers, independently. The braces collect every
+vector you obtain as the dials sweep their full range. So the span is not one combination —
+it is the entire catalogue of them.
+
+A second, equally important reading: **"$\mathbf{w}$ is in the span" is exactly the
+question "does a certain system of linear equations have a solution?"** Writing each vector
+out by components, $\mathbf{w} = \sum_j c_j\mathbf{v}_j$ is $n$ scalar equations (one per
+entry) in the $k$ unknowns $c_1,\dots,c_k$. The vector $\mathbf{w}$ is reachable precisely
+when those equations are *consistent* — when some assignment of weights solves them. This
+is the bridge from the geometric word *span* to the computational world of solving
+$A\mathbf{c} = \mathbf{w}$, which the track makes fully explicit in [GEOM-8] (a matrix
+times a vector *is* a linear combination of the matrix's columns) and [GEOM-11] (when that
+system has a solution). We will use this reading in @sec-membership to *test* membership by
+hand.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the span a finite set, an infinite set, or what?"* For any nonzero vector it is
+**infinite** — uncountably so — because the coefficients range over all of $\mathbb{R}$,
+a continuum. The only finite span is $\operatorname{span}\{\mathbf{0}\} = \{\mathbf{0}\}$,
+a single point. Do not picture the span as "the $k$ vectors you were handed plus a few
+combinations"; picture it as the *entire continuous sheet* they sweep out.
+:::
+
+## Subspace: the shape a span always has {#sec-subspace-def}
+
+We now define the kind of *shape* a span turns out to be, independently of any particular
+spanning vectors. The definition isolates the two structural properties we read off the
+pictures in @sec-intuition: a subspace is a set you cannot escape by combining or scaling
+its own members.
+
+::: {#def-subspace}
+**Definition (subspace of $\mathbb{R}^n$).** A set $V \subseteq \mathbb{R}^n$ is a
+**subspace** if it satisfies all three conditions:
+
+1. **(Contains the origin.)** $\mathbf{0} \in V$.
+2. **(Closed under addition.)** If $\mathbf{u} \in V$ and $\mathbf{w} \in V$, then
+   $\mathbf{u} + \mathbf{w} \in V$.
+3. **(Closed under scalar multiplication.)** If $\mathbf{u} \in V$ and $c \in \mathbb{R}$,
+   then $c\,\mathbf{u} \in V$.
+:::
+
+The word *closed* means exactly what it says in plain English: the operation cannot take
+you out of the set. Add two members — still inside. Scale a member — still inside. The
+geometric translation of these three rules is the heart of the matter and worth stating in
+words: **a subspace is a flat object (no curving, since combinations of its points stay
+inside) that has no boundary (you can always scale further) and is pinned to the origin.**
+Lines and planes *through the origin* qualify; a line that misses the origin does not, and
+neither does any curve, any line segment, or any region with an edge.
+
+::: {.callout-warning title="Pitfall"}
+**Condition 1 is not optional decoration, and a set can fail it loudly.** Consider the line
+$y = x + 1$ in $\mathbb{R}^2$ — points of the form $(t,\,t+1)$. It is perfectly flat and
+straight, so it *looks* like it should be a subspace. It is not: it does not pass through
+the origin ($\mathbf{0} = (0,0)$ would need $0 = 0 + 1$, false). And it fails closure too —
+add $(0,1)$ and $(1,2)$, both on the line, and you get $(1,3)$, which is *not* on the line
+($3 \neq 1+1$). A flat set that misses the origin is an **affine** set, not a subspace; the
+two are constantly confused. The fix, when you meet such a set in practice (e.g. a
+regression line, or data that has not been centered), is to *translate it to the origin* —
+exactly the "subtract the mean" centering move that the data tracks use before applying any
+of this machinery. After centering, the affine set becomes a genuine subspace.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why are conditions 2 and 3 stated separately — isn't closure under scaling implied by
+closure under addition?"* No. Addition lets you reach $\mathbf{u}+\mathbf{u} = 2\mathbf{u}$,
+$3\mathbf{u}$, and so on — but only **integer** (in fact only positive-integer, then with
+condition 1 the zero) multiples, by repeated addition. It does **not** give you
+$\tfrac{1}{2}\mathbf{u}$ or $-\sqrt{2}\,\mathbf{u}$. Scalar closure (condition 3) is what
+guarantees the *whole continuous line* through each point, including fractional and
+negative and irrational multiples. The two conditions together are equivalent to the
+single statement "closed under linear combinations," which is the form we prove next. And
+condition 1 is not redundant either in the strictest reading: the **empty set** is
+vacuously closed under both operations but is not a subspace — requiring $\mathbf{0}\in V$
+rules it out. (When $V$ is nonempty, condition 1 does follow from condition 3 by taking
+$c=0$; we list it anyway to make "contains the origin" impossible to forget.)
+:::
+
+## Span is a subspace {#sec-span-is-subspace}
+
+The first half of "span and subspace are the same object" is to show every span satisfies
+@def-subspace. We prove it in full; every closure check is on the page.
+
+::: {#thm-span-is-subspace}
+**Theorem (every span is a subspace).** For any vectors
+$\mathbf{v}_1,\dots,\mathbf{v}_k \in \mathbb{R}^n$, the set
+$V = \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$ is a subspace of
+$\mathbb{R}^n$.
+:::
+
+::: {.proof}
+We verify the three conditions of @def-subspace one at a time.
+
+**Condition 1 — the origin is in $V$.** Choose every coefficient to be zero. By @eq-span
+with $c_1 = \cdots = c_k = 0$,
+
+$$
+\sum_{j=1}^k 0\cdot\mathbf{v}_j = \mathbf{0},
+$$
+
+so $\mathbf{0}$ is a linear combination of the $\mathbf{v}_j$ and therefore $\mathbf{0}
+\in V$. (This is the "zero combination" fact from @sec-recall, used explicitly.)
+
+**Condition 2 — closed under addition.** Take any two members $\mathbf{u}, \mathbf{w} \in
+V$. By the definition of the span, *being in $V$ means being writable as a combination*, so
+there exist real coefficients $a_1,\dots,a_k$ and $b_1,\dots,b_k$ with
+
+$$
+\mathbf{u} = \sum_{j=1}^k a_j \mathbf{v}_j,
+\qquad
+\mathbf{w} = \sum_{j=1}^k b_j \mathbf{v}_j .
+$$
+
+Add them, and group the two sums term by term — legal because vector addition is done
+componentwise and real addition is associative and commutative (the vector-space rules from
+[GEOM-1]):
+
+$$
+\mathbf{u} + \mathbf{w}
+= \sum_{j=1}^k a_j \mathbf{v}_j + \sum_{j=1}^k b_j \mathbf{v}_j
+= \sum_{j=1}^k \bigl(a_j \mathbf{v}_j + b_j \mathbf{v}_j\bigr)
+= \sum_{j=1}^k (a_j + b_j)\,\mathbf{v}_j .
+$$
+
+The last equality factors $\mathbf{v}_j$ out of each pair using the distributive rule
+$a_j\mathbf{v}_j + b_j\mathbf{v}_j = (a_j+b_j)\mathbf{v}_j$ (again from [GEOM-1]). Now define
+$c_j = a_j + b_j$. Each $c_j$ is a sum of two real numbers, hence a real number. So
+
+$$
+\mathbf{u} + \mathbf{w} = \sum_{j=1}^k c_j \mathbf{v}_j
+$$
+
+is a linear combination of the $\mathbf{v}_j$ with real coefficients — which is precisely
+the definition of belonging to $V$. Therefore $\mathbf{u} + \mathbf{w} \in V$.
+
+**Condition 3 — closed under scalar multiplication.** Take any member $\mathbf{u} \in V$,
+say $\mathbf{u} = \sum_{j=1}^k a_j \mathbf{v}_j$, and any real number $c$. Scale:
+
+$$
+c\,\mathbf{u}
+= c\sum_{j=1}^k a_j \mathbf{v}_j
+= \sum_{j=1}^k c\,(a_j \mathbf{v}_j)
+= \sum_{j=1}^k (c\,a_j)\,\mathbf{v}_j .
+$$
+
+The first equality pulls the scalar $c$ inside the sum (scalar multiplication distributes
+over vector addition); the second regroups $c(a_j\mathbf{v}_j) = (ca_j)\mathbf{v}_j$ by the
+associativity of scalar multiplication — both [GEOM-1] rules. Each new coefficient $ca_j$
+is a product of two reals, hence real. So $c\mathbf{u}$ is again a linear combination of the
+$\mathbf{v}_j$, meaning $c\mathbf{u} \in V$.
+
+All three conditions hold, so $V$ is a subspace. $\qquad\blacksquare$
+:::
+
+That proof is short, but notice what made it work: closure of the *span* is nothing more
+than closure of the real numbers under $+$ and $\times$, lifted componentwise through the
+linear-combination form. This is the precise sense in which "you can never escape a span by
+combining its members" — the escape attempt always lands you on another valid choice of
+coefficients.
+
+## Every subspace is a span {#sec-subspace-is-span}
+
+The other half closes the loop. We have shown every span *is* a subspace; now we show every
+subspace can be *written as* a span. Together they say the two words describe one class of
+objects.
+
+::: {#thm-subspace-is-span}
+**Theorem (every subspace is a span).** Let $V \subseteq \mathbb{R}^n$ be a subspace. Then
+there exist finitely many vectors $\mathbf{v}_1,\dots,\mathbf{v}_k \in V$ such that
+$V = \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$.
+:::
+
+::: {.proof}
+We build a spanning set by hand, one vector at a time, and show the construction stops.
+
+If $V = \{\mathbf{0}\}$, then $V = \operatorname{span}\{\mathbf{0}\}$ and we are done with
+$k=1$ (indeed the zero set is the span of the single zero vector). So assume $V$ contains a
+nonzero vector.
+
+**The greedy construction.** Pick any nonzero $\mathbf{v}_1 \in V$. Because $V$ is closed
+under linear combinations (it is a subspace), *every* combination of vectors drawn from $V$
+stays in $V$; in particular $\operatorname{span}\{\mathbf{v}_1\} \subseteq V$. Now ask: is
+$\operatorname{span}\{\mathbf{v}_1\}$ already all of $V$? If yes, stop. If no, there is some
+$\mathbf{v}_2 \in V$ that is *not* in $\operatorname{span}\{\mathbf{v}_1\}$; adjoin it.
+Again $\operatorname{span}\{\mathbf{v}_1,\mathbf{v}_2\} \subseteq V$ (same closure
+argument). Repeat: at each step, if the span of the chosen vectors is not yet all of $V$,
+there is a vector in $V$ outside that span, and we adjoin it.
+
+**Why it stops.** Each adjoined vector lies *outside* the span of the previous ones, so it
+is not a linear combination of them — it is a genuinely new direction. We will prove in
+[GEOM-3] that in $\mathbb{R}^n$ you cannot have more than $n$ vectors that are each outside
+the span of the rest (any $n+1$ vectors in $\mathbb{R}^n$ are linearly dependent — at least
+one is a combination of the others). We flag that fact here as imported from the next
+article rather than assumed silently: it is the **dimension bound**, and its full proof is
+[GEOM-3]'s job. Granting it, the greedy process cannot adjoin more than $n$ vectors, so it
+must halt after some $k \le n$ steps with
+
+$$
+\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\} = V .
+$$
+
+The two inclusions that close the argument: $\operatorname{span}\{\mathbf{v}_1,\dots,
+\mathbf{v}_k\} \subseteq V$ because every $\mathbf{v}_j \in V$ and $V$ is closed under
+combinations; and $V \subseteq \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$
+because the process only stopped once the span had swallowed all of $V$. Equal sets.
+$\qquad\blacksquare$
+:::
+
+::: {.callout-note title="What we borrowed, and where it is built"}
+This proof leaned on one fact from the next article: *in $\mathbb{R}^n$ you cannot keep
+finding vectors each outside the span of the previous ones beyond $n$ of them.* That is the
+**dimension bound**, proved in full in [GEOM-3 *Linear Independence, Basis, and
+Dimension*]. We imported only its statement so the loop "span $\Leftrightarrow$ subspace"
+could close here. Nothing else in the present article depends on it — every other result is
+self-contained.
+:::
+
+With both theorems in hand, the vocabulary settles: from now on, "the subspace spanned by
+the columns of $A$" and "the column space of $A$" and "$\operatorname{span}$ of the
+columns" all name the same object, and we will use whichever phrasing the geometry makes
+clearest.
+
+## Testing membership: is a target vector reachable? {#sec-membership}
+
+The constructive payoff of @def-span is a *procedure*: to decide whether a target
+$\mathbf{w}$ is in $\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$, ask whether the
+system $\sum_j c_j\mathbf{v}_j = \mathbf{w}$ has a solution in the unknown coefficients
+$c_j$. Let us run it once, fully by hand, on a small concrete case so the mechanics are
+unmysterious.
+
+Take in $\mathbb{R}^3$ the two vectors
+
+$$
+\mathbf{v}_1 = \begin{pmatrix} 1 \\ 0 \\ 1 \end{pmatrix},
+\qquad
+\mathbf{v}_2 = \begin{pmatrix} 0 \\ 1 \\ 1 \end{pmatrix},
+$$
+
+and ask two membership questions.
+
+**Question A: is $\mathbf{w} = (2,\,3,\,5)^\top$ in the span?** We need reals $c_1, c_2$
+with $c_1\mathbf{v}_1 + c_2\mathbf{v}_2 = \mathbf{w}$. Writing the three components
+separately (each entry of the combination must match the corresponding entry of
+$\mathbf{w}$):
+
+$$
+\underbrace{c_1 \cdot 1 + c_2 \cdot 0}_{\text{entry 1}} = 2,
+\qquad
+\underbrace{c_1 \cdot 0 + c_2 \cdot 1}_{\text{entry 2}} = 3,
+\qquad
+\underbrace{c_1 \cdot 1 + c_2 \cdot 1}_{\text{entry 3}} = 5 .
+$$
+
+The first equation gives $c_1 = 2$ outright; the second gives $c_2 = 3$ outright. Those are
+forced. Now the third equation is not a new unknown to solve — it is a **consistency
+check**: substituting, $c_1 + c_2 = 2 + 3 = 5$, which matches the required $5$ exactly. The
+system is consistent, so $\mathbf{w}$ **is** in the span, with the explicit recipe
+$\mathbf{w} = 2\mathbf{v}_1 + 3\mathbf{v}_2$.
+
+**Question B: is $\mathbf{w}' = (2,\,3,\,0)^\top$ in the span?** Same first two equations
+force $c_1 = 2$, $c_2 = 3$. But the third equation now demands $c_1 + c_2 = 0$, i.e.
+$2 + 3 = 0$, which is $5 = 0$ — **false**. There is no choice of coefficients that satisfies
+all three equations at once; the system is *inconsistent*. So $\mathbf{w}'$ is **not** in
+the span. Geometrically, $\mathbf{w}'$ sticks out of the plane that $\mathbf{v}_1$ and
+$\mathbf{v}_2$ sweep.
+
+The pattern generalizes and is worth stating: **the span of these two vectors is exactly
+the set of $(a,b,c)^\top$ with $c = a + b$** — a single linear constraint carves the plane
+out of all of $\mathbb{R}^3$. The third coordinate is not free; it is dictated by the first
+two. That one equation *is* the plane, and it is why two vectors span a (two-dimensional)
+plane inside (three-dimensional) space rather than filling it. @fig-plane-in-r3 draws this
+plane, the reachable target, and the unreachable one.
+
+```{python}
+#| label: fig-plane-in-r3
+#| fig-cap: "The span of $\\mathbf{v}_1=(1,0,1)$ and $\\mathbf{v}_2=(0,1,1)$ is the plane $\\{(a,b,c): c=a+b\\}$ through the origin in $\\mathbb{R}^3$ (shaded). The reachable target $\\mathbf{w}=(2,3,5)$ (green) lies *on* the plane — it satisfies $5=2+3$ — and equals $2\\mathbf{v}_1+3\\mathbf{v}_2$. The target $\\mathbf{w}'=(2,3,0)$ (black) floats *off* the plane ($0\\neq 2+3$) and is unreachable. A span in $\\mathbb{R}^3$ is a flat sheet through the origin, never a curved or floating surface."
+v1 = np.array([1, 0, 1.0])
+v2 = np.array([0, 1, 1.0])
+w_in  = np.array([2, 3, 5.0])    # = 2 v1 + 3 v2, on the plane
+w_out = np.array([2, 3, 0.0])    # off the plane
+
+# Mesh the plane c = a + b over a window.
+a = np.linspace(-1, 4, 12)
+b = np.linspace(-1, 4, 12)
+A, B = np.meshgrid(a, b)
+C = A + B
+
+fig = plt.figure(figsize=(6.6, 5.2))
+ax = fig.add_subplot(111, projection="3d")
+ax.plot_surface(A, B, C, color=SPAN, alpha=0.22, linewidth=0)
+
+for v, name, col in [(v1, r"$\mathbf{v}_1$", VEC), (v2, r"$\mathbf{v}_2$", VEC)]:
+    ax.quiver(0, 0, 0, *v, color=col, lw=2.4, arrow_length_ratio=0.12)
+    ax.text(*v, name, color=col, fontsize=12)
+
+ax.quiver(0, 0, 0, *w_in, color=ACCENT, lw=2.4, arrow_length_ratio=0.08)
+ax.text(*w_in, r"  $\mathbf{w}=(2,3,5)$ (in span)", color=ACCENT, fontsize=10)
+ax.scatter(*w_out, color="black", s=55)
+# dashed gap from w_out down to the plane (the plane height at (2,3) is 5)
+ax.plot([w_out[0], w_out[0]], [w_out[1], w_out[1]], [w_out[2], 5],
+        color="black", ls="--", lw=1.4)
+ax.text(*w_out, r"  $\mathbf{w}'=(2,3,0)$ (off span)", color="black", fontsize=10)
+
+ax.set_xlabel("$a$"); ax.set_ylabel("$b$"); ax.set_zlabel("$c$")
+ax.set_title(r"span$\{\mathbf{v}_1,\mathbf{v}_2\}=\{c=a+b\}$")
+ax.view_init(elev=20, azim=-60)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Given some vectors, how do you actually check by hand whether a target is in their span?"*
+Set up the system $\sum_j c_j\mathbf{v}_j = \mathbf{w}$ — one equation per coordinate — and
+ask if it is consistent. Concretely you stack the spanning vectors as the columns of a
+matrix $A$ and row-reduce the augmented matrix $[\,A \mid \mathbf{w}\,]$: if you ever reach
+a row of the form $[\,0\ \cdots\ 0 \mid (\text{nonzero})\,]$, the system is inconsistent and
+$\mathbf{w}$ is **not** in the span; otherwise it is, and the reduction hands you the
+coefficients. This is exactly the $A\mathbf{c}=\mathbf{w}$ solvability question that
+[GEOM-11 *Solving $Ax=b$*] treats in full — span-membership and system-consistency are the
+same question wearing different clothes.
+:::
+
+## How big is the span? The dimension count, previewed honestly {#sec-howbig}
+
+We have repeatedly said "the number of vectors does not decide the size of the span." We
+can now make that precise enough to use, while being honest that the *complete* theory of
+dimension is the next article's.
+
+From the membership view, the span of $k$ vectors is the set of right-hand sides
+$\mathbf{w}$ for which $\sum_j c_j\mathbf{v}_j = \mathbf{w}$ is solvable. Sweeping the $k$
+coefficients gives at most a $k$-dimensional family of outcomes — *at most*, because two
+different coefficient choices can produce the *same* vector whenever the $\mathbf{v}_j$ are
+related. In Question B's setup, for instance, the two vectors were unrelated and the span
+was genuinely 2-dimensional; but recall the right panel of @fig-spans, where
+$\mathbf{v}_2 = 1.8\,\mathbf{v}_1$ and *every* combination collapsed onto a single line.
+
+The clean statement, which we will prove next article, is: the dimension of
+$\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$ equals the **number of the vectors
+that are not linear combinations of the others** — the count of genuinely independent
+directions among them. Equivalently it is the *rank* of the matrix whose columns are the
+$\mathbf{v}_j$ ([GEOM-12]). For now, two consequences are all we need and they follow
+directly from @def-span without the full theory:
+
+- **Adding a vector already in the span never grows it.** If $\mathbf{v}_{k+1} \in
+  \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$, then
+  $\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k,\mathbf{v}_{k+1}\} =
+  \operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$. *Proof:* any combination using
+  $\mathbf{v}_{k+1}$ can rewrite $\mathbf{v}_{k+1}$ as a combination of the first $k$ and
+  fold the coefficients in, by the closure we proved in @thm-span-is-subspace. So the larger
+  span is contained in the smaller; the reverse containment is obvious. Equal.
+- **The span of $k$ vectors has dimension at most $k$, and at most $n$.** At most $k$
+  because there are only $k$ dials; at most $n$ because the whole thing lives inside
+  $\mathbb{R}^n$, which is $n$-dimensional.
+
+The gap between "at most $k$" and "exactly $k$" is the entire subject of linear
+independence, and it is where redundancy — the data scientist's multicollinearity — lives.
+We turn to it now as the honest edge case the Core promised.
+
+# The honest edge case: when extra vectors buy no reach {#sec-collinear}
+
+This is the section that separates "knows the definition of span" from "knows what span
+*does* in data." We confront, head-on, the situation where you hold several vectors,
+naively expect them to span a large region, and discover they span a much smaller one
+because they are secretly related. In data this is **collinearity** (two features) and
+**multicollinearity** (several), and it is one of the most common reasons a perfectly valid
+regression returns nonsense coefficients.
+
+## Two vectors that look independent but are not {#sec-look-independent}
+
+Consider two feature columns from a hypothetical dataset of rental apartments: $x_1 =$
+*floor area in square meters*, and $x_2 =$ *floor area in square feet*, measured on the
+same units of length but reported in two systems. As vectors over the $n$ apartments, these
+are not just *similar* — they are **exact scalar multiples**, because one square meter is
+$10.7639$ square feet, so $\mathbf{x}_2 = 10.7639\,\mathbf{x}_1$ entrywise. Whatever
+$\mathbf{x}_2$ contributes, $\mathbf{x}_1$ already contributed (scaled). Their span is a
+**line**, not a plane, even though there are two of them and they "look" like two distinct
+columns in the spreadsheet.
+
+A subtler and more realistic version: $x_1 =$ *number of bedrooms*, $x_2 =$ *number of
+bathrooms*, $x_3 =$ *total rooms*. If the dataset records *total rooms = bedrooms +
+bathrooms + 1* (say, plus a kitchen) for every apartment, then $\mathbf{x}_3 = \mathbf{x}_1
++ \mathbf{x}_2 + \mathbf{1}$, where $\mathbf{1}$ is the all-ones vector (the intercept
+column a regression silently adds). The third column is a *linear combination of columns
+already present*. By the first bullet of @sec-howbig, it adds **zero** reach: the span of
+all of them is the span of $\{\mathbf{1}, \mathbf{x}_1, \mathbf{x}_2\}$, a 3-dimensional
+subspace, even though there are four columns. One full degree of "apparent information" is
+an illusion.
+
+```{python}
+#| label: fig-collinear
+#| fig-cap: "Collinearity collapses a span. **Left:** two feature vectors that point in nearly the same direction (correlation $\\approx 0.997$) — like square meters vs. square feet with a little measurement noise. Their span is *almost* a line: the shaded reachable region is a razor-thin sliver, not a fat plane, so to reach an off-sliver target you need enormous, near-cancelling coefficients. **Right:** the same two directions pulled apart to be genuinely distinct; now the span is a healthy, wide plane and every direction is cheaply reachable. The width of the sliver is what the *condition number* (GEOM-26) measures."
+rng = np.random.default_rng(3)
+
+fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.8))
+
+# --- Left: near-collinear pair ---
+ax = axes[0]
+u1 = np.array([1.5, 1.0]); u1 = u1 / np.linalg.norm(u1) * 2.2
+u2 = u1 + np.array([0.06, -0.04])   # almost the same direction
+# sample many combinations to visualize the (near-)reachable sliver with modest coeffs
+cc = rng.uniform(-1.2, 1.2, size=(4000, 2))
+pts = cc @ np.vstack([u1, u2])
+ax.scatter(pts[:, 0], pts[:, 1], s=2, color=SPAN, alpha=0.10)
+draw_vec(ax, (0, 0), u1, color=VEC, label=r"$\mathbf{x}_1$")
+draw_vec(ax, (0, 0), u2, color=PALE, label=r"$\mathbf{x}_2$")
+ax.set_title("near-collinear: a thin sliver")
+ax.set_xlim(-4, 4); ax.set_ylim(-4, 4)
+
+# --- Right: genuinely distinct pair ---
+ax = axes[1]
+w1 = np.array([2.2, 0.3]); w2 = np.array([0.3, 2.2])
+cc = rng.uniform(-1.2, 1.2, size=(4000, 2))
+pts = cc @ np.vstack([w1, w2])
+ax.scatter(pts[:, 0], pts[:, 1], s=2, color=SPAN, alpha=0.10)
+draw_vec(ax, (0, 0), w1, color=VEC, label=r"$\mathbf{x}_1$")
+draw_vec(ax, (0, 0), w2, color=VEC, label=r"$\mathbf{x}_2$")
+ax.set_title("distinct: a wide plane")
+ax.set_xlim(-4, 4); ax.set_ylim(-4, 4)
+
+for ax in axes:
+    ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+    ax.set_aspect("equal"); ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+# Report the correlation of the near-collinear pair as a concrete number.
+corr = np.corrcoef(u1, u2)[0, 1]
+print(f"left panel: cos-angle between x1 and x2 = {u1@u2/(np.linalg.norm(u1)*np.linalg.norm(u2)):.4f}")
+```
+
+## Why "almost collinear" is the dangerous case {#sec-almost}
+
+Exact collinearity ($\mathbf{x}_2$ an *exact* multiple of $\mathbf{x}_1$) is the clean,
+honest case: the span is exactly a line, the redundancy is visible, and most software will
+refuse to fit or will drop a column. The treacherous case is **near-collinearity**, the
+left panel of @fig-collinear, where the two vectors are *almost* parallel — distinct enough
+that the span is technically the full plane, but so nearly aligned that the plane is a
+razor-thin wedge in the directions that matter.
+
+Here is the geometric mechanism, stated without yet having the dot product (that is
+[GEOM-4]). To reach a target that lies slightly *off* the near-parallel direction, you must
+take a large positive multiple of one vector and a large *negative* multiple of the other,
+so that the bulk cancels and only the small perpendicular sliver survives. The coefficients
+$c_1, c_2$ become enormous and nearly opposite. In a data setting those coefficients are
+your regression weights: enormous, opposite, and exquisitely sensitive — nudge one data
+point and they swing wildly, because a tiny change in the target requires a huge change in
+the cancelling combination. The span did not *quite* collapse, but it came close enough
+that solving inside it is numerically miserable.
+
+This is the geometric seed of three things the track and the series develop in full, and we
+name them so the reader sees the throughline:
+
+- **Multicollinearity in regression** ([REGR-7]): the design matrix's columns nearly span a
+  lower-dimensional subspace, so $X^\top X$ is nearly singular and the coefficient estimates
+  have huge variance.
+- **The condition number** ([GEOM-26]): the precise number measuring how thin the wedge is —
+  the ratio of the longest to the shortest axis of the reachable region — and hence how much
+  a small input error is amplified.
+- **Rank deficiency and the four subspaces** ([GEOM-12]): exact collinearity is exact
+  rank deficiency; the span's true dimension is the rank, and the gap between the column
+  count and the rank is the redundancy.
+
+::: {.callout-warning title="Pitfall"}
+**More columns is not more information.** It is tempting to throw every available feature
+into a model, reasoning that extra columns can only help. But if a new column lies in (or
+near) the span of the columns you already have, it adds no reach and no genuine information
+— it only *inflates the apparent dimension while the true dimension stands still*. The
+model then has more coefficients than it has independent directions to pin them down, and
+the surplus coefficients are not estimable separately: infinitely many coefficient vectors
+produce the identical fit (exact case) or near-identical fits (near case). The cure is to
+recognize the redundancy — drop a column, combine columns, or regularize — *before*
+trusting any individual coefficient. Recognizing it **is** recognizing that a span did not
+grow.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"If I add a feature to my linear model and the fit doesn't improve at all, what could be
+going on geometrically?"* The new feature vector is (exactly or nearly) already in the span
+of the existing feature columns. Since a linear model's predictions are confined to that
+span (the column space), a column that adds no new direction adds no new reachable
+predictions, so the best achievable fit is unchanged. If the fit *appears* to improve only
+trivially while the new coefficient is huge and unstable, you are in the near-collinear
+regime: the column is *almost* redundant, and you are paying for a sliver of new reach with
+a wildly sensitive coefficient. Either way the lesson is the same — examine whether your
+columns span what you think they span.
+:::
+
+# A second worked example: spanning the whole space, and failing to {#sec-examples2}
+
+We close the examples with a contrasting pair that pins down "when does a set of vectors
+reach *everything*?" — the most practically loaded version of the span question, since
+"the columns span all of $\mathbb{R}^n$" is what lets a linear system always have a
+solution.
+
+**Reaching everything in $\mathbb{R}^2$.** The two vectors $\mathbf{e}_1 = (1,0)^\top$ and
+$\mathbf{e}_2 = (0,1)^\top$ — the standard axes — span all of $\mathbb{R}^2$, because any
+$(a,b)^\top = a\mathbf{e}_1 + b\mathbf{e}_2$ trivially. But the axes are not special: *any*
+two vectors pointing in different directions do it. Take $\mathbf{u}_1 = (2,1)^\top$ and
+$\mathbf{u}_2 = (1,3)^\top$. To reach an arbitrary $(a,b)^\top$ we solve $c_1\mathbf{u}_1 +
+c_2\mathbf{u}_2 = (a,b)^\top$, i.e. the two equations $2c_1 + c_2 = a$ and $c_1 + 3c_2 = b$.
+From the first, $c_2 = a - 2c_1$; substitute into the second: $c_1 + 3(a - 2c_1) = b$, so
+$c_1 - 6c_1 + 3a = b$, giving $-5c_1 = b - 3a$ and $c_1 = (3a - b)/5$. Then $c_2 = a -
+2(3a-b)/5 = (5a - 6a + 2b)/5 = (2b - a)/5$. A solution exists for *every* $(a,b)$ — the
+span is all of $\mathbb{R}^2$.
+
+**Failing to reach everything — the edge.** Now the honest near-failure. Take
+$\mathbf{u}_1 = (2,1)^\top$ and $\mathbf{u}_2 = (4,2)^\top = 2\mathbf{u}_1$. The same setup
+gives $2c_1 + 4c_2 = a$ and $c_1 + 2c_2 = b$. The first equation is exactly twice the
+second on the left ($2c_1 + 4c_2 = 2(c_1 + 2c_2)$), so it demands $a = 2b$. If $a \neq 2b$,
+*no* solution exists: the target is unreachable. The span is only the line $\{(2t, t)\}$,
+and any target off that line is forever out of reach. @fig-reach contrasts the two.
+
+```{python}
+#| label: fig-reach
+#| fig-cap: "When do two vectors reach all of $\\mathbb{R}^2$? **Left:** $\\mathbf{u}_1=(2,1)$ and $\\mathbf{u}_2=(1,3)$ point in different directions and span the whole plane — an arbitrary target (green star) is reachable, here $(3,2)=c_1\\mathbf{u}_1+c_2\\mathbf{u}_2$ with the coefficients solved in the text. **Right:** $\\mathbf{u}_2=(4,2)=2\\mathbf{u}_1$ is collinear with $\\mathbf{u}_1$; the span is just the line $a=2b$, and the same target $(3,2)$ now floats off it (red star) and is unreachable. Two vectors span the plane exactly when they are not collinear."
+fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.9))
+target = np.array([3.0, 2.0])
+
+# --- Left: spanning the plane ---
+ax = axes[0]
+u1 = np.array([2.0, 1.0]); u2 = np.array([1.0, 3.0])
+ax.fill([-5, 5, 5, -5], [-5, -5, 5, 5], color=SPAN, alpha=0.08)
+draw_vec(ax, (0, 0), u1, color=VEC, label=r"$\mathbf{u}_1$")
+draw_vec(ax, (0, 0), u2, color=VEC, label=r"$\mathbf{u}_2$")
+ax.scatter(*target, color=ACCENT, marker="*", s=260, zorder=6, edgecolor="white")
+ax.text(target[0], target[1], r"  $(3,2)$ reachable", color=ACCENT, fontsize=10)
+ax.set_title("two directions span the plane")
+ax.set_xlim(-1, 5); ax.set_ylim(-1, 5)
+
+# --- Right: collinear, spans only a line ---
+ax = axes[1]
+u1 = np.array([2.0, 1.0]); u2 = np.array([4.0, 2.0])
+ts = np.linspace(-2, 2.5, 50)
+ln = np.outer(ts, u1)
+ax.plot(ln[:, 0], ln[:, 1], color=SPAN, lw=2.2, label=r"span (line $a=2b$)")
+draw_vec(ax, (0, 0), u2, color=PALE, label=r"$\mathbf{u}_2=2\mathbf{u}_1$")
+draw_vec(ax, (0, 0), u1, color=VEC, label=r"$\mathbf{u}_1$")
+ax.scatter(*target, color=SPAN, marker="*", s=260, zorder=6, edgecolor="white")
+ax.text(target[0], target[1], r"  $(3,2)$ unreachable", color=SPAN, fontsize=10)
+ax.set_title("collinear: span is only a line")
+ax.set_xlim(-1, 5); ax.set_ylim(-1, 5)
+
+for ax in axes:
+    ax.axhline(0, color=GREY, lw=0.8); ax.axvline(0, color=GREY, lw=0.8)
+    ax.set_aspect("equal"); ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The contrast is the whole lesson of the article in one figure: the same *count* of vectors
+(two) produces either the full plane or a mere line, decided entirely by whether the second
+vector pointed somewhere genuinely new. Reaching "everything" in $\mathbb{R}^n$ requires the
+span to fill all $n$ dimensions, which requires $n$ vectors *that each add a new direction*
+— the precise condition (a **basis**) that [GEOM-3] is built to deliver.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The concepts of span and subspace are exact — there is no approximation to break, the way a
+regression line can be wrong. The failure modes here are failures of *recognition* and of
+*notation*, plus the numerical edge where exactness meets floating point. They are worth
+collecting.
+
+## The affine trap: forgetting the origin {#sec-affine-trap}
+
+The single most common error is treating an **affine** set (a flat set that misses the
+origin) as a subspace. We met it in the Pitfall of @sec-subspace-def: the line $y = x+1$,
+or a data cloud that has not been centered. The diagnostic is mechanical — *does it contain
+$\mathbf{0}$, and is it closed?* — and the fix is mechanical too: **center the data**
+(subtract the mean from each column) to slide the affine set to the origin, where it
+becomes a genuine subspace. This is exactly why the data tracks center before computing
+covariance, before PCA, and before any projection: the geometry of subspaces only applies
+once the origin is where it belongs. When a method *does* care about the offset (an
+intercept term in regression), the standard move is to append the all-ones column
+$\mathbf{1}$ and span the affine family as a subspace in one-higher dimension — turning an
+affine question into a span question.
+
+## The degenerate span: all-zero or duplicate vectors {#sec-degenerate}
+
+If you hand the span the zero vector, it contributes nothing:
+$\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k,\mathbf{0}\} =
+\operatorname{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$, because any coefficient on
+$\mathbf{0}$ produces $\mathbf{0}$ and changes no combination. Likewise a duplicated vector,
+or any exact linear combination of the others, adds no reach (the first bullet of
+@sec-howbig). These are the exact-collinearity cases. They are not errors — the span is
+perfectly well-defined — but they are the situations where "I have $k$ vectors" badly
+overstates "my span is $k$-dimensional." The honest dimension is the count of
+non-redundant directions, the rank, which [GEOM-3] and [GEOM-12] compute.
+
+## The numerical edge: when "in the span" becomes "almost" {#sec-numerical}
+
+On a computer, the crisp distinction between "in the span" and "not in the span" blurs.
+Floating-point arithmetic cannot represent most reals exactly, so a target that is
+*mathematically* in the span may, after rounding, fail the consistency check by a hair, and
+a near-collinear pair (left panel of @fig-collinear) may be reported as exactly collinear or
+as barely independent depending on the last bit. This is not a flaw in the concept; it is
+the reason the *condition number* exists. The practical rule the track will justify in
+[GEOM-26]: do not test "is $\mathbf{w}$ in the span?" by checking whether a residual is
+*exactly* zero — that is fragile — and do not test rank deficiency by checking whether a
+determinant is exactly zero. Use a tolerance, and prefer the SVD's singular values
+([GEOM-20]), which report *how close* to rank-deficient you are on a meaningful scale,
+rather than a yes/no that floating point cannot honestly deliver.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the span/subspace framework the right lens, and when is it not?"* Use it whenever
+your problem is genuinely about **linear** reach — what a linear model can predict, which
+systems $A\mathbf{x}=\mathbf{b}$ are solvable, what directions a set of features covers,
+what a projection projects onto. It is exactly the right tool there and underlies the entire
+linear-algebra half of data science. It is the **wrong** lens when the relationships are
+nonlinear: the set of points a *neural network* or a *kernel method* can reach is a curved
+manifold, not a flat subspace, and forcing it into span language loses the curvature that
+matters (the kernel trick, [CLAS], deliberately maps into a high-dimensional space precisely
+to make a nonlinear reachable set *look* linear there). And it is the wrong lens for sets
+that are flat but off-origin until you center them (the affine trap). The discipline:
+confirm the operations in play really are "add and scale," and that the origin is where you
+think it is.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[GEOM-1 *Adding and Scaling*]**, which gave you the linear combination as
+the one move linear algebra permits. This article turned that single move loose — letting
+its coefficients range over all of $\mathbb{R}$ — and named the reachable set (**span**) and
+its shape (**subspace**), proving they are one object. From here the build continues:
+
+- **[GEOM-3 *Linear Independence, Basis, and Dimension*]** — the immediate sequel. We
+  asked "how big is the span?" and could only answer "at most $k$." GEOM-3 answers it
+  exactly: a span's dimension is the number of *independent* directions in it, a basis is a
+  minimal spanning set, and the dimension bound we borrowed in @thm-subspace-is-span is
+  proved there in full.
+- **[GEOM-6 *Orthogonal Projection onto a Subspace*]** — the keystone. Once we know a span
+  is a subspace, the central operation of the whole series is *projecting a point onto it* —
+  finding the closest reachable point to an unreachable target, exactly the situation of
+  $\mathbf{w}'$ in @sec-membership. That is least squares.
+- **[GEOM-8 *Matrices as Linear Maps*]** and **[GEOM-11 *Solving $Ax=b$*]** — make the
+  membership test fully algebraic: $A\mathbf{c}=\mathbf{w}$ is solvable exactly when
+  $\mathbf{w}$ is in the span of $A$'s columns (the **column space**).
+- **[GEOM-12 *Rank and the Four Fundamental Subspaces*]** — the column space is a span and a
+  subspace; its dimension is the rank; and the collinearity collapse of @sec-collinear
+  becomes rank deficiency.
+- **Across to [REGR-7 *Multicollinearity*]** — the data-science payoff: when feature columns
+  nearly fail to add reach, coefficients become unstable. That article links straight back
+  here for the geometry.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Hermann Grassmann's *Die lineale Ausdehnungslehre* (1844, expanded
+  1862) is the origin of treating "all combinations of given elements, closed under the
+  operations" as a structure in its own right — span and subspace in embryo. Giuseppe
+  Peano's *Calcolo geometrico* (1888) gave the modern axioms of a vector space, from which
+  the subspace conditions of @def-subspace fall out directly.
+- **The recommended modern treatments.** Gilbert Strang's *Introduction to Linear Algebra*
+  develops the column space and its span as the organizing idea of the subject (the "four
+  subspaces" framing this track adopts in [GEOM-12]); Sheldon Axler's *Linear Algebra Done
+  Right* gives the cleanest axiomatic account of subspaces and spanning, at a slightly more
+  abstract pitch than we need here.
+- **Open threads this article deliberately deferred.** *Exactly how big is a span, and is
+  the count well-defined?* — dimension and its invariance, [GEOM-3]. *What is the closest
+  reachable point to an unreachable target?* — orthogonal projection, [GEOM-6], which needs
+  the dot product of [GEOM-4] first. *How do I read the dimension of a span off a matrix
+  reliably, even numerically?* — rank ([GEOM-12]) and the singular values ([GEOM-20]). Each
+  is a later chapter of the same story you started here: *what can I reach, and how much room
+  is there to reach it in?*
