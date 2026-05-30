@@ -147,7 +147,7 @@ That average signed product *is* the covariance. @fig-quadrants makes the pictur
 
 ```{python}
 #| label: fig-quadrants
-#| fig-cap: "The sign of covariance, by quadrant. The mean lines $x=\\mu_X$ (vertical) and $y=\\mu_Y$ (horizontal) split the plane into four quadrants. In the green quadrants the product $(x-\\mu_X)(y-\\mu_Y)$ is **positive** (both deviations share a sign); in the red quadrants it is **negative**. **Left:** an up-tilted cloud lands mostly in the positive quadrants, so the average product — the covariance — is positive. **Right:** a down-tilted cloud lands in the negative quadrants, giving negative covariance. Covariance is just the average of the signed shaded-quadrant contributions."
+#| fig-cap: 'The sign of covariance, by quadrant. The mean lines $x=\\mu_X$ (vertical) and $y=\\mu_Y$ (horizontal) split the plane into four quadrants. In the green quadrants the product $(x-\\mu_X)(y-\\mu_Y)$ is **positive** (both deviations share a sign); in the red quadrants it is **negative**. **Left:** an up-tilted cloud lands mostly in the positive quadrants, so the average product — the covariance — is positive. **Right:** a down-tilted cloud lands in the negative quadrants, giving negative covariance. Covariance is just the average of the signed shaded-quadrant contributions.'
 rng = np.random.default_rng(3)
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 4.2))
 
@@ -718,7 +718,7 @@ sees it; we have derived the inequality without needing that machinery.
 
 ```{python}
 #| label: fig-corr-grid
-#| fig-cap: "What correlation looks like. Each panel is a sample from a bivariate normal with the labeled correlation $\\rho$. At $\\rho=0$ the cloud is round (no linear tilt); as $|\\rho|\\to 1$ it collapses toward a line, positively sloped for $\\rho>0$ and negatively for $\\rho<0$. At $\\rho=\\pm 1$ (not shown) the points would lie exactly on a line. Correlation measures *only* this tilt-toward-a-line — a fact @fig-zero-cov will exploit."
+#| fig-cap: 'What correlation looks like. Each panel is a sample from a bivariate normal with the labeled correlation $\\rho$. At $\\rho=0$ the cloud is round (no linear tilt); as $|\\rho|\\to 1$ it collapses toward a line, positively sloped for $\\rho>0$ and negatively for $\\rho<0$. At $\\rho=\\pm 1$ (not shown) the points would lie exactly on a line. Correlation measures *only* this tilt-toward-a-line — a fact @fig-zero-cov will exploit.'
 rng = np.random.default_rng(0)
 rhos = [-0.9, -0.5, 0.0, 0.4, 0.8, 0.99]
 fig, axes = plt.subplots(2, 3, figsize=(9.0, 6.0))
@@ -868,7 +868,7 @@ Monte-Carlo sample, and shows the density surface.
 
 ```{python}
 #| label: fig-continuous
-#| fig-cap: "The joint density $f(x,y)=x+y$ on the unit square. **Left:** the density as a heatmap — it tilts upward toward the $(1,1)$ corner where both variables are large. **Right:** a scatter of $40{,}000$ points drawn from it (via rejection sampling). The slight negative covariance is invisible to the eye at this scale, which is the honest point: $\\rho=-1/144 \\div (\\sigma_X\\sigma_Y)$ is tiny. The hand-computed $\\operatorname{Cov}=-1/144\\approx-0.00694$ matches the sample covariance printed below."
+#| fig-cap: 'The joint density $f(x,y)=x+y$ on the unit square. **Left:** the density as a heatmap — it tilts upward toward the $(1,1)$ corner where both variables are large. **Right:** a scatter of $40{,}000$ points drawn from it (via rejection sampling). The slight negative covariance is invisible to the eye at this scale, which is the honest point: $\\rho=-1/144 \\div (\\sigma_X\\sigma_Y)$ is tiny. The hand-computed $\\operatorname{Cov}=-1/144\\approx-0.00694$ matches the sample covariance printed below.'
 # exact pieces
 EX_c = 7/12; EXY_c = 1/3
 cov_c = EXY_c - EX_c**2
@@ -911,7 +911,7 @@ diversification curve, computed from the identity we derived.
 
 ```{python}
 #| label: fig-portfolio
-#| fig-cap: "Portfolio standard deviation vs. the correlation between two assets, for a 50/50 mix ($\\sigma_A=1.2\\%$, $\\sigma_B=0.9\\%$). The curve is $\\sqrt{w^2\\sigma_A^2+(1-w)^2\\sigma_B^2+2w(1-w)\\rho\\,\\sigma_A\\sigma_B}$ with $w=0.5$ — a direct reading of @eq-var-sum. Dashed grey marks the *naive* level you would get by ignoring covariance (the $\\rho=0$ value). At negative correlation the portfolio is markedly *less* volatile than either asset; this risk reduction is the covariance cross-term, made visible."
+#| fig-cap: 'Portfolio standard deviation vs. the correlation between two assets, for a 50/50 mix ($\\sigma_A=1.2\\%$, $\\sigma_B=0.9\\%$). The curve is $\\sqrt{w^2\\sigma_A^2+(1-w)^2\\sigma_B^2+2w(1-w)\\rho\\,\\sigma_A\\sigma_B}$ with $w=0.5$ — a direct reading of @eq-var-sum. Dashed grey marks the *naive* level you would get by ignoring covariance (the $\\rho=0$ value). At negative correlation the portfolio is markedly *less* volatile than either asset; this risk reduction is the covariance cross-term, made visible.'
 sA, sB, w = 0.012, 0.009, 0.5
 rhos = np.linspace(-1, 1, 200)
 port_sd = np.sqrt(w**2*sA**2 + (1-w)**2*sB**2 + 2*w*(1-w)*rhos*sA*sB)
@@ -1034,7 +1034,7 @@ products that weight far points heavily.
 
 ```{python}
 #| label: fig-anscombe-style
-#| fig-cap: "Correlation is a lossy, outlier-sensitive summary. **Left:** a genuine moderate linear relationship. **Middle:** pure noise with one extreme outlier that *manufactures* a spurious strong correlation out of nothing. **Right:** a clean strong relationship that one outlier *destroys*. All three carry information the single number $\\rho$ cannot. The lesson matches [REGR-01]'s Anscombe quartet: never trust a correlation without seeing the cloud."
+#| fig-cap: 'Correlation is a lossy, outlier-sensitive summary. **Left:** a genuine moderate linear relationship. **Middle:** pure noise with one extreme outlier that *manufactures* a spurious strong correlation out of nothing. **Right:** a clean strong relationship that one outlier *destroys*. All three carry information the single number $\\rho$ cannot. The lesson matches [REGR-01]''s Anscombe quartet: never trust a correlation without seeing the cloud.'
 rng = np.random.default_rng(20)
 fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.6))
 

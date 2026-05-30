@@ -158,7 +158,7 @@ one rises as the other falls).
 
 ```{python}
 #| label: fig-cloud
-#| fig-cap: "Three random-vector clouds in the plane, each with the same center $\\boldsymbol\\mu=(0,0)$ and the same per-axis spreads, differing only in covariance. **Left:** zero covariance — no tilt, the components carry no linear information about each other. **Middle:** positive covariance — the cloud tilts up to the right; large $X_1$ tends to come with large $X_2$. **Right:** negative covariance — the cloud tilts down. The covariance matrix is exactly the object that records this tilt along with the spreads."
+#| fig-cap: 'Three random-vector clouds in the plane, each with the same center $\\boldsymbol\\mu=(0,0)$ and the same per-axis spreads, differing only in covariance. **Left:** zero covariance — no tilt, the components carry no linear information about each other. **Middle:** positive covariance — the cloud tilts up to the right; large $X_1$ tends to come with large $X_2$. **Right:** negative covariance — the cloud tilts down. The covariance matrix is exactly the object that records this tilt along with the spreads.'
 rng = np.random.default_rng(1)
 n = 600
 covs = [0.0, 0.75, -0.75]
@@ -530,7 +530,7 @@ minimum mark the long and short axes of the cloud.
 
 ```{python}
 #| label: fig-psd
-#| fig-cap: "Positive semidefiniteness, made visible. For a fixed $2\\times2$ covariance matrix $\\Sigma$, we sweep a unit direction $\\mathbf a=(\\cos\\theta,\\sin\\theta)$ all the way around and plot the directional variance $\\mathbf a^\\top\\Sigma\\,\\mathbf a=\\operatorname{Var}(\\mathbf a^\\top\\mathbf X)$. **Left:** the curve stays at or above zero for every angle — the geometric content of $\\Sigma\\succeq 0$. The dashed line marks zero. **Right:** the same information as the data cloud, with the maximum-variance (long-axis) and minimum-variance (short-axis) directions drawn. The peak and trough of the left curve are the spreads along those two axes."
+#| fig-cap: 'Positive semidefiniteness, made visible. For a fixed $2\\times2$ covariance matrix $\\Sigma$, we sweep a unit direction $\\mathbf a=(\\cos\\theta,\\sin\\theta)$ all the way around and plot the directional variance $\\mathbf a^\\top\\Sigma\\,\\mathbf a=\\operatorname{Var}(\\mathbf a^\\top\\mathbf X)$. **Left:** the curve stays at or above zero for every angle — the geometric content of $\\Sigma\\succeq 0$. The dashed line marks zero. **Right:** the same information as the data cloud, with the maximum-variance (long-axis) and minimum-variance (short-axis) directions drawn. The peak and trough of the left curve are the spreads along those two axes.'
 Sigma = np.array([[2.0, 1.1], [1.1, 1.0]])
 thetas = np.linspace(0, 2*np.pi, 400)
 dirvar = np.array([np.array([np.cos(t), np.sin(t)]) @ Sigma @ np.array([np.cos(t), np.sin(t)])
@@ -721,7 +721,7 @@ three cases, the direct multivariate echo of the three clouds in @fig-cloud.
 
 ```{python}
 #| label: fig-mvn-contours
-#| fig-cap: "Density contours of three bivariate normals, all centered at $\\boldsymbol\\mu=(0,0)$. **Left:** $\\Sigma=I$ (unit variances, zero covariance) — perfectly circular contours, $X_1$ and $X_2$ unrelated. **Middle:** unequal variances, zero covariance — an axis-aligned ellipse, wider along the higher-variance axis. **Right:** nonzero covariance — the ellipse *tilts*, and correlation reads off as the angle of the tilt. The shape of each ellipse is a direct picture of the covariance matrix that generated it."
+#| fig-cap: 'Density contours of three bivariate normals, all centered at $\\boldsymbol\\mu=(0,0)$. **Left:** $\\Sigma=I$ (unit variances, zero covariance) — perfectly circular contours, $X_1$ and $X_2$ unrelated. **Middle:** unequal variances, zero covariance — an axis-aligned ellipse, wider along the higher-variance axis. **Right:** nonzero covariance — the ellipse *tilts*, and correlation reads off as the angle of the tilt. The shape of each ellipse is a direct picture of the covariance matrix that generated it.'
 def mvn_density(X1, X2, Sigma):
     Sinv = np.linalg.inv(Sigma)
     det = np.linalg.det(Sigma)
@@ -866,7 +866,7 @@ in one identity, and it is the cleanest real-world payoff of @thm-quadratic-form
 
 ```{python}
 #| label: fig-portfolio
-#| fig-cap: "Five assets' daily returns ($n=750$ trading days, realistic correlated structure). **Left:** the $5\\times5$ correlation matrix as a heatmap — two clusters (the first three assets move together strongly, the last two form a second block) with weak cross-cluster correlation. **Right:** the risk (standard deviation) of an equal-weight portfolio compared against the average of the individual asset risks. Because the assets are not perfectly correlated, the portfolio risk is *strictly below* the naive average — the mathematical content of diversification, and it falls straight out of $\\mathbf w^\\top\\Sigma\\,\\mathbf w$ being smaller than $\\mathbf w^\\top(\\text{diag }\\Sigma)\\mathbf w$ when off-diagonals are below the diagonal."
+#| fig-cap: 'Five assets'' daily returns ($n=750$ trading days, realistic correlated structure). **Left:** the $5\\times5$ correlation matrix as a heatmap — two clusters (the first three assets move together strongly, the last two form a second block) with weak cross-cluster correlation. **Right:** the risk (standard deviation) of an equal-weight portfolio compared against the average of the individual asset risks. Because the assets are not perfectly correlated, the portfolio risk is *strictly below* the naive average — the mathematical content of diversification, and it falls straight out of $\\mathbf w^\\top\\Sigma\\,\\mathbf w$ being smaller than $\\mathbf w^\\top(\\text{diag }\\Sigma)\\mathbf w$ when off-diagonals are below the diagonal.'
 rng = np.random.default_rng(2024)
 names = ["TechA", "TechB", "TechC", "Util1", "Util2"]
 # Construct a realistic correlation structure: two blocks.
@@ -952,7 +952,7 @@ determined by $X_1$, yet the covariance is essentially zero and $\Sigma$ is near
 
 ```{python}
 #| label: fig-nonlinear
-#| fig-cap: "The edge of applicability. **Left:** $X_1$ is symmetric about zero and $X_2=X_1^2$ exactly — total dependence. **Right:** the estimated covariance matrix is nearly diagonal; the off-diagonal covariance is ~0, so $\\Sigma$ declares the two components 'uncorrelated' and any Gaussian model would call them independent. They are not — $X_2$ is a deterministic function of $X_1$. Covariance captures *linear* structure only; this dependence is purely nonlinear and slips through entirely."
+#| fig-cap: 'The edge of applicability. **Left:** $X_1$ is symmetric about zero and $X_2=X_1^2$ exactly — total dependence. **Right:** the estimated covariance matrix is nearly diagonal; the off-diagonal covariance is ~0, so $\\Sigma$ declares the two components ''uncorrelated'' and any Gaussian model would call them independent. They are not — $X_2$ is a deterministic function of $X_1$. Covariance captures *linear* structure only; this dependence is purely nonlinear and slips through entirely.'
 rng = np.random.default_rng(7)
 x1 = rng.uniform(-2, 2, 800)
 x2 = x1**2 + rng.normal(0, 0.05, x1.size)
@@ -996,7 +996,7 @@ unstable, the multivariate echo of the multicollinearity that [REGR-07] treats i
 
 ```{python}
 #| label: fig-degenerate
-#| fig-cap: "A degenerate random vector. $X_2 = 1.5\\,X_1$ exactly (plus negligible noise), so the cloud lies on a line and has zero spread perpendicular to it. The covariance matrix is singular — its determinant is ~0 and it has no inverse — so the multivariate-normal density does not exist. This is the boundary case of positive *semi*definiteness: one direction carries exactly zero variance."
+#| fig-cap: 'A degenerate random vector. $X_2 = 1.5\\,X_1$ exactly (plus negligible noise), so the cloud lies on a line and has zero spread perpendicular to it. The covariance matrix is singular — its determinant is ~0 and it has no inverse — so the multivariate-normal density does not exist. This is the boundary case of positive *semi*definiteness: one direction carries exactly zero variance.'
 rng = np.random.default_rng(2)
 x1 = rng.normal(0, 1, 400)
 x2 = 1.5 * x1 + rng.normal(0, 0.01, x1.size)

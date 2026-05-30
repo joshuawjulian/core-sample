@@ -365,7 +365,7 @@ $(\mathbf v+\theta)_+$. We use this projection in the portfolio example of @sec-
 
 ```{python}
 #| label: fig-projections
-#| fig-cap: "Three closed-form projections. **Left:** onto a box, each coordinate is clipped to its interval. **Center:** onto a ball, an outside point is pulled radially to the boundary sphere, an inside point is left alone. **Right:** onto the probability simplex (the segment $x_1+x_2=1$, $x\ge0$ in 2-D), the nearest feasible point of an infeasible $\\mathbf v$. In every case the dashed segment from $\\mathbf v$ to $\\Pi_C(\\mathbf v)$ is the shortest path to the set."
+#| fig-cap: 'Three closed-form projections. **Left:** onto a box, each coordinate is clipped to its interval. **Center:** onto a ball, an outside point is pulled radially to the boundary sphere, an inside point is left alone. **Right:** onto the probability simplex (the segment $x_1+x_2=1$, $x\ge0$ in 2-D), the nearest feasible point of an infeasible $\\mathbf v$. In every case the dashed segment from $\\mathbf v$ to $\\Pi_C(\\mathbf v)$ is the shortest path to the set.'
 fig, (axB, axC, axS) = plt.subplots(1, 3, figsize=(10.5, 3.6))
 
 # (a) box
@@ -690,7 +690,7 @@ keep exact what you cannot." @fig-ista-surrogate makes the surrogate picture con
 
 ```{python}
 #| label: fig-ista-surrogate
-#| fig-cap: "One proximal-gradient step in 1-D on $F(x)=f(x)+g(x)$ with $f$ smooth (a quadratic) and $g(x)=\\lambda|x|$. At the current point $x_k$ we replace $f$ by its quadratic upper bound (the descent-lemma parabola, grey dashed) but keep $g$ exact. The next iterate $x_{k+1}$ (red) is the minimizer of surrogate-plus-exact-penalty, i.e. the prox of the gradient-step point. Note it lands *at the kink* $x=0$: the prox produces an exact zero, which a subgradient step could not."
+#| fig-cap: 'One proximal-gradient step in 1-D on $F(x)=f(x)+g(x)$ with $f$ smooth (a quadratic) and $g(x)=\\lambda|x|$. At the current point $x_k$ we replace $f$ by its quadratic upper bound (the descent-lemma parabola, grey dashed) but keep $g$ exact. The next iterate $x_{k+1}$ (red) is the minimizer of surrogate-plus-exact-penalty, i.e. the prox of the gradient-step point. Note it lands *at the kink* $x=0$: the prox produces an exact zero, which a subgradient step could not.'
 lam = 0.6; Lc = 2.0
 fq = lambda x: 0.5*Lc*(x-1.3)**2          # smooth part
 gp = lambda x: lam*np.abs(x)
@@ -920,7 +920,7 @@ hard-threshold and the identity, and shows the dead zone that manufactures spars
 
 ```{python}
 #| label: fig-soft
-#| fig-cap: "Soft-thresholding $S_\\kappa(v)=\\operatorname{sign}(v)(|v|-\\kappa)_+$, the prox of $\\kappa|\\cdot|$ (red), against the identity $v\\mapsto v$ (grey dashed, the prox of no penalty). The flat **dead zone** $|v|\\le\\kappa$ is where coefficients are crushed to exactly zero — this is the kink of $|\\cdot|$ cashed out as the sparsity-making mechanism. Outside the dead zone the output is the input pulled back toward zero by exactly $\\kappa$ (note the curve runs parallel to, but below, the identity)."
+#| fig-cap: 'Soft-thresholding $S_\\kappa(v)=\\operatorname{sign}(v)(|v|-\\kappa)_+$, the prox of $\\kappa|\\cdot|$ (red), against the identity $v\\mapsto v$ (grey dashed, the prox of no penalty). The flat **dead zone** $|v|\\le\\kappa$ is where coefficients are crushed to exactly zero — this is the kink of $|\\cdot|$ cashed out as the sparsity-making mechanism. Outside the dead zone the output is the input pulled back toward zero by exactly $\\kappa$ (note the curve runs parallel to, but below, the identity).'
 kappa = 1.0
 v = np.linspace(-4, 4, 400)
 S = np.sign(v) * np.maximum(np.abs(v) - kappa, 0.0)
@@ -1000,7 +1000,7 @@ sparse-recovery problem; the acceleration is dramatic.
 
 ```{python}
 #| label: fig-fista
-#| fig-cap: "ISTA vs. FISTA on a sparse-recovery lasso. We recover a sparse $\\boldsymbol\\beta^\\star$ (10 nonzeros out of 200) from 100 noisy linear measurements $\\mathbf y=X\\boldsymbol\\beta^\\star+\\text{noise}$ by minimizing $\\tfrac12\\|\\mathbf y-X\\boldsymbol\\beta\\|^2+\\lambda\\|\\boldsymbol\\beta\\|_1$. **Left:** objective gap $F(\\boldsymbol\\beta_k)-F^\\star$ on a log scale — FISTA's $O(1/k^2)$ leaves ISTA's $O(1/k)$ far behind. **Right:** the recovered coefficients from FISTA — out of 200 coordinates, all but a handful are crushed to *exactly* zero (the soft-threshold dead zone at work), and the recovered nonzeros sit on the true support, modulo a few small false positives that a larger $\\lambda$ would remove at the cost of bias."
+#| fig-cap: 'ISTA vs. FISTA on a sparse-recovery lasso. We recover a sparse $\\boldsymbol\\beta^\\star$ (10 nonzeros out of 200) from 100 noisy linear measurements $\\mathbf y=X\\boldsymbol\\beta^\\star+\\text{noise}$ by minimizing $\\tfrac12\\|\\mathbf y-X\\boldsymbol\\beta\\|^2+\\lambda\\|\\boldsymbol\\beta\\|_1$. **Left:** objective gap $F(\\boldsymbol\\beta_k)-F^\\star$ on a log scale — FISTA''s $O(1/k^2)$ leaves ISTA''s $O(1/k)$ far behind. **Right:** the recovered coefficients from FISTA — out of 200 coordinates, all but a handful are crushed to *exactly* zero (the soft-threshold dead zone at work), and the recovered nonzeros sit on the true support, modulo a few small false positives that a larger $\\lambda$ would remove at the cost of bias.'
 rng = np.random.default_rng(0)
 n_obs, p, s = 100, 200, 10
 X = rng.standard_normal((n_obs, p)) / np.sqrt(n_obs)
@@ -1187,7 +1187,7 @@ projection onto the intersection.
 
 ```{python}
 #| label: fig-edge
-#| fig-cap: "The edge of applicability. Projecting onto the intersection of a box and a ball. **Alternating** projections (project onto the box, then the ball, then the box, ...) do converge to a feasible point in the intersection — but the limit is generally **not** $\\Pi_{C_1\\cap C_2}(\\mathbf v)$, the true nearest point (green star). The dashed path shows the alternating iterates zig-zagging into the lens-shaped intersection; they land on the boundary, not at the closest interior-feasible point. When the prox of the *combined* constraint has no closed form, a single projected-gradient step is itself an iterative subproblem, and the method loses its appeal."
+#| fig-cap: 'The edge of applicability. Projecting onto the intersection of a box and a ball. **Alternating** projections (project onto the box, then the ball, then the box, ...) do converge to a feasible point in the intersection — but the limit is generally **not** $\\Pi_{C_1\\cap C_2}(\\mathbf v)$, the true nearest point (green star). The dashed path shows the alternating iterates zig-zagging into the lens-shaped intersection; they land on the boundary, not at the closest interior-feasible point. When the prox of the *combined* constraint has no closed form, a single projected-gradient step is itself an iterative subproblem, and the method loses its appeal.'
 fig, ax = plt.subplots(figsize=(5.8, 5.4))
 # box C1 and ball C2
 ax.add_patch(plt.Rectangle((-0.2, -0.6), 1.6, 1.4, fc="none", ec=CURVE, lw=2, label="box $C_1$"))

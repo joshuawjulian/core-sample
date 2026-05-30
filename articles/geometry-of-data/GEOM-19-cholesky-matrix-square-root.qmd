@@ -201,7 +201,7 @@ flows into it.
 
 ```{python}
 #| label: fig-two-roots
-#| fig-cap: "Two square roots of the same positive-definite matrix $A=\\begin{psmallmatrix}4&2\\\\2&3\\end{psmallmatrix}$, each mapping the unit circle (grey) to the *same* ellipse $\\{Bz:\\|z\\|=1\\}$ (which is the unit ellipse of $A$). **Left:** the symmetric root $A^{1/2}$ stretches the circle straight along the eigen-axes of $A$ (red, green) — a pure, rotation-free scaling. **Right:** the Cholesky factor $L$ reaches the identical ellipse by a triangular shear: stretch $x_1$, then skew $x_2$. Same destination, different route. The image of the standard axes (blue arrows) shows how each factor moves the coordinate frame."
+#| fig-cap: 'Two square roots of the same positive-definite matrix $A=\\begin{psmallmatrix}4&2\\\\2&3\\end{psmallmatrix}$, each mapping the unit circle (grey) to the *same* ellipse $\\{Bz:\\|z\\|=1\\}$ (which is the unit ellipse of $A$). **Left:** the symmetric root $A^{1/2}$ stretches the circle straight along the eigen-axes of $A$ (red, green) — a pure, rotation-free scaling. **Right:** the Cholesky factor $L$ reaches the identical ellipse by a triangular shear: stretch $x_1$, then skew $x_2$. Same destination, different route. The image of the standard axes (blue arrows) shows how each factor moves the coordinate frame.'
 A = np.array([[4.0, 2.0], [2.0, 3.0]])
 
 # symmetric root via spectral theorem
@@ -646,7 +646,7 @@ covariance matches $\Sigma$.
 
 ```{python}
 #| label: fig-sampling
-#| fig-cap: "Sampling a correlated Gaussian by $x = Lz$. **Left:** 2000 draws of uncorrelated standard noise $z$ (covariance $\\approx I$, a round cloud). **Right:** the same draws after $x = Lz$ with $L$ the Cholesky factor of the target $\\Sigma=\\begin{psmallmatrix}3&1.8\\\\1.8&2\\end{psmallmatrix}$. The cloud has acquired exactly the target covariance ellipse (red); the empirical covariance (printed) matches $\\Sigma$ to sampling error. The Cholesky factor *installs* the correlation structure."
+#| fig-cap: 'Sampling a correlated Gaussian by $x = Lz$. **Left:** 2000 draws of uncorrelated standard noise $z$ (covariance $\\approx I$, a round cloud). **Right:** the same draws after $x = Lz$ with $L$ the Cholesky factor of the target $\\Sigma=\\begin{psmallmatrix}3&1.8\\\\1.8&2\\end{psmallmatrix}$. The cloud has acquired exactly the target covariance ellipse (red); the empirical covariance (printed) matches $\\Sigma$ to sampling error. The Cholesky factor *installs* the correlation structure.'
 rng = np.random.default_rng(0)
 Sigma = np.array([[3.0, 1.8], [1.8, 2.0]])
 L = np.linalg.cholesky(Sigma)
@@ -720,7 +720,7 @@ symmetric).
 
 ```{python}
 #| label: fig-whitening
-#| fig-cap: "Whitening removes correlation. **Left:** a correlated data cloud with covariance $\\Sigma$ and its 2-$\\sigma$ ellipse. **Middle:** after the symmetric whitener $\\Sigma^{-1/2}$ — a round, unit-covariance cloud, with the data left in its natural orientation (no spurious rotation). **Right:** after the Cholesky whitener $L^{-1}$ — also perfectly white (round), but rotated/sheared, because the triangular factor reaches $I$ by a different route. Both achieve $\\mathrm{cov}=I$; the symmetric root is the rotation-free one."
+#| fig-cap: 'Whitening removes correlation. **Left:** a correlated data cloud with covariance $\\Sigma$ and its 2-$\\sigma$ ellipse. **Middle:** after the symmetric whitener $\\Sigma^{-1/2}$ — a round, unit-covariance cloud, with the data left in its natural orientation (no spurious rotation). **Right:** after the Cholesky whitener $L^{-1}$ — also perfectly white (round), but rotated/sheared, because the triangular factor reaches $I$ by a different route. Both achieve $\\mathrm{cov}=I$; the symmetric root is the rotation-free one.'
 rng = np.random.default_rng(7)
 Sigma = np.array([[4.0, 2.6], [2.6, 2.5]])
 L = np.linalg.cholesky(Sigma)
@@ -853,7 +853,7 @@ singular.
 
 ```{python}
 #| label: fig-edge
-#| fig-cap: "The edge of applicability. We build $\\Sigma_\\rho=\\begin{psmallmatrix}1&\\rho\\\\\\rho&1\\end{psmallmatrix}$ and push the correlation $\\rho\\to 1$, where the two features become collinear and $\\Sigma$ approaches singular. **Left:** the smallest Cholesky pivot $d_2 = 1-\\rho^2$ collapses to zero — the factorization survives but barely, $L_{22}=\\sqrt{1-\\rho^2}\\to 0$. **Right:** the resulting covariance ellipse degenerates from a circle ($\\rho=0$) to a near-line ($\\rho=0.99$): the cloud loses a dimension, whitening must divide by $\\sqrt{1-\\rho^2}\\to0$, and the problem is numerically lost before it is mathematically lost."
+#| fig-cap: 'The edge of applicability. We build $\\Sigma_\\rho=\\begin{psmallmatrix}1&\\rho\\\\\\rho&1\\end{psmallmatrix}$ and push the correlation $\\rho\\to 1$, where the two features become collinear and $\\Sigma$ approaches singular. **Left:** the smallest Cholesky pivot $d_2 = 1-\\rho^2$ collapses to zero — the factorization survives but barely, $L_{22}=\\sqrt{1-\\rho^2}\\to 0$. **Right:** the resulting covariance ellipse degenerates from a circle ($\\rho=0$) to a near-line ($\\rho=0.99$): the cloud loses a dimension, whitening must divide by $\\sqrt{1-\\rho^2}\\to0$, and the problem is numerically lost before it is mathematically lost.'
 rhos = np.linspace(0, 0.999, 200)
 pivots = 1 - rhos**2                  # d_2 for the 2x2 correlation matrix
 

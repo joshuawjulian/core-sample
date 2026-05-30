@@ -210,7 +210,7 @@ through both stages.
 
 ```{python}
 #| label: fig-pipeline
-#| fig-cap: "Composition as two machines in series. A single input vector $\\mathbf x=(1,1)$ (navy) enters $B$, a $90^\\circ$ rotation, and emerges as $B\\mathbf x$ (green). That output then enters $A$, a horizontal stretch by $2$, and emerges as $A(B\\mathbf x)$ (red). The compound machine — rotate, then stretch — is the single matrix $AB$. Reading the action right-to-left ($B$ first) is the price of writing the matrix to the left of the vector."
+#| fig-cap: 'Composition as two machines in series. A single input vector $\\mathbf x=(1,1)$ (navy) enters $B$, a $90^\\circ$ rotation, and emerges as $B\\mathbf x$ (green). That output then enters $A$, a horizontal stretch by $2$, and emerges as $A(B\\mathbf x)$ (red). The compound machine — rotate, then stretch — is the single matrix $AB$. Reading the action right-to-left ($B$ first) is the price of writing the matrix to the left of the vector.'
 B = np.array([[0., -1.], [1., 0.]])      # 90 deg rotation
 A = np.array([[2., 0.], [0., 1.]])       # horizontal stretch by 2
 x  = np.array([1., 1.])
@@ -666,7 +666,7 @@ results are visibly different shapes, which is the geometric content of $RS \neq
 
 ```{python}
 #| label: fig-noncommute
-#| fig-cap: "Order matters, drawn. The faint navy grid is the plane; the unit square is highlighted. **Left:** shear first, then rotate ($RS$). **Right:** rotate first, then shear ($SR$). The same two maps composed in opposite orders produce genuinely different images of the square — geometric proof that $RS \\neq SR$. Non-commutativity is not a quirk to memorize; it is the visible fact that doing things in a different order lands you somewhere else."
+#| fig-cap: 'Order matters, drawn. The faint navy grid is the plane; the unit square is highlighted. **Left:** shear first, then rotate ($RS$). **Right:** rotate first, then shear ($SR$). The same two maps composed in opposite orders produce genuinely different images of the square — geometric proof that $RS \\neq SR$. Non-commutativity is not a quirk to memorize; it is the visible fact that doing things in a different order lands you somewhere else.'
 R = np.array([[0., -1.], [1., 0.]])    # 90 deg rotation
 S = np.array([[1., 1.], [0., 1.]])     # horizontal shear
 RS = R @ S
@@ -824,7 +824,7 @@ rank-one outer-product layers.
 
 ```{python}
 #| label: fig-outer
-#| fig-cap: "The outer-product view of $AB$ as a sum of rank-one layers (@eq-outer-sum). Each of the three middle panels is one slab $\\mathbf a_k\\,\\mathbf b^{(k)\\top}$ — the $k$-th column of $A$ times the $k$-th row of $B$, a rank-one matrix. Added together (rightmost panel) they reconstruct the full product $AB$ (leftmost). This 'stack of rank-one layers' picture is exactly how the SVD ([GEOM-20]) rebuilds a matrix, keeping only the layers that carry the most information."
+#| fig-cap: 'The outer-product view of $AB$ as a sum of rank-one layers (@eq-outer-sum). Each of the three middle panels is one slab $\\mathbf a_k\\,\\mathbf b^{(k)\\top}$ — the $k$-th column of $A$ times the $k$-th row of $B$, a rank-one matrix. Added together (rightmost panel) they reconstruct the full product $AB$ (leftmost). This ''stack of rank-one layers'' picture is exactly how the SVD ([GEOM-20]) rebuilds a matrix, keeping only the layers that carry the most information.'
 rng = np.random.default_rng(3)
 A = rng.integers(-3, 4, size=(3, 3)).astype(float)
 B = rng.integers(-3, 4, size=(3, 3)).astype(float)
@@ -906,7 +906,7 @@ the payoff of @thm-product. @fig-graphics carries it through.
 
 ```{python}
 #| label: fig-graphics
-#| fig-cap: "Composition in graphics: rotating a house $45^\\circ$ about its own center $\\mathbf c$. Done as a single rotation $R$ (left), the shape swings away around the origin (grey) — wrong. The correct motion (right) is the composite $M = T(\\mathbf c)\\,R\\,T(-\\mathbf c)$: translate center to origin, rotate, translate back. The three maps collapse into one matrix that rotates in place. Order is read right-to-left and is the entire program logic."
+#| fig-cap: 'Composition in graphics: rotating a house $45^\\circ$ about its own center $\\mathbf c$. Done as a single rotation $R$ (left), the shape swings away around the origin (grey) — wrong. The correct motion (right) is the composite $M = T(\\mathbf c)\\,R\\,T(-\\mathbf c)$: translate center to origin, rotate, translate back. The three maps collapse into one matrix that rotates in place. Order is read right-to-left and is the entire program logic.'
 def T(tx, ty):
     return np.array([[1, 0, tx], [0, 1, ty], [0, 0, 1.]])
 def Rot(deg):
@@ -966,7 +966,7 @@ tiny weather chain with states *Sunny*, *Cloudy*, *Rainy*.
 
 ```{python}
 #| label: fig-markov
-#| fig-cap: "A 3-state weather Markov chain. Each step is the matrix-vector product $\\mathbf p \\mapsto P\\mathbf p$ (composition with the one-step map); $t$ steps is the matrix power $P^t$ applied to the start. **Left:** the distribution over Sunny/Cloudy/Rainy as it evolves from a certain-Sunny start, converging to the chain's steady state. **Right:** the $t$-step transition matrix $P^t$ for $t=1,3,10$ — its columns become identical as $t$ grows, the matrix-level signature of convergence. Repeated composition is just matrix powers."
+#| fig-cap: 'A 3-state weather Markov chain. Each step is the matrix-vector product $\\mathbf p \\mapsto P\\mathbf p$ (composition with the one-step map); $t$ steps is the matrix power $P^t$ applied to the start. **Left:** the distribution over Sunny/Cloudy/Rainy as it evolves from a certain-Sunny start, converging to the chain''s steady state. **Right:** the $t$-step transition matrix $P^t$ for $t=1,3,10$ — its columns become identical as $t$ grows, the matrix-level signature of convergence. Repeated composition is just matrix powers.'
 # columns are FROM-state, rows are TO-state; each column sums to 1
 states = ["Sunny", "Cloudy", "Rainy"]
 P = np.array([
@@ -1050,7 +1050,7 @@ disagree — and the disagreement is exactly $RP \neq PR$.
 
 ```{python}
 #| label: fig-edge
-#| fig-cap: "The edge: two genuinely linear maps that do not commute, and getting the order wrong silently changes the answer. A 2-D point cloud (navy, centered at the origin) is processed two ways. **Order A — $RP$:** project onto the horizontal axis (collapse to a line), then rotate $45^\\circ$ (green line of points). **Order B — $PR$:** rotate $45^\\circ$ first, then project (red line of points). The two pipelines keep *different* combinations of the original data — different spread, different orientation — because projection discards information and the rotation decides which information that is. This is $RP \\neq PR$ made visible on real data."
+#| fig-cap: 'The edge: two genuinely linear maps that do not commute, and getting the order wrong silently changes the answer. A 2-D point cloud (navy, centered at the origin) is processed two ways. **Order A — $RP$:** project onto the horizontal axis (collapse to a line), then rotate $45^\\circ$ (green line of points). **Order B — $PR$:** rotate $45^\\circ$ first, then project (red line of points). The two pipelines keep *different* combinations of the original data — different spread, different orientation — because projection discards information and the rotation decides which information that is. This is $RP \\neq PR$ made visible on real data.'
 rng = np.random.default_rng(11)
 # centered cloud so the disagreement is about the maps, not the mean
 X = rng.multivariate_normal([0.0, 0.0], [[2.2, 1.3], [1.3, 1.0]], size=250).T  # 2 x N

@@ -173,7 +173,7 @@ flattening, and the directions the pseudoinverse can and cannot undo.
 
 ```{python}
 #| label: fig-ellipse
-#| fig-cap: "One $2\\times 2$ matrix read through its SVD. **Left:** $A$ sends the unit circle (grey) to an ellipse (blue) whose semi-axes are the singular vectors $u_1,u_2$ scaled by $\\sigma_1 > \\sigma_2$. **Center:** the best rank-1 approximation $A_1=\\sigma_1 u_1 v_1^\\top$ collapses the short axis entirely — the circle maps onto a *line segment* along $u_1$. The dropped axis had length $\\sigma_2$, exactly the approximation error. **Right:** to invert, the pseudoinverse divides by each axis length; the long axis ($\\div\\sigma_1$) is safe, the short axis ($\\div\\sigma_2$) is the fragile one that amplifies error — and would be *refused* outright if $\\sigma_2$ were zero."
+#| fig-cap: 'One $2\\times 2$ matrix read through its SVD. **Left:** $A$ sends the unit circle (grey) to an ellipse (blue) whose semi-axes are the singular vectors $u_1,u_2$ scaled by $\\sigma_1 > \\sigma_2$. **Center:** the best rank-1 approximation $A_1=\\sigma_1 u_1 v_1^\\top$ collapses the short axis entirely — the circle maps onto a *line segment* along $u_1$. The dropped axis had length $\\sigma_2$, exactly the approximation error. **Right:** to invert, the pseudoinverse divides by each axis length; the long axis ($\\div\\sigma_1$) is safe, the short axis ($\\div\\sigma_2$) is the fragile one that amplifies error — and would be *refused* outright if $\\sigma_2$ were zero.'
 
 A = np.array([[2.0, 1.1],
               [0.4, 1.7]])
@@ -542,7 +542,7 @@ truncations sharpen as $k$ grows, alongside the exact error predicted by
 
 ```{python}
 #| label: fig-image
-#| fig-cap: "Eckart–Young on a $200\\times 200$ grayscale image. The original (top-left) is reconstructed at ranks $k = 2, 5, 20, 60$. The rank-2 version captures the gross light/dark layout; by rank 20 the structure is essentially recovered; rank 60 is visually indistinguishable. Each panel's title reports the *measured* relative Frobenius error and — in parentheses — the value $\\sqrt{\\sum_{i>k}\\sigma_i^2}/\\|A\\|_F$ predicted by @eq-trunc-error. They match to plotting precision: the theorem is exact, not approximate."
+#| fig-cap: 'Eckart–Young on a $200\\times 200$ grayscale image. The original (top-left) is reconstructed at ranks $k = 2, 5, 20, 60$. The rank-2 version captures the gross light/dark layout; by rank 20 the structure is essentially recovered; rank 60 is visually indistinguishable. Each panel''s title reports the *measured* relative Frobenius error and — in parentheses — the value $\\sqrt{\\sum_{i>k}\\sigma_i^2}/\\|A\\|_F$ predicted by @eq-trunc-error. They match to plotting precision: the theorem is exact, not approximate.'
 
 rng = np.random.default_rng(3)
 N = 200
@@ -577,7 +577,7 @@ plt.tight_layout()
 
 ```{python}
 #| label: fig-scree
-#| fig-cap: "The singular-value spectrum of the same image (left, log scale) and the cumulative energy fraction $\\sum_{i\\le k}\\sigma_i^2 / \\sum_i \\sigma_i^2$ (right). The spectrum falls off fast — the image's information is concentrated in the first dozen-or-so directions — which is *why* low-rank approximation works here. The horizontal line marks $99\\%$ of the energy; reaching it takes only a small fraction of the full rank. A flat spectrum (no such decay) would mean truncation buys nothing — the honest precondition for this whole technique."
+#| fig-cap: 'The singular-value spectrum of the same image (left, log scale) and the cumulative energy fraction $\\sum_{i\\le k}\\sigma_i^2 / \\sum_i \\sigma_i^2$ (right). The spectrum falls off fast — the image''s information is concentrated in the first dozen-or-so directions — which is *why* low-rank approximation works here. The horizontal line marks $99\\%$ of the energy; reaching it takes only a small fraction of the full rank. A flat spectrum (no such decay) would mean truncation buys nothing — the honest precondition for this whole technique.'
 
 cum = np.cumsum(s**2)/total_energy
 k99 = int(np.searchsorted(cum, 0.99)) + 1
@@ -617,7 +617,7 @@ near-full-rank one and shows what rank-$k$ truncation costs in each.
 
 ```{python}
 #| label: fig-edge
-#| fig-cap: "When low-rank approximation fails. **Left:** singular-value spectra of two $80\\times 80$ matrices — one with fast decay (blue, compressible) and one that is essentially full-rank random noise (red, flat). **Right:** relative Frobenius error of the rank-$k$ truncation versus $k$. For the compressible matrix the error plunges; for the flat-spectrum matrix it falls only as fast as $\\sqrt{1 - k/r}$ — you must keep almost every component to lose little, so truncation buys nothing. The flat spectrum is the precise signature of a matrix you should *not* try to compress."
+#| fig-cap: 'When low-rank approximation fails. **Left:** singular-value spectra of two $80\\times 80$ matrices — one with fast decay (blue, compressible) and one that is essentially full-rank random noise (red, flat). **Right:** relative Frobenius error of the rank-$k$ truncation versus $k$. For the compressible matrix the error plunges; for the flat-spectrum matrix it falls only as fast as $\\sqrt{1 - k/r}$ — you must keep almost every component to lose little, so truncation buys nothing. The flat spectrum is the precise signature of a matrix you should *not* try to compress.'
 
 n = 80
 rng = np.random.default_rng(11)
@@ -846,7 +846,7 @@ squares" — fell out as a labeled step. @fig-pinv-cases draws the two regimes.
 
 ```{python}
 #| label: fig-pinv-cases
-#| fig-cap: "The two regimes the pseudoinverse handles, in the plane. **Left (over-determined):** three noisy points constrain a line through the origin, $y = x\\,\\theta$, with no exact fit; $\\hat\\theta = A^+ y$ is the least-squares slope, and $A\\hat\\theta$ is the orthogonal projection of $y$ onto the column space (the reachable line). **Right (under-determined):** a single equation $a^\\top x = c$ in two unknowns has a whole line of exact solutions (grey); $A^+ c$ (green) is the one closest to the origin — the foot of the perpendicular from the origin to that solution line, the minimum-norm choice."
+#| fig-cap: 'The two regimes the pseudoinverse handles, in the plane. **Left (over-determined):** three noisy points constrain a line through the origin, $y = x\\,\\theta$, with no exact fit; $\\hat\\theta = A^+ y$ is the least-squares slope, and $A\\hat\\theta$ is the orthogonal projection of $y$ onto the column space (the reachable line). **Right (under-determined):** a single equation $a^\\top x = c$ in two unknowns has a whole line of exact solutions (grey); $A^+ c$ (green) is the one closest to the origin — the foot of the perpendicular from the origin to that solution line, the minimum-norm choice.'
 
 # Left: over-determined least squares (1 unknown slope, 3 equations)
 A_over = np.array([[1.0], [2.0], [3.0]])
@@ -937,7 +937,7 @@ while distributing the coefficient between the two collinear predictors in the u
 
 ```{python}
 #| label: fig-rankdef
-#| fig-cap: "Rank-deficient regression. **Left:** fitted vs. observed $y$ — the pseudoinverse fit is excellent ($45^\\circ$ line), because the *predictions* are well-determined even when the coefficients are not. **Right:** the coefficient indeterminacy. Any split of the combined effect between the collinear $x_1$ and $x_2$ along the grey line gives the *same* fit; the pseudoinverse picks the green point, the one closest to the origin (minimum norm). This is the geometric meaning of 'the pseudoinverse chooses for you' — and a warning that the individual collinear coefficients are not interpretable."
+#| fig-cap: 'Rank-deficient regression. **Left:** fitted vs. observed $y$ — the pseudoinverse fit is excellent ($45^\\circ$ line), because the *predictions* are well-determined even when the coefficients are not. **Right:** the coefficient indeterminacy. Any split of the combined effect between the collinear $x_1$ and $x_2$ along the grey line gives the *same* fit; the pseudoinverse picks the green point, the one closest to the origin (minimum norm). This is the geometric meaning of ''the pseudoinverse chooses for you'' — and a warning that the individual collinear coefficients are not interpretable.'
 
 fitted = A @ beta_pinv
 fig, (a0, a1) = plt.subplots(1, 2, figsize=(8.8, 3.6))
@@ -1020,7 +1020,7 @@ question into an easy decision, one singular value at a time.
 
 ```{python}
 #| label: fig-summary
-#| fig-cap: "The two operations as transformations of the singular values, on a shared spectrum. **Top:** the raw singular values $\\sigma_i$ (blue), with the cutoff $k$ marked. **Bottom-left:** low-rank approximation keeps $\\sigma_i$ for $i\\le k$ and zeros the rest. **Bottom-right:** the pseudoinverse maps each kept $\\sigma_i$ to $1/\\sigma_i$ and zeros the rest — note how the *smallest* kept singular value becomes the *largest* reciprocal, which is why a small surviving $\\sigma$ is dangerous. Same cutoff, two mirror-image edits."
+#| fig-cap: 'The two operations as transformations of the singular values, on a shared spectrum. **Top:** the raw singular values $\\sigma_i$ (blue), with the cutoff $k$ marked. **Bottom-left:** low-rank approximation keeps $\\sigma_i$ for $i\\le k$ and zeros the rest. **Bottom-right:** the pseudoinverse maps each kept $\\sigma_i$ to $1/\\sigma_i$ and zeros the rest — note how the *smallest* kept singular value becomes the *largest* reciprocal, which is why a small surviving $\\sigma$ is dangerous. Same cutoff, two mirror-image edits.'
 
 s_demo = np.array([8.0, 5.5, 3.2, 2.0, 1.1, 0.6, 0.25, 0.08])
 k = 4

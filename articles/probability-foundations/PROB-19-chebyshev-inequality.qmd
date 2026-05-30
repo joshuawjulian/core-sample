@@ -179,7 +179,7 @@ it punishes far outcomes quadratically, so a small variance forcibly starves the
 
 ```{python}
 #| label: fig-budget
-#| fig-cap: "Variance as a finite budget that starves the tails. The blue density has mean $0$ and standard deviation $1$. The shaded red regions are the tails beyond $k=2$ standard deviations. Every outcome in those tails contributes at least $(2\\sigma)^2 = 4$ to the variance budget, yet the *whole* budget is only $\\sigma^2 = 1$. So at most a fraction $1/k^2 = 1/4$ of probability can live out there — Chebyshev's ceiling (red dashed). The actual tail mass for this particular density is far below the ceiling, which previews how loose the universal bound is for friendly shapes."
+#| fig-cap: 'Variance as a finite budget that starves the tails. The blue density has mean $0$ and standard deviation $1$. The shaded red regions are the tails beyond $k=2$ standard deviations. Every outcome in those tails contributes at least $(2\\sigma)^2 = 4$ to the variance budget, yet the *whole* budget is only $\\sigma^2 = 1$. So at most a fraction $1/k^2 = 1/4$ of probability can live out there — Chebyshev''s ceiling (red dashed). The actual tail mass for this particular density is far below the ceiling, which previews how loose the universal bound is for friendly shapes.'
 mu, sigma, k = 0.0, 1.0, 2.0
 x = np.linspace(-5, 5, 1000)
 # A concrete friendly density (standard normal) to visualize against the budget.
@@ -386,7 +386,7 @@ is much smaller. The table below puts the ceiling beside the truth.
 
 ```{python}
 #| label: fig-looseness
-#| fig-cap: "How loose Chebyshev is for a friendly distribution. For the standard normal, the red curve is Chebyshev's universal ceiling $1/k^2$ on $P(|Z|\\ge k)$; the blue curve is the *actual* normal tail probability $2(1-\\Phi(k))$. On a log scale the gap is enormous — at $k=4$ the bound permits $6.25\\%$ while the true tail is $0.006\\%$, a factor of about a thousand. The looseness is the price of distribution-freeness: the bound also has to cover distributions whose tails really are this heavy."
+#| fig-cap: 'How loose Chebyshev is for a friendly distribution. For the standard normal, the red curve is Chebyshev''s universal ceiling $1/k^2$ on $P(|Z|\\ge k)$; the blue curve is the *actual* normal tail probability $2(1-\\Phi(k))$. On a log scale the gap is enormous — at $k=4$ the bound permits $6.25\\%$ while the true tail is $0.006\\%$, a factor of about a thousand. The looseness is the price of distribution-freeness: the bound also has to cover distributions whose tails really are this heavy.'
 from math import erf, sqrt
 
 def normal_two_sided_tail(k):
@@ -465,7 +465,7 @@ adversary, and the barbell is it.
 
 ```{python}
 #| label: fig-tight
-#| fig-cap: "The adversary that makes Chebyshev exact. For $k=2$, the three-point 'barbell' distribution puts mass $1/(2k^2)=1/8$ at each of $\\pm 2\\sigma$ and the remaining $1-1/k^2 = 3/4$ at the mean. Exactly $1/k^2 = 1/4$ of the probability sits at distance $\\ge 2\\sigma$ (red), so Chebyshev's bound (red dashed line at $0.25$) is attained with equality. No distribution with this mean and variance can do worse, which is what makes $1/k^2$ a genuine ceiling and not just a heuristic."
+#| fig-cap: 'The adversary that makes Chebyshev exact. For $k=2$, the three-point ''barbell'' distribution puts mass $1/(2k^2)=1/8$ at each of $\\pm 2\\sigma$ and the remaining $1-1/k^2 = 3/4$ at the mean. Exactly $1/k^2 = 1/4$ of the probability sits at distance $\\ge 2\\sigma$ (red), so Chebyshev''s bound (red dashed line at $0.25$) is attained with equality. No distribution with this mean and variance can do worse, which is what makes $1/k^2$ a genuine ceiling and not just a heuristic.'
 k = 2.0
 sigma = 1.0
 c = k * sigma
@@ -572,7 +572,7 @@ Gaussian assumed.
 
 ```{python}
 #| label: fig-lln
-#| fig-cap: "Chebyshev driving the law of large numbers. We sample i.i.d. from a heavily skewed Exponential($\\lambda=1$) population ($\\mu=1$, $\\sigma=1$ — emphatically *not* normal) and track the sample mean as $n$ grows, for ten independent runs (thin grey paths). The fan of paths narrows toward the true mean $\\mu=1$ (green). The red envelope is Chebyshev's $\\pm\\,\\varepsilon$ band where $\\varepsilon$ is chosen so the bound $\\sigma^2/(n\\varepsilon^2)$ equals $0.05$ at each $n$ — i.e. the guaranteed-95\\% region. Every path stays inside its envelope far more often than the worst case allows, because the exponential is friendlier than the barbell adversary."
+#| fig-cap: 'Chebyshev driving the law of large numbers. We sample i.i.d. from a heavily skewed Exponential($\\lambda=1$) population ($\\mu=1$, $\\sigma=1$ — emphatically *not* normal) and track the sample mean as $n$ grows, for ten independent runs (thin grey paths). The fan of paths narrows toward the true mean $\\mu=1$ (green). The red envelope is Chebyshev''s $\\pm\\,\\varepsilon$ band where $\\varepsilon$ is chosen so the bound $\\sigma^2/(n\\varepsilon^2)$ equals $0.05$ at each $n$ — i.e. the guaranteed-95\\% region. Every path stays inside its envelope far more often than the worst case allows, because the exponential is friendlier than the barbell adversary.'
 n_max = 2000
 n_runs = 10
 mu_true, sigma_true = 1.0, 1.0  # Exponential(1)
@@ -669,7 +669,7 @@ large enough for the normal approximation to be trustworthy.
 
 ```{python}
 #| label: fig-poll
-#| fig-cap: "Chebyshev vs. the normal approximation for polling sample size. Both give the $n$ needed so the sample proportion is within $\\varepsilon$ of $p$ with 95% confidence, worst case $p=1/2$. The red Chebyshev curve ($n = \\sigma^2/(0.05\\varepsilon^2)$) sits well above the blue normal-approximation curve ($n = (z_{0.975}\\,\\sigma/\\varepsilon)^2$) at every margin of error: the distribution-free guarantee costs about $5\\times$ the samples. The vertical line marks the $\\varepsilon=0.03$ worked example."
+#| fig-cap: 'Chebyshev vs. the normal approximation for polling sample size. Both give the $n$ needed so the sample proportion is within $\\varepsilon$ of $p$ with 95% confidence, worst case $p=1/2$. The red Chebyshev curve ($n = \\sigma^2/(0.05\\varepsilon^2)$) sits well above the blue normal-approximation curve ($n = (z_{0.975}\\,\\sigma/\\varepsilon)^2$) at every margin of error: the distribution-free guarantee costs about $5\\times$ the samples. The vertical line marks the $\\varepsilon=0.03$ worked example.'
 eps_grid = np.linspace(0.01, 0.06, 200)
 sig2 = 0.25  # worst-case Bernoulli variance
 z = 1.959963985  # 97.5th percentile of the standard normal

@@ -156,7 +156,7 @@ this convergence visible in @fig-lln-convergence.
 
 ```{python}
 #| label: fig-lln-convergence
-#| fig-cap: "Why the weighted average is the *long-run* average. We simulate repeated rolls of a fair six-sided die and plot the running sample average $\\bar x_n = \\frac1n\\sum_{i\\le n} x_i$ against the number of rolls $n$ (three independent runs, in muted blues). Early on the average lurches around; as $n$ grows every run is drawn toward the same horizontal line — the expectation $E[X]=\\sum x\\,p(x) = 3.5$ (red). The expectation is *defined* to be the value the sample average is converging to. The full theorem that guarantees this convergence is the Law of Large Numbers, owned by the Inference track; here we only need the picture."
+#| fig-cap: 'Why the weighted average is the *long-run* average. We simulate repeated rolls of a fair six-sided die and plot the running sample average $\\bar x_n = \\frac1n\\sum_{i\\le n} x_i$ against the number of rolls $n$ (three independent runs, in muted blues). Early on the average lurches around; as $n$ grows every run is drawn toward the same horizontal line — the expectation $E[X]=\\sum x\\,p(x) = 3.5$ (red). The expectation is *defined* to be the value the sample average is converging to. The full theorem that guarantees this convergence is the Law of Large Numbers, owned by the Inference track; here we only need the picture.'
 rng = np.random.default_rng(0)
 faces = np.arange(1, 7)
 EX = faces.mean()            # = sum x * (1/6) = 3.5
@@ -201,7 +201,7 @@ That balance point — the **center of mass** — is the expectation. @fig-balan
 
 ```{python}
 #| label: fig-balance
-#| fig-cap: "Expectation is the balance point of the probability mass. **Left:** a discrete variable with masses $p(x)$ as bars at four values; the triangle marks where the line balances, $E[X]=\\sum x\\,p(x)$. **Right:** a continuous variable; the shaded area is the density $f(x)$, and the triangle marks $E[X]=\\int x f(x)\\,dx$. In both cases the expectation is the fulcrum at which the mass to the left exactly counterbalances the mass to the right — note it is pulled toward the heavy side, not the side with more *values*."
+#| fig-cap: 'Expectation is the balance point of the probability mass. **Left:** a discrete variable with masses $p(x)$ as bars at four values; the triangle marks where the line balances, $E[X]=\\sum x\\,p(x)$. **Right:** a continuous variable; the shaded area is the density $f(x)$, and the triangle marks $E[X]=\\int x f(x)\\,dx$. In both cases the expectation is the fulcrum at which the mass to the left exactly counterbalances the mass to the right — note it is pulled toward the heavy side, not the side with more *values*.'
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.8))
 
 # Discrete: a skewed little distribution
@@ -734,7 +734,7 @@ is the rare jackpot.
 
 ```{python}
 #| label: fig-lottery
-#| fig-cap: "Where the expected prize comes from. Each bar is one prize's *contribution* $x\\cdot p(x)$ to $E[X]=\\$0.38$. Note the jackpot ($\\$10{,}000$, probability $1/50{,}000$) and the tiny \\$2 refund contribute almost equally to the mean despite differing in probability by a factor of $1000$ — the expectation weights *value times probability*, so a rare huge prize and a common tiny one can matter the same amount. The expectation is the height of the whole stack, well below the \\$2 ticket price (red)."
+#| fig-cap: 'Where the expected prize comes from. Each bar is one prize''s *contribution* $x\\cdot p(x)$ to $E[X]=\\$0.38$. Note the jackpot ($\\$10{,}000$, probability $1/50{,}000$) and the tiny \\$2 refund contribute almost equally to the mean despite differing in probability by a factor of $1000$ — the expectation weights *value times probability*, so a rare huge prize and a common tiny one can matter the same amount. The expectation is the height of the whole stack, well below the \\$2 ticket price (red).'
 contrib = prizes * probs
 labels = ["$10,000", "$500", "$20", "$2 refund", "$0"]
 fig, ax = plt.subplots()
@@ -802,7 +802,7 @@ bulk of the mass.
 
 ```{python}
 #| label: fig-exponential
-#| fig-cap: "Expected waiting time for an exponential with rate $\\lambda=2$ (calls per minute). The density $f(x)=\\lambda e^{-\\lambda x}$ piles probability near $0$ — short waits are most common — but its long right tail drags the balance point out to $E[X]=1/\\lambda = 0.5$ min (green triangle/line), well to the right of the most likely value (which is $0$). The dashed line marks the median ($\\ln 2/\\lambda \\approx 0.347$): for this skewed distribution mean $>$ median $>$ mode, the textbook signature of right skew. A Monte-Carlo average of $200{,}000$ simulated waits (printed) lands on $1/\\lambda$, confirming the hand integral."
+#| fig-cap: 'Expected waiting time for an exponential with rate $\\lambda=2$ (calls per minute). The density $f(x)=\\lambda e^{-\\lambda x}$ piles probability near $0$ — short waits are most common — but its long right tail drags the balance point out to $E[X]=1/\\lambda = 0.5$ min (green triangle/line), well to the right of the most likely value (which is $0$). The dashed line marks the median ($\\ln 2/\\lambda \\approx 0.347$): for this skewed distribution mean $>$ median $>$ mode, the textbook signature of right skew. A Monte-Carlo average of $200{,}000$ simulated waits (printed) lands on $1/\\lambda$, confirming the hand integral.'
 lam = 2.0
 xs = np.linspace(0, 3, 400)
 fx = lam * np.exp(-lam * xs)
@@ -978,7 +978,7 @@ strip that away and it fails completely. @fig-cauchy shows it.
 
 ```{python}
 #| label: fig-cauchy
-#| fig-cap: "The edge of applicability: a distribution with no mean. **Left:** the Cauchy density (red) overlaid on a standard normal (grey); they look deceptively similar near the center, but the Cauchy's tails are far heavier — that heaviness is what makes $\\int|x|f(x)\\,dx$ diverge. **Right:** the running sample average of Cauchy draws (three runs) *refuses to settle* — every so often a single enormous draw from the heavy tail yanks the average to a new place, forever. Contrast this with @fig-lln-convergence, where a finite mean pulled every run to one line. For Cauchy data, the sample mean is a meaningless statistic; you must summarize with the median (which *does* exist) instead."
+#| fig-cap: 'The edge of applicability: a distribution with no mean. **Left:** the Cauchy density (red) overlaid on a standard normal (grey); they look deceptively similar near the center, but the Cauchy''s tails are far heavier — that heaviness is what makes $\\int|x|f(x)\\,dx$ diverge. **Right:** the running sample average of Cauchy draws (three runs) *refuses to settle* — every so often a single enormous draw from the heavy tail yanks the average to a new place, forever. Contrast this with @fig-lln-convergence, where a finite mean pulled every run to one line. For Cauchy data, the sample mean is a meaningless statistic; you must summarize with the median (which *does* exist) instead.'
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.9))
 
 xs = np.linspace(-6, 6, 400)

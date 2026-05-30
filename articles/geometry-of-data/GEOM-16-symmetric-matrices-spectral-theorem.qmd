@@ -206,7 +206,7 @@ eigenvalues. @fig-ellipse shows it.
 
 ```{python}
 #| label: fig-ellipse
-#| fig-cap: "A symmetric matrix turns the unit circle into an ellipse whose axes are *perpendicular* and aligned with the eigenvectors. **Left:** the unit circle (grey) with the two orthonormal eigenvectors $q_1, q_2$ (red, green). **Right:** the image $A x$ as $x$ runs around the circle (blue ellipse). The eigenvectors do not rotate — they only stretch, by $\\lambda_1$ and $\\lambda_2$ — so they land exactly on the ellipse's axes. There is no shear: the right angle between $q_1$ and $q_2$ is preserved. This is the entire geometric content of the spectral theorem."
+#| fig-cap: 'A symmetric matrix turns the unit circle into an ellipse whose axes are *perpendicular* and aligned with the eigenvectors. **Left:** the unit circle (grey) with the two orthonormal eigenvectors $q_1, q_2$ (red, green). **Right:** the image $A x$ as $x$ runs around the circle (blue ellipse). The eigenvectors do not rotate — they only stretch, by $\\lambda_1$ and $\\lambda_2$ — so they land exactly on the ellipse''s axes. There is no shear: the right angle between $q_1$ and $q_2$ is preserved. This is the entire geometric content of the spectral theorem.'
 A = np.array([[3.0, 1.0], [1.0, 2.0]])   # symmetric
 w, V = np.linalg.eigh(A)
 q1, q2 = V[:, 0], V[:, 1]
@@ -699,7 +699,7 @@ and draws the geometry.
 
 ```{python}
 #| label: fig-ex-byhand
-#| fig-cap: "The hand-worked example $A = \\bigl[\\begin{smallmatrix}4&1\\\\1&4\\end{smallmatrix}\\bigr]$. The eigenvectors $q_1=(1,1)/\\sqrt2$ (red) and $q_2=(1,-1)/\\sqrt2$ (green) are perpendicular; $A$ stretches along $q_1$ by $\\lambda_1=5$ and along $q_2$ by $\\lambda_2=3$, turning the unit circle (grey) into an ellipse (blue) whose axes lie exactly on the eigenvectors. The diagonal symmetry of $A$ shows up as the $45^\\circ$ tilt of the principal axis."
+#| fig-cap: 'The hand-worked example $A = \\bigl[\\begin{smallmatrix}4&1\\\\1&4\\end{smallmatrix}\\bigr]$. The eigenvectors $q_1=(1,1)/\\sqrt2$ (red) and $q_2=(1,-1)/\\sqrt2$ (green) are perpendicular; $A$ stretches along $q_1$ by $\\lambda_1=5$ and along $q_2$ by $\\lambda_2=3$, turning the unit circle (grey) into an ellipse (blue) whose axes lie exactly on the eigenvectors. The diagonal symmetry of $A$ shows up as the $45^\\circ$ tilt of the principal axis.'
 A = np.array([[4.0, 1.0], [1.0, 4.0]])
 w, V = np.linalg.eigh(A)                 # ascending: lambda=3 then 5
 order = np.argsort(w)[::-1]              # put largest first for plotting
@@ -749,7 +749,7 @@ and it links back here for exactly this decomposition.
 
 ```{python}
 #| label: fig-covariance
-#| fig-cap: "A correlated data cloud and the principal axes the spectral theorem extracts from its covariance matrix. The points (blue) have correlated $x_1,x_2$. Diagonalizing $\\Sigma = Q\\Lambda Q^\\top$ gives perpendicular eigenvectors $q_1$ (red, direction of maximum variance) and $q_2$ (green, minimum variance); the arrows are scaled by $\\sqrt{\\lambda_k}$ (one standard deviation along each axis). The dashed ellipse is the one-standard-deviation contour $\\{x : x^\\top \\Sigma^{-1} x = 1\\}$ — its axes are exactly the eigenvectors. The eigenstructure of $\\Sigma$ *is* the shape of the cloud."
+#| fig-cap: 'A correlated data cloud and the principal axes the spectral theorem extracts from its covariance matrix. The points (blue) have correlated $x_1,x_2$. Diagonalizing $\\Sigma = Q\\Lambda Q^\\top$ gives perpendicular eigenvectors $q_1$ (red, direction of maximum variance) and $q_2$ (green, minimum variance); the arrows are scaled by $\\sqrt{\\lambda_k}$ (one standard deviation along each axis). The dashed ellipse is the one-standard-deviation contour $\\{x : x^\\top \\Sigma^{-1} x = 1\\}$ — its axes are exactly the eigenvectors. The eigenstructure of $\\Sigma$ *is* the shape of the cloud.'
 rng = np.random.default_rng(3)
 # A genuinely correlated cloud: draw from a known covariance.
 true_cov = np.array([[3.0, 1.6], [1.6, 1.2]])
@@ -810,7 +810,7 @@ that powers second-order optimization.
 
 ```{python}
 #| label: fig-hessian
-#| fig-cap: "The spectral theorem reads the shape of a surface off its Hessian. **Left:** contours of $f(x,y)=x^2+xy+y^2$; the level sets are ellipses whose axes are the Hessian's eigenvectors $q_1$ (red), $q_2$ (green). **Right:** the surface itself, a bowl. Both eigenvalues of $H=\\bigl[\\begin{smallmatrix}2&1\\\\1&2\\end{smallmatrix}\\bigr]$ are positive ($\\lambda=3$ and $\\lambda=1$), so the surface curves upward along *both* principal directions — a genuine local minimum. The eigenvalue is the curvature along its eigenvector."
+#| fig-cap: 'The spectral theorem reads the shape of a surface off its Hessian. **Left:** contours of $f(x,y)=x^2+xy+y^2$; the level sets are ellipses whose axes are the Hessian''s eigenvectors $q_1$ (red), $q_2$ (green). **Right:** the surface itself, a bowl. Both eigenvalues of $H=\\bigl[\\begin{smallmatrix}2&1\\\\1&2\\end{smallmatrix}\\bigr]$ are positive ($\\lambda=3$ and $\\lambda=1$), so the surface curves upward along *both* principal directions — a genuine local minimum. The eigenvalue is the curvature along its eigenvector.'
 H = np.array([[2.0, 1.0], [1.0, 2.0]])
 w, V = np.linalg.eigh(H); order = np.argsort(w)[::-1]; w, V = w[order], V[:, order]
 q1, q2 = V[:, 0], V[:, 1]
@@ -854,7 +854,7 @@ axis. This is the honest boundary: trust the *eigenvalues* and the *eigenspaces*
 
 ```{python}
 #| label: fig-edge
-#| fig-cap: "The edge of applicability: near-degenerate eigenvalues. We take a symmetric matrix with two almost-equal eigenvalues ($\\lambda_1 \\approx \\lambda_2$, an almost-circular ellipse) and a clearly separated one ($\\lambda_1 \\gg \\lambda_2$). For each we add tiny random symmetric perturbations and overlay the recomputed top eigenvector (red) across 30 trials. **Left (separated):** the eigenvector barely moves — well-conditioned. **Right (near-degenerate):** the eigenvector spins around the circle — the individual direction is meaningless even though the theorem still holds and the eigenvalues are stable."
+#| fig-cap: 'The edge of applicability: near-degenerate eigenvalues. We take a symmetric matrix with two almost-equal eigenvalues ($\\lambda_1 \\approx \\lambda_2$, an almost-circular ellipse) and a clearly separated one ($\\lambda_1 \\gg \\lambda_2$). For each we add tiny random symmetric perturbations and overlay the recomputed top eigenvector (red) across 30 trials. **Left (separated):** the eigenvector barely moves — well-conditioned. **Right (near-degenerate):** the eigenvector spins around the circle — the individual direction is meaningless even though the theorem still holds and the eigenvalues are stable.'
 rng = np.random.default_rng(11)
 
 def trials(base, eps=0.02, n=30):

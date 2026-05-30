@@ -180,7 +180,7 @@ that is $E[X^2]$. @fig-tilt makes the tilt visible.
 
 ```{python}
 #| label: fig-tilt
-#| fig-cap: "The MGF as a tilted average. The grey curve is a standard normal density $f(x)$. Multiplying by $e^{tx}$ (here $t=0.8$) tilts it: the dashed red curve is the *unnormalized* tilted weight $e^{tx} f(x)$, which leans toward the right tail. The MGF $M(t)=\\int e^{tx} f(x)\\,dx$ is the total area under that tilted curve — a single number for each $t$. As $t$ grows the tilt is more violent, and if the original density did not decay fast enough the area would be infinite."
+#| fig-cap: 'The MGF as a tilted average. The grey curve is a standard normal density $f(x)$. Multiplying by $e^{tx}$ (here $t=0.8$) tilts it: the dashed red curve is the *unnormalized* tilted weight $e^{tx} f(x)$, which leans toward the right tail. The MGF $M(t)=\\int e^{tx} f(x)\\,dx$ is the total area under that tilted curve — a single number for each $t$. As $t$ grows the tilt is more violent, and if the original density did not decay fast enough the area would be infinite.'
 x = np.linspace(-4, 4, 400)
 f = np.exp(-x**2 / 2) / np.sqrt(2 * np.pi)
 t = 0.8
@@ -507,7 +507,7 @@ exponential's, with a figure.
 
 ```{python}
 #| label: fig-catalog-mgfs
-#| fig-cap: "The MGFs of four catalog distributions, each plotted over the range of $t$ where it is finite. Bernoulli, Poisson, and normal MGFs are finite for every $t$. The exponential's MGF $\\lambda/(\\lambda-t)$ (here $\\lambda=1.5$) is finite only for $t<\\lambda$ and diverges to $+\\infty$ as $t\\to\\lambda$ (dashed vertical line) — the first sign that existence is not automatic. Every curve passes through $(0,1)$, the universal value $M_X(0)=1$ (grey dot)."
+#| fig-cap: 'The MGFs of four catalog distributions, each plotted over the range of $t$ where it is finite. Bernoulli, Poisson, and normal MGFs are finite for every $t$. The exponential''s MGF $\\lambda/(\\lambda-t)$ (here $\\lambda=1.5$) is finite only for $t<\\lambda$ and diverges to $+\\infty$ as $t\\to\\lambda$ (dashed vertical line) — the first sign that existence is not automatic. Every curve passes through $(0,1)$, the universal value $M_X(0)=1$ (grey dot).'
 fig, axes = plt.subplots(2, 2, figsize=(8.6, 6.0))
 
 # Bernoulli(0.4)
@@ -777,7 +777,7 @@ simulated sum lands precisely on the density predicted by multiplying MGFs.
 
 ```{python}
 #| label: fig-convolution
-#| fig-cap: "Convolution-by-multiplication, verified by simulation. We add $n=5$ i.i.d. Exponential($\\lambda=1$) variables. Multiplying their MGFs predicts the sum is Gamma$(5,1)$, by @eq-mgf-gamma and uniqueness. The blue histogram is $200{,}000$ simulated sums; the red curve is the Gamma$(5,1)$ density the MGF predicted. They coincide — the product of MGFs found the distribution of the sum without ever computing a convolution integral."
+#| fig-cap: 'Convolution-by-multiplication, verified by simulation. We add $n=5$ i.i.d. Exponential($\\lambda=1$) variables. Multiplying their MGFs predicts the sum is Gamma$(5,1)$, by @eq-mgf-gamma and uniqueness. The blue histogram is $200{,}000$ simulated sums; the red curve is the Gamma$(5,1)$ density the MGF predicted. They coincide — the product of MGFs found the distribution of the sum without ever computing a convolution integral.'
 from scipy import stats
 rng = np.random.default_rng(20)
 n_terms, n_sims, lam = 5, 200_000, 1.0
@@ -835,7 +835,7 @@ tail (Cauchy) and shows the tilted integrand diverging.
 
 ```{python}
 #| label: fig-heavy-tail
-#| fig-cap: "Why heavy tails kill the MGF. **Left:** the normal tail (blue) decays like $e^{-x^2/2}$, fast enough that the tilted integrand $e^{tx}f(x)$ (red, $t=0.5$) still goes to zero — its area, the MGF, is finite. **Right:** the Cauchy tail decays only like $1/x^2$; the tilted integrand $e^{tx}f(x)$ (red) *grows without bound* as $x\\to\\infty$, so the area is infinite and the MGF does not exist. The exponential tilt always wins against a polynomial tail."
+#| fig-cap: 'Why heavy tails kill the MGF. **Left:** the normal tail (blue) decays like $e^{-x^2/2}$, fast enough that the tilted integrand $e^{tx}f(x)$ (red, $t=0.5$) still goes to zero — its area, the MGF, is finite. **Right:** the Cauchy tail decays only like $1/x^2$; the tilted integrand $e^{tx}f(x)$ (red) *grows without bound* as $x\\to\\infty$, so the area is infinite and the MGF does not exist. The exponential tilt always wins against a polynomial tail.'
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))
 t = 0.5
 
@@ -998,7 +998,7 @@ MGF could not.
 
 ```{python}
 #| label: fig-cf
-#| fig-cap: "Characteristic functions exist where MGFs do not. **Left:** the standard normal's characteristic function $\\varphi(t)=e^{-t^2/2}$ (red), bounded by $1$ and tending to $0$ — compare its MGF $e^{t^2/2}$ (grey), which blows up. **Right:** the Cauchy has *no* MGF (it would be infinite for every $t\\neq 0$), yet its characteristic function $\\varphi(t)=e^{-|t|}$ (red) is a clean, bounded function. The complex exponential's unit modulus guarantees the curve never leaves the band $[-1,1]$ (grey dashed)."
+#| fig-cap: 'Characteristic functions exist where MGFs do not. **Left:** the standard normal''s characteristic function $\\varphi(t)=e^{-t^2/2}$ (red), bounded by $1$ and tending to $0$ — compare its MGF $e^{t^2/2}$ (grey), which blows up. **Right:** the Cauchy has *no* MGF (it would be infinite for every $t\\neq 0$), yet its characteristic function $\\varphi(t)=e^{-|t|}$ (red) is a clean, bounded function. The complex exponential''s unit modulus guarantees the curve never leaves the band $[-1,1]$ (grey dashed).'
 t = np.linspace(-4, 4, 400)
 
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.6, 3.7))

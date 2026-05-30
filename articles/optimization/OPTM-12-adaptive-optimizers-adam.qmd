@@ -144,7 +144,7 @@ hardest* — all from the gradients you already compute, at $O(p)$ cost.
 
 ```{python}
 #| label: fig-why-anisotropic
-#| fig-cap: "Why one step size cannot win. The objective $f=\\tfrac12(L x_1^2+\\mu x_2^2)$ with $L=30$, $\\mu=1$ -- steep in $x_1$, flat in $x_2$. **Navy:** plain GD with the largest stable step ($\\eta$ just under $2/L$): it is safe in the steep $x_1$ direction but barely moves along the flat $x_2$ direction, so it crawls down the valley floor. **Red:** the *same* step rescaled *per coordinate* by $1/\\sqrt{\\text{curvature}}$ -- the adaptive idea -- which races to the optimum because each coordinate finally gets the step it wants. The grey arrows on the floor show the per-coordinate step the navy path is forced to share."
+#| fig-cap: 'Why one step size cannot win. The objective $f=\\tfrac12(L x_1^2+\\mu x_2^2)$ with $L=30$, $\\mu=1$ -- steep in $x_1$, flat in $x_2$. **Navy:** plain GD with the largest stable step ($\\eta$ just under $2/L$): it is safe in the steep $x_1$ direction but barely moves along the flat $x_2$ direction, so it crawls down the valley floor. **Red:** the *same* step rescaled *per coordinate* by $1/\\sqrt{\\text{curvature}}$ -- the adaptive idea -- which races to the optimum because each coordinate finally gets the step it wants. The grey arrows on the floor show the per-coordinate step the navy path is forced to share.'
 L, mu = 30.0, 1.0
 def grad(x): return np.array([L * x[0], mu * x[1]])
 
@@ -265,7 +265,7 @@ rough ground. @fig-roadmap previews the payoff on the anisotropic bowl.
 
 ```{python}
 #| label: fig-roadmap
-#| fig-cap: "The whole article on one slide. The anisotropic bowl $f=\\tfrac12(L x_1^2+\\mu x_2^2)$, $L=30$, $\\mu=1$, all methods from the same start with a *single global* base learning rate. **Plain SGD-style GD** (navy) is forced into a tiny safe step and crawls. **AdaGrad** (orange) rescales per coordinate and accelerates -- but watch it slow late as its accumulator grows. **RMSProp** (red) keeps a healthy per-coordinate step throughout. **Adam** (green) adds momentum and sweeps to the optimum fastest. Same gradients, same base $\\eta$; the only difference is how each method sets its *per-coordinate* effective step."
+#| fig-cap: 'The whole article on one slide. The anisotropic bowl $f=\\tfrac12(L x_1^2+\\mu x_2^2)$, $L=30$, $\\mu=1$, all methods from the same start with a *single global* base learning rate. **Plain SGD-style GD** (navy) is forced into a tiny safe step and crawls. **AdaGrad** (orange) rescales per coordinate and accelerates -- but watch it slow late as its accumulator grows. **RMSProp** (red) keeps a healthy per-coordinate step throughout. **Adam** (green) adds momentum and sweeps to the optimum fastest. Same gradients, same base $\\eta$; the only difference is how each method sets its *per-coordinate* effective step.'
 L, mu = 30.0, 1.0
 def grad(x): return np.array([L * x[0], mu * x[1]])
 x0 = np.array([1.0, 4.0]); eps = 1e-8; base_eta = 0.30; nsteps = 80
@@ -437,7 +437,7 @@ inexorably toward zero, and the resulting loss curve flattening far above the op
 
 ```{python}
 #| label: fig-adagrad-decay
-#| fig-cap: "AdaGrad starves itself. A logistic-regression-style smooth convex objective trained for many steps. **Left:** AdaGrad's effective step size $\\eta/\\sqrt{G_k}$ for a representative coordinate, on a log scale -- it decays monotonically toward zero because the accumulator $G_k$ only ever grows, never forgetting old gradients. **Right:** the resulting suboptimality. AdaGrad (orange) makes fast early progress, then **stalls** as its step starves -- the curve flattens far above the optimum -- while RMSProp (red), which forgets old gradients via an EMA (next section), keeps a healthy step and continues descending. The flaw is structural, not a tuning mistake."
+#| fig-cap: 'AdaGrad starves itself. A logistic-regression-style smooth convex objective trained for many steps. **Left:** AdaGrad''s effective step size $\\eta/\\sqrt{G_k}$ for a representative coordinate, on a log scale -- it decays monotonically toward zero because the accumulator $G_k$ only ever grows, never forgetting old gradients. **Right:** the resulting suboptimality. AdaGrad (orange) makes fast early progress, then **stalls** as its step starves -- the curve flattens far above the optimum -- while RMSProp (red), which forgets old gradients via an EMA (next section), keeps a healthy step and continues descending. The flaw is structural, not a tuning mistake.'
 rng = np.random.default_rng(4)
 n, p = 600, 25
 X = rng.standard_normal((n, p))
@@ -697,7 +697,7 @@ violently mis-scaled; with it, they are calibrated from step one.
 
 ```{python}
 #| label: fig-bias
-#| fig-cap: "Bias correction, made visible. **Left:** the shrink factor $1-\\beta_2^k$ (red) for $\\beta_2=0.999$ and $1-\\beta_1^k$ (navy) for $\\beta_1=0.9$. The first-moment factor warms up in ~30 steps; the second-moment factor takes thousands -- so early on the *uncorrected* $v$ is drastically too small. **Right:** Adam on a simple quadratic, with and without bias correction. *Without* correction (orange) the first steps are wildly oversized -- $\\sqrt{v}$ is near zero, so $m/\\sqrt{v}$ blows up -- and the path lurches before recovering. *With* correction (green) every step is properly scaled from the start. The fix matters precisely in the opening steps."
+#| fig-cap: 'Bias correction, made visible. **Left:** the shrink factor $1-\\beta_2^k$ (red) for $\\beta_2=0.999$ and $1-\\beta_1^k$ (navy) for $\\beta_1=0.9$. The first-moment factor warms up in ~30 steps; the second-moment factor takes thousands -- so early on the *uncorrected* $v$ is drastically too small. **Right:** Adam on a simple quadratic, with and without bias correction. *Without* correction (orange) the first steps are wildly oversized -- $\\sqrt{v}$ is near zero, so $m/\\sqrt{v}$ blows up -- and the path lurches before recovering. *With* correction (green) every step is properly scaled from the start. The fix matters precisely in the opening steps.'
 b1, b2 = 0.9, 0.999
 ks = np.arange(1, 200)
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 4.0))
@@ -809,7 +809,7 @@ became the default. We train the same network with each optimizer and watch the 
 
 ```{python}
 #| label: fig-ex-nn
-#| fig-cap: "The modern default, on a non-convex problem. A two-layer tanh network ($2\\to16\\to1$) trained on a two-moons-style nonlinear classification task, minibatch size 32, each optimizer with a *reasonable* (lightly tuned) learning rate. **Plain SGD** (navy) makes slow, noisy progress and is sensitive to the step size. **RMSProp** (red) and especially **Adam** (green) descend faster and more smoothly with far less tuning -- the per-coordinate scaling tames the wildly different gradient magnitudes across the network's weights and biases. AdaGrad (orange) starts well but its monotone decay (@sec-adagrad-flaw) slows it late. This robustness-with-little-tuning is exactly why Adam became the default for deep models."
+#| fig-cap: 'The modern default, on a non-convex problem. A two-layer tanh network ($2\\to16\\to1$) trained on a two-moons-style nonlinear classification task, minibatch size 32, each optimizer with a *reasonable* (lightly tuned) learning rate. **Plain SGD** (navy) makes slow, noisy progress and is sensitive to the step size. **RMSProp** (red) and especially **Adam** (green) descend faster and more smoothly with far less tuning -- the per-coordinate scaling tames the wildly different gradient magnitudes across the network''s weights and biases. AdaGrad (orange) starts well but its monotone decay (@sec-adagrad-flaw) slows it late. This robustness-with-little-tuning is exactly why Adam became the default for deep models.'
 rng = np.random.default_rng(3)
 # two-moons-ish data
 nA = 400
@@ -892,7 +892,7 @@ training loss (where the two optimizers tie) and the *held-out* test loss (where
 
 ```{python}
 #| label: fig-ex-edge
-#| fig-cap: "The edge of applicability: same training fit, worse generalization. An **overparametrized** noisy regression ($n_{\\text{train}}=60$ examples, $p=200$ weights, so the model has more than enough capacity to fit the training data exactly). **Left -- training loss:** both optimizers drive it to essentially zero; **Adam** (green) gets there faster. There is *nothing left to separate them on the data you fit.* **Right -- held-out test loss:** here they part ways. **SGD with momentum** (navy) settles at a clearly *lower* test loss; **Adam** plateaus *higher*. Both interpolate the training set, but they reach *different* interpolating solutions, and Adam's per-coordinate rescaling steers it to one that fits the noise more and generalizes worse (its final weight norm is larger). This is the documented Adam-vs-SGD generalization gap (Wilson et al. 2017): when many solutions fit the data, the optimizer's implicit bias decides which one you land on -- and Adam's is often the worse one for test performance."
+#| fig-cap: 'The edge of applicability: same training fit, worse generalization. An **overparametrized** noisy regression ($n_{\\text{train}}=60$ examples, $p=200$ weights, so the model has more than enough capacity to fit the training data exactly). **Left -- training loss:** both optimizers drive it to essentially zero; **Adam** (green) gets there faster. There is *nothing left to separate them on the data you fit.* **Right -- held-out test loss:** here they part ways. **SGD with momentum** (navy) settles at a clearly *lower* test loss; **Adam** plateaus *higher*. Both interpolate the training set, but they reach *different* interpolating solutions, and Adam''s per-coordinate rescaling steers it to one that fits the noise more and generalizes worse (its final weight norm is larger). This is the documented Adam-vs-SGD generalization gap (Wilson et al. 2017): when many solutions fit the data, the optimizer''s implicit bias decides which one you land on -- and Adam''s is often the worse one for test performance.'
 rng = np.random.default_rng(0)
 ntr, nte, p = 60, 4000, 200          # overparametrized: p >> n_train, many interpolating solutions
 Xtr = rng.standard_normal((ntr, p)); Xte = rng.standard_normal((nte, p))

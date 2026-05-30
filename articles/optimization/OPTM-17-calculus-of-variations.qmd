@@ -189,7 +189,7 @@ bottom out at $\varepsilon=0$.
 
 ```{python}
 #| label: fig-perturbation
-#| fig-cap: "Slicing function-space along one direction. The thick blue curve is a candidate $f$ (here pinned to pass through the two black endpoints). Each thin red curve is a perturbed competitor $f + \\varepsilon\\eta$ for a fixed wiggle $\\eta(x)=\\sin(\\pi (x-a)/(b-a))$ that vanishes at both ends, as $\\varepsilon$ ranges over $[-1,1]$. Sliding $\\varepsilon$ traces a *straight line* through the space of admissible curves. The functional's value along that line is an ordinary function $\\Phi(\\varepsilon)$ — and if $f$ is optimal, $\\Phi$ must bottom out at $\\varepsilon=0$."
+#| fig-cap: 'Slicing function-space along one direction. The thick blue curve is a candidate $f$ (here pinned to pass through the two black endpoints). Each thin red curve is a perturbed competitor $f + \\varepsilon\\eta$ for a fixed wiggle $\\eta(x)=\\sin(\\pi (x-a)/(b-a))$ that vanishes at both ends, as $\\varepsilon$ ranges over $[-1,1]$. Sliding $\\varepsilon$ traces a *straight line* through the space of admissible curves. The functional''s value along that line is an ordinary function $\\Phi(\\varepsilon)$ — and if $f$ is optimal, $\\Phi$ must bottom out at $\\varepsilon=0$.'
 a, b = 0.0, 1.0
 xs = np.linspace(a, b, 200)
 f = 1.0 + 0.8 * (xs - a) * (b - xs) * 2.0                 # a gentle arch, pinned at ends
@@ -222,7 +222,7 @@ the slice $\Phi$ itself for a concrete functional.
 
 ```{python}
 #| label: fig-phi-slice
-#| fig-cap: "The slice $\\Phi(\\varepsilon)=J[f+\\varepsilon\\eta]$ for the bending-energy functional $J[f]=\\int_0^1 f''(x)^2\\,dx$, with $f$ the straight line joining $(0,0)$ to $(1,1)$ (which has $f''\\equiv 0$, so zero energy) and $\\eta(x)=\\sin(\\pi x)$. Because $f$ is the energy minimizer here, $\\Phi$ is an upward parabola bottoming exactly at $\\varepsilon=0$: every nonzero wiggle *adds* bending energy. The tangent at $\\varepsilon=0$ is flat — that flatness, demanded for all $\\eta$, is the Euler–Lagrange condition."
+#| fig-cap: 'The slice $\\Phi(\\varepsilon)=J[f+\\varepsilon\\eta]$ for the bending-energy functional $J[f]=\\int_0^1 f''''(x)^2\\,dx$, with $f$ the straight line joining $(0,0)$ to $(1,1)$ (which has $f''''\\equiv 0$, so zero energy) and $\\eta(x)=\\sin(\\pi x)$. Because $f$ is the energy minimizer here, $\\Phi$ is an upward parabola bottoming exactly at $\\varepsilon=0$: every nonzero wiggle *adds* bending energy. The tangent at $\\varepsilon=0$ is flat — that flatness, demanded for all $\\eta$, is the Euler–Lagrange condition.'
 xs = np.linspace(0, 1, 400)
 fbase = xs.copy()                      # straight line: f'' = 0
 eta = np.sin(np.pi * xs)               # eta'' = -pi^2 sin(pi x)
@@ -580,7 +580,7 @@ numerically: the straight line beats every perturbed competitor on length.
 
 ```{python}
 #| label: fig-shortest
-#| fig-cap: "Euler–Lagrange passes its sanity check. **Left:** the straight line from $(0,0)$ to $(1,1)$ (blue) against perturbed competitors $f+\\varepsilon\\eta$ (red), $\\eta=\\sin(\\pi x)$. **Right:** arc length $J[f+\\varepsilon\\eta]=\\int_0^1\\sqrt{1+(f'+\\varepsilon\\eta')^2}\\,dx$ as a function of $\\varepsilon$, computed by numerical integration. It bottoms out exactly at $\\varepsilon=0$: the straight line is the shortest, as the derivation predicts. Every wiggle, in either direction, lengthens the curve."
+#| fig-cap: 'Euler–Lagrange passes its sanity check. **Left:** the straight line from $(0,0)$ to $(1,1)$ (blue) against perturbed competitors $f+\\varepsilon\\eta$ (red), $\\eta=\\sin(\\pi x)$. **Right:** arc length $J[f+\\varepsilon\\eta]=\\int_0^1\\sqrt{1+(f''+\\varepsilon\\eta'')^2}\\,dx$ as a function of $\\varepsilon$, computed by numerical integration. It bottoms out exactly at $\\varepsilon=0$: the straight line is the shortest, as the derivation predicts. Every wiggle, in either direction, lengthens the curve.'
 xs = np.linspace(0, 1, 600)
 fbase = xs.copy()                 # straight line, f' = 1
 fprime = np.ones_like(xs)
@@ -696,7 +696,7 @@ regimes.
 
 ```{python}
 #| label: fig-catenoid
-#| fig-cap: "The minimal surface of revolution and the edge where it breaks. We fix two rings of equal radius $r=1$ a distance $2d$ apart and look for a catenary $f(x)=c\\cosh(x/c)$ with $f(\\pm d)=1$. **Left ($d=0.4$, rings close):** a valid catenary exists (blue) — the soap film is a smooth catenoid. **Right ($d=0.9$, rings far):** the boundary equation $1=c\\cosh(d/c)$ has *no solution* — every catenary (grey, various $c$) overshoots or undershoots the ring height at $x=\\pm d$. The Euler–Lagrange method returns nothing; the physical film tears into two flat disks. The variational machinery is honest about its own limit: a stationary curve need not exist."
+#| fig-cap: 'The minimal surface of revolution and the edge where it breaks. We fix two rings of equal radius $r=1$ a distance $2d$ apart and look for a catenary $f(x)=c\\cosh(x/c)$ with $f(\\pm d)=1$. **Left ($d=0.4$, rings close):** a valid catenary exists (blue) — the soap film is a smooth catenoid. **Right ($d=0.9$, rings far):** the boundary equation $1=c\\cosh(d/c)$ has *no solution* — every catenary (grey, various $c$) overshoots or undershoots the ring height at $x=\\pm d$. The Euler–Lagrange method returns nothing; the physical film tears into two flat disks. The variational machinery is honest about its own limit: a stationary curve need not exist.'
 def ring_gap_curve(c, d, npts=200):
     xs = np.linspace(-d, d, npts)
     return xs, c * np.cosh(xs / c)
@@ -819,7 +819,7 @@ it is the seed of the spline.
 
 ```{python}
 #| label: fig-bending
-#| fig-cap: "Why minimizing $\\int f''^2$ produces a cubic. We fix $f(0)=0,\\,f(1)=1$ and the end slopes $f'(0)=0,\\,f'(1)=0$, then ask which curve bends least. The Euler–Lagrange equation gives $f^{(4)}=0$, i.e. a cubic; here that cubic is $f(x)=3x^2-2x^3$ (blue). Competitors of the form $f+\\varepsilon\\eta$ with $\\eta=\\sin^2(\\pi x)$ (which preserves all four end conditions) are shown in red; the right panel plots their total bending energy $\\int_0^1(f''+\\varepsilon\\eta'')^2dx$, which bottoms exactly at the cubic ($\\varepsilon=0$)."
+#| fig-cap: 'Why minimizing $\\int f''''^2$ produces a cubic. We fix $f(0)=0,\\,f(1)=1$ and the end slopes $f''(0)=0,\\,f''(1)=0$, then ask which curve bends least. The Euler–Lagrange equation gives $f^{(4)}=0$, i.e. a cubic; here that cubic is $f(x)=3x^2-2x^3$ (blue). Competitors of the form $f+\\varepsilon\\eta$ with $\\eta=\\sin^2(\\pi x)$ (which preserves all four end conditions) are shown in red; the right panel plots their total bending energy $\\int_0^1(f''''+\\varepsilon\\eta'''')^2dx$, which bottoms exactly at the cubic ($\\varepsilon=0$).'
 xs = np.linspace(0, 1, 600)
 fcub = 3 * xs**2 - 2 * xs**3        # cubic with f(0)=0,f(1)=1,f'(0)=f'(1)=0
 fcub_pp = 6 - 12 * xs               # second derivative
@@ -872,7 +872,7 @@ straight line (the OLS regression line). For intermediate $\lambda$ we get the f
 
 ```{python}
 #| label: fig-lambda
-#| fig-cap: "The roughness penalty $\\lambda$ interpolates between two extremes. Synthetic data (grey) from a smooth signal plus noise. As $\\lambda\\to 0$ (red) the smoothing spline chases every point — minimal data error, maximal wiggle. As $\\lambda\\to\\infty$ (gold) the penalty crushes all curvature and the fit becomes the straight least-squares line. The intermediate $\\lambda$ (blue) is the honest smoother: it tracks the trend without chasing noise. This whole family is the set of minimizers of @eq-spline-objective."
+#| fig-cap: 'The roughness penalty $\\lambda$ interpolates between two extremes. Synthetic data (grey) from a smooth signal plus noise. As $\\lambda\\to 0$ (red) the smoothing spline chases every point — minimal data error, maximal wiggle. As $\\lambda\\to\\infty$ (gold) the penalty crushes all curvature and the fit becomes the straight least-squares line. The intermediate $\\lambda$ (blue) is the honest smoother: it tracks the trend without chasing noise. This whole family is the set of minimizers of @eq-spline-objective.'
 from scipy.interpolate import make_smoothing_spline
 rng = np.random.default_rng(3)
 xd = np.sort(rng.uniform(0, 10, 40))
