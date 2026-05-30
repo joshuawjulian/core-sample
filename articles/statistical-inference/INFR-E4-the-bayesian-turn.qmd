@@ -1,0 +1,1037 @@
+---
+title: "The Bayesian Turn: Probability as Degree of Belief"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240920)
+
+PRIOR  = "#6c757d"     # the prior
+LIKE   = "#0a7d4d"     # the likelihood (as a function of theta)
+POST   = "#2b3a67"     # the posterior
+TRUTH  = "#c1121f"     # the true parameter / point estimates
+FILL   = "#9fb3d1"     # shaded credible mass
+ACCENT = "#d6791f"     # secondary highlights
+GREY   = "#9aa0a6"
+```
+
+> **Where this sits in the track.** This is the **closing article** of the Statistical
+> Inference track — the fork in the road. Every article before it answered the charter
+> question, *"what can we conclude from data, and how sure are we,"* inside the
+> **frequentist** frame, where the parameter is a fixed unknown and the data are random.
+> This article keeps the question and changes the frame: the parameter becomes the random
+> thing, and "how sure are we" becomes a literal probability. It assumes three earlier
+> articles directly. From [INFR-B1 *The Likelihood*] it takes the likelihood
+> $L(\theta)=p(x\mid\theta)$ as the object that scores how well each parameter explains the
+> data — the Bayesian posterior is *this object times a prior*. From [INFR-C1 *Confidence
+> Intervals*] it takes the carefully-built notion of a confidence interval, against which
+> we contrast the **credible interval** (the payoff of the whole track's framing). From
+> [INFR-D1 *The Logic of Hypothesis Testing*] it takes the testing apparatus we re-answer
+> with posterior probabilities. From the Probability Foundations track it borrows, each
+> built there from the ground up, **Bayes' rule for events** ([PROB-06]) and the **Beta and
+> Gamma distributions** ([PROB-14]); we import only their statements. Nothing else above the
+> Calculus-I floor is assumed. This article **sets up** a future *Bayesian Computation /
+> MCMC* track (which builds the machinery for the non-conjugate case we can only gesture at
+> here) and closes a loop back to **Regression** by showing that the MAP estimate under a
+> Gaussian or Laplace prior *is* ridge or lasso.
+
+## Abstract {.unnumbered}
+
+Frequentist inference treats the parameter $\theta$ as a fixed unknown constant and the
+data as random; "$95\%$ confident" is a property of a *procedure*, never of the one
+interval in your hands. The **Bayesian turn** is a single, consequential change of
+definition: treat probability as a **degree of belief**, let $\theta$ itself be a random
+variable carrying a distribution, and then the data update that distribution by the same
+Bayes' rule you already know for events. This article derives **Bayes' theorem for
+parameters** — $\text{posterior}\propto\text{likelihood}\times\text{prior}$ — from
+nothing but the definition of conditional density, names every piece (the prior, the
+likelihood, and the marginal likelihood that makes it integrate to one), and carries two
+**conjugate** models all the way through by hand: the **Beta–Binomial** (a coin's bias)
+and the **Normal–Normal** (a mean with known variance). With a full posterior in hand we
+build the **credible interval** and place it beside the confidence interval, making the
+philosophical and numerical difference concrete: the credible interval *does* license the
+sentence "there is a $95\%$ probability $\theta$ is in here" that the confidence interval
+forbids. We derive the **MAP** estimate, show it is the posterior's mode, prove it reduces
+to the MLE under a flat prior, and prove that under Gaussian and Laplace priors it is
+exactly **ridge** and **lasso** regression — the link back to the Regression track. Then
+the honest boundary: prior sensitivity, when Bayes and frequentism agree and when they
+diverge, and the computational price (the marginal likelihood is an integral that is
+usually intractable, which is why a whole MCMC track must follow). The single claim the
+article defends is that **the Bayesian and frequentist answers to "how sure are we" are
+different objects answering different questions, and a graduate must be able to state
+precisely which one a given problem calls for.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Make one change to everything that came before: treat probability as a **degree of
+belief**, so that the unknown parameter $\theta$ is itself a **random variable** with a
+distribution. Before seeing data you hold a **prior** $\pi(\theta)$ — what you believe
+about $\theta$ in advance. The data arrive through the **likelihood** $p(x\mid\theta)$ from
+[INFR-B1]. Bayes' rule combines them into the **posterior** — your updated belief about
+$\theta$ *after* seeing the data:
+$$
+\underbrace{p(\theta\mid x)}_{\text{posterior}}
+\;=\;
+\frac{\overbrace{p(x\mid\theta)}^{\text{likelihood}}\;\overbrace{\pi(\theta)}^{\text{prior}}}
+     {\underbrace{\textstyle\int p(x\mid\theta')\,\pi(\theta')\,d\theta'}_{\text{marginal likelihood } p(x)}}
+\;\;\propto\;\; p(x\mid\theta)\,\pi(\theta).
+$$
+The denominator is a constant in $\theta$ (the data are fixed); it only rescales the
+numerator so the posterior integrates to one. So the working slogan is
+$$
+\boxed{\;\text{posterior} \;\propto\; \text{likelihood} \times \text{prior}.\;}
+$$
+Everything Bayesian is a reading of this one distribution. A **point estimate** is its
+mode (the **MAP**) or its mean. A **credible interval** is a region holding $95\%$ of its
+mass — and unlike a confidence interval, it *does* mean "there is a $95\%$ probability
+$\theta$ is in here," because here $\theta$ is genuinely random. A **test** compares the
+posterior probabilities of competing hypotheses. The price: that denominator is an
+integral, and outside the **conjugate** cases we work by hand below, it is usually
+intractable — which is the entire reason a Bayesian-computation track must follow.
+:::
+
+Everything in this article orbits that box. The hinge is the redefinition of probability
+itself, so we spend the next section on *why* anyone would make that move and *what it buys*
+— because the whole track until now was built on the opposite definition, and the reader is
+owed a clear account of what is being traded.
+
+# Why we are doing this: the problem that forced the turn {#sec-why}
+
+Hold one question in view for the entire article: **what changes when we let the parameter
+be random, and how does that re-answer the same "how sure are we" question the whole track
+has been chasing?** Every derivation below answers a piece of that.
+
+## The itch the frequentist interval never scratched
+
+Go back to [INFR-C1]. We built a $95\%$ confidence interval and then spent an entire section
+forbidding the one interpretation everyone's intuition reaches for: *"there's a $95\%$
+chance the parameter is in this interval."* That sentence is false in the frequentist frame
+for a precise reason — once the data are in, the interval is a fixed pair of numbers and
+$\theta$ is a fixed number, so the statement "$L\le\theta\le U$" is simply true or false,
+with no probability left to attach. The $95\%$ described the *procedure*, not the interval.
+
+This is correct, and it is also deeply unsatisfying. The question a scientist actually has
+is: *given the data I collected, how probable is it that the drug works / the effect is
+positive / the rate is below the safety threshold?* The frequentist apparatus cannot answer
+that question **as stated**, because it refuses to put a probability on $\theta$ at all.
+It answers a subtly different question — *how would this procedure behave over many
+hypothetical repetitions?* — and asks you to be satisfied with that.
+
+The Bayesian turn is the decision to answer the question *as asked*. To say "there is a
+$95\%$ probability $\theta$ lies in $[a,b]$" and mean it, you must be willing to treat
+$\theta$ as a random variable — something that *can* carry a probability. That single
+willingness is the entire move. Everything else is consequence.
+
+::: {.callout-tip title="You might be asked"}
+*"Is the Bayesian approach 'more correct' than the frequentist one?"* No — and answering
+"yes" is a tell that you do not understand either. They answer **different questions** under
+**different definitions of probability**. Frequentist probability is a long-run frequency:
+it is defined only for things that *can* be repeated, so it attaches to procedures and data,
+never to a one-off fixed constant like "the true mean income in 2026." Bayesian probability
+is a degree of belief: it attaches to *any* proposition whose truth is uncertain to you,
+including a one-off constant. Each is internally coherent. The mature answer is: the
+frequentist guarantee is about *calibration over repetition* and needs no prior; the
+Bayesian answer is a *direct probability about this case* and needs a prior. Which you want
+depends on whether your question is "how does my method behave in the long run" or "what
+should I believe right now, given these data and what I knew before."
+:::
+
+## A two-paragraph history
+
+The degree-of-belief view is in fact the *older* one. Thomas Bayes' essay, published
+posthumously in 1763, and Pierre-Simon Laplace's far more developed work around 1774–1812,
+treated probability as a state of knowledge and updated it with data exactly as we will
+below — Laplace used it to estimate the mass of Saturn and famously to ask the probability
+that the sun would rise tomorrow. For over a century this "inverse probability" *was*
+statistics.
+
+The frequentist framework — Fisher's likelihood, Neyman and Pearson's tests and confidence
+intervals — was a deliberate early-20th-century *reaction* against putting probabilities on
+hypotheses, motivated by discomfort with the apparent arbitrariness of the prior. It won
+the textbooks for most of the century. The Bayesian view never died (Jeffreys, Savage, de
+Finetti kept it rigorous and gave the degree-of-belief idea axiomatic foundations), and it
+returned to dominance once computers could evaluate the awkward integral in the Core box by
+simulation — the MCMC revolution of the late 1980s and 1990s. So the turn we make here is
+not a fringe alternative; it is half of the field, and the half that answers the question
+practitioners actually ask.
+
+# Intuition before symbols: belief as a reweighting {#sec-intuition}
+
+Before any algebra, here is the picture that makes the posterior unsurprising. You start
+with a belief about $\theta$ spread across its possible values — the prior, a curve over the
+$\theta$-axis. The data do not *replace* that belief; they **reweight** it. The likelihood
+$L(\theta)=p(x\mid\theta)$, read as a function of $\theta$ (exactly the backward reading of
+[INFR-B1]), is tall at the $\theta$ values that explain the data well and short where they
+explain it badly. Multiply the prior curve by the likelihood curve, point by point, and you
+get the posterior (up to rescaling): belief survives only where it was *both* plausible a
+priori *and* consistent with the data.
+
+@fig-update draws one such update for a coin. The flat-ish prior says "I don't know the
+bias." The likelihood from seeing 9 heads in 12 flips leans right. The posterior is the
+product — pulled toward the data but still carrying a memory of the prior.
+
+```{python}
+#| label: fig-update
+#| fig-cap: 'Bayesian updating as reweighting, for a coin''s bias $\theta$. The prior (grey) is a mild belief centred at a fair coin. The likelihood (green), as a function of $\theta$ after observing 9 heads in 12 flips, peaks near $\theta=0.75$. The posterior (navy) is their pointwise product, renormalised to integrate to one: belief survives only where the prior and the data agree. The posterior sits between the prior''s centre and the data''s, and is narrower than either input — combining two sources of information sharpens belief.'
+theta = np.linspace(0, 1, 500)
+
+# A mild Beta(2,2) prior: believes the coin is roughly fair, weakly.
+a0, b0 = 2.0, 2.0
+prior = stats.beta(a0, b0).pdf(theta)
+
+# Data: 9 heads in 12 flips. Likelihood as a function of theta (up to a constant).
+k, n = 9, 12
+like = theta**k * (1 - theta)**(n - k)
+like_scaled = like / np.trapezoid(like, theta)   # scale only so it is visible on the same axes
+
+# Posterior is Beta(a0 + k, b0 + n - k) — derived in the text below.
+post = stats.beta(a0 + k, b0 + n - k).pdf(theta)
+
+fig, ax = plt.subplots()
+ax.plot(theta, prior, color=PRIOR, lw=2.0, label="prior  $\\pi(\\theta)=$ Beta(2,2)")
+ax.plot(theta, like_scaled, color=LIKE, lw=2.0, ls="--",
+        label="likelihood (rescaled)")
+ax.plot(theta, post, color=POST, lw=2.4, label="posterior  Beta(11,5)")
+ax.fill_between(theta, post, color=FILL, alpha=0.35)
+ax.set_xlabel(r"coin bias $\theta$")
+ax.set_ylabel("density")
+ax.set_title("Posterior $\\propto$ likelihood $\\times$ prior")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Where does the prior come from, and isn't choosing it cheating?"* The prior encodes what
+you knew before the data — past studies, physical constraints (a probability must lie in
+$[0,1]$), expert judgment, or a deliberate statement of ignorance. It is not cheating; it is
+**explicit**, which is its virtue and its liability. The virtue: every assumption is on the
+page and auditable. The liability: a different analyst may choose differently, so honest
+Bayesian work *reports prior sensitivity* (we do exactly this in @sec-sensitivity). The
+frequentist who says "I used no prior" has in effect used a particular one (a flat prior,
+as we prove in @sec-map) and simply not labelled it. The interview-grade point: the choice
+is unavoidable; the Bayesian merely makes it visible.
+:::
+
+# The formal development {#sec-formal}
+
+## From Bayes' rule for events to Bayes' rule for parameters {#sec-bayes-derive}
+
+We build the Core box from the ground up. The only import is Bayes' rule for events, which
+the Probability track ([PROB-06]) derives in one line from the definition of conditional
+probability; we restate it so the derivation is self-contained. For two events $A$ and $B$
+with $P(B)>0$,
+$$
+P(A\mid B) \;=\; \frac{P(B\mid A)\,P(A)}{P(B)},
+$$ {#eq-bayes-events}
+which follows because $P(A\mid B)P(B)=P(A\cap B)=P(B\mid A)P(A)$ — two ways of writing the
+same joint probability — and dividing by $P(B)$ isolates $P(A\mid B)$.
+
+Now we promote this from events to a continuous parameter and continuous data. This is the
+step that is *not* in the Probability track, so we do every move. Let $\theta$ be the
+unknown parameter, now modelled as a random variable with a **prior density** $\pi(\theta)$,
+and let $x$ denote the observed data with **conditional density** $p(x\mid\theta)$ (the
+model — the same forward-facing object from [INFR-B1]). The **joint density** of parameter
+and data is, by the definition of conditional density (the continuous analogue of
+$P(A\cap B)=P(B\mid A)P(A)$),
+$$
+p(\theta, x) \;=\; p(x\mid\theta)\,\pi(\theta).
+$$ {#eq-joint}
+We can equally factor the joint the other way, conditioning on the data instead:
+$$
+p(\theta, x) \;=\; p(\theta\mid x)\,p(x),
+$$ {#eq-joint-other}
+where $p(\theta\mid x)$ is the **posterior density** we want and $p(x)$ is the
+**marginal density of the data** — the density of $x$ with $\theta$ integrated out.
+Setting @eq-joint equal to @eq-joint-other (both equal the one joint density) and solving
+for the posterior:
+$$
+p(\theta\mid x)\,p(x) \;=\; p(x\mid\theta)\,\pi(\theta)
+\quad\Longrightarrow\quad
+p(\theta\mid x) \;=\; \frac{p(x\mid\theta)\,\pi(\theta)}{p(x)}.
+$$ {#eq-bayes-param}
+
+That is **Bayes' theorem for parameters**, derived from nothing but the definition of a
+conditional density used twice. It is the exact analogue of @eq-bayes-events with the
+substitutions $A\to\theta$, $B\to x$, and probabilities of events replaced by densities.
+
+The denominator $p(x)$ needs unpacking, because it is the piece that is both essential and
+troublesome. By the **law of total probability** in its continuous form — sum (integrate)
+the joint density over all possible values of the conditioned-out variable —
+$$
+p(x) \;=\; \int p(\theta, x)\,d\theta \;=\; \int p(x\mid\theta')\,\pi(\theta')\,d\theta'.
+$$ {#eq-marginal}
+(We use a dummy variable $\theta'$ inside the integral to keep it distinct from the
+$\theta$ on the left of @eq-bayes-param; the integral runs over *all* parameter values and
+returns a number that no longer depends on $\theta$.) This $p(x)$ is variously called the
+**marginal likelihood**, the **evidence**, or the **normalizing constant**.
+
+Here is the single most useful observation about it: **with the data $x$ fixed, $p(x)$ is a
+constant in $\theta$.** It does not change the *shape* of the posterior as a function of
+$\theta$ — it only scales it so the total area is one. Therefore, for everything except
+problems that require the actual normalized density, we may drop it and write
+$$
+p(\theta\mid x) \;\propto\; p(x\mid\theta)\,\pi(\theta)
+\;=\; L(\theta)\,\pi(\theta),
+$$ {#eq-proportional}
+the proportionality slogan of the Core, where $L(\theta)=p(x\mid\theta)$ is precisely the
+likelihood of [INFR-B1]. The $\propto$ sign carries real meaning: *the posterior is the
+likelihood-times-prior curve, rescaled by whatever constant makes it integrate to one.*
+
+::: {.callout-important title="Why the proportionality form is the one you actually use"}
+The full Bayes formula @eq-bayes-param looks like it demands the hard integral @eq-marginal.
+But for *estimation* — finding the posterior's mode, mean, or a credible interval — the
+constant $p(x)$ never matters, because it scales the whole curve equally. We will exploit
+this repeatedly: recognize the *shape* of $L(\theta)\pi(\theta)$ as a known distribution,
+and read off its normalizing constant for free. That trick is exactly what makes the
+**conjugate** examples below solvable by hand. The integral @eq-marginal only bites when you
+need $p(x)$ itself — for **model comparison** (Bayes factors) or when the shape is *not*
+recognizable, which is the non-conjugate world that forces simulation.
+:::
+
+## Naming the four pieces {#sec-four-pieces}
+
+Each object in @eq-bayes-param earns a name, and an interview will probe whether you know
+what each *is* and *is not*.
+
+- **Prior $\pi(\theta)$** — a genuine probability density over $\theta$, integrating to one,
+  encoding belief *before* the data. It is a density over the *parameter*, which is the
+  thing the likelihood emphatically was *not* ([INFR-B1] proved $L(\theta)$ need not
+  integrate to one). This is the conceptual novelty.
+- **Likelihood $p(x\mid\theta)=L(\theta)$** — the model read backwards, exactly as in
+  [INFR-B1]. As a function of $\theta$ it is *not* a density (no normalization in $\theta$);
+  it is the data's verdict on each $\theta$.
+- **Posterior $p(\theta\mid x)$** — a genuine probability density over $\theta$ (the prior,
+  updated). This is the whole output of a Bayesian analysis; every Bayesian quantity is a
+  summary of it.
+- **Marginal likelihood / evidence $p(x)$** — a single number once the data are fixed: the
+  prior-averaged probability of the data. It normalizes the posterior and scores the model
+  as a whole.
+
+::: {.callout-tip title="You might be asked"}
+*"In one breath, what is the difference between the likelihood and the posterior?"* The
+likelihood $p(x\mid\theta)$ is a function of $\theta$ that is **not** a probability
+distribution over $\theta$ — it ranks parameters by fit but does not integrate to one and
+carries no prior belief. The posterior $p(\theta\mid x)$ **is** a probability distribution
+over $\theta$ — it is the likelihood multiplied by the prior and renormalized. The MLE
+maximizes the first; the MAP maximizes the second; they coincide exactly when the prior is
+flat (@sec-map). If you can say that cleanly, you have the spine of the article.
+:::
+
+## Conjugacy: when the posterior stays in the family {#sec-conjugacy}
+
+The integral @eq-marginal is the villain of Bayesian computation. For a special and
+beautiful class of prior–likelihood pairs it disappears entirely, because the posterior
+turns out to be the *same kind of distribution* as the prior, just with updated parameters.
+We can then read the answer off by pattern-matching, no integral required.
+
+::: {#def-conjugate}
+**Definition (conjugate prior).** A family $\mathcal F$ of prior distributions is
+**conjugate** to a likelihood $p(x\mid\theta)$ if, whenever the prior $\pi(\theta)$ is in
+$\mathcal F$, the posterior $p(\theta\mid x)$ is also in $\mathcal F$ — only its parameters
+change.
+:::
+
+Conjugacy is a computational convenience, not a law of nature — but it is the cleanest
+possible window onto *how* the data move belief, because we can watch the prior's parameters
+update in closed form. We work the two canonical cases completely.
+
+## Worked conjugate case I: the Beta–Binomial (a coin's bias) {#sec-beta-binom}
+
+The setting is the most basic in statistics: we flip a coin (or run a click-through test,
+or count survivals) $n$ times, see $k$ "successes," and want to learn the success
+probability $\theta\in[0,1]$. The likelihood is Binomial; with $k$ successes in $n$
+independent Bernoulli$(\theta)$ trials,
+$$
+p(k\mid\theta) \;=\; \binom{n}{k}\,\theta^{k}\,(1-\theta)^{\,n-k}.
+$$ {#eq-binom-like}
+As a function of $\theta$ (data fixed), the binomial coefficient $\binom{n}{k}$ is a
+constant, so $L(\theta)\propto \theta^{k}(1-\theta)^{n-k}$.
+
+We need a prior on $\theta\in[0,1]$. The **Beta distribution** is the natural choice — it
+lives on exactly that interval. (The Beta is built from first principles in [PROB-14]; we
+import only its density.) With shape parameters $a,b>0$,
+$$
+\pi(\theta) \;=\; \frac{1}{B(a,b)}\,\theta^{a-1}(1-\theta)^{b-1},
+\qquad 0\le\theta\le 1,
+$$ {#eq-beta-prior}
+where $B(a,b)=\int_0^1 t^{a-1}(1-t)^{b-1}\,dt$ is the **Beta function**, the constant that
+makes @eq-beta-prior integrate to one. Notice the shape: a power of $\theta$ times a power
+of $(1-\theta)$ — the *same algebraic form* as the binomial likelihood. That is the whole
+reason conjugacy will work.
+
+Now multiply, using the proportionality form @eq-proportional and dropping every factor
+that does not contain $\theta$ (the $\binom{n}{k}$ and the $1/B(a,b)$ are both constants in
+$\theta$):
+$$
+p(\theta\mid k)
+\;\propto\; L(\theta)\,\pi(\theta)
+\;\propto\; \underbrace{\theta^{k}(1-\theta)^{n-k}}_{\text{likelihood}}\;\cdot\;
+            \underbrace{\theta^{a-1}(1-\theta)^{b-1}}_{\text{prior}}.
+$$
+Combine the powers by adding exponents (the rule $\theta^{p}\theta^{q}=\theta^{p+q}$ from
+Calc-1-level algebra):
+$$
+p(\theta\mid k)
+\;\propto\; \theta^{\,(a+k)-1}\,(1-\theta)^{\,(b+n-k)-1}.
+$$ {#eq-beta-post-shape}
+
+Look hard at @eq-beta-post-shape and compare it to the Beta density @eq-beta-prior. It is
+**exactly the algebraic form of a Beta**, with new parameters
+$$
+\boxed{\;a' = a + k, \qquad b' = b + (n - k).\;}
+$$ {#eq-beta-update}
+There is only one normalized density with that shape — the $\mathrm{Beta}(a',b')$ density —
+so the proportionality must in fact be an equality once we attach the correct constant
+$1/B(a',b')$. We did not have to *compute* any integral: we recognized the shape and the
+normalizer is forced. The posterior is
+$$
+\theta\mid k \;\sim\; \mathrm{Beta}\bigl(a + k,\; b + n - k\bigr).
+$$ {#eq-beta-post}
+
+This is the entire Beta–Binomial update, and it is worth reading for meaning. The prior
+parameters $(a,b)$ behave exactly like **prior pseudo-counts**: $a$ acts as "successes seen
+in imagination before any data," $b$ as imagined failures. The data add real counts: $k$
+successes onto $a$, and $n-k$ failures onto $b$. The Beta$(2,2)$ prior of @fig-update was
+"pretend I saw 2 heads and 2 tails"; after 9 real heads and 3 real tails the posterior is
+Beta$(2+9,\,2+3)=\mathrm{Beta}(11,5)$, exactly the navy curve there.
+
+The posterior **mean** has a clean closed form (the mean of a Beta$(a',b')$ is
+$a'/(a'+b')$, a fact from [PROB-14]):
+$$
+\mathbb E[\theta\mid k]
+= \frac{a + k}{a + b + n}.
+$$ {#eq-beta-mean}
+Rearrange it to expose the most important idea in Bayesian estimation — that the posterior
+is a **compromise** between prior and data. Write the data's own estimate (the MLE) as
+$\hat\theta_{\text{MLE}}=k/n$ and the prior mean as $\theta_0 = a/(a+b)$. Then, multiplying
+out,
+$$
+\frac{a+k}{a+b+n}
+= \frac{a+b}{a+b+n}\cdot\frac{a}{a+b}
+   \;+\; \frac{n}{a+b+n}\cdot\frac{k}{n}
+= \underbrace{w}_{\text{prior weight}}\theta_0
+   \;+\; \underbrace{(1-w)}_{\text{data weight}}\hat\theta_{\text{MLE}},
+$$ {#eq-shrinkage}
+where $w=(a+b)/(a+b+n)$. (Check the algebra: the first term's numerator is
+$(a+b)\cdot\frac{a}{a+b}=a$ over $a+b+n$, and the second is $n\cdot\frac{k}{n}=k$ over
+$a+b+n$; adding gives $(a+k)/(a+b+n)$, matching @eq-beta-mean.) So the posterior mean is a
+**weighted average** of the prior mean and the data mean, with weights set by the
+"strength" $a+b$ of the prior versus the sample size $n$. As $n\to\infty$ the data weight
+$1-w\to 1$ and the posterior mean converges to the MLE: **the data eventually overwhelm any
+fixed prior.** This convergence is the formal sense in which Bayes and frequentism agree in
+the large-sample limit, taken up in @sec-agree.
+
+```{python}
+#| label: fig-beta-sequence
+#| fig-cap: 'The Beta-Binomial posterior sharpening as data accumulate, all from the same Beta(2,2) prior. A coin with true bias $\theta=0.7$ (red line) is flipped; after $n=5,20,80,320$ flips the posterior (navy, progressively darker) concentrates ever more tightly around the truth, and its mean (the weighted average of @eq-shrinkage) marches from the prior''s 0.5 toward 0.7. With little data the prior still pulls the estimate toward a fair coin; with much data the prior is irrelevant. This is Bayesian learning in one picture.'
+theta = np.linspace(0, 1, 500)
+a0, b0 = 2.0, 2.0
+true_p = 0.7
+ns = [5, 20, 80, 320]
+shades = ["#9fb3d1", "#6f86b3", "#41598c", "#1f2f55"]
+
+fig, ax = plt.subplots()
+ax.plot(theta, stats.beta(a0, b0).pdf(theta), color=PRIOR, lw=2.0,
+        ls=":", label="prior Beta(2,2)")
+# One growing data stream so the updates are nested.
+flips = (rng.random(max(ns)) < true_p).astype(int)
+for n, c in zip(ns, shades):
+    k = int(flips[:n].sum())
+    post = stats.beta(a0 + k, b0 + n - k)
+    ax.plot(theta, post.pdf(theta), color=c, lw=2.2,
+            label=f"n={n}: Beta({a0+k:.0f},{b0+n-k:.0f}), mean {post.mean():.3f}")
+ax.axvline(true_p, color=TRUTH, lw=2.0, label=r"true $\theta=0.7$")
+ax.set_xlabel(r"coin bias $\theta$"); ax.set_ylabel("posterior density")
+ax.set_title("Posterior concentrates on the truth as data grow")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What prior means 'I know nothing'?"* For the coin, $\mathrm{Beta}(1,1)$ is the
+**uniform** prior on $[0,1]$ — its density is $\theta^{0}(1-\theta)^{0}/B(1,1)=1$, flat
+everywhere. Plug $a=b=1$ into @eq-beta-mean: the posterior mean becomes
+$(1+k)/(2+n)$, the **Laplace rule of succession** (Laplace's answer to "will the sun rise
+tomorrow"). With a flat prior the posterior is $\propto L(\theta)$, so the posterior *mode*
+is the MLE $k/n$ — a first glimpse of @sec-map. But beware the word "uninformative":
+$\mathrm{Beta}(1,1)$ is flat in $\theta$, yet *not* flat in, say, the log-odds of $\theta$ —
+"knowing nothing" is not reparameterization-invariant. The Jeffreys prior $\mathrm{Beta}(½,
+½)$ is the principled answer to that subtlety; it is built from the Fisher information of
+[INFR-B3], and we point to it in @sec-deeper rather than derive it here.
+:::
+
+## Worked conjugate case II: the Normal–Normal (a mean, known variance) {#sec-normal-normal}
+
+The second canonical case mirrors the confidence-interval setting of [INFR-C1] so we can
+later place the credible interval directly beside the confidence interval on the *same*
+problem. We observe $x_1,\dots,x_n$ i.i.d. $\mathcal N(\mu,\sigma^2)$ with the variance
+$\sigma^2$ **known** (the same honest simplification as [INFR-C1]; it isolates the idea),
+and we want the mean $\mu$.
+
+The likelihood, as a function of $\mu$, comes from the Gaussian density. Multiplying the $n$
+independent densities and dropping every factor free of $\mu$:
+$$
+L(\mu)
+\;\propto\; \exp\!\Bigl(-\frac{1}{2\sigma^2}\sum_{i=1}^n (x_i-\mu)^2\Bigr).
+$$
+Expand the sum and isolate $\mu$. Using $\sum(x_i-\mu)^2=\sum(x_i-\bar x)^2 +
+n(\bar x-\mu)^2$ (the standard centering identity — add and subtract $\bar x$; the cross
+term vanishes because $\sum(x_i-\bar x)=0$), the first piece is constant in $\mu$, so
+$$
+L(\mu)
+\;\propto\; \exp\!\Bigl(-\frac{n}{2\sigma^2}(\mu-\bar x)^2\Bigr).
+$$ {#eq-normal-like}
+Read as a function of $\mu$, this is **itself the shape of a Gaussian**. To see it, match
+the exponent to the canonical Gaussian exponent $-\tfrac{1}{2v}(\mu-c)^2$, which has centre
+$c$ and variance $v$: writing $\tfrac{n}{2\sigma^2}=\tfrac{1}{2(\sigma^2/n)}$ shows the
+exponent is $-\tfrac{1}{2(\sigma^2/n)}(\mu-\bar x)^2$, so $L(\mu)$ has the shape of a Gaussian
+in $\mu$ centred at $c=\bar x$ with variance $v=\sigma^2/n$. (That variance $\sigma^2/n$ is
+exactly the squared standard error from [INFR-A1].) This is why the Gaussian is
+self-conjugate.
+
+Take a **Gaussian prior** for $\mu$, centred at our prior guess $\mu_0$ with prior variance
+$\tau_0^2$ (large $\tau_0^2$ = vague prior, small = confident):
+$$
+\pi(\mu)\;\propto\;\exp\!\Bigl(-\frac{1}{2\tau_0^2}(\mu-\mu_0)^2\Bigr).
+$$ {#eq-normal-prior}
+Multiply prior and likelihood; the posterior is proportional to the product of two
+exponentials, so we add the exponents:
+$$
+p(\mu\mid x)
+\;\propto\;
+\exp\!\Bigl(-\tfrac12\Bigl[\tfrac{n}{\sigma^2}(\mu-\bar x)^2
+                          +\tfrac{1}{\tau_0^2}(\mu-\mu_0)^2\Bigr]\Bigr).
+$$ {#eq-nn-product}
+The bracket is a quadratic in $\mu$, so the posterior is again a Gaussian — we only need to
+find its centre and width by **completing the square**. Write the bracket as
+$Q(\mu)=A(\mu-\bar x)^2 + B(\mu-\mu_0)^2$ with $A=n/\sigma^2$ and $B=1/\tau_0^2$ (these are
+called **precisions** — inverse variances; the names will pay off). Expand both squares:
+$$
+Q(\mu) = A\mu^2 - 2A\bar x\,\mu + A\bar x^2
+       + B\mu^2 - 2B\mu_0\,\mu + B\mu_0^2 .
+$$
+Collect the $\mu^2$, $\mu$, and constant terms:
+$$
+Q(\mu) = (A+B)\mu^2 \;-\; 2(A\bar x + B\mu_0)\,\mu \;+\;\text{(const in }\mu).
+$$
+Factor out $(A+B)$ from the first two terms and complete the square:
+$$
+Q(\mu) = (A+B)\Bigl[\mu^2 - 2\,\frac{A\bar x + B\mu_0}{A+B}\,\mu\Bigr] + \text{const}
+       = (A+B)\Bigl(\mu - \frac{A\bar x + B\mu_0}{A+B}\Bigr)^2 + \text{const}',
+$$
+where the constants absorb everything free of $\mu$ (they vanish into the proportionality).
+Matching this to the exponent of a Gaussian $\exp(-\tfrac{1}{2\tau_n^2}(\mu-\mu_n)^2)$, where
+the exponent is $-\tfrac12\cdot\tfrac{1}{\tau_n^2}(\mu-\mu_n)^2$, we read off the
+**posterior precision** $1/\tau_n^2 = A+B$ and the **posterior mean** $\mu_n=(A\bar x +
+B\mu_0)/(A+B)$. Substituting $A=n/\sigma^2$ and $B=1/\tau_0^2$ back:
+$$
+\boxed{\;
+\frac{1}{\tau_n^2} = \frac{n}{\sigma^2} + \frac{1}{\tau_0^2},
+\qquad
+\mu_n = \tau_n^2\Bigl(\frac{n\,\bar x}{\sigma^2} + \frac{\mu_0}{\tau_0^2}\Bigr).
+\;}
+$$ {#eq-nn-update}
+So $\mu\mid x \sim \mathcal N(\mu_n,\tau_n^2)$. Two facts make these formulas memorable, and
+both are the kind of thing an interviewer loves:
+
+- **Precisions add.** The posterior precision is the data precision $n/\sigma^2$ *plus* the
+  prior precision $1/\tau_0^2$. Information, measured as precision, is additive — combining
+  the prior with the data makes you strictly more certain (smaller posterior variance) than
+  either alone. This is the Gaussian echo of the Fisher-information additivity from
+  [INFR-B3].
+- **The posterior mean is a precision-weighted average.** Dividing the $\mu_n$ formula
+  through shows it is $\mu_n = \frac{(n/\sigma^2)\bar x + (1/\tau_0^2)\mu_0}{n/\sigma^2 +
+  1/\tau_0^2}$ — each source pulls the centre in proportion to *how precise it is*. The same
+  shrinkage story as the coin: data with high precision (large $n$) dominate; a vague prior
+  (large $\tau_0^2$, tiny precision) barely tugs.
+
+As $n\to\infty$, the data precision $n/\sigma^2$ swamps the prior precision, $\tau_n^2\to
+\sigma^2/n$, and $\mu_n\to\bar x$: the posterior becomes a Gaussian centred at the MLE with
+the frequentist standard error as its spread. **This is the precise sense in which the
+Bayesian and frequentist answers merge with enough data** — a point we cash out
+numerically in @sec-vs.
+
+# The credible interval: the payoff {#sec-credible}
+
+This is what the whole track was building toward — the interval that means what everyone
+*wishes* a confidence interval meant.
+
+::: {#def-credible}
+**Definition (credible interval).** A **$(1-\alpha)$ credible interval** for $\theta$ is any
+interval $[a,b]$ whose **posterior** probability is $1-\alpha$:
+$$
+P(a\le\theta\le b\mid x) \;=\; \int_a^b p(\theta\mid x)\,d\theta \;=\; 1-\alpha.
+$$
+Because $\theta$ is a random variable with the posterior as its distribution, this is a
+*literal probability statement about $\theta$*.
+:::
+
+That last sentence is the entire philosophical payoff. Recall the cardinal forbidden
+sentence from [INFR-C1]: "there is a $95\%$ probability that $\mu$ is in this interval."
+For a confidence interval that sentence is false, because $\mu$ is fixed and the interval is
+the only random thing. For a credible interval **the sentence is exactly true**, because we
+*defined* $\theta$ to be random and the interval was carved to hold $95\%$ of its posterior
+mass. The Bayesian turn bought us the interpretation the frequentist had to refuse.
+
+There is a small but real ambiguity to resolve: many intervals hold $95\%$ of the mass.
+Two conventions dominate.
+
+- **Equal-tailed interval (ETI):** chop $\alpha/2$ off each tail — the interval from the
+  $\alpha/2$ to the $1-\alpha/2$ posterior quantile. Easy, and invariant under monotone
+  reparameterization.
+- **Highest posterior density (HPD) interval:** the *shortest* interval with mass
+  $1-\alpha$; equivalently, every point inside it has higher posterior density than every
+  point outside. It is the most honest "where the belief concentrates," but harder to
+  compute and not reparameterization-invariant.
+
+For a symmetric, unimodal posterior (like the Normal–Normal) the two coincide, and it is
+worth seeing why rather than taking it on faith. Symmetry about the mode $m$ means the two
+equal-tailed quantiles sit at $m\pm c$ for the same offset $c$, and unimodality means the
+density falls monotonically as you move away from $m$ in either direction; so the
+equal-tailed endpoints $m\pm c$ have *equal* density (by symmetry) and every interior point
+has strictly higher density (by unimodality) — which is exactly the defining property of the
+HPD interval. Hence the equal-tailed interval already *is* the highest-density one. For a
+skewed posterior (like a Beta near a boundary) symmetry fails: the two equal-tail endpoints
+have different densities, so trimming equal mass from each tail is no longer the shortest
+interval, and the ETI and HPD differ — the HPD is the tighter, more defensible summary.
+@fig-credible shows both on the skewed coin posterior.
+
+```{python}
+#| label: fig-credible
+#| fig-cap: 'Two 95% credible intervals on the same Beta(11,5) coin posterior (the navy curve from @fig-update). The equal-tailed interval (orange, dashed) cuts 2.5% of posterior mass off each tail. The highest-posterior-density interval (green) is the shortest interval containing 95% of the mass; on this right-skewed posterior it sits slightly left of the ETI and is narrower. Both are genuine probability statements: there is a 95% posterior probability that $\theta$ lies in either band. The shaded region is the HPD mass.'
+post = stats.beta(11, 5)
+theta = np.linspace(0, 1, 1000)
+pdf = post.pdf(theta)
+
+# Equal-tailed: the 2.5% and 97.5% quantiles.
+eti_lo, eti_hi = post.ppf(0.025), post.ppf(0.975)
+
+# HPD: scan a horizontal density threshold until the included mass is 95%.
+def hpd_interval(dist, grid, mass=0.95):
+    d = dist.pdf(grid)
+    order = np.argsort(d)[::-1]            # densest points first
+    csum = np.cumsum(dist.pdf(grid[order]) * (grid[1] - grid[0]))
+    keep = grid[order][csum <= mass]
+    return keep.min(), keep.max()
+
+hpd_lo, hpd_hi = hpd_interval(post, theta)
+
+fig, ax = plt.subplots()
+ax.plot(theta, pdf, color=POST, lw=2.4, label="posterior Beta(11,5)")
+hmask = (theta >= hpd_lo) & (theta <= hpd_hi)
+ax.fill_between(theta[hmask], pdf[hmask], color=FILL, alpha=0.5,
+                label="95% HPD mass")
+ax.axvline(eti_lo, color=ACCENT, ls="--", lw=1.6)
+ax.axvline(eti_hi, color=ACCENT, ls="--", lw=1.6,
+           label=f"equal-tailed [{eti_lo:.3f}, {eti_hi:.3f}]")
+ax.axvline(hpd_lo, color=LIKE, lw=1.6)
+ax.axvline(hpd_hi, color=LIKE, lw=1.6,
+           label=f"HPD [{hpd_lo:.3f}, {hpd_hi:.3f}]")
+ax.set_xlabel(r"coin bias $\theta$"); ax.set_ylabel("posterior density")
+ax.set_title("Equal-tailed vs. highest-density credible intervals")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"Equal-tailed 95% credible interval: [{eti_lo:.4f}, {eti_hi:.4f}], width {eti_hi-eti_lo:.4f}")
+print(f"HPD          95% credible interval: [{hpd_lo:.4f}, {hpd_hi:.4f}], width {hpd_hi-hpd_lo:.4f}")
+```
+
+## Credible interval vs. confidence interval, side by side {#sec-vs}
+
+We now put the two intervals on the *same* Normal-mean problem so the difference is concrete
+and not just philosophical. From [INFR-C1], the $95\%$ **confidence** interval for a Normal
+mean with known variance is $\bar x \pm z_{\alpha/2}\,\sigma/\sqrt n$. From @eq-nn-update,
+the $95\%$ **credible** interval is $\mu_n \pm z_{\alpha/2}\,\tau_n$ (the posterior is
+Gaussian, so its equal-tailed interval is mean $\pm\, z$ posterior-SDs).
+
+```{python}
+#| label: fig-ci-vs-credible
+#| fig-cap: 'Confidence interval vs. credible interval for a Normal mean ($\sigma=4$ known, true $\mu=10$). **Left, $n=8$:** with little data the prior still matters — a vague prior (Normal(0, $10^2$), green) gives a credible interval almost identical to the frequentist CI (red), while a confident-but-wrong prior centred at 5 (orange) shifts and shrinks its credible interval, visibly pulling the estimate toward the prior. **Right, $n=200$:** with ample data both priors'' credible intervals collapse onto the confidence interval — the data have overwhelmed the prior, and the two paradigms give numerically identical answers. The numbers agree in the large-sample limit; the *interpretation* never does.'
+sigma, mu_true = 4.0, 10.0
+z = 1.959963984540054
+
+def intervals(n, seed):
+    r = np.random.default_rng(seed)
+    x = r.normal(mu_true, sigma, size=n)
+    xbar = x.mean()
+    # Frequentist CI (known sigma).
+    ci = (xbar - z * sigma / np.sqrt(n), xbar + z * sigma / np.sqrt(n))
+    out = {"CI": ci, "xbar": xbar}
+    # Two Bayesian credible intervals (known sigma), priors N(mu0, tau0^2).
+    for name, (mu0, tau0) in {"vague N(0,10^2)": (0.0, 10.0),
+                              "tight N(5,1^2)": (5.0, 1.0)}.items():
+        prec = n / sigma**2 + 1 / tau0**2
+        taun = np.sqrt(1 / prec)
+        mun = taun**2 * (n * xbar / sigma**2 + mu0 / tau0**2)
+        out[name] = (mun - z * taun, mun + z * taun)
+    return out
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8), sharex=True)
+for ax, n, title in [(axL, 8, "small sample (n=8)"),
+                     (axR, 200, "large sample (n=200)")]:
+    res = intervals(n, seed=n)
+    rows = [("frequentist CI", res["CI"], TRUTH),
+            ("credible, vague prior", res["vague N(0,10^2)"], LIKE),
+            ("credible, tight wrong prior", res["tight N(5,1^2)"], ACCENT)]
+    for i, (lab, (lo, hi), c) in enumerate(rows):
+        ax.plot([lo, hi], [i, i], color=c, lw=3, solid_capstyle="round")
+        ax.plot([(lo + hi) / 2], [i], "o", color=c, ms=6)
+        ax.text((lo + hi) / 2, i + 0.18, lab, ha="center", fontsize=8, color=c)
+    ax.axvline(mu_true, color=GREY, ls=":", lw=1.4)
+    ax.set_ylim(-0.6, 2.8); ax.set_yticks([])
+    ax.set_xlabel(r"$\mu$"); ax.set_title(title)
+plt.tight_layout()
+res8 = intervals(8, 8); res200 = intervals(200, 200)
+print("n=8 : CI            ", tuple(round(v, 2) for v in res8["CI"]))
+print("n=8 : credible vague", tuple(round(v, 2) for v in res8["vague N(0,10^2)"]))
+print("n=8 : credible tight", tuple(round(v, 2) for v in res8["tight N(5,1^2)"]))
+print("n=200: CI           ", tuple(round(v, 2) for v in res200["CI"]))
+print("n=200: cred. vague  ", tuple(round(v, 2) for v in res200["vague N(0,10^2)"]))
+print("n=200: cred. tight  ", tuple(round(v, 2) for v in res200["tight N(5,1^2)"]))
+```
+
+The picture tells the whole story of the two paradigms' relationship. With a **vague** prior
+the credible interval is numerically almost identical to the confidence interval even at
+small $n$ — which is reassuring and also a warning: a frequentist who quotes a CI is, to a
+good approximation, a Bayesian with a flat prior who has not said so. With a **confident but
+wrong** prior, the small-$n$ credible interval is visibly shifted and shrunk toward the
+prior — the Bayesian estimate is *biased toward the prior*, which is a feature (you injected
+real outside knowledge) or a bug (you injected a wrong assumption), depending entirely on
+whether the prior was justified. And with **large $n$** every interval coincides: the data
+swamp the prior and the two paradigms return the same numbers. The interpretations,
+however, stay forever different — the CI is a statement about the procedure, the credible
+interval a statement about $\theta$.
+
+::: {.callout-tip title="You might be asked"}
+*"If the numbers usually agree, why does the distinction matter?"* Three reasons, and a
+strong candidate gives all three. **(1) Interpretation:** only the credible interval
+licenses "$95\%$ probability $\theta$ is in here," which is the statement decision-makers
+actually want; with a CI you must use the procedure language. **(2) Small samples and strong
+priors:** when data are scarce and you genuinely know something (a physical bound, a
+well-studied effect), the prior contributes real information and the intervals *diverge* —
+the Bayesian one is often shorter and better-calibrated *if the prior is right*. **(3)
+Awkward parameters:** for bounded or constrained parameters (a probability near 0 or 1, a
+variance), the frequentist Wald interval can stray outside the parameter space or undercover
+([INFR-C1]'s polling disaster, [INFR-C3]), whereas a posterior built on a prior supported on
+the legal range *cannot*. The honest closing line: they agree when the prior is weak and
+the sample large, and that is exactly the regime where the distinction is least interesting.
+:::
+
+# MAP estimation: the bridge to the MLE and to regularization {#sec-map}
+
+A full posterior is the complete Bayesian answer, but often we still want a single number.
+The **posterior mean** is one choice (it minimizes expected squared error). The other, which
+connects beautifully back to the rest of the track and to Regression, is the **maximum a
+posteriori** estimate.
+
+::: {#def-map}
+**Definition (MAP estimate).** The **maximum a posteriori** estimate is the value of
+$\theta$ that maximizes the posterior — the posterior's **mode**:
+$$
+\hat\theta_{\text{MAP}} \;=\; \arg\max_\theta\; p(\theta\mid x)
+\;=\; \arg\max_\theta\; p(x\mid\theta)\,\pi(\theta),
+$$
+where the marginal likelihood $p(x)$ drops because it is a positive constant in $\theta$ and
+cannot move the location of a maximum.
+:::
+
+As in [INFR-B1] and [INFR-B2], we maximize in the log, because the log is strictly
+increasing (it never moves the argmax) and it turns the product into a sum:
+$$
+\hat\theta_{\text{MAP}}
+= \arg\max_\theta\;\Bigl[\,\underbrace{\log p(x\mid\theta)}_{\text{log-likelihood }\ell(\theta)}
+                          \;+\; \log\pi(\theta)\,\Bigr].
+$$ {#eq-map-log}
+Compare this to the MLE, which maximizes $\ell(\theta)$ alone ([INFR-B2]). **The MAP is the
+MLE with one extra additive term, $\log\pi(\theta)$ — a penalty (or reward) supplied by the
+prior.** Two consequences follow immediately and are exactly what an interviewer fishes for.
+
+## MAP reduces to MLE under a flat prior {#sec-map-flat}
+
+If the prior is **flat** — $\pi(\theta)=c$, a constant, over the whole parameter range —
+then $\log\pi(\theta)=\log c$ is itself a constant in $\theta$, and a constant added to a
+function never moves its maximum. So @eq-map-log becomes $\arg\max_\theta \ell(\theta)$,
+which is precisely the MLE:
+$$
+\pi(\theta)\propto 1 \quad\Longrightarrow\quad \hat\theta_{\text{MAP}} = \hat\theta_{\text{MLE}}.
+$$
+This is the formal proof of the slogan from @sec-intuition: **the MLE is the MAP under a
+flat prior**, i.e. the frequentist point estimate is the Bayesian one when you claim total
+prior ignorance. (We saw the special case in the coin: the Beta$(1,1)$ flat prior makes the
+posterior $\propto L(\theta)=\theta^k(1-\theta)^{n-k}$; maximizing it sets the derivative of
+$\log L=k\log\theta+(n-k)\log(1-\theta)$ to zero, $k/\theta-(n-k)/(1-\theta)=0$, which solves
+to $\theta=k/n$ — the binomial MLE of [INFR-B2]. So the posterior mode is $k/n$, the MLE.)
+
+## MAP under a Gaussian prior is ridge; under a Laplace prior is lasso {#sec-map-reg}
+
+This is the link the track roadmap promised back to Regression, and it is worth deriving in
+full because it reveals **regularization to be Bayesian inference in disguise.** Consider the
+linear-regression setting where the data log-likelihood, under Gaussian noise with variance
+$\sigma^2$, is (from [REGR-01]'s Gaussian-MLE argument, which we cited there and use here)
+$$
+\ell(\boldsymbol\beta)
+= -\frac{1}{2\sigma^2}\sum_{i=1}^n\bigl(y_i - \mathbf x_i^\top\boldsymbol\beta\bigr)^2
+  \;+\; \text{const},
+$$
+so maximizing $\ell$ is minimizing the sum of squared errors — ordinary least squares. Now
+put a **mean-zero Gaussian prior** on each coefficient, $\beta_j\sim\mathcal N(0,\tau^2)$
+independently, expressing a prior belief that coefficients are small. Its log is
+$$
+\log\pi(\boldsymbol\beta)
+= -\frac{1}{2\tau^2}\sum_{j=1}^p \beta_j^2 \;+\; \text{const}.
+$$
+Substitute both into @eq-map-log. Maximizing the sum is the same as minimizing its negative;
+multiply through by $-2\sigma^2$ (a positive constant, which does not move the minimizer) to
+clear the leading factor:
+$$
+\hat{\boldsymbol\beta}_{\text{MAP}}
+= \arg\min_{\boldsymbol\beta}\;
+  \sum_{i=1}^n\bigl(y_i - \mathbf x_i^\top\boldsymbol\beta\bigr)^2
+  \;+\; \underbrace{\frac{\sigma^2}{\tau^2}}_{\displaystyle\lambda}\sum_{j=1}^p \beta_j^2 .
+$$ {#eq-ridge}
+That is **ridge regression** exactly — least squares plus an $\ell_2$ penalty $\lambda\sum
+\beta_j^2$, with the penalty strength $\lambda=\sigma^2/\tau^2$. The penalty is large
+(strong shrinkage) when the prior is tight ($\tau^2$ small, you strongly believe
+coefficients are near zero) and vanishes as $\tau^2\to\infty$ (a vague prior, recovering
+OLS). The ridge penalty is not an arbitrary trick to tame overfitting; **it is the
+log-density of a Gaussian prior on the coefficients.**
+
+Swap the Gaussian prior for a **Laplace (double-exponential) prior**, $\pi(\beta_j)\propto
+\exp(-|\beta_j|/b)$, whose log is $-|\beta_j|/b + \text{const}$. The identical substitution
+gives
+$$
+\hat{\boldsymbol\beta}_{\text{MAP}}
+= \arg\min_{\boldsymbol\beta}\;
+  \sum_{i=1}^n\bigl(y_i - \mathbf x_i^\top\boldsymbol\beta\bigr)^2
+  \;+\; \lambda\sum_{j=1}^p |\beta_j|,
+$$ {#eq-lasso}
+which is **lasso regression** — least squares plus an $\ell_1$ penalty. The Laplace prior's
+sharp peak at zero is what drives coefficients *exactly* to zero (the sparsity the lasso is
+famous for). @fig-priors-penalty shows the two priors and the penalties they induce.
+
+```{python}
+#| label: fig-priors-penalty
+#| fig-cap: 'Regularization is a prior in disguise. **Left:** a Gaussian prior (green) and a Laplace prior (orange) on a single coefficient, both centred at zero. The Laplace has a sharp peak at zero and heavier tails. **Right:** the corresponding penalties $-\log\pi(\beta)$ that the MAP adds to the least-squares loss: the Gaussian''s $\beta^2$ (ridge) and the Laplace''s $|\beta|$ (lasso). The lasso penalty''s corner at zero is exactly what pushes coefficients to be *exactly* zero, producing sparse fits; the smooth ridge penalty only shrinks them. The penalty you choose in Regression is the prior you believe in Inference.'
+b = np.linspace(-3, 3, 400)
+gauss = np.exp(-b**2 / 2) / np.sqrt(2 * np.pi)
+laplace = np.exp(-np.abs(b)) / 2
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.7))
+axL.plot(b, gauss, color=LIKE, lw=2.2, label="Gaussian prior")
+axL.plot(b, laplace, color=ACCENT, lw=2.2, label="Laplace prior")
+axL.set_title("Priors on a coefficient")
+axL.set_xlabel(r"$\beta$"); axL.set_ylabel("prior density")
+axL.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
+axR.plot(b, b**2, color=LIKE, lw=2.2, label=r"ridge penalty $\beta^2$ (Gaussian)")
+axR.plot(b, np.abs(b), color=ACCENT, lw=2.2, label=r"lasso penalty $|\beta|$ (Laplace)")
+axR.set_title(r"Induced penalty $-\log\pi(\beta)$")
+axR.set_xlabel(r"$\beta$"); axR.set_ylabel("penalty")
+axR.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Is regularized regression Bayesian or frequentist?"* It can be read either way, and saying
+so is the sophisticated answer. As a *frequentist* procedure, ridge/lasso is penalized
+maximum likelihood — a point estimate that trades a little bias for a lot of variance
+reduction, justified by its risk properties with no prior in sight. As a *Bayesian*
+procedure, it is the **MAP estimate** under a Gaussian (ridge) or Laplace (lasso) prior on
+the coefficients — the single point of @eq-ridge–@eq-lasso. The penalty strength $\lambda$ is
+the frequentist's tuning knob and the Bayesian's prior variance ($\lambda=\sigma^2/\tau^2$);
+they are the same number wearing two hats. The catch worth volunteering: the MAP is only the
+*mode* of the posterior, so it throws away the rest of the distribution — a full Bayesian
+analysis would report the whole posterior (and the posterior *mean*, not the mode, which
+for the lasso is not sparse). Regression's own derivation of the ridge and lasso penalties,
+at a different altitude, is in [REGR-08]–[REGR-09].
+:::
+
+# Bayesian hypothesis testing, briefly {#sec-testing}
+
+To close the contrast with the testing movement (D), note how the same posterior re-answers
+a test. In [INFR-D1] a frequentist test asks: *under $H_0$, how surprising are the data?* —
+the p-value. The Bayesian asks the question decision-makers actually want: *given the data,
+how probable is each hypothesis?* For a one-sided claim like "the effect is positive,"
+$\theta>0$, the answer is a direct **posterior probability**,
+$$
+P(\theta > 0\mid x) = \int_0^\infty p(\theta\mid x)\,d\theta,
+$$
+read straight off the posterior — no null distribution, no tail-area-under-a-hypothesis
+gymnastics. For comparing two models $M_0,M_1$, the Bayesian computes the **Bayes factor**
+$p(x\mid M_1)/p(x\mid M_0)$, the ratio of marginal likelihoods @eq-marginal — which is
+precisely where the troublesome integral becomes unavoidable, and which we flag as the
+gateway to the computation track rather than develop here.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The Bayesian turn buys a clean interpretation at a real cost, and a graduate must be able to
+state the costs as crisply as the benefits.
+
+## Prior sensitivity: the same data, different conclusions {#sec-sensitivity}
+
+The credible interval's honesty is conditional on the prior, and with little data the prior
+can drive the answer. We make this an *honest* example — not one rigged to flatter Bayes,
+but the regime where it strains.
+
+```{python}
+#| label: fig-prior-sensitivity
+#| fig-cap: "The edge of applicability: prior sensitivity with little data. A rare-event count — 1 success in 10 trials — analysed under four Beta priors. **Top:** an enthusiast's prior (Beta(8,2), believing success is likely), a skeptic's (Beta(2,8)), a flat prior (Beta(1,1)), and Jeffreys (Beta(0.5,0.5)). **Bottom:** the four posteriors. With only $n=10$ they disagree substantially — the enthusiast's posterior mean is more than double the skeptic's, and the 95% credible intervals barely overlap. *This is the honest boundary*: when data are scarce relative to the strength of the prior, the prior, not the data, decides the answer, and a responsible analysis must report exactly this sensitivity table."
+theta = np.linspace(0, 1, 500)
+k, n = 1, 10
+priors = {"enthusiast Beta(8,2)": (8, 2),
+          "skeptic Beta(2,8)": (2, 8),
+          "flat Beta(1,1)": (1, 1),
+          "Jeffreys Beta(.5,.5)": (0.5, 0.5)}
+colors = [LIKE, ACCENT, PRIOR, POST]
+
+fig, (axT, axB) = plt.subplots(2, 1, figsize=(6.6, 6.0), sharex=True)
+for (name, (a, b)), c in zip(priors.items(), colors):
+    axT.plot(theta, stats.beta(a, b).pdf(theta), color=c, lw=2.0, label=name)
+    post = stats.beta(a + k, b + n - k)
+    lo, hi = post.ppf(0.025), post.ppf(0.975)
+    axB.plot(theta, post.pdf(theta), color=c, lw=2.2,
+             label=f"mean {post.mean():.2f}, 95% CrI [{lo:.2f},{hi:.2f}]")
+axT.set_title("Four priors"); axT.set_ylabel("density")
+axT.legend(loc="upper center", fontsize=8, framealpha=0.9)
+axB.set_title(f"Four posteriors after {k} success in {n} trials")
+axB.set_xlabel(r"$\theta$"); axB.set_ylabel("density")
+axB.legend(loc="upper right", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+
+print("Posterior summaries (k=1, n=10):")
+for name, (a, b) in priors.items():
+    post = stats.beta(a + k, b + n - k)
+    print(f"  {name:24s} mean={post.mean():.3f}  95% CrI=[{post.ppf(0.025):.3f}, {post.ppf(0.975):.3f}]")
+```
+
+The lesson is not "Bayes is unreliable." It is that **with little data the prior is part of
+the answer, and you must say which prior you used.** Frequentist inference dodges this by
+refusing to use a prior — but it pays for the dodge with the inability to answer the direct
+question, and (as [INFR-C1]'s polling example showed) its own small-sample intervals can
+misbehave near boundaries. The honest practice on both sides: with scarce data, report the
+sensitivity; with ample data, it does not matter (the posteriors in @fig-prior-sensitivity
+would be indistinguishable at $n=1000$).
+
+## When Bayes and frequentism agree, and when they diverge {#sec-agree}
+
+Pulling the threads together into the applicability call a graduate must be able to make:
+
+- **They agree (numerically) when** the prior is weak relative to the data — large $n$, a
+  vague prior, a well-identified parameter. The Bernstein–von Mises phenomenon (the
+  large-sample fact that the posterior becomes Gaussian centred at the MLE with the inverse
+  Fisher information as variance — the [INFR-B4] limit reappearing) is the formal statement;
+  we name it as an imported result rather than prove it, since its proof needs the
+  asymptotic machinery of [INFR-B4] plus regularity conditions. Both intervals then have the
+  same endpoints, and a $95\%$ credible interval also has $\approx 95\%$ frequentist
+  coverage.
+- **They diverge when** data are scarce and the prior is informative (the prior genuinely
+  shifts the answer), when the parameter is on a boundary (a probability near 0/1, a
+  variance near 0 — where the prior's support constraint helps and the frequentist Wald
+  interval breaks), or when the question itself is inherently about a *single, unrepeatable*
+  event ("what is the probability *this* patient has the disease given *this* test result"),
+  which the frequentist frame cannot phrase as a probability at all.
+
+## The computational price {#sec-computation}
+
+Everything by hand above worked because the models were **conjugate** — the posterior had a
+recognizable closed form and the integral @eq-marginal evaporated. The moment the prior and
+likelihood are not conjugate — which is *most* real models — that integral is a
+high-dimensional beast with no closed form, and even *evaluating* the normalized posterior,
+let alone its credible intervals, requires numerical integration that is hopeless beyond a
+few dimensions.
+
+::: {.callout-warning title="Pitfall"}
+**Conjugacy is the exception, not the rule.** The Beta–Binomial and Normal–Normal updates in
+this article are clean because the algebra of the prior matched the algebra of the
+likelihood. Almost any realistic model — logistic regression with a Gaussian prior, a
+hierarchical model, anything with several interacting parameters — is **not** conjugate, and
+the posterior is known only up to the intractable constant $p(x)$. You cannot integrate it,
+and you often cannot even normalize it. The escape is to **sample** from the posterior
+without ever computing $p(x)$ — Markov chain Monte Carlo (Metropolis–Hastings, Gibbs,
+Hamiltonian Monte Carlo) and variational inference. That machinery is large enough to be its
+own track; this article deliberately stops at the conjugate edge so that the *concepts* —
+posterior, credible interval, MAP — are rock-solid before the computation is layered on.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When would you actually choose Bayesian over frequentist inference in practice?"* The
+practitioner's checklist: **reach for Bayes** when (a) you have genuine, defensible prior
+information and the data are limited, so the prior earns its keep; (b) the decision-maker
+needs a *direct* probability about the parameter or a hypothesis (medical risk,
+business-decision expected loss) rather than a long-run-frequency guarantee; (c) the model is
+hierarchical or has many partially-pooled groups, where Bayesian shrinkage is natural and
+coherent; or (d) the parameter is constrained and frequentist intervals misbehave. **Stay
+frequentist** when (a) you want a guarantee that needs no prior and is calibrated over
+repetition (regulatory settings, A/B tests at scale where the procedure's long-run error
+rate is the contract); (b) priors would be contentious and you want assumption-light
+answers (reach for the bootstrap, [INFR-E1]); or (c) you simply have so much data that the
+two agree and the frequentist tooling is faster. The naive answer picks a side; the graduate
+answer matches the tool to the question.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+This article **closes** the Statistical Inference track. It kept the charter question — *how
+sure are we* — and answered it under a different definition of probability, treating the
+parameter as random.
+
+- It assumed **[INFR-B1 *The Likelihood*]** (the posterior is the likelihood times a prior),
+  **[INFR-C1 *Confidence Intervals*]** (the foil for the credible interval — the cardinal
+  forbidden sentence that the credible interval *is allowed* to say), and **[INFR-D1 *The
+  Logic of Hypothesis Testing*]** (the testing apparatus we re-answered with posterior
+  probabilities and Bayes factors).
+- It reached back to **Regression**: the **MAP** estimate under a Gaussian prior is **ridge**
+  ([REGR-08]) and under a Laplace prior is **lasso** ([REGR-09]) — regularization revealed as
+  a prior in disguise. The Gaussian-noise likelihood it borrowed is from [REGR-01].
+- It reused the large-sample machinery of **[INFR-B4 *MLE Asymptotics*]**: the
+  Bernstein–von Mises phenomenon (posterior $\to$ Gaussian at the MLE with inverse Fisher
+  information variance) is why Bayes and frequentism merge with enough data, and it pointed
+  to **[INFR-B3 *Fisher Information*]** for the Jeffreys prior.
+- It **forks to a future Bayesian Computation / MCMC track.** The conjugate cases here are
+  the entire hand-computable universe; the intractable marginal likelihood @eq-marginal is
+  the wall that Metropolis–Hastings, Gibbs sampling, Hamiltonian Monte Carlo, and
+  variational inference are built to climb. Those methods need the posterior *concepts*
+  installed here as their foundation.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding sources.** T. Bayes, "An Essay towards Solving a Problem in the Doctrine of
+  Chances," *Phil. Trans.* (1763), and P.-S. Laplace, *Mémoire sur la probabilité des
+  causes par les événements* (1774) — the latter is where the modern machinery actually
+  takes shape, including the rule of succession from the @sec-beta-binom callout.
+- **The modern graduate texts.** A. Gelman et al., *Bayesian Data Analysis* (3rd ed.) — the
+  standard reference, with conjugate analysis, prior choice, and the computation that
+  follows this article; and C. Robert, *The Bayesian Choice*, for the decision-theoretic
+  foundations (why the posterior mean minimizes expected squared loss, the MAP its own
+  loss).
+- **The objective-prior thread.** H. Jeffreys' prior, $\pi(\theta)\propto\sqrt{I(\theta)}$
+  built from the Fisher information of [INFR-B3], is the principled answer to "what does
+  'know nothing' mean," and is reparameterization-invariant by construction — the fix for
+  the subtlety flagged in the @sec-beta-binom callout.
+- **Open threads deliberately deferred.** *How do we compute the posterior when it is not
+  conjugate?* — MCMC and variational inference, the future computation track. *How do we
+  compare whole models?* — Bayes factors and the marginal likelihood @eq-marginal, whose
+  evaluation is the same hard integral. *Is there a prior that makes the credible interval
+  have exact frequentist coverage?* — the matching-prior program, a deep corner where the two
+  paradigms are engineered to coincide.

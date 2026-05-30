@@ -1,0 +1,1268 @@
+---
+title: "The Asymptotic Trinity: Likelihood-Ratio, Wald, and Score Tests"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20241007)
+
+DATA   = "#2b3a67"     # data / point estimates / the log-likelihood curve
+CURVE  = "#c1121f"     # theoretical limit / reference curves
+ACCENT = "#0a7d4d"     # the MLE / the truth / highlights
+LR     = "#7b2cbf"     # likelihood-ratio flavour
+WALD   = "#0a7d4d"     # Wald flavour
+SCORE  = "#d6791f"     # score flavour
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas / histograms
+```
+
+> **Where this sits in the track.** This is the capstone of the **Hypothesis Testing**
+> movement (D). It assumes [INFR-B2 *Maximum Likelihood*] (the MLE
+> $\hat\theta_n=\arg\max_\theta\ell_n(\theta)$ and the **score**
+> $U_n(\theta)=\ell_n'(\theta)$ whose root we chase); [INFR-B3 *Fisher Information*] (the
+> per-observation information $I_1(\theta)$ as the variance of the score and as the
+> negative expected curvature, with total information $I_n=nI_1$); [INFR-B4 *MLE
+> Asymptotics*], whose two headline facts — $\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}
+> \mathcal N(0,I_1(\theta_0)^{-1})$ and the score's CLT
+> $\frac1{\sqrt n}U_n(\theta_0)\xrightarrow{d}\mathcal N(0,I_1(\theta_0))$ — are the entire
+> engine of this article; [INFR-D1 *The Logic of Hypothesis Testing*] (null vs.
+> alternative, Type I/II error, the level $\alpha$, power, and the p-value as a tail
+> probability under the null); and [INFR-D2 *The Workhorse Tests*] for the
+> **chi-square distribution** as the law of a sum of squared standard Normals. It is the
+> test-side companion of [INFR-C3 *Wald, Score, and Profile Intervals*]: the three intervals
+> there and the three tests here are the same three objects, read as a confidence set or as
+> a decision. Nothing new is imported from outside the track. It **sets up** the asymptotic
+> inference the entire **Regression** track relies on — every deviance test for nested GLMs,
+> every coefficient $z$-test, every score (Lagrange-multiplier) diagnostic is one of these
+> three.
+
+## Abstract {.unnumbered}
+
+[INFR-D2] gave us a test for each everyday question — a $z$ for a mean, a $\chi^2$ for a
+contingency table, an $F$ for nested linear models — but each was built by hand for its
+setting. This article supplies the *general* machinery: three test statistics that test
+**any** hypothesis about **any** model fit by maximum likelihood, and the single theorem
+that gives all three the same null distribution. The **likelihood-ratio (LR)** statistic
+compares the height of the log-likelihood at its unconstrained peak to its height under
+the null; **Wilks' theorem** proves that twice that drop converges to a chi-square whose
+degrees of freedom equal the number of constraints the null imposes — and we derive it,
+not assert it. The **Wald** statistic measures, in standard-error units, how far the
+unconstrained estimate sits from the null value. The **score (Rao / Lagrange-multiplier)**
+statistic measures how steeply the log-likelihood is still climbing *at* the null value.
+We show all three are the same quadratic read three ways — horizontal distance, vertical
+drop, and slope on the log-likelihood curve — prove their asymptotic equivalence, and
+explain exactly when and why they disagree for finite $n$. We then prove the
+**Neyman–Pearson lemma**: for testing one simple hypothesis against another, the
+likelihood-ratio test is the *most powerful* test at its level — the theorem that explains
+why likelihood ratios sit at the center of all three. The single claim the article defends
+is that **the trinity is not three rival recipes but one geometry — the curvature of the
+log-likelihood at and around its peak — and that knowing which corner of that geometry a
+test reads tells you exactly when to trust it.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+To test a null hypothesis $H_0$ about a model fit by maximum likelihood, read the
+log-likelihood curve $\ell_n(\theta)$ three ways. Let $\hat\theta$ be the unconstrained
+MLE and $\theta_0$ the value the null asserts.
+
+1. **Likelihood-ratio** — how far the curve **drops** from its free peak to the null:
+   $$
+   \Lambda_{\mathrm{LR}} = 2\bigl[\ell_n(\hat\theta)-\ell_n(\theta_0)\bigr].
+   $$
+2. **Wald** — how far the **estimate** sits from the null, in squared standard-error units
+   (curvature measured *at the peak*):
+   $$
+   \Lambda_{\mathrm{W}} = (\hat\theta-\theta_0)^2\,I_n(\hat\theta).
+   $$
+3. **Score (Rao)** — how steeply the curve is still **climbing** at the null value (slope
+   and curvature measured *at $\theta_0$*):
+   $$
+   \Lambda_{\mathrm{S}} = \frac{U_n(\theta_0)^2}{I_n(\theta_0)}.
+   $$
+
+**Wilks' theorem** gives all three the same large-sample null distribution: each converges
+to $\chi^2_q$, where $q$ is the number of free parameters the null pins down. They are
+**equal as $n\to\infty$** and **disagree exactly when the log-likelihood is not a
+symmetric parabola**. And the **Neyman–Pearson lemma** explains why the likelihood ratio
+is the object at the center: for a simple-vs-simple test it is the *most powerful* test at
+its level. The single picture: **LR reads the vertical drop, Wald the horizontal distance,
+score the slope — three coordinates of one curvature.**
+:::
+
+Everything below orbits that box. Each statistic measures the same thing — "how
+incompatible is the null with the likelihood?" — through a different feature of one curve:
+its *height* (LR), the *location of its peak* (Wald), or its *slope at the null* (score).
+On a perfect parabola the three coincide; the entire practical story of the trinity is
+*where the curve is not a parabola*, which is exactly where they part ways and exactly
+where one of them is right and the others lie.
+
+# Why we are doing this: from a test per problem to a test for everything {#sec-why}
+
+Keep one question in view for the entire article: **we can fit any model by maximum
+likelihood — how do we test a hypothesis about it without inventing a new test from
+scratch each time?** Every derivation below is an answer to a piece of that.
+
+## The problem the workhorse tests left open
+
+[INFR-D2] is a catalog. The one-sample $z$-test handles a Normal mean with known variance;
+the $t$-test handles it with unknown variance; Pearson's $\chi^2$ handles a multinomial
+goodness-of-fit; the $F$-test handles nested *linear* models. Each statistic was
+hand-built: a pivot was found, its null distribution was worked out, and a rejection
+region was drawn. That is fine when a clean pivot exists. But the moment we leave the
+comfortable Normal-and-linear world — logistic regression, Poisson counts, a Weibull
+survival model, a mixture, *any* model whose likelihood we can write but whose estimator
+has no closed-form sampling distribution — the catalog runs out. There is no "$t$-test for
+whether a logistic-regression coefficient is zero" in the sense of an exact pivot; there
+is only the likelihood.
+
+So we need a testing principle as general as maximum likelihood itself: given *any*
+log-likelihood $\ell_n(\theta)$ and *any* hypothesis $H_0$, produce a statistic and a null
+distribution. That is precisely what the trinity delivers — and the reason all three share
+one null distribution is the same asymptotic-normality engine that [INFR-B4] already built.
+This article is, in a real sense, [INFR-B4] turned from estimation into testing.
+
+## Why three, and not one
+
+A natural first reaction: if all three are asymptotically equivalent, why carry three? The
+honest answer — the one a sharp examiner is after — is **computational cost and
+finite-sample behavior**, and they pull in opposite directions.
+
+- The **Wald** statistic needs only the *unconstrained* fit $\hat\theta$ and the curvature
+  there. You fit the full model once; the null value never enters the optimization. This is
+  why every regression table prints Wald $z$-statistics: they are free once the model is fit.
+- The **score** statistic needs only the fit *under the null* $\tilde\theta$. You fit the
+  restricted (often much simpler) model and ask whether the data are pulling away from it.
+  This is why the score test is the natural **diagnostic** — "should I add this term?" —
+  testable without ever fitting the larger model.
+- The **likelihood-ratio** statistic needs *both* fits, the constrained and the
+  unconstrained. It is the most work but, as we will see, usually the most trustworthy when
+  the likelihood is skewed.
+
+So the choice is driven by *which fit you already have in hand* and *how trustworthy the
+quadratic approximation is for your sample*. Keeping all three is not redundancy; it is
+having the right tool for whichever fit is cheap and whichever approximation is safe.
+
+::: {.callout-tip title="You might be asked"}
+*"If the three tests are asymptotically equivalent, does it ever matter which one I use?"*
+Yes — for two reasons an interviewer wants you to separate. **Computationally**, they
+require different fits (Wald: full model only; score: null model only; LR: both), so one
+may be far cheaper in a given workflow. **Statistically**, they are equivalent only *in the
+limit*; for finite $n$ they can give materially different p-values, and they disagree most
+exactly when it matters most — skewed likelihoods, small samples, parameters near a
+boundary. The standard guidance: the LR test is generally the most reliable (it is
+invariant to reparameterization and uses the curve's actual shape), the Wald test is the
+least reliable when the likelihood is skewed (it can even be *non-monotone* in the data —
+the Hauck–Donner effect), and the score test is the safe choice when you cannot or will not
+fit the full model. "Asymptotically equivalent" is a promise about $n\to\infty$, not a
+license to treat them as interchangeable at your $n$.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+One picture carries the whole article: the **log-likelihood curve**, with its peak at the
+MLE $\hat\theta$ and the null value $\theta_0$ marked on the axis. Near its peak a smooth
+log-likelihood looks like a downward parabola (this is [INFR-B4]'s Taylor expansion, and we
+re-derive it in @sec-quadratic), and a parabola is pinned down by three numbers: where its
+top is, how tall it is, and how steeply its sides fall. The three tests read exactly these
+three features.
+
+```{python}
+#| label: fig-trinity-geometry
+#| fig-cap: 'The trinity as three readings of one curve. The black curve is a log-likelihood $\ell_n(\theta)$, peaked at the MLE $\hat\theta$ (green). The null asserts $\theta=\theta_0$ (red tick). **Wald** reads the *horizontal* gap $\hat\theta-\theta_0$ and converts it to a height using the curvature at the peak. **Likelihood-ratio** reads the *vertical* drop $\ell_n(\hat\theta)-\ell_n(\theta_0)$. **Score** reads the *slope* of the curve at $\theta_0$ (orange tangent) — how hard the likelihood is still pulling away from the null. On a parabola these three numbers are algebraically locked together; the entire finite-sample story is how they come apart when the curve is skewed.'
+# A deliberately mildly-skewed log-likelihood to show the three readings distinctly.
+theta = np.linspace(0.2, 4.2, 400)
+# Use a gamma-type log-likelihood shape: peaks near 2, gently skewed
+def ell(t):
+    return 30*(np.log(t) - t/2.0)   # maximized at t=2, concave, slightly skewed
+peak_t = 2.0
+ell_peak = ell(peak_t)
+theta0 = 1.05
+
+fig, ax = plt.subplots(figsize=(6.8, 4.4))
+ax.plot(theta, ell(theta), color="black", lw=2.2, label=r"$\ell_n(\theta)$")
+# peak / MLE
+ax.scatter([peak_t], [ell_peak], color=ACCENT, s=60, zorder=6)
+ax.axvline(peak_t, color=ACCENT, lw=1.0, ls=":")
+ax.text(peak_t+0.05, ell(theta).min()+1.0, r"$\hat\theta$", color=ACCENT, fontsize=12)
+# null value
+ax.axvline(theta0, color=CURVE, lw=1.0, ls=":")
+ax.text(theta0-0.30, ell(theta).min()+1.0, r"$\theta_0$", color=CURVE, fontsize=12)
+# LR: vertical drop
+ax.annotate("", xy=(theta0, ell(theta0)), xytext=(theta0, ell_peak),
+            arrowprops=dict(arrowstyle="<->", color=LR, lw=2.0))
+ax.text(theta0+0.06, (ell(theta0)+ell_peak)/2, "LR:\nvertical drop", color=LR, fontsize=9)
+# Wald: horizontal distance
+ax.annotate("", xy=(theta0, ell_peak), xytext=(peak_t, ell_peak),
+            arrowprops=dict(arrowstyle="<->", color=WALD, lw=2.0))
+ax.text((theta0+peak_t)/2-0.35, ell_peak+0.6, "Wald: horizontal gap", color=WALD, fontsize=9)
+# Score: tangent slope at theta0
+slope = 30*(1/theta0 - 0.5)
+tx = np.linspace(theta0-0.45, theta0+0.55, 50)
+ax.plot(tx, ell(theta0) + slope*(tx-theta0), color=SCORE, lw=2.0, ls="--")
+ax.text(theta0-0.10, ell(theta0)-3.2, "score:\nslope at $\\theta_0$", color=SCORE, fontsize=9)
+ax.set_xlabel(r"$\theta$"); ax.set_ylabel(r"$\ell_n(\theta)$")
+ax.set_title("Three coordinates of one log-likelihood curve")
+ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
+ax.set_ylim(ell(theta).min()-1, ell_peak+4)
+plt.tight_layout()
+```
+
+The mental model to hold for the rest of the article: **if the curve were an exact
+downward parabola, the horizontal gap, the vertical drop, and the slope would each
+determine the other two by simple algebra — they would be one number in three costumes.**
+They are. The asymptotic theory says the curve *becomes* a parabola as $n\to\infty$, so the
+three become identical. For finite $n$ the curve has some skew, and then the three readings
+genuinely differ — Wald trusts the curvature at the peak (which can be a poor guide far
+from it), the score trusts the curvature at $\theta_0$, and LR uses the honest height drop.
+That single observation predicts every disagreement we will see.
+
+# The formal development {#sec-formal}
+
+## Setup and the hypotheses we test {#sec-setup}
+
+We observe $X_1,\dots,X_n$ i.i.d. from $f(x\mid\theta)$, with log-likelihood and score
+$$
+\ell_n(\theta)=\sum_{i=1}^n\log f(x_i\mid\theta),
+\qquad
+U_n(\theta)=\ell_n'(\theta),
+$$ {#eq-ell-score}
+exactly as in [INFR-B2]. We take the **scalar case** $\theta\in\mathbb R$ for the main
+derivations — it carries all the ideas and keeps the algebra visible — and state the
+vector generalization (gradients, the information *matrix*, and degrees of freedom equal to
+the number of restrictions) where it is the only change. The MLE $\hat\theta_n$ solves
+$U_n(\hat\theta_n)=0$, and the total Fisher information is $I_n(\theta)=nI_1(\theta)$
+([INFR-B3]).
+
+The hypotheses are about $\theta$. In the scalar case the most common is the **simple
+null** against a **two-sided alternative**,
+$$
+H_0:\ \theta=\theta_0
+\qquad\text{vs.}\qquad
+H_1:\ \theta\ne\theta_0 ,
+$$ {#eq-hypo}
+where $\theta_0$ is a fixed value the analyst names (e.g. "the coefficient is zero," so
+$\theta_0=0$). When $\theta$ is a vector $(\psi,\lambda)$ split into a parameter of
+interest $\psi\in\mathbb R^q$ and a **nuisance** parameter $\lambda$, the null
+$H_0:\psi=\psi_0$ imposes $q$ constraints and leaves $\lambda$ free; that $q$ is the
+degrees of freedom in Wilks' theorem, and we keep it in view because it is the single
+number people most often get wrong.
+
+The two facts from [INFR-B4] we will use relentlessly, recalled here so the article is
+self-contained, both holding under that article's regularity conditions and evaluated at
+the true $\theta_0$:
+
+::: {#thm-imports}
+**Imported facts (from [INFR-B4]).** Under the regularity conditions, as $n\to\infty$:
+
+1. **(Score CLT.)** The score at the truth, normalized, is asymptotically Gaussian with
+   variance the information:
+   $$
+   \frac{1}{\sqrt n}\,U_n(\theta_0)\ \xrightarrow{\ d\ }\ \mathcal N\!\bigl(0,\,I_1(\theta_0)\bigr).
+   $$
+2. **(MLE asymptotic normality.)** The estimation error, magnified by $\sqrt n$, is
+   Gaussian:
+   $$
+   \sqrt n\,(\hat\theta_n-\theta_0)\ \xrightarrow{\ d\ }\ \mathcal N\!\bigl(0,\,I_1(\theta_0)^{-1}\bigr).
+   $$
+3. **(Curvature converges to information.)** The normalized observed curvature settles onto
+   the information: $-\frac1n\ell_n''(\theta_n^\ast)\xrightarrow{P}I_1(\theta_0)$ for any
+   $\theta_n^\ast\xrightarrow{P}\theta_0$.
+:::
+
+These are not re-proved here — they are the whole content of [INFR-B4], built there with
+the Taylor-plus-CLT argument every step shown. What is *new* in this article is turning
+them into three test statistics and establishing that each has a chi-square null
+distribution.
+
+We also need one fact from [INFR-D2], which we use by name:
+
+::: {.callout-note title="Imported: the chi-square distribution (from INFR-D2)"}
+If $Z_1,\dots,Z_q$ are independent standard Normal random variables, then
+$\sum_{j=1}^q Z_j^2$ has the **chi-square distribution with $q$ degrees of freedom**,
+written $\chi^2_q$. In particular the **square of a single standard Normal is $\chi^2_1$** —
+the fact that turns each of our (asymptotically Normal) statistics, once squared, into a
+chi-square. [INFR-D2] builds this distribution from scratch as the law of a sum of squared
+Normals; we consume it.
+:::
+
+## The quadratic approximation: one curve, three coordinates {#sec-quadratic}
+
+The trinity's unity comes from a single Taylor expansion. We expand the log-likelihood
+about its peak $\hat\theta$ — the same expansion [INFR-B4] used, now pointed at testing.
+
+Because $\hat\theta$ maximizes $\ell_n$ at an interior point, the first derivative there
+vanishes: $U_n(\hat\theta)=\ell_n'(\hat\theta)=0$. Taylor-expand $\ell_n(\theta)$ about
+$\hat\theta$ to second order (the Calc-1 Taylor expansion, $g(\theta)\approx
+g(\hat\theta)+g'(\hat\theta)(\theta-\hat\theta)+\tfrac12 g''(\hat\theta)(\theta-\hat\theta)^2$),
+and use that the linear term drops because $\ell_n'(\hat\theta)=0$:
+$$
+\ell_n(\theta)\ \approx\ \ell_n(\hat\theta)
++ \underbrace{\ell_n'(\hat\theta)}_{=\,0}(\theta-\hat\theta)
++ \tfrac12\,\ell_n''(\hat\theta)\,(\theta-\hat\theta)^2
+= \ell_n(\hat\theta) - \tfrac12\,J_n(\hat\theta)\,(\theta-\hat\theta)^2 ,
+$$ {#eq-quad}
+where we name the **observed information** $J_n(\theta)=-\ell_n''(\theta)$, the negative
+curvature of the log-likelihood. (It is positive at a maximum, since $\ell_n''(\hat\theta)
+<0$ there — the curve bends down.) By imported fact 3, $\frac1n J_n(\hat\theta)\to
+I_1(\theta_0)$, so $J_n(\hat\theta)\approx I_n(\theta_0)\approx I_n(\hat\theta)$ for large
+$n$; we will move between $J_n(\hat\theta)$ and $I_n(\hat\theta)$ freely, flagging it, since
+they share the limit.
+
+@eq-quad says the log-likelihood is, near its peak, a **downward parabola** of height
+$\ell_n(\hat\theta)$ and curvature $J_n(\hat\theta)$. Everything the three tests measure is
+a feature of this parabola, and reading off all three is now pure algebra. Evaluate
+@eq-quad at the null value $\theta_0$:
+$$
+\ell_n(\theta_0)\ \approx\ \ell_n(\hat\theta) - \tfrac12\,J_n(\hat\theta)\,(\hat\theta-\theta_0)^2 .
+$$ {#eq-quad-at-null}
+
+**The LR drop.** Rearranging @eq-quad-at-null,
+$$
+2\bigl[\ell_n(\hat\theta)-\ell_n(\theta_0)\bigr]\ \approx\ J_n(\hat\theta)\,(\hat\theta-\theta_0)^2 .
+$$ {#eq-LRquad}
+
+**The Wald distance.** The right-hand side of @eq-LRquad, with $J_n(\hat\theta)$ replaced
+by its limit-equivalent $I_n(\hat\theta)$, is *exactly the Wald statistic*
+$(\hat\theta-\theta_0)^2 I_n(\hat\theta)$.
+
+**The score slope.** Differentiate @eq-quad once in $\theta$ to get the score near the peak,
+$U_n(\theta)=\ell_n'(\theta)\approx -J_n(\hat\theta)(\theta-\hat\theta)$, and evaluate at
+$\theta_0$:
+$$
+U_n(\theta_0)\ \approx\ -J_n(\hat\theta)\,(\theta_0-\hat\theta) = J_n(\hat\theta)\,(\hat\theta-\theta_0).
+$$
+Square it and divide by $I_n$ (again the limit-equivalent of $J_n$):
+$$
+\frac{U_n(\theta_0)^2}{I_n}\ \approx\ \frac{J_n(\hat\theta)^2(\hat\theta-\theta_0)^2}{I_n}
+\ \approx\ I_n(\hat\theta)\,(\hat\theta-\theta_0)^2 .
+$$ {#eq-scorequad}
+
+Stand back. @eq-LRquad, the Wald statistic, and @eq-scorequad are **the same quantity**
+$I_n(\hat\theta)(\hat\theta-\theta_0)^2$, to leading order. That is the algebraic heart of
+the trinity: on the quadratic approximation the three statistics are not merely close, they
+are *equal*. Their differences are entirely in the higher-order terms the parabola dropped
+— which is why they coincide as $n\to\infty$ (the curve becomes parabolic) and diverge when
+the curve is skewed (the dropped terms matter). @fig-trinity-geometry was this fact drawn.
+
+::: {.callout-important title="The one identity to carry"}
+Near the peak, all three statistics equal
+$$
+I_n(\hat\theta)\,(\hat\theta-\theta_0)^2
+= \Bigl(\tfrac{\hat\theta-\theta_0}{\mathrm{SE}}\Bigr)^2,
+\qquad \mathrm{SE}=\frac{1}{\sqrt{I_n(\hat\theta)}},
+$$
+the **squared standardized distance** of the estimate from the null. Wald measures it at
+the peak's curvature, score at the null's, LR by the honest height drop — three estimates
+of one number. When the log-likelihood is a symmetric parabola they agree exactly; the rest
+of the article is the catalog of what happens when it is not.
+:::
+
+## The Wald test {#sec-wald}
+
+The Wald statistic is imported fact 2 read as a test. By that fact,
+$\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}\mathcal N(0,I_1(\theta_0)^{-1})$ *under the
+null* (when $\theta_0$ is the truth). Standardize: divide by the asymptotic standard
+deviation $\sqrt{I_1(\theta_0)^{-1}}=1/\sqrt{I_1(\theta_0)}$, i.e. multiply by
+$\sqrt{I_1(\theta_0)}$,
+$$
+\sqrt n\,(\hat\theta_n-\theta_0)\,\sqrt{I_1(\theta_0)}
+= \sqrt{n I_1(\theta_0)}\,(\hat\theta_n-\theta_0)
+= \sqrt{I_n(\theta_0)}\,(\hat\theta_n-\theta_0)\ \xrightarrow{\ d\ }\ \mathcal N(0,1).
+$$
+That is the **Wald $z$-statistic** $Z_{\mathrm W}=(\hat\theta_n-\theta_0)\sqrt{I_n}$.
+Squaring a standard Normal gives a $\chi^2_1$ (the imported chi-square fact), so
+
+::: {#thm-wald}
+**Theorem (Wald test).** Under $H_0:\theta=\theta_0$ and the regularity conditions,
+$$
+\Lambda_{\mathrm W} = (\hat\theta_n-\theta_0)^2\,I_n(\hat\theta_n)\ \xrightarrow{\ d\ }\ \chi^2_1 .
+$$
+:::
+
+::: {.proof}
+By imported fact 2, $\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}\mathcal
+N(0,I_1(\theta_0)^{-1})$ under the null. Multiplying a $\mathcal N(0,v)$ variable by the
+constant $c$ scales its variance by $c^2$, so multiplying by $\sqrt{I_1(\theta_0)}$ gives
+$\sqrt{I_1(\theta_0)}\cdot\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}\mathcal
+N\bigl(0,\,I_1(\theta_0)\cdot I_1(\theta_0)^{-1}\bigr)=\mathcal N(0,1)$. The left side is
+$\sqrt{n I_1(\theta_0)}(\hat\theta_n-\theta_0)=\sqrt{I_n(\theta_0)}(\hat\theta_n-\theta_0)$.
+We must replace the unknown $I_n(\theta_0)$ by the computable $I_n(\hat\theta_n)$: since
+$I_1$ is continuous and $\hat\theta_n\xrightarrow{P}\theta_0$ (consistency, [INFR-B4]),
+$I_1(\hat\theta_n)\xrightarrow{P}I_1(\theta_0)$, so the ratio
+$\sqrt{I_n(\hat\theta_n)/I_n(\theta_0)}\xrightarrow{P}1$, and **Slutsky's theorem** lets us
+substitute without changing the limit. Hence $\sqrt{I_n(\hat\theta_n)}(\hat\theta_n-\theta_0)
+\xrightarrow{d}\mathcal N(0,1)$. Finally, if $Z\xrightarrow{d}\mathcal N(0,1)$ then
+$Z^2\xrightarrow{d}\chi^2_1$ by the continuous-mapping theorem and the imported chi-square
+fact (the square of a standard Normal is $\chi^2_1$). Squaring the standardized statistic
+gives exactly $\Lambda_{\mathrm W}=(\hat\theta_n-\theta_0)^2 I_n(\hat\theta_n)$.
+$\qquad\blacksquare$
+:::
+
+The Wald test's selling point is laid bare in the proof: **it uses only the unconstrained
+fit.** You compute $\hat\theta_n$ and the information at it, both byproducts of fitting the
+full model, and the null value $\theta_0$ enters only at the very end as a number you
+subtract. This is why software prints "$z=\hat\theta/\mathrm{SE}$" for every coefficient —
+that is the Wald statistic for $H_0:\theta=0$, and its square is $\Lambda_{\mathrm W}$.
+
+Its weakness is equally visible: it measures curvature *at the peak* $J_n(\hat\theta)$, then
+trusts that curvature all the way out to $\theta_0$. If $\theta_0$ is far from $\hat\theta$
+and the likelihood is skewed, the curvature at the peak is the wrong scale for the distance
+traveled — and the Wald statistic is miscalibrated. We see this fail concretely in
+@sec-failure.
+
+::: {.callout-warning title="Pitfall"}
+**The Wald test is not invariant to how you parameterize the model.** Test $H_0:\theta=1$
+via $\Lambda_{\mathrm W}=(\hat\theta-1)^2 I_n(\hat\theta)$, or test the algebraically
+*identical* hypothesis $H_0:\log\theta=0$ via the Wald statistic for $\log\theta$, and you
+get **different p-values** — because the Wald statistic depends on the *shape* of the
+parameterization through the second derivative, and $\theta\mapsto\log\theta$ bends the
+curve. The likelihood-ratio statistic, which reads only the *height* of the log-likelihood,
+gives the *same* answer under any monotone reparameterization (the height of the peak does
+not move when you relabel the axis). This non-invariance is a genuine defect of Wald, not a
+curiosity, and it is the deepest reason to prefer LR when the two disagree.
+:::
+
+## The score (Rao) test {#sec-score}
+
+The score test is imported fact 1 read as a test. The key move that distinguishes it from
+Wald: it never fits the full model. It asks, *if the null were true, would the
+log-likelihood still be trying to climb away from $\theta_0$?* If the data fit the null
+well, the score $U_n(\theta_0)$ — the slope at $\theta_0$ — should be near zero (the null
+value is near the peak). A steep slope at $\theta_0$ is evidence against the null.
+
+Under the null, $\theta_0$ *is* the truth, so imported fact 1 applies directly:
+$\frac1{\sqrt n}U_n(\theta_0)\xrightarrow{d}\mathcal N(0,I_1(\theta_0))$. Standardize by
+dividing by the standard deviation $\sqrt{I_1(\theta_0)}$:
+$$
+\frac{\frac1{\sqrt n}U_n(\theta_0)}{\sqrt{I_1(\theta_0)}}
+= \frac{U_n(\theta_0)}{\sqrt{n I_1(\theta_0)}}
+= \frac{U_n(\theta_0)}{\sqrt{I_n(\theta_0)}}\ \xrightarrow{\ d\ }\ \mathcal N(0,1).
+$$
+Square it:
+
+::: {#thm-score}
+**Theorem (score / Rao test).** Under $H_0:\theta=\theta_0$ and the regularity conditions,
+$$
+\Lambda_{\mathrm S} = \frac{U_n(\theta_0)^2}{I_n(\theta_0)}\ \xrightarrow{\ d\ }\ \chi^2_1 .
+$$
+:::
+
+::: {.proof}
+Under the null $\theta_0$ is the true parameter, so imported fact 1 gives
+$\frac1{\sqrt n}U_n(\theta_0)\xrightarrow{d}\mathcal N(0,I_1(\theta_0))$. Dividing this
+$\mathcal N(0,I_1(\theta_0))$ variable by the constant $\sqrt{I_1(\theta_0)}$ scales its
+variance by $1/I_1(\theta_0)$, giving $\mathcal N(0,1)$; the left side equals
+$U_n(\theta_0)/\sqrt{n I_1(\theta_0)}=U_n(\theta_0)/\sqrt{I_n(\theta_0)}$. By the imported
+chi-square fact, the square of this standard Normal converges to $\chi^2_1$, and that square
+is exactly $\Lambda_{\mathrm S}=U_n(\theta_0)^2/I_n(\theta_0)$. Note the crucial difference
+from @thm-wald: here the information is evaluated at the *known* null value $\theta_0$, not
+at $\hat\theta_n$ — so **no full-model fit is required**, and there is no Slutsky
+substitution because $I_n(\theta_0)$ is already a known constant under $H_0$.
+$\qquad\blacksquare$
+:::
+
+The score test's selling point is the mirror image of Wald's: **it uses only the null
+fit.** In the scalar simple-null case you fit nothing at all — $\theta_0$ is given, and you
+just evaluate the slope and the information there. In the realistic case with nuisance
+parameters (test $\psi=\psi_0$ with $\lambda$ free), you fit the *restricted* model — fix
+$\psi=\psi_0$, maximize over $\lambda$ to get $\tilde\lambda$ — which is typically far
+cheaper than the full model. This is why the score test is the natural **model-building
+diagnostic**: it asks "is it worth adding this term?" *without* adding it. In econometrics
+it is called the **Lagrange-multiplier test** for exactly this reason — the score at the
+restricted optimum is the Lagrange multiplier on the constraint $\psi=\psi_0$.
+
+::: {.callout-tip title="You might be asked"}
+*"Why would I ever use the score test instead of just fitting the full model and using
+Wald?"* Three honest reasons. **Cost:** the full model may be expensive or unstable to fit
+(many parameters, separation in logistic regression, a hard optimization), while the
+restricted model is simple — the score test gets you a test without paying that cost.
+**Diagnostics:** the score test is built for "should I add this?" questions — testing
+whether to include an omitted variable, a nonlinearity, or autocorrelation — where you
+genuinely have not fit the larger model and may not want to. **Boundary behavior:** because
+the score test evaluates everything at $\theta_0$ and never relies on $\hat\theta$ being
+interior, it behaves better than Wald when the alternative would push the estimate toward a
+boundary. The classic application — the **Breusch–Pagan** test for heteroskedasticity and
+the **Durbin–Watson**-style tests for autocorrelation in regression — are score tests,
+precisely because you want to test the simple model without fitting the elaborate one.
+:::
+
+## The likelihood-ratio test and Wilks' theorem {#sec-lr}
+
+The likelihood-ratio statistic is the most direct expression of the question: *how much
+better does the free model explain the data than the null-constrained one?* The ratio of
+maximized likelihoods,
+$$
+\Lambda = \frac{\sup_{\theta}L_n(\theta)}{L_n(\theta_0)}
+= \frac{L_n(\hat\theta)}{L_n(\theta_0)}\ \ge\ 1,
+$$
+is at least one (the unconstrained max is at least the constrained value), and large $\Lambda$
+means the data prefer the free model. Taking twice the log turns the ratio into a difference
+of log-likelihoods and gives the statistic we use:
+$$
+\Lambda_{\mathrm{LR}} = 2\log\Lambda = 2\bigl[\ell_n(\hat\theta)-\ell_n(\theta_0)\bigr]\ \ge\ 0 .
+$$ {#eq-LR-def}
+The "$2$" is not cosmetic — it is exactly the factor that makes the chi-square come out, as
+the derivation now shows. This is **Wilks' theorem** (1938), the keystone of the whole
+movement.
+
+::: {#thm-wilks}
+**Theorem (Wilks).** Under $H_0:\theta=\theta_0$ and the regularity conditions, for a scalar
+$\theta$,
+$$
+\Lambda_{\mathrm{LR}} = 2\bigl[\ell_n(\hat\theta_n)-\ell_n(\theta_0)\bigr]\ \xrightarrow{\ d\ }\ \chi^2_1 .
+$$
+More generally, if $H_0$ imposes $q$ functionally independent constraints on a
+$p$-dimensional parameter (leaving $p-q$ free), then $\Lambda_{\mathrm{LR}}\xrightarrow{d}
+\chi^2_q$, where $\hat\theta$ is the unconstrained MLE and $\tilde\theta$ the MLE under
+$H_0$, and $\Lambda_{\mathrm{LR}}=2[\ell_n(\hat\theta)-\ell_n(\tilde\theta)]$.
+:::
+
+::: {.proof}
+**Scalar case first.** Start from the quadratic expansion @eq-LRquad derived in
+@sec-quadratic:
+$$
+\Lambda_{\mathrm{LR}} = 2\bigl[\ell_n(\hat\theta)-\ell_n(\theta_0)\bigr]
+\ \approx\ J_n(\hat\theta)\,(\hat\theta-\theta_0)^2 ,
+$$
+where $J_n(\hat\theta)=-\ell_n''(\hat\theta)$ is the observed information. Now rewrite the
+right side to expose a standard Normal. Multiply and divide by $I_n(\theta_0)$ — legitimate
+since it is positive — and group:
+$$
+J_n(\hat\theta)\,(\hat\theta-\theta_0)^2
+= \underbrace{\frac{J_n(\hat\theta)}{I_n(\theta_0)}}_{(\mathrm a)}
+\cdot \underbrace{I_n(\theta_0)\,(\hat\theta-\theta_0)^2}_{(\mathrm b)} .
+$$
+Take the two factors in turn. Factor $(\mathrm a)$: by imported fact 3 (and $I_n=nI_1$),
+both $\frac1n J_n(\hat\theta)$ and $\frac1n I_n(\theta_0)=I_1(\theta_0)$ converge to
+$I_1(\theta_0)$, so their ratio $(\mathrm a)\xrightarrow{P}1$ — it is asymptotically
+negligible, a constant $1$. Factor $(\mathrm b)$: write it as the square of a standardized
+estimator,
+$$
+I_n(\theta_0)\,(\hat\theta-\theta_0)^2 = \Bigl(\sqrt{I_n(\theta_0)}\,(\hat\theta-\theta_0)\Bigr)^2 ,
+$$
+and by imported fact 2 (exactly as in @thm-wald), $\sqrt{I_n(\theta_0)}(\hat\theta-\theta_0)
+\xrightarrow{d}\mathcal N(0,1)$ under the null. So $(\mathrm b)$ is the square of an
+asymptotically standard Normal, hence $(\mathrm b)\xrightarrow{d}\chi^2_1$ by the imported
+chi-square fact. By **Slutsky's theorem**, a quantity converging in probability to $1$
+times a quantity converging in distribution to $\chi^2_1$ converges in distribution to
+$\chi^2_1$:
+$$
+\Lambda_{\mathrm{LR}}\ \approx\ (\mathrm a)\cdot(\mathrm b)\ \xrightarrow{\ d\ }\ 1\cdot\chi^2_1 = \chi^2_1 .
+$$
+(The "$\approx$" carries an error term from the third-order Taylor remainder; under the
+smoothness condition it is $o_P(1)$ — vanishing in probability — so it does not affect the
+limit, which is the standard regularity bookkeeping of [INFR-B4].) This is the scalar claim.
+
+**The $q$-constraint case.** The same expansion runs in $p$ dimensions with the gradient
+$\nabla\ell_n$ and the information *matrix* $\mathbf I_n$. The unconstrained MLE $\hat\theta$
+and the constrained MLE $\tilde\theta$ each admit a quadratic expansion about the truth; the
+difference $2[\ell_n(\hat\theta)-\ell_n(\tilde\theta)]$ becomes, after the algebra, a
+quadratic form $\mathbf Z^\top \mathbf Z$ in a $q$-dimensional asymptotically standard
+Normal vector $\mathbf Z$ — one standard Normal coordinate for each of the $q$ directions
+the null pins down, the $p-q$ free directions contributing nothing because the constrained
+and unconstrained fits agree there. A sum of $q$ independent squared standard Normals is
+$\chi^2_q$ by the imported chi-square fact. The geometric content — *the degrees of freedom
+count the dimensions the null removes* — is the part worth carrying; the matrix algebra is
+the multivariate echo of the scalar lines above. $\qquad\blacksquare$
+:::
+
+The degrees-of-freedom rule deserves its own sentence because it is the single most
+error-prone part of applying these tests: **the chi-square degrees of freedom equal the
+number of free parameters the null fixes — equivalently, (parameters in the big model) −
+(parameters in the small model).** Testing one coefficient is zero: $q=1$. Testing whether
+three coefficients are jointly zero: $q=3$. Testing whether two nested models differ, where
+the big model has five parameters and the small one three: $q=2$. Get $q$ wrong and the
+p-value is meaningless even though the statistic is correct.
+
+::: {.callout-tip title="You might be asked"}
+*"Where does the chi-square come from — why that distribution and not some other?"* Trace
+it to its source: the MLE error $\hat\theta-\theta_0$ is asymptotically **Gaussian**
+([INFR-B4]), the test statistics are all (to leading order) the **squared** standardized
+version of that error, and *the square of a standard Normal is $\chi^2_1$* — sum $q$ of them
+for $q$ constraints and you get $\chi^2_q$. The chi-square is not a new assumption; it is
+the Gaussian asymptotics of the MLE, squared. If a follow-up asks why the *F*-distribution
+appears instead in linear regression, the answer is that for the exact Normal-linear model
+with *unknown variance* the relevant statistic is a ratio of two chi-squares (numerator and
+estimated-variance denominator), which is an $F$; the LR/Wald/score chi-squares are the
+large-sample version where the variance is known well enough that the denominator's
+randomness vanishes and $F\cdot q\to\chi^2_q$. [INFR-D2] derived that $F$; this article is
+its asymptotic, distribution-free cousin.
+:::
+
+## The deviance: Wilks in the language Regression speaks {#sec-deviance}
+
+A vocabulary note that pays off immediately in the Regression track. For a fitted model,
+the **deviance** is defined as
+$$
+D = 2\bigl[\ell_n(\text{saturated})-\ell_n(\hat\theta)\bigr],
+$$
+twice the gap between the log-likelihood of a "saturated" model (one parameter per
+observation, fitting the data perfectly) and the fitted model. The saturated term is a
+*constant* — it does not depend on which nested model you fit — so the **difference of
+deviances** between a small model and a big model is exactly the likelihood-ratio statistic:
+$$
+D_{\text{small}}-D_{\text{big}}
+= 2\bigl[\ell_n(\text{big})-\ell_n(\text{small})\bigr]
+= \Lambda_{\mathrm{LR}}\ \xrightarrow{\ d\ }\ \chi^2_{\,q},
+$$
+the saturated constant cancelling. So "compare two nested GLMs by the change in deviance,
+referred to a chi-square with degrees of freedom equal to the difference in parameters" is
+*literally* Wilks' theorem in disguise. When [REGR] tests whether a logistic or Poisson
+regression term improves the fit, it is computing $\Lambda_{\mathrm{LR}}$ and reading
+@thm-wilks. This article is where that test is justified.
+
+# Worked examples {#sec-examples}
+
+We now run all three tests on real, messy problems — never a toy rigged to flatter them.
+The first we carry through by hand, number by number, so the formulas breathe; the last
+sits squarely on the edge where they part company.
+
+## Example 1 — a binomial proportion, all three by hand {#sec-ex-binomial}
+
+A quality-control engineer inspects $n=200$ welds and finds $k=18$ defective. The standard
+assumes a defect rate of $\theta_0=0.05$; the data suggest higher. Test $H_0:\theta=0.05$
+against $H_1:\theta\ne0.05$ three ways. This is the cleanest possible demonstration because
+every piece has a closed form ([INFR-B2], [INFR-B3] gave them): the MLE is $\hat\theta=k/n$,
+the log-likelihood is $\ell_n(\theta)=k\log\theta+(n-k)\log(1-\theta)$ plus a constant, the
+score is $U_n(\theta)=\frac{k}{\theta}-\frac{n-k}{1-\theta}$, and the information is
+$I_n(\theta)=\frac{n}{\theta(1-\theta)}$.
+
+```{python}
+#| label: fig-binomial-trinity
+#| fig-cap: 'All three tests on one binomial log-likelihood ($n=200$, $k=18$, $H_0:\theta_0=0.05$). The black curve is $\ell_n(\theta)$; the green dot is the MLE $\hat\theta=0.09$; the red tick is $\theta_0=0.05$. **Wald** (green) reads the horizontal gap scaled by the curvature *at the peak*; **score** (orange) reads the slope *at $\theta_0$*; **likelihood-ratio** (purple) reads the vertical drop. The three statistics, printed below, are close but not equal — the mild skew of the binomial log-likelihood at this $n$ separates them, exactly the higher-order terms the parabola dropped.'
+n, k = 200, 18
+theta0 = 0.05
+thhat = k/n
+
+def loglik(t):  # up to an additive constant
+    return k*np.log(t) + (n-k)*np.log(1-t)
+
+def score(t):
+    return k/t - (n-k)/(1-t)
+
+def info(t):    # total Fisher information I_n(theta) = n / [theta(1-theta)]
+    return n/(t*(1-t))
+
+# the three statistics
+lam_W  = (thhat-theta0)**2 * info(thhat)
+lam_S  = score(theta0)**2 / info(theta0)
+lam_LR = 2*(loglik(thhat) - loglik(theta0))
+
+t = np.linspace(0.01, 0.20, 400)
+fig, ax = plt.subplots(figsize=(6.8, 4.4))
+ax.plot(t, loglik(t), color="black", lw=2.2, label=r"$\ell_n(\theta)$")
+ax.scatter([thhat],[loglik(thhat)], color=ACCENT, s=60, zorder=6)
+ax.axvline(thhat, color=ACCENT, lw=1.0, ls=":"); ax.text(thhat+0.004, loglik(t).min()+1, r"$\hat\theta$", color=ACCENT, fontsize=12)
+ax.axvline(theta0, color=CURVE, lw=1.0, ls=":"); ax.text(theta0-0.012, loglik(t).min()+1, r"$\theta_0$", color=CURVE, fontsize=12)
+# vertical LR drop
+ax.annotate("", xy=(theta0, loglik(theta0)), xytext=(theta0, loglik(thhat)),
+            arrowprops=dict(arrowstyle="<->", color=LR, lw=2.0))
+# score tangent at theta0
+sl = score(theta0)
+tx = np.linspace(theta0-0.015, theta0+0.02, 40)
+ax.plot(tx, loglik(theta0)+sl*(tx-theta0), color=SCORE, lw=2.0, ls="--", label="slope at $\\theta_0$ (score)")
+# wald parabola at the peak
+par = loglik(thhat) - 0.5*info(thhat)*(t-thhat)**2
+ax.plot(t, par, color=WALD, lw=1.6, ls="-.", alpha=0.8, label="parabola at peak (Wald)")
+ax.set_ylim(loglik(t).min()-1, loglik(thhat)+2)
+ax.set_xlabel(r"$\theta$"); ax.set_ylabel(r"$\ell_n(\theta)$ (up to a constant)")
+ax.set_title("Three readings of the binomial log-likelihood")
+ax.legend(loc="lower center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+from math import erf, sqrt
+def chi2_1_sf(x):  # P(chi^2_1 > x) = 2*(1 - Phi(sqrt(x)))
+    return 2*(1 - 0.5*(1+erf(sqrt(x)/sqrt(2))))
+print(f"MLE theta_hat = {thhat:.4f},  null theta0 = {theta0}")
+print(f"Wald   statistic = {lam_W:.4f},  p = {chi2_1_sf(lam_W):.4f}")
+print(f"Score  statistic = {lam_S:.4f},  p = {chi2_1_sf(lam_S):.4f}")
+print(f"LR     statistic = {lam_LR:.4f},  p = {chi2_1_sf(lam_LR):.4f}")
+```
+
+Walk the arithmetic the code computed, plugging into the boxed formulas.
+
+- The MLE is $\hat\theta=k/n=18/200=`{python} f"{thhat:.3f}"`$ — the defect rate is nearly
+  double the standard's $0.05$.
+- **Wald.** The information at the peak is $I_n(\hat\theta)=n/[\hat\theta(1-\hat\theta)]$.
+  The statistic is $(\hat\theta-\theta_0)^2 I_n(\hat\theta)=`{python} f"{lam_W:.3f}"`$, i.e.
+  the squared standardized distance of $0.09$ from $0.05$.
+- **Score.** The slope at the null is $U_n(\theta_0)=\frac{k}{\theta_0}-\frac{n-k}{1-\theta_0}$
+  and the information there is $I_n(\theta_0)=n/[\theta_0(1-\theta_0)]$; the statistic is
+  $U_n(\theta_0)^2/I_n(\theta_0)=`{python} f"{lam_S:.3f}"`$ — no full-model fit was needed,
+  only evaluation at $\theta_0=0.05$.
+- **Likelihood-ratio.** Twice the height drop, $2[\ell_n(\hat\theta)-\ell_n(\theta_0)]
+  =`{python} f"{lam_LR:.3f}"`$.
+
+All three exceed the $\chi^2_1$ critical value $3.84$ (the $0.95$ quantile), so all three
+reject $H_0$ at the $5\%$ level — the defect rate is genuinely elevated. But notice they are
+*not identical*: $`{python} f"{lam_W:.2f}"`$ vs. $`{python} f"{lam_S:.2f}"`$ vs.
+$`{python} f"{lam_LR:.2f}"`$. That spread is the higher-order skew of the binomial
+log-likelihood at $n=200$ — small here, but the seed of the disaster in @sec-failure when
+$n$ is small and $\theta_0$ is near the boundary.
+
+## Example 2 — a Poisson rate and the duality with the confidence interval {#sec-ex-poisson}
+
+A call center logs $n=30$ days; the total calls are $\sum x_i = 246$, so the daily rate MLE
+is $\hat\lambda=\bar x=8.2$. Management's staffing model assumes $\lambda_0=7$. Test
+$H_0:\lambda=7$. For the Poisson ([INFR-B2], [INFR-B3]): $\ell_n(\lambda)=
+(\sum x_i)\log\lambda - n\lambda$ plus a constant, $U_n(\lambda)=\frac{\sum x_i}{\lambda}-n$,
+$I_n(\lambda)=n/\lambda$. We use this example to make the **test/interval duality** of
+[INFR-D1] and [INFR-C3] concrete: the set of null values a level-$\alpha$ test does *not*
+reject is exactly the $(1-\alpha)$ confidence interval.
+
+```{python}
+#| label: fig-poisson-duality
+#| fig-cap: 'Test/interval duality for a Poisson rate ($n=30$, $\sum x_i=246$, $\hat\lambda=8.2$). For each candidate null $\lambda_0$ on the horizontal axis we compute the Wald (green), score (orange), and LR (purple) statistics for $H_0:\lambda=\lambda_0$ and plot them against the $\chi^2_1$ critical value $3.84$ (grey). The set of $\lambda_0$ whose statistic falls *below* the line — the values a 5% test fails to reject — is the 95% confidence interval for that method (shown as the horizontal bars). The LR and score curves are asymmetric about $\hat\lambda$ (they follow the curve), so their intervals are asymmetric; the Wald curve is an exact parabola, so its interval is symmetric. The three intervals are the confidence-set duals of [INFR-C3].'
+n = 30; S = 246
+lamhat = S/n
+def ell_p(l): return S*np.log(l) - n*l
+def score_p(l): return S/l - n
+def info_p(l): return n/l
+
+l0 = np.linspace(5.5, 11.2, 500)
+W  = (lamhat-l0)**2 * info_p(lamhat)
+Sc = score_p(l0)**2 / info_p(l0)
+LRc= 2*(ell_p(lamhat) - ell_p(l0))
+crit = 3.841
+
+fig, ax = plt.subplots(figsize=(7.0, 4.4))
+ax.plot(l0, W,  color=WALD,  label="Wald")
+ax.plot(l0, Sc, color=SCORE, label="score")
+ax.plot(l0, LRc,color=LR,    label="likelihood-ratio")
+ax.axhline(crit, color=GREY, lw=1.4, ls="--", label=r"$\chi^2_{1,0.95}=3.84$")
+ax.axvline(lamhat, color=ACCENT, lw=1.0, ls=":"); ax.text(lamhat+0.05, 9.0, r"$\hat\lambda$", color=ACCENT)
+
+# extract intervals (where each curve <= crit) and draw as bars near the bottom
+def interval(curve):
+    below = l0[curve <= crit]
+    return below.min(), below.max()
+for curve, col, yy, name in [(W, WALD, -0.8, "Wald"), (Sc, SCORE, -1.6, "score"), (LRc, LR, -2.4, "LR")]:
+    lo, hi = interval(curve)
+    ax.plot([lo, hi], [yy, yy], color=col, lw=4, solid_capstyle="round")
+    ax.text(hi+0.08, yy, f"{name}: [{lo:.2f}, {hi:.2f}]", color=col, fontsize=8.5, va="center")
+ax.set_ylim(-3.0, 10)
+ax.set_xlabel(r"null value $\lambda_0$"); ax.set_ylabel("test statistic")
+ax.set_title("Acceptance region = confidence interval (test/interval duality)")
+ax.legend(loc="upper center", fontsize=8.5, framealpha=0.9, ncol=2)
+plt.tight_layout()
+
+from math import erf, sqrt
+def chi2_1_sf(x): return 2*(1 - 0.5*(1+erf(sqrt(x)/sqrt(2))))
+W0  = (lamhat-7)**2*info_p(lamhat)
+S0  = score_p(7.0)**2/info_p(7.0)
+LR0 = 2*(ell_p(lamhat)-ell_p(7.0))
+print(f"Testing H0: lambda = 7  (lambda_hat = {lamhat:.3f})")
+print(f"Wald : {W0:.3f}  p = {chi2_1_sf(W0):.4f}")
+print(f"Score: {S0:.3f}  p = {chi2_1_sf(S0):.4f}")
+print(f"LR   : {LR0:.3f}  p = {chi2_1_sf(LR0):.4f}")
+```
+
+Reading the output: testing $H_0:\lambda=7$, all three statistics are well above $3.84$ and
+all three p-values are small — the rate is significantly above $7$. The figure makes the
+deeper point. **The confidence interval is the test run at every null value at once.** The
+horizontal bars are the sets of $\lambda_0$ the $5\%$ test does not reject, and they are
+*exactly* the Wald, score, and LR confidence intervals of [INFR-C3] — the test and the
+interval are two views of the same object, the duality [INFR-D1] proved. Notice the Wald
+interval is symmetric about $\hat\lambda$ (its statistic is an exact parabola in
+$\lambda_0$) while the score and LR intervals lean — they follow the asymmetric likelihood —
+which is precisely why, near a boundary, they behave better.
+
+## Example 3 — a joint test with nuisance parameters: logistic regression {#sec-ex-logistic}
+
+The realistic case: a model with several parameters, where we test a *subset*. This is where
+$q>1$ degrees of freedom appear and where the LR/deviance machinery earns its keep. We
+simulate a logistic regression — a binary outcome (say, customer churn) driven by two
+predictors plus an intercept — and test whether the *two slopes are jointly zero*
+($H_0:\beta_1=\beta_2=0$, $q=2$ constraints, the intercept a free nuisance parameter under
+both hypotheses). There is no closed form; we fit by Newton's method (the [INFR-B2]
+machinery) and compare the maximized log-likelihoods.
+
+```{python}
+#| label: fig-logistic-joint
+#| fig-cap: 'A joint likelihood-ratio test in logistic regression ($n=400$, two genuine predictors). We fit the full model (intercept + two slopes) and the null model (intercept only), then compute the deviance drop $\Lambda_{\mathrm{LR}}=2[\ell(\text{full})-\ell(\text{null})]$ and refer it to $\chi^2_2$. **Left:** the fitted churn probability vs. the first predictor, full model (curve) over the binary data (jittered). **Right:** the $\chi^2_2$ reference density (red) with the observed LR statistic marked (purple) — far into the tail, so the two slopes are jointly highly significant. The degrees of freedom are $2$ because the null fixes two parameters.'
+def sigmoid(z): return 1/(1+np.exp(-z))
+
+n = 400
+X1 = rng.normal(0, 1, n)
+X2 = rng.normal(0, 1, n)
+beta_true = np.array([-0.4, 1.1, -0.8])   # intercept, slope1, slope2
+Xfull = np.column_stack([np.ones(n), X1, X2])
+p_true = sigmoid(Xfull @ beta_true)
+y = rng.binomial(1, p_true)
+
+def fit_logistic(Xmat, y, iters=50):
+    """Newton-Raphson MLE for logistic regression (the INFR-B2 optimizer)."""
+    b = np.zeros(Xmat.shape[1])
+    for _ in range(iters):
+        eta = Xmat @ b
+        p = sigmoid(eta)
+        W = p*(1-p)
+        grad = Xmat.T @ (y - p)
+        H = Xmat.T @ (Xmat * W[:, None])           # = -ell'' (observed information)
+        b = b + np.linalg.solve(H + 1e-9*np.eye(Xmat.shape[1]), grad)
+    return b
+
+def loglik_logistic(Xmat, b, y):
+    eta = Xmat @ b
+    return np.sum(y*eta - np.log1p(np.exp(eta)))
+
+# full and null (intercept-only) fits
+b_full = fit_logistic(Xfull, y)
+ll_full = loglik_logistic(Xfull, b_full, y)
+Xnull = np.ones((n, 1))
+b_null = fit_logistic(Xnull, y)
+ll_null = loglik_logistic(Xnull, b_null, y)
+
+LR_joint = 2*(ll_full - ll_null)   # ~ chi^2_2 under H0: beta1 = beta2 = 0
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.9))
+order = np.argsort(X1)
+axL.scatter(X1, y + rng.uniform(-0.04, 0.04, n), s=12, color=DATA, alpha=0.5, label="data (jittered)")
+# fitted prob along X1 at the mean of X2
+grid1 = np.linspace(X1.min(), X1.max(), 100)
+Xg = np.column_stack([np.ones(100), grid1, np.full(100, X2.mean())])
+axL.plot(grid1, sigmoid(Xg @ b_full), color=CURVE, label="fitted $P(y=1)$")
+axL.set_xlabel(r"predictor $x_1$"); axL.set_ylabel("churn / probability")
+axL.set_title("Full logistic fit"); axL.legend(fontsize=8.5, framealpha=0.9)
+
+# chi^2_2 density: for 2 df it is (1/2) exp(-x/2)
+xx = np.linspace(0, max(15, LR_joint*1.1), 300)
+chi2_2 = 0.5*np.exp(-xx/2)
+axR.plot(xx, chi2_2, color=CURVE, label=r"$\chi^2_2$ density")
+axR.axvline(LR_joint, color=LR, lw=2.2, label=fr"observed $\Lambda_{{LR}}={LR_joint:.1f}$")
+axR.fill_between(xx[xx>=5.991], chi2_2[xx>=5.991], color=FILL, alpha=0.5)
+axR.axvline(5.991, color=GREY, lw=1.2, ls="--", label=r"$\chi^2_{2,0.95}=5.99$")
+axR.set_xlabel("statistic"); axR.set_ylabel("density")
+axR.set_title("LR statistic vs. its $\\chi^2_2$ null"); axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+from math import exp
+def chi2_2_sf(x): return exp(-x/2)   # survival function of chi^2_2
+print(f"full-model log-likelihood = {ll_full:.3f}  (beta_hat = {np.round(b_full,3)})")
+print(f"null-model log-likelihood = {ll_null:.3f}")
+print(f"LR statistic = 2*(ll_full - ll_null) = {LR_joint:.3f}")
+print(f"degrees of freedom q = 2,  p-value = {chi2_2_sf(LR_joint):.2e}")
+```
+
+The full model recovers slopes near the true $(1.1,-0.8)$; the deviance drop from the
+intercept-only model is $\Lambda_{\mathrm{LR}}=`{python} f"{LR_joint:.1f}"`$, referred to
+$\chi^2_2$ (two slopes fixed under the null) for a p-value of
+$`{python} f"{chi2_2_sf(LR_joint):.0e}"`$. The two predictors jointly carry real signal.
+Three lessons this example makes concrete:
+
+- **This is the test every GLM report runs.** "Model chi-square," "likelihood-ratio test
+  vs. null," "drop-in-deviance test" — all are $\Lambda_{\mathrm{LR}}$ with the appropriate
+  $q$. The Regression track consumes exactly this.
+- **The degrees of freedom are the count of fixed parameters**, here $q=2$. Had we tested
+  only $\beta_1=0$ with $\beta_2$ free, the null model would refit with $\beta_2$ included
+  and $q=1$.
+- **A Wald or score version exists too**, using the information *matrix* and the quadratic
+  form of @thm-wilks. Software usually reports the Wald $z$ for each coefficient (cheap, full
+  fit only) and the LR for the joint or nested comparison (more reliable). Same trinity,
+  vector form.
+
+## Example 4 — the edge of applicability: where Wald breaks and the trinity splits {#sec-failure}
+
+Now the honest boundary, and the most important example in the article. The three tests are
+equal *asymptotically*; for small $n$ and parameters near a boundary they can disagree
+violently, and Wald is the one that fails — sometimes catastrophically. We make this
+visible with a binomial proportion at small $n$ near the floor, the same regime that broke
+the Wald interval in [INFR-B4] and [INFR-C3].
+
+Suppose $n=25$ trials yield $k=1$ success, so $\hat\theta=0.04$, and we test $H_0:\theta=0.20$.
+
+```{python}
+#| label: fig-trinity-disagree
+#| fig-cap: 'The trinity comes apart at small $n$ near the boundary ($n=25$, $k=1$, $H_0:\theta_0=0.20$). The binomial log-likelihood (black) is sharply *right-skewed* about the tiny MLE $\hat\theta=0.04$: very steeply curved at the peak, then a long gentle climb out toward $\theta_0$. **Wald** fits a symmetric parabola using the curvature *at the peak* (green dashed) — which is far too steep to describe the gentle stretch out to $\theta_0$ — so it badly *overstates* the distance and returns the largest statistic. **Score** (orange tangent at $\theta_0$) uses the gentle curvature at the null and returns the smallest; **likelihood-ratio** (purple drop) reads the honest height and sits between. The printed statistics disagree by a factor of four; the LR is the trustworthy one.'
+n, k = 25, 1
+theta0 = 0.20
+thhat = k/n
+def ll_b(t): return k*np.log(t) + (n-k)*np.log(1-t)
+def sc_b(t): return k/t - (n-k)/(1-t)
+def in_b(t): return n/(t*(1-t))
+
+lam_W  = (thhat-theta0)**2 * in_b(thhat)
+lam_S  = sc_b(theta0)**2 / in_b(theta0)
+lam_LR = 2*(ll_b(thhat) - ll_b(theta0))
+
+t = np.linspace(0.005, 0.45, 500)
+fig, ax = plt.subplots(figsize=(7.0, 4.4))
+ax.plot(t, ll_b(t), color="black", lw=2.2, label=r"$\ell_n(\theta)$ (right-skewed)")
+ax.scatter([thhat],[ll_b(thhat)], color=ACCENT, s=60, zorder=6)
+ax.axvline(thhat, color=ACCENT, lw=1.0, ls=":"); ax.text(thhat+0.006, ll_b(t).min()+0.5, r"$\hat\theta$", color=ACCENT, fontsize=12)
+ax.axvline(theta0, color=CURVE, lw=1.0, ls=":"); ax.text(theta0+0.006, ll_b(t).min()+0.5, r"$\theta_0$", color=CURVE, fontsize=12)
+# wald parabola
+par = ll_b(thhat) - 0.5*in_b(thhat)*(t-thhat)**2
+ax.plot(t, par, color=WALD, lw=1.6, ls="--", label="Wald parabola at peak")
+# score tangent at theta0
+sl = sc_b(theta0)
+tx = np.linspace(theta0-0.05, theta0+0.06, 40)
+ax.plot(tx, ll_b(theta0)+sl*(tx-theta0), color=SCORE, lw=2.0, ls="-.", label="score slope at $\\theta_0$")
+# LR drop
+ax.annotate("", xy=(theta0, ll_b(theta0)), xytext=(theta0, ll_b(thhat)),
+            arrowprops=dict(arrowstyle="<->", color=LR, lw=2.0))
+ax.set_ylim(ll_b(t).min()-0.5, ll_b(thhat)+1.5)
+ax.set_xlabel(r"$\theta$"); ax.set_ylabel(r"$\ell_n(\theta)$ (up to a constant)")
+ax.set_title("Small $n$, near boundary: Wald's parabola is the wrong shape")
+ax.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+from math import erf, sqrt
+def chi2_1_sf(x): return 2*(1 - 0.5*(1+erf(sqrt(x)/sqrt(2))))
+print(f"n={n}, k={k}, theta_hat={thhat:.3f}, testing H0: theta={theta0}")
+print(f"Wald  statistic = {lam_W:6.3f}   p = {chi2_1_sf(lam_W):.4f}   {'REJECT' if lam_W>3.841 else 'fail to reject'}")
+print(f"Score statistic = {lam_S:6.3f}   p = {chi2_1_sf(lam_S):.4f}   {'REJECT' if lam_S>3.841 else 'fail to reject'}")
+print(f"LR    statistic = {lam_LR:6.3f}   p = {chi2_1_sf(lam_LR):.4f}   {'REJECT' if lam_LR>3.841 else 'fail to reject'}")
+```
+
+The numbers tell the story the picture set up — and they disagree by a factor of four
+($\Lambda_{\mathrm W}\approx16.7$, $\Lambda_{\mathrm{LR}}\approx5.5$,
+$\Lambda_{\mathrm S}\approx4.0$). With $\hat\theta=0.04$ jammed against the floor, the
+curvature *at the peak* is enormous — the information $I_n(\hat\theta)=n/[\hat\theta
+(1-\hat\theta)]$ blows up as $\hat\theta\to0$ — so Wald's parabola is far too steep to
+describe the long, gentle climb out to $\theta_0=0.20$. It therefore *overstates* the
+distance and returns by far the largest statistic, the most aggressive rejection. The score
+statistic uses the much gentler curvature at $\theta_0$ and returns the smallest; the LR
+reads the honest height drop and lands between. Here all three happen to reject, but the
+fourfold spread is the warning: **at this $n$ the three are no longer interchangeable, and
+Wald — whose value depends entirely on a peak curvature that misrepresents the rest of the
+curve — is the one to distrust.** In a less extreme case the same mechanism makes Wald reject
+when LR would not, or (the Hauck–Donner symptom below) the reverse.
+
+This is not a contrived corner; it is the everyday hazard of small counts, rare events, and
+coefficients near the edge of their range. Three consolidated lessons:
+
+- **Wald is the fragile corner.** It relies entirely on the curvature *at the peak* being a
+  good guide to the curvature *everywhere between $\hat\theta$ and $\theta_0$*. When the
+  likelihood is skewed (small $n$, near-boundary parameter, a wild reparameterization) that
+  assumption fails and Wald is miscalibrated — and, by the non-invariance pitfall of
+  @sec-wald, even the *direction* of the error depends on the parameterization.
+- **The Hauck–Donner effect is the extreme case.** In logistic regression, as a
+  coefficient's true value grows, the Wald statistic can *decrease* toward zero — the test
+  becomes *less* likely to reject the larger the effect, because the standard error inflates
+  faster than the estimate. The LR test does not suffer this. A Wald $z$ near zero is not
+  always evidence of no effect; it can be evidence of a *huge* one the test cannot see.
+- **Default to LR (or score) when the likelihood is skewed.** The likelihood-ratio test is
+  invariant to reparameterization and uses the curve's true shape; the score test is the
+  cheap, boundary-respecting alternative when you do not want to fit the full model. Reserve
+  Wald for the regime it is good in: large $n$, interior parameter, roughly symmetric
+  likelihood — exactly when all three agree anyway.
+
+::: {.callout-warning title="Pitfall"}
+**"All three are asymptotically equivalent" is not "all three give the same answer."** The
+equivalence is a $n\to\infty$ theorem. When a Wald, score, and LR test of the *same*
+hypothesis disagree on your data, that disagreement is *information*: it means the
+log-likelihood is not a symmetric parabola at your sample size, the chi-square approximation
+is strained, and you should (a) trust the LR test, (b) consider a profile-likelihood or
+exact method, or (c) get more data. Quoting whichever of the three crossed your significance
+threshold is p-hacking by another name.
+:::
+
+# Why the likelihood ratio is special: the Neyman–Pearson lemma {#sec-np}
+
+The trinity puts the likelihood ratio at its center, and Wilks' theorem makes it the most
+trustworthy of the three. But there is a *deeper* reason likelihood ratios are the right
+object — one that predates the asymptotics and justifies them. For the cleanest possible
+testing problem, **the likelihood-ratio test is provably the best test that exists**. This
+is the **Neyman–Pearson lemma** (1933), the theoretical foundation of the entire enterprise.
+
+## The setup: simple vs. simple
+
+Consider the simplest hypothesis-testing problem: both hypotheses are **simple**, meaning
+each fully specifies the distribution. We have data $\mathbf x$ with density $f_0(\mathbf
+x)$ under $H_0$ and $f_1(\mathbf x)$ under $H_1$ — two completely specified competing
+densities, no free parameters on either side:
+$$
+H_0:\ \mathbf X\sim f_0
+\qquad\text{vs.}\qquad
+H_1:\ \mathbf X\sim f_1 .
+$$
+A test is a decision rule: a region $R$ in data space such that we reject $H_0$ when
+$\mathbf x\in R$. Its **size** (Type I error, [INFR-D1]) is $\alpha=P_0(\mathbf X\in R)=
+\int_R f_0$, the chance of rejecting when $H_0$ is true. Its **power** (the chance of
+correctly rejecting when $H_1$ is true) is $1-\beta=P_1(\mathbf X\in R)=\int_R f_1$. Among
+all tests of a fixed size $\alpha$, we want the one with the **largest power** — the most
+sensitive detector that still keeps false alarms at $\alpha$.
+
+The lemma says the answer is the **likelihood-ratio test**: reject $H_0$ when the ratio of
+likelihoods is large,
+$$
+R^\star = \Bigl\{\mathbf x:\ \frac{f_1(\mathbf x)}{f_0(\mathbf x)}\ge k\Bigr\},
+$$ {#eq-np-region}
+with the threshold $k$ chosen so the size is exactly $\alpha$. *Rank the data by how much
+more likely they are under $H_1$ than $H_0$, and reject the top $\alpha$-fraction.*
+
+::: {#thm-np}
+**Theorem (Neyman–Pearson lemma).** For testing the simple $H_0:f_0$ against the simple
+$H_1:f_1$, let $R^\star$ be the likelihood-ratio region @eq-np-region with $k$ chosen so
+that $\int_{R^\star}f_0 = \alpha$. Then $R^\star$ is **most powerful** at level $\alpha$:
+any other test $R$ with size $\int_R f_0\le\alpha$ has power $\int_R f_1\le\int_{R^\star}f_1$.
+:::
+
+::: {.proof}
+The proof is one clean inequality; we show every step. Let $R$ be any competing test with
+size $\le\alpha$. Encode each region by its **indicator function** — write
+$\mathbf 1_{R^\star}(\mathbf x)=1$ if $\mathbf x\in R^\star$ and $0$ otherwise, similarly
+$\mathbf 1_{R}$. The claim "$R^\star$ has at least as much power as $R$" is the statement
+$$
+\int \bigl(\mathbf 1_{R^\star}-\mathbf 1_{R}\bigr)\,f_1\ \ge\ 0 .
+$$
+
+**The key pointwise inequality.** Consider the function
+$$
+g(\mathbf x) = \bigl(\mathbf 1_{R^\star}(\mathbf x)-\mathbf 1_{R}(\mathbf x)\bigr)\,
+\bigl(f_1(\mathbf x)-k\,f_0(\mathbf x)\bigr) .
+$$
+We claim $g(\mathbf x)\ge 0$ **everywhere** — check the two cases that matter:
+
+- If $\mathbf x\in R^\star$, then by the definition @eq-np-region, $f_1\ge k f_0$, so the
+  second factor $f_1-kf_0\ge 0$. The first factor is $1-\mathbf 1_R\in\{0,1\}\ge 0$. Product
+  of two non-negatives: $g\ge 0$.
+- If $\mathbf x\notin R^\star$, then $f_1< k f_0$, so the second factor $f_1-kf_0<0$. The
+  first factor is $0-\mathbf 1_R\in\{-1,0\}\le 0$. Product of a non-positive and a negative:
+  $g\ge 0$.
+
+(When $\mathbf x\in R^\star$ *and* $\mathbf x\in R$, the first factor is $0$ and $g=0$;
+likewise outside both. The inequality holds in every case.) So $g\ge 0$ pointwise, hence its
+integral is non-negative:
+$$
+0\ \le\ \int g
+= \int\bigl(\mathbf 1_{R^\star}-\mathbf 1_{R}\bigr)f_1
+\;-\; k\int\bigl(\mathbf 1_{R^\star}-\mathbf 1_{R}\bigr)f_0 .
+$$
+
+**Read the two integrals.** The first is exactly the power difference,
+$\int_{R^\star}f_1-\int_R f_1$. The second is $k$ times the size difference,
+$\int_{R^\star}f_0-\int_R f_0 = \alpha - \text{size}(R)\ge 0$ (since $R^\star$ has size
+exactly $\alpha$ and $R$ has size at most $\alpha$). Rearranging the inequality,
+$$
+\underbrace{\int_{R^\star}f_1-\int_R f_1}_{\text{power difference}}
+\ \ge\ k\underbrace{\Bigl(\alpha-\text{size}(R)\Bigr)}_{\ge\,0} \ \ge\ 0 ,
+$$
+where the last step uses $k\ge 0$ (a likelihood ratio threshold is non-negative). So the
+power of $R^\star$ is at least the power of $R$. Since $R$ was an arbitrary test of size
+$\le\alpha$, $R^\star$ is most powerful. $\qquad\blacksquare$
+:::
+
+The proof's engine is worth saying in words because it is the *why* behind the entire
+trinity: **to maximize power for a fixed false-alarm budget, spend that budget on the data
+points that most discriminate between the two hypotheses — and the likelihood ratio is
+exactly the measure of how discriminating each data point is.** Every unit of size $\alpha$
+"buys" the most power when allocated to the highest-likelihood-ratio outcomes. The
+likelihood ratio is not one option among many; it is *the* optimal currency of evidence.
+
+## From simple-vs-simple to the real world
+
+Neyman–Pearson is about *simple* hypotheses, but real hypotheses are usually **composite** —
+$H_1:\theta\ne\theta_0$ is a whole family, not a single density. The lemma does not directly
+hand us a most-powerful test there (in general none exists uniformly over the alternative).
+But it justifies the likelihood ratio as the right building block, and two bridges connect it
+to the trinity:
+
+- **Monotone likelihood ratio.** For one-parameter families with a monotone likelihood ratio
+  in the data (the exponential family — Normal, binomial, Poisson, exponential — all qualify),
+  the Neyman–Pearson region for *every* simple alternative on one side is the *same* region,
+  so the likelihood-ratio test is **uniformly most powerful** for the one-sided composite
+  $H_1:\theta>\theta_0$. This is the cleanest extension and covers most one-sided tests in
+  practice.
+- **The generalized likelihood ratio.** For composite-vs-composite, we replace each density
+  by its *maximized* likelihood — $\sup_{\theta\in H_1}L/\sup_{\theta\in H_0}L$ — which is
+  exactly the $\Lambda$ of @sec-lr. It is no longer provably optimal in finite samples, but
+  it inherits Neyman–Pearson's logic and, by Wilks, a tractable null distribution. **The
+  generalized likelihood-ratio test is the practical descendant of the lemma**, and its
+  asymptotic chi-square is what makes it usable.
+
+::: {.callout-tip title="You might be asked"}
+*"What does the Neyman–Pearson lemma actually guarantee, and what doesn't it?"* It
+guarantees that for *simple-vs-simple* testing, the likelihood-ratio test is most powerful
+at any level — the best possible detector for a fixed false-alarm rate. It does **not**
+guarantee a uniformly most powerful test for two-sided or composite alternatives (one
+usually does not exist), and it says nothing about *asymptotics* — it is an exact,
+finite-sample result. Its role is foundational: it is *why* we center testing on likelihood
+ratios in the first place, which Wilks then makes practical by giving the generalized
+likelihood ratio a chi-square null distribution. The crisp answer ties them together:
+Neyman–Pearson says likelihood ratios are optimal; Wilks says they are computable; together
+they are the justification for the LR test being the default.
+:::
+
+# When the three disagree, and which to trust {#sec-disagree}
+
+We have met the disagreement empirically (@sec-failure) and structurally (@sec-quadratic).
+Here is the consolidated practitioner's map — the judgment a graduate-level command requires.
+
+```{python}
+#| label: fig-disagreement-sweep
+#| fig-cap: 'How the disagreement grows as the sample shrinks. For a binomial test of $H_0:\theta=0.5$ with a fixed observed proportion $\hat\theta=0.7$, we sweep the sample size $n$ and plot all three statistics. At large $n$ (right) the three curves are indistinguishable — Wilks'' equivalence. As $n$ falls (left) they separate: Wald drifts away from the LR and score, because the quadratic approximation at the peak degrades fastest. The vertical gap between the curves *is* the breakdown of the asymptotic equivalence, made visible.'
+theta0 = 0.5
+thhat = 0.7
+ns = np.unique(np.round(np.logspace(np.log10(8), np.log10(2000), 40)).astype(int))
+def ll_b(k,n,t): return k*np.log(t)+(n-k)*np.log(1-t)
+W_list, S_list, LR_list = [], [], []
+for nn in ns:
+    k = thhat*nn
+    info_hat = nn/(thhat*(1-thhat))
+    info_0   = nn/(theta0*(1-theta0))
+    sc0 = k/theta0 - (nn-k)/(1-theta0)
+    W_list.append((thhat-theta0)**2*info_hat)
+    S_list.append(sc0**2/info_0)
+    LR_list.append(2*(ll_b(k,nn,thhat)-ll_b(k,nn,theta0)))
+
+fig, ax = plt.subplots(figsize=(7.0, 4.2))
+ax.plot(ns, W_list,  color=WALD,  marker="o", ms=3, label="Wald")
+ax.plot(ns, S_list,  color=SCORE, marker="s", ms=3, label="score")
+ax.plot(ns, LR_list, color=LR,    marker="^", ms=3, label="likelihood-ratio")
+ax.set_xscale("log"); ax.set_yscale("log")
+ax.set_xlabel("sample size $n$ (log scale)"); ax.set_ylabel("test statistic (log scale)")
+ax.set_title(r"The three agree as $n\to\infty$, split as $n$ shrinks")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The figure is the whole section in one image: identical at large $n$, separating as $n$
+falls. The rules to carry:
+
+- **They agree when the log-likelihood is a symmetric parabola** — large $n$, interior
+  parameter, no wild reparameterization. In that regime use whichever is cheapest, which is
+  usually the **Wald** statistic your software already printed.
+- **They disagree when the likelihood is skewed** — small $n$, parameter near a boundary, or
+  a heavily nonlinear parameterization. There, **prefer the likelihood-ratio test**: it is
+  invariant to reparameterization, uses the curve's true shape, and is the most reliable of
+  the three. Its only cost is needing both the constrained and unconstrained fits.
+- **Use the score test when you cannot or will not fit the full model** — model-building
+  diagnostics ("should I add this term?"), expensive or unstable full fits, and
+  boundary-respecting tests. It needs only the restricted fit.
+- **Distrust the Wald test specifically when** the estimate is far from the null in
+  standard-error units, the parameter is near a boundary, or you observe the Hauck–Donner
+  symptom (a large effect with a small Wald statistic). When Wald disagrees with LR, LR is
+  almost always right.
+
+::: {.callout-tip title="You might be asked"}
+*"You run a Wald test and a likelihood-ratio test on the same coefficient and get different
+p-values — which do you report, and why?"* Report the **likelihood-ratio** test, and say why:
+it is invariant to how the model is parameterized, it uses the actual shape of the
+log-likelihood rather than a parabola fit at the peak, and it is more reliable when the
+likelihood is skewed — which is exactly the situation that *caused* the two to disagree in
+the first place. The disagreement itself is diagnostic: it tells you the sample is small
+enough, or the parameter close enough to a boundary, that the quadratic approximation behind
+the Wald test is strained. If you want to go further, mention the profile-likelihood interval
+([INFR-C3]) as the interval-side dual, or an exact/bootstrap method ([INFR-E1]) when even the
+LR's chi-square approximation is in doubt.
+:::
+
+# Failure modes and the edge of applicability {#sec-edge}
+
+The trinity inherits, wholesale, the regularity conditions of [INFR-B4] — because all three
+tests are that article's asymptotic normality, squared. Each failure mode below is the
+negation of one condition.
+
+- **Small samples (the limit has not arrived).** The chi-square null distribution is a
+  large-$n$ approximation. For small $n$ the true null distribution of each statistic differs
+  from $\chi^2_q$ — and the three statistics differ from each other (@sec-failure). The
+  remedy is an **exact** test where one exists (Fisher's exact test for $2\times2$ tables, the
+  exact binomial test), a **profile-likelihood** interval ([INFR-C3]), or a **bootstrap /
+  permutation** calibration of the statistic's null distribution ([INFR-E1], [INFR-E3]).
+- **Boundary parameters (Wilks' theorem fails).** If the null sits on the boundary of the
+  parameter space — testing whether a variance component is *zero*, a mixing proportion is
+  $0$ or $1$ — the unconstrained MLE cannot move to one side, the Taylor expansion of
+  @sec-quadratic is invalid, and the LR statistic's null distribution is **not** $\chi^2_q$.
+  It is typically a *mixture* of chi-squares (Chernoff's result: e.g. a $50\!:\!50$ mix of
+  $\chi^2_0$ and $\chi^2_1$ for one boundary parameter), and using the naive $\chi^2_q$
+  p-value is conservative-to-wrong. This is the single most common silent error in
+  variance-component and mixture testing.
+- **Parameter-dependent support.** When the data's support depends on $\theta$ (the uniform
+  $[0,\theta]$, [INFR-B2]), the score identities of [INFR-B4] fail, the MLE is not
+  $\sqrt n$-normal, and none of the three chi-square results hold. A different,
+  model-specific theory is required.
+- **Misspecification.** If the model family does not contain the truth, the information
+  equality (variance of score = negative expected curvature, [INFR-B4]) breaks, so the Wald
+  and score statistics' "information" denominator is the wrong variance and the LR statistic's
+  $\chi^2$ is no longer valid. The fixes are the **robust (sandwich) variance** for Wald-type
+  tests and, for the LR, **adjusted/robust LR statistics** — the testing analogue of the
+  sandwich standard errors of [INFR-B4].
+
+::: {.callout-warning title="Pitfall"}
+**The chi-square null distribution assumes the null parameter is interior and the model is
+correct.** When you test a variance component against zero, a mixture against "no extra
+component," or any parameter against its boundary, *do not* use the off-the-shelf $\chi^2_q$
+p-value — the asymptotic theory that produced it does not apply, and the true null
+distribution is usually a chi-square *mixture* that makes your reported p-value too large
+(conservative) or, after naive corrections, too small. Recognizing "my null is on a
+boundary" is the trigger to reach for the boundary-corrected distribution or a
+simulation-based p-value.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-D1 *The Logic of Hypothesis Testing*]** (the null/alternative
+structure, the two errors, and the p-value) and **[INFR-D2 *The Workhorse Tests*]** (z, t,
+$\chi^2$, F, and the chi-square distribution we consumed). This article generalized all of
+them: the trinity tests *any* MLE hypothesis, and Wilks' theorem gives them one null
+distribution. It is built directly on **[INFR-B4 *MLE Asymptotics*]** — the three statistics
+are that article's asymptotic normality, read three ways and squared — and it is the
+test-side companion of **[INFR-C3 *Wald, Score, and Profile Intervals*]**: every test here
+inverts to an interval there, the duality made concrete in @sec-ex-poisson. From here:
+
+- **The Regression track** consumes this wholesale. Every nested-model comparison in a GLM
+  is the **deviance / LR test** of @sec-deviance; every coefficient $z$-statistic is the
+  **Wald test** of @sec-wald; every "should I add this term?" diagnostic (Breusch–Pagan,
+  omitted-variable, autocorrelation tests) is a **score / Lagrange-multiplier test**. The
+  $F$-test for nested *linear* models in [INFR-D2] is the exact-Normal special case of the
+  LR test here.
+- **[INFR-D4 *Power and Sample Size*]** asks how *big* an effect each of these tests can
+  detect — the power side of the Neyman–Pearson trade-off, made quantitative.
+- **[INFR-D5 *Multiple Comparisons*]** asks what happens when you run *many* of these tests
+  at once and the false-discovery arithmetic compounds.
+- **[INFR-E1 *The Bootstrap*]** and **[INFR-E3 *Permutation Tests*]** are the
+  assumption-light alternatives for exactly the small-$n$ and boundary cases where
+  @sec-edge says the chi-square approximation cannot be trusted.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding papers.** J. Neyman and E. S. Pearson, "On the Problem of the Most Efficient
+  Tests of Statistical Hypotheses," *Philosophical Transactions of the Royal Society A* 231
+  (1933) — the lemma of @sec-np and the birth of the size/power framework. S. S. Wilks, "The
+  Large-Sample Distribution of the Likelihood Ratio for Testing Composite Hypotheses,"
+  *Annals of Mathematical Statistics* 9 (1938) — @thm-wilks. C. R. Rao, "Large Sample Tests
+  of Statistical Hypotheses…," *Proc. Cambridge Phil. Soc.* 44 (1948) — the score test. A.
+  Wald, "Tests of Statistical Hypotheses Concerning Several Parameters…," *Trans. AMS* 54
+  (1943) — the Wald test.
+- **The unifying view.** A. Buse, "The Likelihood Ratio, Wald, and Lagrange Multiplier Tests:
+  An Expository Note," *The American Statistician* 36 (1982) — the single best short account
+  of the three-readings-of-one-curve geometry this article is built around, with the picture
+  of @fig-trinity-geometry.
+- **The Wald cautionary tale.** D. Hauck and A. Donner, "Wald's Test as Applied to Hypotheses
+  in Logit Analysis," *JASA* 72 (1977) — the effect of @sec-failure, where a larger true
+  effect *shrinks* the Wald statistic.
+- **Boundary problems.** H. Chernoff, "On the Distribution of the Likelihood Ratio," *Annals
+  of Mathematical Statistics* 25 (1954) — the chi-square *mixture* null distribution when the
+  parameter is on a boundary, the failure mode of @sec-edge.
+- **The standard modern reference.** A. W. van der Vaart, *Asymptotic Statistics* (1998), Ch.
+  16, develops all three tests and Wilks' theorem with full rigor and is the definitive source
+  for the regularity bookkeeping this article flagged but did not belabor.
+- **Open threads this article deferred.** *How much power does each test actually have against
+  a given alternative?* — [INFR-D4]. *What if the chi-square approximation is untrustworthy?*
+  — bootstrap and permutation calibration, [INFR-E1] and [INFR-E3]. *What does the Bayesian
+  do instead of a likelihood-ratio test?* — the **Bayes factor** of [INFR-E4], the ratio of
+  *marginal* likelihoods, which integrates over the parameter rather than maximizing — a
+  different answer to the same "which model?" question.

@@ -1,0 +1,851 @@
+---
+title: "Power and Sample Size: Designing a Test That Can Actually Find Something"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20241104)
+
+NULLC  = "#2b3a67"     # the null world
+ALTC   = "#0a7d4d"     # the alternative world
+REJECT = "#c1121f"     # rejection region / critical value
+TYPE2  = "#d6791f"     # Type II / beta
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas
+ACCENT = "#6a2c91"     # observed / highlights
+
+def normal_pdf(t, mu=0.0, sigma=1.0):
+    """The Gaussian density — used to draw null and alternative sampling distributions."""
+    return np.exp(-0.5 * ((t - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+```
+
+> **Where this sits in the track.** This is the *design* article of the **Hypothesis
+> Testing** movement (D) of the Statistical Inference track. It assumes two earlier
+> articles. From [INFR-D1 *The Logic of Hypothesis Testing*] it takes the entire decision
+> frame: the null $H_0$ and alternative $H_1$, the **two ways to be wrong** (Type I rate
+> $\alpha$ and Type II rate $\beta$), and the **power** $1-\beta$ defined as a probability
+> *under a specified alternative*. From [INFR-D2 *The Workhorse Tests*] it takes the
+> concrete z- and t-test statistics whose power we now compute. The only thing imported
+> from outside the track is the standard-Normal CDF $\Phi$ and its quantiles $z_\alpha$,
+> built in the Probability Foundations track ([PROB-11]), used by name. Where [INFR-D1]
+> defined power and [INFR-D2] ran tests *after* the data arrived, this article asks the
+> question that comes *first*: **before collecting anything, how large a sample do we need
+> for the test to stand a real chance of detecting an effect worth detecting?** It is the
+> disciplined answer to the significance-vs-importance trap [INFR-D1] flagged. It **sets
+> up** [INFR-D5 *Multiple Comparisons*] (power under multiplicity) and informs every
+> experimental design downstream, in this track and in Regression.
+
+## Abstract {.unnumbered}
+
+A hypothesis test that cannot detect the effect it is looking for is theater: it goes
+through the motions, returns "not significant," and tells you nothing. **Power** is the
+probability a test *does* detect a real effect of a given size, and it is a deterministic
+function of four quantities — the effect size, the sample size $n$, the significance level
+$\alpha$, and the noise. This article derives that function explicitly for the z- and
+t-test, every step from the definition in [INFR-D1]. We compute the **power curve**, invert
+it to get the **sample-size formula** $n = (z_\alpha + z_\beta)^2/\delta^2$, and read off
+the **minimum detectable effect** for a fixed budget. We separate **effect size** from
+**statistical significance** with honest examples — a trivially small effect made
+"significant" by brute sample size, and a real effect missed because the study was too
+small. The article's edge-of-applicability case is the most consequential confusion in
+applied statistics: the difference between **"underpowered"** and **"no effect,"** and the
+file-drawer and p-hacking damage that follows from getting it wrong. The single claim it
+defends is that **power is something you buy before the experiment, not something you
+discover after** — and that a non-significant result from an underpowered study is not
+evidence of absence, it is absence of evidence.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **power** of a test is the probability it correctly rejects a false null:
+$$
+\text{power} = 1-\beta = P(\text{reject } H_0 \mid H_1 \text{ true, effect size } \delta).
+$$
+It is **not** a free-floating number — it is pinned down by exactly four levers, and fixing
+any three determines the fourth:
+
+1. the **effect size** $\delta$ — how far the truth sits from the null, *in units of noise*;
+2. the **sample size** $n$ — how much data you collect;
+3. the **significance level** $\alpha$ — your tolerated false-alarm rate;
+4. the **variance** $\sigma^2$ — how noisy a single observation is.
+
+For the one-sample z-test these combine into one formula. The power is
+$$
+1-\beta = \Phi\!\left(\sqrt{n}\,\frac{\delta}{\sigma} - z_\alpha\right),
+$$
+and inverting it to hit a target power gives the **sample-size formula**
+$$
+n = \frac{(z_\alpha + z_\beta)^2\,\sigma^2}{\delta^2}.
+$$
+The one fact to carry: **$n$ grows like $1/\delta^2$.** Halving the effect you want to
+detect *quadruples* the sample you need. Power is bought, in advance, at a known price.
+:::
+
+Everything below orbits that box. Two ideas inside it are the ones an examiner will push
+on. First: **power is computed in the alternative world**, not the null — the conditioning
+bar reads "$\mid H_1$ true." This is the exact mirror of [INFR-D1]'s $\alpha$, which lived
+under $H_0$; you cannot draw the alternative's sampling distribution until you commit to
+*how big* the effect is, which is why $\delta$ must be named before any power exists.
+Second: **the $1/\delta^2$ scaling is the whole economics of experiment design.** It is why
+small effects demand enormous studies, why a "null result" from a tiny sample is worthless,
+and why power must be planned, never inspected after the fact.
+
+# Why we are doing this: the problem that forced power analysis {#sec-why}
+
+Hold one question in view for the whole article: **how do we keep a test from failing
+silently?** A test can be wrong in two ways ([INFR-D1]), and the apparatus there spent all
+its discipline on *one* of them. We fix $\alpha$ in advance, we calibrate the rejection
+region so a true null fires falsely only $5\%$ of the time, we prove the p-value is uniform
+under the null. Every guarantee is about the **null world**. Nothing in [INFR-D1] forces
+the test to *succeed* when there genuinely is an effect.
+
+That asymmetry is dangerous because of how the two failures *feel*. A Type I error is loud:
+you announce a discovery, others try to build on it, and the false alarm eventually surfaces
+when nobody can replicate it. A Type II error is silent: you run the study, get "$p=0.31$,"
+shrug, and conclude "no effect" — when in fact there *was* an effect and your study was
+simply too small to see it. The test gave you exactly the wrong answer and left no
+fingerprint. @sec-effect-vs-sig and @sec-underpowered are about precisely this silent
+failure, which is the costliest mistake in applied work.
+
+::: {.callout-tip title="You might be asked"}
+*"Why isn't controlling $\alpha$ enough? Why do we need power at all?"* Because $\alpha$
+only protects you against finding things that aren't there; it does nothing to ensure you
+find the things that are. A test with $\alpha=0.05$ and power $0.10$ is perfectly valid —
+it controls false alarms — and almost useless, because it misses $90\%$ of real effects.
+Worse, the few effects it does catch are systematically *overestimated* (only the lucky,
+large sample draws clear the bar — the "winner's curse" of @sec-underpowered). Controlling
+$\alpha$ without controlling $\beta$ is buying a smoke detector that you have wired to never
+go off: no false alarms, no fire detection either.
+:::
+
+## A one-paragraph history
+
+Power is the **Neyman–Pearson** half of testing ([INFR-D1]'s second parent). Fisher's
+significance testing had no formal alternative and hence no notion of power; you computed a
+p-value and stopped. Jerzy Neyman and Egon Pearson, recasting testing as a decision between
+two hypotheses around 1933, introduced $\beta$ and power as the quantity a good test should
+*maximize* for a fixed $\alpha$ — and their lemma (the subject of [INFR-D3]) identifies the
+most powerful test of all. The practical engineering of power — *choosing $n$ to hit a
+target power before running the study* — was systematized by **Jacob Cohen** in the 1960s,
+whose work on standardized effect sizes and power tables turned "how big a sample do I need"
+from guesswork into a calculation. This article rebuilds Cohen's calculation from the
+[INFR-D1] definition, every step.
+
+# Intuition before symbols: pulling the two worlds apart {#sec-intuition}
+
+[INFR-D1]'s central picture was **two overlapping worlds**: the null distribution of the
+test statistic centered at its no-effect value, and the alternative distribution shifted by
+the effect. We drew one vertical line — the critical value $c$ — and rejected when the
+statistic landed past it. The null mass beyond $c$ was $\alpha$; the alternative mass
+*short* of $c$ was $\beta$; the alternative mass *beyond* $c$ was the power.
+
+Power analysis is the study of **how that overlap shrinks**. Anything that pulls the two
+curves apart relative to their own width pushes more of the alternative curve past the line,
+raising power. There are exactly three ways to do it, and @fig-power-levers shows each:
+
+- **Bigger effect $\delta$** — slides the alternative curve further right. (Usually not
+  under your control: the effect is whatever nature made it.)
+- **More data $n$** — narrows *both* curves, because the sampling distribution of a mean has
+  spread $\sigma/\sqrt n$. The centers stay put but the curves get skinny, so they stop
+  overlapping. (Your main lever.)
+- **Looser $\alpha$** — slides the line $c$ left, scooping more of the alternative curve
+  into the rejection region. (Cheap, but it buys power by accepting more false alarms — a
+  trade, not a gift.)
+
+```{python}
+#| label: fig-power-levers
+#| fig-cap: 'The three levers of power, each shrinking the overlap between the null world (blue) and the alternative world (green). The red dashed line is the critical value $c$; the green-shaded area beyond it is the power. **Left:** the baseline. **Middle:** doubling the effect size $\delta$ slides the alternative curve right, sweeping far more of it past $c$. **Right:** quadrupling $n$ leaves the centers fixed but narrows both curves (spread $\sigma/\sqrt{n}$), pulling them apart relative to their width. Both maneuvers raise power; only $n$ is reliably under the experimenter''s control.'
+fig, axes = plt.subplots(1, 3, figsize=(10.2, 3.4), sharey=True)
+
+def draw_worlds(ax, shift, sd, title):
+    t = np.linspace(-4, 8, 800)
+    c = 1.645 * sd            # critical value scales with the SE
+    npdf = normal_pdf(t, 0.0, sd)
+    apdf = normal_pdf(t, shift, sd)
+    ax.plot(t, npdf, color=NULLC, lw=1.8)
+    ax.plot(t, apdf, color=ALTC, lw=1.8)
+    m = t >= c
+    ax.fill_between(t[m], apdf[m], color=ALTC, alpha=0.35)
+    ax.axvline(c, color=REJECT, ls="--", lw=1.3)
+    pw = 1 - stats.norm.cdf((c - shift) / sd)
+    ax.set_title(f"{title}\npower $\\approx$ {pw:.2f}", fontsize=10)
+    ax.set_xlim(-4, 8); ax.set_xlabel("test statistic")
+
+draw_worlds(axes[0], shift=2.0, sd=1.0, title="baseline")
+draw_worlds(axes[1], shift=4.0, sd=1.0, title="effect $\\delta$ doubled")
+draw_worlds(axes[2], shift=2.0, sd=0.5, title="$n$ quadrupled ($\\sigma/\\sqrt{n}$ halved)")
+axes[0].set_ylabel("density")
+plt.tight_layout()
+```
+
+Notice in the right panel that *both* curves got skinnier while their centers held still:
+that is the entire mechanism by which more data buys power. The effect's *size* did not
+change; the **ruler got finer**, so the same gap now reads as many standard errors. This is
+the benign mirror image of [INFR-D1]'s Trap 3 (significance is not importance): there, a
+fine ruler made a trivial effect look significant; here, the same fine ruler lets a real
+effect clear the bar. The ruler is honest in both cases — it is the *interpretation* that
+must stay disciplined.
+
+# The formal development {#sec-formal}
+
+## The power function, defined {#sec-power-fn}
+
+We work the one-sample, known-variance z-test of [INFR-D1] @sec-build — the cleanest case,
+which isolates the logic before [INFR-D2]'s t-correction muddies it. We have
+$X_1,\dots,X_n$ i.i.d. with unknown mean $\mu$ and known variance $\sigma^2$, and we test
+
+$$
+H_0:\ \mu = \mu_0 \qquad\text{versus}\qquad H_1:\ \mu > \mu_0
+$$
+
+at level $\alpha$, rejecting when the statistic $Z=(\bar X-\mu_0)/(\sigma/\sqrt n)$ exceeds
+$z_\alpha$ (the upper-$\alpha$ Normal quantile, with $P(\mathcal N(0,1)>z_\alpha)=\alpha$).
+
+::: {#def-power name="Power function"}
+The **power function** of a test is the probability of
+rejecting $H_0$, viewed as a function of the *true* parameter value $\mu$:
+$$
+\pi(\mu) \;=\; P\bigl(\text{reject } H_0 \,\big|\, \text{true mean} = \mu\bigr).
+$$
+At $\mu=\mu_0$ it returns the Type I rate, $\pi(\mu_0)=\alpha$; at any $\mu$ in the
+alternative it returns the power against *that* specific alternative, $\pi(\mu)=1-\beta(\mu)$.
+:::
+
+The power function is one object that contains everything: evaluated under the null it is
+$\alpha$, evaluated under any alternative it is the power there. The "power" people quote is
+$\pi$ at the one alternative they care about. Let us compute $\pi(\mu)$ outright.
+
+## Deriving the power formula, every step {#sec-derive}
+
+The rejection event is $Z \ge z_\alpha$, i.e.
+
+$$
+\frac{\bar X - \mu_0}{\sigma/\sqrt n} \;\ge\; z_\alpha .
+$$
+
+We want its probability *when the true mean is some $\mu$* (possibly $\neq\mu_0$). The
+obstacle is that the statistic is standardized around the *null* value $\mu_0$, but the data
+actually scatter around the *true* value $\mu$. So under the truth, $Z$ is **not** standard
+Normal — that was only its null distribution. We find its true distribution by
+re-standardizing.
+
+When the true mean is $\mu$, [INFR-A1] gives $\mathbb E[\bar X]=\mu$ and
+$\operatorname{Var}(\bar X)=\sigma^2/n$, so the genuinely standard-Normal quantity is
+$(\bar X-\mu)/(\sigma/\sqrt n)$, **not** the one with $\mu_0$. Rewrite the statistic by
+adding and subtracting the true mean inside the numerator:
+
+$$
+Z = \frac{\bar X - \mu_0}{\sigma/\sqrt n}
+  = \frac{(\bar X - \mu) + (\mu - \mu_0)}{\sigma/\sqrt n}
+  = \underbrace{\frac{\bar X - \mu}{\sigma/\sqrt n}}_{=\,W\,\sim\,\mathcal N(0,1)}
+    \;+\; \frac{\mu - \mu_0}{\sigma/\sqrt n} .
+$$
+
+The first piece $W$ is exactly standard Normal under the truth; the second piece is a
+**constant shift** — the true mean's distance from the null, measured in standard errors.
+Call that shift
+
+$$
+\lambda \;=\; \frac{\mu - \mu_0}{\sigma/\sqrt n} \;=\; \sqrt n\,\frac{\mu-\mu_0}{\sigma},
+$$ {#eq-ncp}
+
+the **noncentrality** — it is how far the alternative curve sits from the null curve, in
+@fig-power-levers's units. So under the truth, $Z = W + \lambda$ is Normal with mean
+$\lambda$ and variance $1$: the alternative curve is the null curve slid right by $\lambda$.
+
+Now compute the power directly. The test rejects when $Z\ge z_\alpha$, i.e. when
+$W+\lambda\ge z_\alpha$, i.e. when $W \ge z_\alpha - \lambda$:
+
+$$
+\pi(\mu) = P(Z \ge z_\alpha)
+         = P(W + \lambda \ge z_\alpha)
+         = P(W \ge z_\alpha - \lambda).
+$$
+
+Since $W\sim\mathcal N(0,1)$ ($\Phi$ is the standard-Normal CDF, $\Phi(a)=P(W\le a)$), the
+upper-tail probability is $P(W\ge a)=1-\Phi(a)$ — total mass is $1$, so the mass *above* $a$
+is whatever is not *at or below* it. We also use $1-\Phi(a)=\Phi(-a)$. This is not magic: the
+standard-Normal density is **even**, $\varphi(w)=\varphi(-w)$ (the bell is mirror-symmetric
+about $0$, since $w$ enters only as $w^2$), so the area to the right of $a$ equals the area to
+the left of $-a$ — i.e. $P(W\ge a)=P(W\le -a)=\Phi(-a)$. Apply this with
+$a=z_\alpha-\lambda$:
+
+$$
+\boxed{\;\pi(\mu) \;=\; \Phi\bigl(\lambda - z_\alpha\bigr)
+       \;=\; \Phi\!\left(\sqrt n\,\frac{\mu-\mu_0}{\sigma} - z_\alpha\right).\;}
+$$ {#eq-power}
+
+Read @eq-power slowly, because it is the engine of the whole article. The power rises
+through $\Phi$ — a CDF, so monotone increasing — as its argument grows. The argument grows
+when:
+
+- $\mu-\mu_0$ grows (bigger true effect): the alternative is further from the null;
+- $n$ grows (more data): the $\sqrt n$ multiplies the standardized effect;
+- $\sigma$ shrinks (less noise): the effect is larger relative to the spread;
+- $z_\alpha$ shrinks, i.e. $\alpha$ grows (looser test): the bar is lower.
+
+These are exactly the four levers of the Core, now read off a single formula. A sanity
+check: at $\mu=\mu_0$ the standardized effect is zero, so $\pi(\mu_0)=\Phi(-z_\alpha)=\alpha$
+— the power function returns the Type I rate under the null, as @def-power demanded.
+
+::: {.callout-tip title="You might be asked"}
+*"Where did the noncentrality come from, and why is it $\sqrt n$ and not $n$?"* The shift
+$\lambda$ measures the true mean's distance from the null *in units of the standard error*
+$\sigma/\sqrt n$. Because the standard error shrinks like $1/\sqrt n$ ([INFR-A1] — averaging
+$n$ values divides the spread by $\sqrt n$, not by $n$), the *same* physical gap $\mu-\mu_0$
+reads as $\sqrt n$ times more standard errors as $n$ grows. That $\sqrt n$ is the [INFR-A2]
+CLT scaling resurfacing: estimation error falls like $1/\sqrt n$, so detectable signal rises
+like $\sqrt n$. It is also the root of the $1/\delta^2$ sample-size law: detection depends on
+$\sqrt n\,\delta$, so to hold detection fixed while halving $\delta$ you must quadruple $n$.
+:::
+
+## The standardized effect size {#sec-effectsize-def}
+
+The combination $(\mu-\mu_0)/\sigma$ keeps appearing, so name it. The **standardized effect
+size**
+
+$$
+\delta \;=\; \frac{\mu - \mu_0}{\sigma}
+$$ {#eq-cohen-d}
+
+is the effect measured in units of the noise — "how many standard deviations does the truth
+sit from the null." (For the one-sample mean this is Cohen's $d$.) It is dimensionless,
+which is exactly the point: a raw effect of "$0.3$ pH units" or "$5$ ms" means nothing until
+you know how noisy the measurement is, but $\delta=0.3$ means the same thing — a small,
+hard-to-detect effect — in every field. With this, @eq-power becomes the clean
+
+$$
+\pi \;=\; \Phi\bigl(\sqrt n\,\delta - z_\alpha\bigr),
+$$ {#eq-power-d}
+
+and power depends on the data only through the single product $\sqrt n\,\delta$. Cohen's
+rough conventions ($\delta\approx 0.2$ small, $0.5$ medium, $0.8$ large) are field-agnostic
+anchors, not laws — what counts as a meaningful $\delta$ is a *subject-matter* judgment,
+which is the honest caveat of @sec-when.
+
+## The power curve {#sec-power-curve}
+
+Fix $\delta$, $\sigma$, and $\alpha$; sweep $n$. The graph of power against sample size is
+the **power curve**, and it is the single most useful object in experiment design: it tells
+you, for a target power (conventionally $0.80$), exactly how much data to buy.
+@fig-power-curve draws it for several effect sizes.
+
+```{python}
+#| label: fig-power-curve
+#| fig-cap: 'Power curves for the one-sided z-test at $\alpha=0.05$, power $\pi=\Phi(\sqrt{n}\,\delta - z_{0.05})$, for four standardized effect sizes. Each curve climbs from $\alpha=0.05$ at $n=0$ (no data, no power beyond the false-alarm floor) toward $1$. The horizontal dashed line marks the conventional target power $0.80$; where a curve crosses it (dots) is the required sample size for that effect. The lesson is the spacing: a large effect ($\delta=0.8$) needs only a handful of observations, while a small effect ($\delta=0.2$) needs nearly 155 — a 16-fold gap from a 4-fold change in $\delta$, the $1/\delta^2$ law made visible.'
+z_a = stats.norm.ppf(0.95)        # z_{0.05}, one-sided
+ns = np.arange(1, 220)
+deltas = [0.2, 0.35, 0.5, 0.8]
+colors = [REJECT, TYPE2, NULLC, ALTC]
+
+fig, ax = plt.subplots(figsize=(7.0, 4.4))
+for d, col in zip(deltas, colors):
+    power = stats.norm.cdf(np.sqrt(ns) * d - z_a)
+    ax.plot(ns, power, color=col, label=fr"$\delta={d}$")
+    # mark the n that first reaches 0.80
+    n_req = (z_a + stats.norm.ppf(0.80)) ** 2 / d ** 2
+    ax.plot([n_req], [0.80], "o", color=col, ms=7)
+ax.axhline(0.80, color=GREY, ls="--", lw=1.3, label="target power 0.80")
+ax.set_xlabel("sample size $n$"); ax.set_ylabel(r"power $1-\beta$")
+ax.set_title("Power curves: bigger effects need far less data")
+ax.set_ylim(0, 1.02)
+ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+for d in deltas:
+    n_req = (z_a + stats.norm.ppf(0.80)) ** 2 / d ** 2
+    print(f"delta={d}:  n for 80% power = {np.ceil(n_req):.0f}")
+```
+
+The dots are the answer to "how much data do I need," and reading them off the curve is the
+graphical version of the algebra we do next.
+
+## Inverting for sample size {#sec-sample-size}
+
+The power curve answers "what power do I get from $n$?" The design question is the inverse:
+"what $n$ gives me a target power $1-\beta$?" Solve @eq-power-d for $n$. We want
+$\pi = 1-\beta$, so set
+
+$$
+1-\beta = \Phi\bigl(\sqrt n\,\delta - z_\alpha\bigr).
+$$
+
+Apply $\Phi^{-1}$ to both sides. Define $z_\beta = \Phi^{-1}(1-\beta)$, the upper-$\beta$
+quantile (e.g. for power $0.80$, $\beta=0.20$ and $z_{0.20}=0.84$). Then
+
+$$
+z_\beta = \Phi^{-1}(1-\beta) = \sqrt n\,\delta - z_\alpha
+\quad\Longrightarrow\quad
+\sqrt n\,\delta = z_\alpha + z_\beta .
+$$
+
+Divide by $\delta$ and square — every step in the open:
+
+$$
+\sqrt n = \frac{z_\alpha + z_\beta}{\delta}
+\quad\Longrightarrow\quad
+\boxed{\; n = \frac{(z_\alpha + z_\beta)^2}{\delta^2}
+          = \frac{(z_\alpha + z_\beta)^2\,\sigma^2}{(\mu-\mu_0)^2}. \;}
+$$ {#eq-samplesize}
+
+This is the sample-size formula, and three features of it are worth memorizing:
+
+- **The numerator $(z_\alpha+z_\beta)^2$ is the "stringency tax."** It is set by how strict
+  you are about *both* errors. Demanding smaller $\alpha$ pushes $z_\alpha$ up; demanding
+  higher power pushes $z_\beta$ up; either raises $n$. For the canonical
+  one-sided $\alpha=0.05$, power $0.80$: $z_\alpha=1.645$, $z_\beta=0.84$, so
+  $(z_\alpha+z_\beta)^2 = (2.49)^2 \approx 6.2$.
+- **The denominator $\delta^2$ is the killer.** Because the effect enters *squared*, halving
+  $\delta$ quadruples $n$. This is the most important practical fact in the article: small
+  effects are expensive, and the cost grows quadratically.
+- **It is a floor, not a ceiling.** @eq-samplesize is the *minimum* $n$ for the target
+  power; real designs round up and pad for dropout, non-normality, and the t-correction
+  below.
+
+::: {.callout-tip title="You might be asked"}
+*"For a two-sided test, what changes?"* Replace $z_\alpha$ with $z_{\alpha/2}$ — the
+rejection region splits its budget into two tails, so each cutoff moves out (from $1.645$ to
+$1.96$ at $\alpha=0.05$). The sample size becomes
+$n = (z_{\alpha/2}+z_\beta)^2/\delta^2$. There is no second $z_\beta/2$: the power is still
+governed by one tail (the alternative shifts in one direction, so essentially all the
+detection happens in the near tail; the far tail contributes negligibly). The two-sided test
+needs slightly more data than the one-sided for the same power — the price of being able to
+detect effects in *either* direction. *"And for a two-sample comparison of means?"* The
+variance of $\bar X-\bar Y$ is $\sigma^2(1/n_1+1/n_2)$; for equal groups of size $n$ each,
+this gives $n = 2(z_{\alpha/2}+z_\beta)^2/\delta^2$ **per group** — the factor of $2$ because
+each group's mean carries its own sampling noise.
+:::
+
+## Minimum detectable effect {#sec-mde}
+
+Often the budget is fixed first — you have $n=64$ subjects and no more — and the design
+question flips again: *what is the smallest effect this study can reliably detect?* Solve
+@eq-power-d for $\delta$ at the target power, i.e. rearrange $\sqrt n\,\delta=z_\alpha+z_\beta$:
+
+$$
+\boxed{\; \delta_{\min} = \frac{z_\alpha + z_\beta}{\sqrt n}. \;}
+$$ {#eq-mde}
+
+This **minimum detectable effect** (MDE) is the honesty check every study should report. If
+your fixed-$n$ study can only detect effects of $\delta_{\min}=0.6$ with $80\%$ power, and
+the scientifically interesting effects are around $\delta=0.2$, then *a non-significant
+result tells you nothing* — the study was never capable of seeing the effect you care about.
+The MDE converts a budget into a candid statement of the study's reach, and it falls only as
+$1/\sqrt n$: to halve the smallest detectable effect you must quadruple the sample, the same
+$1/\delta^2$ law read from the other side.
+
+# Worked examples {#sec-examples}
+
+We run the machinery on real design questions, and push the last one to the edge where the
+naive reading of a "null result" misleads.
+
+## Example 1 — sizing a clinical trial, by hand {#sec-ex-trial}
+
+A team plans a trial of a blood-pressure drug. From prior studies, systolic BP has standard
+deviation $\sigma=12$ mmHg, and the smallest *clinically meaningful* reduction is
+$\mu-\mu_0=4$ mmHg — anything less is not worth prescribing. They will run a one-sided test
+at $\alpha=0.05$ and want $80\%$ power. How many patients?
+
+```{python}
+#| label: ex-trial
+#| echo: true
+sigma = 12.0          # mmHg, known from prior data
+raw_effect = 4.0      # mmHg, smallest clinically meaningful reduction
+alpha = 0.05
+target_power = 0.80
+
+delta = raw_effect / sigma                       # standardized effect (Cohen's d)
+z_a = stats.norm.ppf(1 - alpha)                  # one-sided z_0.05
+z_b = stats.norm.ppf(target_power)               # z_0.20
+n_float = (z_a + z_b) ** 2 / delta ** 2
+n = int(np.ceil(n_float))
+
+# Verify by plugging back into the power formula.
+achieved = stats.norm.cdf(np.sqrt(n) * delta - z_a)
+print(f"standardized effect delta = {raw_effect}/{sigma} = {delta:.4f}")
+print(f"z_alpha = {z_a:.4f},  z_beta = {z_b:.4f}")
+print(f"(z_a + z_b)^2           = {(z_a + z_b)**2:.4f}")
+print(f"required n (exact)      = {n_float:.2f}  ->  round up to {n}")
+print(f"achieved power at n={n}: {achieved:.4f}  (>= 0.80, as required)")
+```
+
+Walk the arithmetic against @eq-samplesize:
+
+- The standardized effect is $\delta = 4/12 = `{python} f"{4/12:.3f}"`$ — a *small* effect by
+  Cohen's anchors, which already warns us the study will not be tiny.
+- The stringency tax is $(z_\alpha+z_\beta)^2 = (1.645+0.842)^2 = `{python} f"{(stats.norm.ppf(0.95)+stats.norm.ppf(0.80))**2:.2f}"`$.
+- So $n = `{python} f"{(stats.norm.ppf(0.95)+stats.norm.ppf(0.80))**2:.2f}"` / `{python} f"{(4/12)**2:.4f}"` = `{python} f"{(stats.norm.ppf(0.95)+stats.norm.ppf(0.80))**2/(4/12)**2:.1f}"`$, rounded up to
+  $`{python} f"{int(np.ceil((stats.norm.ppf(0.95)+stats.norm.ppf(0.80))**2/(4/12)**2))}"`$ patients.
+
+The honest design conversation now writes itself. If the team can only recruit $30$
+patients, @eq-mde says their MDE is
+$\delta_{\min}=(1.645+0.842)/\sqrt{30}=`{python} f"{(stats.norm.ppf(0.95)+stats.norm.ppf(0.80))/np.sqrt(30):.2f}"`$
+standardized units, i.e. a raw reduction of
+$`{python} f"{12*(stats.norm.ppf(0.95)+stats.norm.ppf(0.80))/np.sqrt(30):.1f}"`$ mmHg —
+they could only reliably detect a drug about *35% more* effective than the one worth having.
+A $30$-patient trial of this drug is not a smaller version of the right study; it is the
+wrong study, and a null result from it would be uninformative. @fig-trial-sensitivity shows
+how the required $n$ explodes as the meaningful effect shrinks.
+
+```{python}
+#| label: fig-trial-sensitivity
+#| fig-cap: 'The $1/\delta^2$ cost curve for the blood-pressure trial ($\sigma=12$, one-sided $\alpha=0.05$, 80% power). Required sample size against the smallest meaningful raw effect. Detecting an 8 mmHg drop needs only ~14 patients; the 4 mmHg drop the team cares about needs ~56; chasing a 2 mmHg drop would need ~223. The curve is the quadratic blow-up of @eq-samplesize — every halving of the target effect quadruples the cost. The vertical line marks the team''s chosen 4 mmHg threshold.'
+z_a = stats.norm.ppf(0.95); z_b = stats.norm.ppf(0.80)
+effects = np.linspace(1.5, 9, 200)
+n_needed = (z_a + z_b) ** 2 * sigma ** 2 / effects ** 2
+
+fig, ax = plt.subplots(figsize=(7.0, 4.2))
+ax.plot(effects, n_needed, color=NULLC)
+for e in (8, 4, 2):
+    nn = (z_a + z_b) ** 2 * sigma ** 2 / e ** 2
+    ax.plot([e], [nn], "o", color=REJECT, ms=7)
+    ax.annotate(f"{e} mmHg: n={np.ceil(nn):.0f}", xy=(e, nn),
+                xytext=(e + 0.3, nn + 18), fontsize=9,
+                arrowprops=dict(arrowstyle="->", color=GREY, lw=1.0))
+ax.axvline(4.0, color=ALTC, ls="--", lw=1.3, label="chosen 4 mmHg threshold")
+ax.set_xlabel("smallest meaningful effect (mmHg)")
+ax.set_ylabel("required sample size $n$")
+ax.set_title("Sample size explodes as the target effect shrinks")
+ax.set_ylim(0, 260); ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Example 2 — significance is not importance, sized two ways {#sec-effect-vs-sig}
+
+[INFR-D1]'s Trap 3 said a tiny effect becomes significant with enough data. Power analysis
+makes that precise and turns it into a design discipline: it forces you to declare the
+*smallest effect worth detecting* in advance, so you neither under- nor over-collect. We
+show both failure directions on one canvas — a study too small to see a real effect, and a
+study so large it will flag a meaningless one.
+
+```{python}
+#| label: fig-effect-vs-sig
+#| fig-cap: 'Two failures of mismatched sample size, one-sided $\alpha=0.05$. **Left:** power against the *true* standardized effect for three sample sizes. A genuinely meaningful effect ($\delta=0.5$, green line) is caught 94% of the time at $n=40$ but under 48% of the time at $n=10$ — the small study misses a real effect more often than not. **Right:** the same curves read for a *trivial* effect ($\delta=0.1$, red line): the huge $n=400$ study has 64% power to flag it as significant, even though $\delta=0.1$ is practically nothing. Power analysis is the discipline that matches $n$ to the effect that matters — big enough to catch $\delta=0.5$, not so big it chases $\delta=0.1$.'
+z_a = stats.norm.ppf(0.95)
+d_grid = np.linspace(0, 1.0, 300)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.4, 3.9), sharey=True)
+
+for n_s, col in [(10, REJECT), (40, NULLC), (400, ALTC)]:
+    pw = stats.norm.cdf(np.sqrt(n_s) * d_grid - z_a)
+    axL.plot(d_grid, pw, color=col, label=f"n={n_s}")
+    axR.plot(d_grid, pw, color=col, label=f"n={n_s}")
+
+axL.axvline(0.5, color=ALTC, ls="--", lw=1.2)
+axL.set_title("A real effect ($\\delta=0.5$) can be missed")
+axL.set_xlabel(r"true effect size $\delta$"); axL.set_ylabel(r"power")
+axL.legend(loc="lower right", fontsize=9, framealpha=0.9)
+
+axR.axvline(0.1, color=REJECT, ls="--", lw=1.2)
+axR.set_xlim(0, 0.35)
+axR.set_title("A trivial effect ($\\delta=0.1$) can be chased")
+axR.set_xlabel(r"true effect size $\delta$")
+axR.legend(loc="lower right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"power for delta=0.5 at n=10:  {stats.norm.cdf(np.sqrt(10)*0.5 - z_a):.3f}")
+print(f"power for delta=0.5 at n=40:  {stats.norm.cdf(np.sqrt(40)*0.5 - z_a):.3f}")
+print(f"power for delta=0.1 at n=400: {stats.norm.cdf(np.sqrt(400)*0.1 - z_a):.3f}")
+```
+
+The two panels are the same formula read for opposite mistakes. Under-power ($n=10$ chasing
+$\delta=0.5$) and over-power ($n=400$ chasing $\delta=0.1$) are both *design* failures, and
+both are prevented by the same act: deciding, before data, the effect size that matters and
+sizing the study to it. The power calculation is precisely the tool that pins down "how big
+is big enough" so neither tail of @fig-effect-vs-sig catches you.
+
+## Example 3 — the t-test correction and a simulation check {#sec-ex-ttest}
+
+Real studies almost never know $\sigma$; [INFR-D2] replaced it with the sample $s$, turning
+the z-test into the t-test. Power changes in two linked ways, and both push the same
+direction — you need a *little more* data than the z-formula says:
+
+1. The null distribution is $t_{n-1}$, with **heavier tails** than the Normal ([INFR-D2]
+   @fig-t-vs-z), so the critical value is larger ($t_{n-1,\alpha}>z_\alpha$) — a higher bar.
+2. Under the alternative the statistic follows a **noncentral $t$** with noncentrality
+   $\lambda=\sqrt n\,\delta$, not a shifted Normal, because the random denominator $s$ adds
+   its own variability.
+
+The exact power is $\pi = P\bigl(T'_{n-1,\lambda} \ge t_{n-1,\alpha}\bigr)$, where
+$T'_{n-1,\lambda}$ is noncentral-$t$. The clean approximation in practice is to use the
+sample-size formula @eq-samplesize and add a few to $n$ (or solve the noncentral-$t$ power
+numerically, which `scipy` does directly). The gap is small and vanishes as $n$ grows,
+because $t_{n-1}\to\mathcal N(0,1)$. We verify the whole apparatus by **simulating** the
+t-test thousands of times at the designed $n$ and counting how often it rejects — the
+empirical power should land on the formula.
+
+```{python}
+#| label: fig-power-sim
+#| fig-cap: 'The power formula, validated by brute-force simulation of the one-sample t-test (one-sided, $\alpha=0.05$, true standardized effect $\delta=0.5$). For each sample size we draw 4000 datasets from $\mathcal{N}(\delta,1)$, run the t-test, and record the fraction that reject (dots). The solid line is the exact noncentral-$t$ power; the dashed line is the simpler Normal approximation $\Phi(\sqrt{n}\,\delta - z_\alpha)$. All three agree closely, and the small gap between the dashed Normal curve and the solid $t$ curve at small $n$ is exactly the price of estimating $\sigma$ — the t-test needs slightly more data for the same power. The simulation confirms the derived formula describes a real, runnable test.'
+delta = 0.5
+alpha = 0.05
+ns = np.array([5, 8, 12, 18, 25, 35, 50])
+reps = 4000
+
+emp_power = []
+for n_s in ns:
+    rejects = 0
+    tcrit = stats.t.ppf(1 - alpha, df=n_s - 1)     # one-sided t critical value
+    for _ in range(reps):
+        s = rng.normal(delta, 1.0, size=n_s)        # sigma = 1, true mean = delta
+        tstat = s.mean() / (s.std(ddof=1) / np.sqrt(n_s))
+        if tstat >= tcrit:
+            rejects += 1
+    emp_power.append(rejects / reps)
+emp_power = np.array(emp_power)
+
+# Exact noncentral-t power and the Normal approximation.
+nn = np.arange(3, 55)
+z_a = stats.norm.ppf(1 - alpha)
+exact = np.array([1 - stats.nct.cdf(stats.t.ppf(1 - alpha, df=k - 1),
+                                    df=k - 1, nc=np.sqrt(k) * delta) for k in nn])
+approx = stats.norm.cdf(np.sqrt(nn) * delta - z_a)
+
+fig, ax = plt.subplots(figsize=(7.0, 4.3))
+ax.plot(nn, exact, color=NULLC, label="exact noncentral-$t$ power")
+ax.plot(nn, approx, color=ALTC, ls="--", label=r"Normal approx $\Phi(\sqrt{n}\,\delta - z_\alpha)$")
+ax.plot(ns, emp_power, "o", color=REJECT, ms=7, label="simulated t-test")
+ax.set_xlabel("sample size $n$"); ax.set_ylabel(r"power $1-\beta$")
+ax.set_title("Derived power matches a simulated t-test ($\\delta=0.5$)")
+ax.set_ylim(0, 1.02); ax.legend(loc="lower right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+for n_s, ep in zip(ns, emp_power):
+    print(f"n={n_s:>3}: simulated power = {ep:.3f}")
+```
+
+The dots sit on the curves: the derivation is not an abstraction, it predicts how often a
+real, $\sigma$-unknown t-test will fire. And the modest gap between the dashed (Normal) and
+solid (noncentral-$t$) curves at small $n$ is the honest correction — at $n=5$ the t-test
+has visibly less power than the z-formula promises, because estimating $\sigma$ from $4$
+degrees of freedom costs you.
+
+# The edge of applicability: underpowered is not "no effect" {#sec-underpowered}
+
+This is the section that separates "can compute power" from "won't be fooled by a null
+result," and it is the most consequential confusion in applied statistics.
+
+[INFR-D1] hammered that *failing to reject $H_0$ is not accepting $H_0$*. Power analysis
+explains exactly *why* and quantifies *when* a null result is worthless. If a study's power
+against the effect you care about is low — say $0.30$ — then **even when the effect is
+real, the study fails to detect it $70\%$ of the time.** A non-significant result from such
+a study is the *expected* outcome whether or not the effect exists, so it discriminates
+nothing. "We found no significant effect" from an underpowered study is not evidence the
+effect is absent; it is evidence the study could not see.
+
+```{python}
+#| label: fig-underpowered
+#| fig-cap: 'Why a null result from an underpowered study is uninformative. We simulate a world where the effect is *genuinely real* ($\delta=0.3$), running a one-sided $\alpha=0.05$ t-test 5000 times at each sample size, and plot the fraction of studies that *fail* to reach significance ($p>0.05$). At $n=15$ the real effect is missed about 70% of the time; even at $n=50$ it is missed roughly a third of the time. A single ''not significant'' from a small study is the *most likely* outcome even though the effect exists — so it cannot be read as ''no effect.'' The dashed line is the implied power $1-\beta$; the miss rate is its complement $\beta$. Absence of evidence is not evidence of absence, made quantitative.'
+delta_true = 0.3
+alpha = 0.05
+ns = np.array([15, 25, 40, 50, 80, 120, 200])
+reps = 5000
+
+miss_rate = []
+for n_s in ns:
+    tcrit = stats.t.ppf(1 - alpha, df=n_s - 1)
+    fails = 0
+    for _ in range(reps):
+        s = rng.normal(delta_true, 1.0, size=n_s)
+        tstat = s.mean() / (s.std(ddof=1) / np.sqrt(n_s))
+        if tstat < tcrit:        # failed to reject, despite real effect
+            fails += 1
+    miss_rate.append(fails / reps)
+miss_rate = np.array(miss_rate)
+
+z_a = stats.norm.ppf(1 - alpha)
+nn = np.arange(10, 210)
+power_curve = stats.norm.cdf(np.sqrt(nn) * delta_true - z_a)
+
+fig, ax = plt.subplots(figsize=(7.0, 4.3))
+ax.plot(ns, miss_rate, "o-", color=REJECT, label=r"P(miss a REAL effect) = $\beta$")
+ax.plot(nn, 1 - power_curve, color=TYPE2, ls=":", lw=1.6, label=r"theoretical $\beta = 1 - \Phi(\sqrt{n}\delta - z_\alpha)$")
+ax.plot(nn, power_curve, color=ALTC, ls="--", lw=1.4, label=r"power $1-\beta$")
+ax.axhline(0.5, color=GREY, lw=1.0)
+ax.set_xlabel("sample size $n$"); ax.set_ylabel("probability")
+ax.set_title("A real effect ($\\delta=0.3$) is routinely missed when underpowered")
+ax.set_ylim(0, 1.02); ax.legend(loc="center right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+for n_s, mr in zip(ns, miss_rate):
+    print(f"n={n_s:>3}: P(fail to detect real effect) = {mr:.3f}")
+```
+
+::: {.callout-warning title="Pitfall"}
+**A non-significant result only carries information if the study had the power to detect the
+effect you care about.** Always report the study's power (or its minimum detectable effect,
+@eq-mde) alongside a null result. "We did not detect an effect, and our study had $85\%$
+power to detect an effect of $\delta=0.4$" is a real, near-conclusive negative finding: had
+a meaningful effect existed, we very likely would have seen it. "We did not detect an effect"
+from a study with $20\%$ power is *no finding at all* — it is a coin flip dressed as a
+conclusion. Equating "not significant" with "no effect," without checking power, is the
+single most common way underpowered studies are over-interpreted.
+:::
+
+## The winner's curse and the file drawer {#sec-winners-curse}
+
+Underpowering does more than hide effects; it *corrupts the ones it finds*. When power is
+low, the only samples that clear the significance bar are the ones where chance happened to
+inflate the estimate — so **the published, significant estimates are systematically too
+large.** This is the *winner's curse* of statistics. Combine it with the **file-drawer
+problem** (non-significant studies go unpublished) and **p-hacking** (analyzing many ways
+until something crosses $0.05$), and a literature of underpowered studies can be both
+*statistically significant on average* and *substantively wrong* — the [INFR-D1]
+base-rate trap, now driven by low power.
+
+```{python}
+#| label: fig-winners-curse
+#| fig-cap: 'The winner''s curse. We simulate many low-power studies of a real but modest effect ($\delta=0.3$, $n=20$, one-sided $\alpha=0.05$, power $\approx 0.35$). The histogram shows the estimated effect $\hat\delta=\bar X/s$ across all studies (grey) versus only the *significant* ones (red). The true effect is the dashed line. Among significant studies the average estimate (red line) is roughly double the truth: significance, at low power, is a filter that admits only the luckily-inflated samples. A literature built from significant underpowered studies systematically overstates effects.'
+delta_true = 0.3
+n_s = 20
+alpha = 0.05
+reps = 8000
+tcrit = stats.t.ppf(1 - alpha, df=n_s - 1)
+
+est_all, est_sig = [], []
+for _ in range(reps):
+    s = rng.normal(delta_true, 1.0, size=n_s)
+    dhat = s.mean() / s.std(ddof=1)
+    tstat = s.mean() / (s.std(ddof=1) / np.sqrt(n_s))
+    est_all.append(dhat)
+    if tstat >= tcrit:
+        est_sig.append(dhat)
+est_all = np.array(est_all); est_sig = np.array(est_sig)
+
+fig, ax = plt.subplots(figsize=(7.0, 4.3))
+ax.hist(est_all, bins=45, color=FILL, alpha=0.7, label="all studies")
+ax.hist(est_sig, bins=25, color=REJECT, alpha=0.6, label="only significant studies")
+ax.axvline(delta_true, color=NULLC, ls="--", lw=1.8, label=fr"true $\delta={delta_true}$")
+ax.axvline(est_sig.mean(), color=REJECT, lw=1.8,
+           label=fr"mean of significant $\hat\delta={est_sig.mean():.2f}$")
+ax.set_xlabel(r"estimated effect $\hat\delta$"); ax.set_ylabel("count")
+ax.set_title("Low power inflates the effects that reach significance")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"true delta = {delta_true}")
+print(f"mean estimate, all studies        = {est_all.mean():.3f}")
+print(f"mean estimate, significant studies = {est_sig.mean():.3f}  (inflated)")
+print(f"empirical power = {len(est_sig)/reps:.3f}")
+```
+
+The red histogram's mean sits far above the dashed truth: the significant subset is a biased
+sample of all studies, selected for inflated estimates. This is why "well-powered" is not
+bureaucratic box-ticking — underpowered significant findings are *expected* to overstate
+effects, and a field that publishes them builds a distorted record.
+
+::: {.callout-tip title="You might be asked"}
+*"What is post-hoc (observed) power, and why is it useless?"* It is power computed *after*
+the study using the *observed* effect as if it were the true effect. It is worthless — even
+actively misleading — for two reasons. First, it is a deterministic, one-to-one function of
+the p-value (a non-significant result *always* yields low observed power), so it adds no
+information beyond the p-value you already have. Second, it answers the wrong question:
+power is a property of a design against a *hypothesized* effect you choose in advance, used
+to *plan*; computing it from the noisy observed effect just feeds the estimate's own error
+back into the calculation. The legitimate retrospective tool is to report the power the
+study had against the *smallest meaningful* effect (or the MDE), fixed independently of what
+you observed — never the observed-effect power.
+:::
+
+# When is power analysis the right tool? {#sec-when}
+
+The article would be dishonest without an explicit applicability verdict.
+
+::: {.callout-tip title="You might be asked"}
+*"When do you do a power analysis, and what are its limits?"* The summary worth reciting:
+
+- **Always, before a confirmatory study,** to choose $n$ (@eq-samplesize) or to state the
+  MDE for a fixed budget (@eq-mde). A confirmatory study with no power plan risks being
+  unable to answer its own question — the silent failure of @sec-why.
+- **Its hardest input is the effect size you plug in.** Power analysis is only as honest as
+  the $\delta$ you feed it, and that $\delta$ should be the *smallest effect worth
+  detecting* (a subject-matter judgment), **not** a guess at the true effect and emphatically
+  **not** a pilot study's noisy estimate (which inherits the winner's curse and gives an
+  over-optimistic, too-small $n$). Plug in the effect that would *matter*, not the one you
+  hope is there.
+- **It assumes the test's model.** The clean formulas here are for Normal means; real designs
+  with binary outcomes, survival times, clustered or repeated measures, or unequal group
+  sizes need the matching power calculation (often done by simulation, exactly as in
+  @fig-power-sim — simulate the actual analysis at candidate $n$ and count rejections). When
+  the parametric model is doubtful, simulate; do not force a formula.
+- **Do not use observed (post-hoc) power** to interpret a completed study (@sec-winners-curse).
+- **And the deepest point:** power analysis governs the **Type II** side that the rest of
+  [INFR-D1]'s apparatus ignored. It does not replace effect sizes and confidence intervals —
+  it *complements* them: power decides whether the study can see, the CI reports what it saw
+  and how precisely. Under multiplicity ([INFR-D5]) the bar $\alpha$ tightens, which *lowers*
+  power and *raises* the required $n$ — power and multiple testing are coupled, which is the
+  next article's concern.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You would not evaluate
+$\Phi$ and noncentral-$t$ tails by hand. In Python, `statsmodels.stats.power` provides
+`TTestPower`, `TTestIndPower`, `NormalIndPower`, and `GofChisquarePower`, each with a
+`.power(...)` method and a `.solve_power(...)` that inverts for whichever of
+$\{n, \delta, \alpha, \text{power}\}$ you leave as `None` — exactly the four-levers
+relationship of the Core, solved for any one. The R ecosystem's `pwr` package and the
+standalone `G*Power` tool do the same. For any analysis without a closed-form power (logistic
+regression, mixed models, custom pipelines), the **simulation recipe of @fig-power-sim is
+the universal fallback**: assume the effect, generate data at a candidate $n$, run your
+actual analysis, repeat thousands of times, and the rejection fraction *is* the power. The
+formula @eq-samplesize is what these tools compute for the Normal-mean case; you now know
+what they are doing and why $n\propto 1/\delta^2$.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-D1]**, which defined power as $1-\beta$ but spent its discipline on
+the null side, and **[INFR-D2]**, which built the z- and t-test statistics. This article
+turned [INFR-D1]'s $\beta$ into a *design tool*: the power function (@def-power), the explicit
+power formula @eq-power, the sample-size law @eq-samplesize with its decisive $1/\delta^2$
+scaling, and the honest boundary between underpowered and "no effect." From here:
+
+- **[INFR-D5 *Multiple Comparisons*]** — when you run many tests, controlling family-wise
+  error tightens each test's effective $\alpha$, which *cuts power* and *inflates* the
+  required $n$. Power and multiplicity are the two halves of designing a study that screens
+  many hypotheses without either drowning in false alarms or missing every real effect.
+- **[INFR-D3 *The Asymptotic Trinity*]** — the Neyman–Pearson lemma there identifies the
+  *most powerful* test for a given $\alpha$, the theoretical ceiling on the power this
+  article computed for the z/t test specifically.
+- **[INFR-C1]/[INFR-C2]** — the confidence interval is power's complement at analysis time:
+  by the [INFR-D1] duality, a study powered to detect $\delta$ is one whose CI will be narrow
+  enough to exclude $\mu_0$ when the effect is real. Reporting the CI shows the effect size
+  that power was sized against.
+- **Downstream in Regression** — every designed experiment (A/B tests, RCTs, dose-response
+  studies) and every "how many observations do I need to detect a coefficient of this size"
+  question is this article's formula applied to a regression slope.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding decision framework.** J. Neyman & E. S. Pearson, "On the Problem of the Most
+  Efficient Tests of Statistical Hypotheses," *Phil. Trans. R. Soc. A* 231 (1933) — where
+  power enters testing as the quantity to maximize.
+- **The practical engineering of power.** Jacob Cohen, *Statistical Power Analysis for the
+  Behavioral Sciences* (2nd ed., 1988) — standardized effect sizes, power tables, and the
+  case that whole fields were chronically underpowered. His 1962 survey of the abnormal-
+  psychology literature first sounded the alarm.
+- **The modern crisis literature.** Button et al., "Power failure: why small sample size
+  undermines the reliability of neuroscience," *Nature Reviews Neuroscience* 14 (2013), for
+  the winner's curse and replication damage of @sec-winners-curse; J. Ioannidis, "Why Most
+  Published Research Findings Are False," *PLoS Medicine* 2 (2005), for the base-rate-plus-
+  low-power mechanism.
+- **Open threads deliberately deferred.** *How does multiplicity change the required $n$?* —
+  [INFR-D5]. *Is there a most powerful test, and what is its power ceiling?* — the
+  Neyman–Pearson lemma, [INFR-D3]. *What about power for non-Normal or complex models?* —
+  simulate the analysis (@fig-power-sim); the principle is unchanged, only the null and
+  alternative distributions differ.

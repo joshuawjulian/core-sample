@@ -1,0 +1,1169 @@
+---
+title: "Permutation Tests: Testing Without a Model"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+DATA   = "#2b3a67"     # observed data / sample
+OBS    = "#0a7d4d"     # the observed statistic / highlight
+PERM   = "#d6791f"     # permutation / null-by-relabeling quantities
+REJECT = "#c1121f"     # tail / rejection
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # histograms / shaded areas
+
+rng = np.random.default_rng(20240917)
+```
+
+> **Where this sits in the track.** This is the third article of movement E —
+> *computational and alternative inference* — of the **Statistical Inference** track, and
+> it closes the resampling pair. It assumes two earlier articles, each built from the
+> ground up. From [INFR-D1 *The Logic of Hypothesis Testing*] it takes the entire
+> apparatus of a test: a **null hypothesis** $H_0$, a **test statistic** $T$, a **null
+> distribution** against which $T$ is judged, and the **p-value** as a tail probability
+> *computed under the null* — together with the long list of what a p-value is **not**.
+> From [INFR-E1 *The Bootstrap*] it takes the resampling instinct — that when you cannot
+> *derive* a distribution you can *simulate* it — and the crucial contrast we will sharpen
+> here: the bootstrap resamples **with replacement** to mimic *drawing a fresh sample*,
+> whereas the permutation test reshuffles labels **without replacement** to mimic *the
+> null's own symmetry*. From the Probability Foundations track it borrows the
+> **combinatorics of permutations and combinations** [PROB-04], which we restate where we
+> use them. Where the earlier tests of movement D ([INFR-D2 *The Workhorse Tests*]) bought
+> their null distributions with an assumption — Normality, or a large-sample
+> approximation — this article shows how to **manufacture an exact null distribution from
+> the data alone**, assuming only a symmetry the null itself supplies. It **sets up** the
+> permutation-based control of family-wise error in [INFR-D5 *Multiple Comparisons*] and
+> stands as the assumption-light companion to every two-sample test in the track.
+
+## Abstract {.unnumbered}
+
+When the null hypothesis says "the labels do not matter," it hands us something
+remarkable: under that null, **any relabeling of the data is just as probable as the one
+we observed**. That is the property of **exchangeability**, and it is enough to build a
+hypothesis test out of nothing but counting. We compute our test statistic on the real
+data, then on every relabeling the null treats as equivalent; the fraction of relabelings
+that match or beat the observed value *is* the p-value — exact, distribution-free, and
+requiring no Normal curve, no $t$-table, no large-$n$ limit. This article derives the
+permutation test from its single load-bearing idea (exchangeability under $H_0$), proves
+that the resulting test is **exactly level-$\alpha$** in finite samples, and shows why
+enumerating all $\binom{N}{n}$ relabelings is usually replaced by a **Monte-Carlo**
+estimate — deriving the correct $(b+1)/(B+1)$ formula and explaining the otherwise
+mysterious "$+1$." We carry three honest examples end to end: a two-sample difference of
+means on clinical data, a test of correlation by permuting one column, and a paired design
+where exchangeability lives *within* pairs (sign-flipping), not across them. We show the
+permutation test agrees with the two-sample $t$-test under Normality and beats it under
+heavy tails — and then walk to the **edge of applicability**, where exchangeability fails
+(unequal nuisance variances, dependence, the Behrens–Fisher problem) and the test silently
+loses its guarantee. The single claim the article defends is that **a permutation test is
+only as valid as the exchangeability it assumes** — get that right and you have the most
+honest test in statistics; get it wrong and you have a confident answer to the wrong
+question.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Suppose the null hypothesis is a statement of **no effect** that makes the data
+**exchangeable** — meaning every ordering, or every assignment of labels, is equally
+likely to have produced what you saw. ("Treatment does nothing" makes the treatment and
+control labels arbitrary; "$X$ and $Y$ are independent" makes the pairing of $x$'s with
+$y$'s arbitrary.) Then build the null distribution *by brute force*:
+
+> *Compute the test statistic $T_{\text{obs}}$ on the real data. Now relabel — shuffle the
+> group labels, or shuffle one of the paired columns — and recompute $T$ on the shuffled
+> data. Do this for all (or many random) relabelings. The collection of those values is
+> the **exact null distribution** of $T$, because under $H_0$ each relabeling was equally
+> probable. The p-value is the fraction of relabelings whose statistic is at least as
+> extreme as $T_{\text{obs}}$.*
+
+No assumption about the *shape* of the data is needed — no Normality, no large sample, no
+formula for a standard error. The only assumption is the **exchangeability** the null
+itself supplies. That is the whole method, and also the whole catch: the test is exactly
+as trustworthy as that exchangeability claim.
+:::
+
+Everything below orbits that box. The load-bearing word is **exchangeability**: it is the
+hinge that turns "the null is true" into "all relabelings are equally likely," which is in
+turn what lets us *count* our way to a null distribution instead of deriving one. We make
+that hinge precise in @sec-formal, prove the test it builds is exactly level-$\alpha$ in
+@sec-exactness, replace exhaustive counting with Monte Carlo (and get the "$+1$" right) in
+@sec-monte-carlo, run three real examples in @sec-examples, and — the half that separates
+competence from mastery — find exactly where exchangeability breaks in @sec-failure.
+
+# Why we are doing this: the problem that forced the idea {#sec-why}
+
+Keep one question in view for the entire article: **what do we test with when we are not
+willing to assume a distribution?** Every move below answers a piece of that. If a step
+feels like sleight of hand, return here.
+
+## The original problem: every test in movement D borrowed a curve
+
+Look back at the tests we have built. The one-sample $z$-test ([INFR-D2]) compares a
+standardized mean to the standard Normal curve — and earns that curve either by *assuming*
+the data are Normal or by invoking the Central Limit Theorem ([INFR-A2]) for large $n$.
+The $t$-test trades the known-$\sigma$ Normal for Student's $t_{n-1}$, but only after
+*assuming the data themselves are Normal* so that the sample variance has the chi-square
+distribution the derivation needs ([INFR-C2]). The $\chi^2$ goodness-of-fit test leans on
+a large-sample approximation that the expected cell counts be "big enough." Every one of
+these tests answers "is this surprising under $H_0$?" by reading a tail area off a
+**theoretical null distribution** — and every one of those theoretical distributions was
+purchased with an assumption about the shape of the data or the size of the sample.
+
+That is fine when the assumption holds. But consider the situations a working
+statistician actually faces:
+
+- A two-sample comparison with $n_1 = 6$ and $n_2 = 7$ — far too small for the CLT to
+  rescue a non-Normal distribution, and you have no reason to believe the data are Normal.
+- A test statistic with **no tractable null distribution at all** — the difference of two
+  *medians*, a difference of two *trimmed means*, the ratio of two interquartile ranges.
+  There is no "$t$-table" for the difference of medians.
+- Data with one wild outlier, where the Normal-theory $t$-test's null distribution is
+  simply the wrong shape and its p-value is a fiction.
+
+In each case the machinery of movement D stalls, not because the *logic* of testing fails
+— $H_0$, a statistic, a tail probability — but because the one ingredient we cannot
+otherwise get, **the null distribution of the statistic**, is unavailable. We are missing
+a curve, not a concept.
+
+## The escape: let the null build its own distribution
+
+Here is the idea, due in spirit to **R. A. Fisher** (1935) and made famous by his "lady
+tasting tea," and put on a general footing by **E. J. G. Pitman** (1937–38). Fisher's
+insight was that for certain null hypotheses you do not *need* a theoretical null
+distribution, because the null itself tells you exactly how the data could have come out
+differently. If a treatment truly does nothing, then which subjects got labeled "treated"
+and which "control" was, as far as the *outcomes* are concerned, a coin flip — the
+outcomes would have been the same numbers regardless of the labels. So the data we
+*could* have seen, under the null, are exactly the data we *did* see with the labels
+reshuffled. Enumerate those reshufflings, compute the statistic on each, and you have the
+null distribution — not approximated, but *constructed*, from the data.
+
+This is the same resampling instinct as the bootstrap ([INFR-E1]) — *simulate what you
+cannot derive* — but pointed at a different target and obeying a different rule, and the
+contrast is worth stating now because the two are constantly confused.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between the bootstrap and a permutation test? They both
+resample."* Three sentences you should be able to give cleanly:
+
+1. **They estimate different things.** The bootstrap estimates the **sampling
+   distribution of an estimator** — its spread, its bias, its confidence interval — by
+   mimicking *drawing a fresh sample from the population*. The permutation test estimates
+   the **null distribution of a test statistic** by mimicking *the null hypothesis's own
+   symmetry*.
+2. **They resample differently.** The bootstrap draws **with replacement** (a fresh
+   sample of size $n$ can repeat points), because that is what re-drawing from a
+   population looks like. The permutation test reshuffles **without replacement** (it is a
+   true rearrangement — every data value is used exactly once), because that is what
+   "relabeling" means.
+3. **They answer different questions.** Bootstrap $\to$ *how uncertain is my estimate?*
+   Permutation $\to$ *could this effect be pure label-luck?* The bootstrap is built for
+   intervals (movement E2); the permutation test is built for tests (movement D logic).
+
+The deepest version of the answer: the permutation test is **exact** under exchangeability
+— its Type I rate is exactly $\alpha$ in finite samples — while the bootstrap is generally
+only **asymptotically** valid. That exactness is what we prove in @sec-exactness, and it
+is the permutation test's signature advantage.
+:::
+
+# Intuition before symbols: the lady tasting tea {#sec-intuition}
+
+Before any formula, the canonical picture. A lady claims she can taste whether the milk or
+the tea was poured into the cup first. Fisher presents her with eight cups — four
+milk-first, four tea-first, in random order — and asks her to identify the four
+milk-first cups. She gets all four right.
+
+Is that impressive, or luck? The null hypothesis is **she is guessing**: her labels carry
+no information, so any assignment of her four "milk-first" guesses to the eight cups is
+equally likely. Under that null we do not need a distribution from a book — we can *count*.
+There are $\binom{8}{4} = 70$ ways to choose which four cups she calls "milk-first." Exactly
+**one** of those 70 gets all four correct. So if she is guessing, the probability of a
+perfect score is $1/70 \approx 0.014$. That number — the fraction of equally-likely
+relabelings at least as impressive as what we saw — *is the p-value*, and it required no
+model of how tea tastes, no Normal curve, nothing but counting equally likely
+arrangements.
+
+That is the entire permutation test in one example. The rest of this article is the same
+move made general: replace "perfect score" with *any* test statistic $T$, replace
+"$\binom{8}{4}$ guesses" with *all relabelings the null treats as equivalent*, and count
+the fraction at least as extreme as the observed $T$.
+
+```{python}
+#| label: fig-tea
+#| fig-cap: 'The lady tasting tea, by enumeration. Under the null ''she is guessing,'' all $\binom{8}{4}=70$ ways of choosing four ''milk-first'' cups are equally likely. The bars show how many of those 70 guesses score $0,1,2,3,4$ cups correct (the hypergeometric null distribution). A perfect score (green) happens in exactly one of the 70 worlds, so the one-sided p-value is $1/70\approx0.014$. No distribution was assumed: the null *built* this histogram by counting equally likely relabelings.'
+from math import comb
+
+# Score = number of the 4 truly milk-first cups that fall among her 4 guesses.
+# Under guessing, the count of correct guesses k follows a hypergeometric law:
+#   P(K=k) = C(4,k) C(4,4-k) / C(8,4).
+ks = np.arange(0, 5)
+counts = np.array([comb(4, k) * comb(4, 4 - k) for k in ks])  # out of 70
+assert counts.sum() == comb(8, 4) == 70
+
+fig, ax = plt.subplots()
+bars = ax.bar(ks, counts, color=FILL, edgecolor=DATA, width=0.7)
+bars[4].set_color(OBS)
+for k, c in zip(ks, counts):
+    ax.text(k, c + 0.6, str(int(c)), ha="center", fontsize=10)
+ax.set_xlabel("number of milk-first cups correctly identified")
+ax.set_ylabel("number of the 70 equally-likely guesses")
+ax.set_title("The null distribution, built by counting relabelings")
+ax.set_xticks(ks)
+ax.text(4, 9, "observed:\nall 4 correct", ha="center", color=OBS, fontsize=9)
+plt.tight_layout()
+```
+
+# The formal development {#sec-formal}
+
+We now make the intuition precise. The work splits into three parts: pin down what
+**exchangeability** means and why $H_0$ supplies it (@sec-exchangeability), define the
+**permutation p-value** as a counted fraction (@sec-pval-def), and prove the test it
+yields is **exactly level-$\alpha$** (@sec-exactness).
+
+## Exchangeability: the one assumption {#sec-exchangeability}
+
+::: {#def-exchangeable}
+**Definition (exchangeability).** Random variables $Z_1,\dots,Z_N$ are **exchangeable** if
+their joint distribution is unchanged by any permutation of their indices: for every
+permutation $\pi$ of $\{1,\dots,N\}$,
+$$
+(Z_1, Z_2, \dots, Z_N) \;\overset{d}{=}\; (Z_{\pi(1)}, Z_{\pi(2)}, \dots, Z_{\pi(N)}),
+$$
+where $\overset{d}{=}$ means "has the same distribution as."
+:::
+
+Read the definition slowly. It says: if you shuffle the order of the variables, the
+*probability of seeing any particular set of values* does not change. It is strictly
+weaker than "i.i.d." — independent and identically distributed variables are
+exchangeable (shuffling i.i.d. draws plainly cannot change their joint law), but
+exchangeable variables need not be independent. For our purposes the key consequence is
+combinatorial and we state it as a lemma because the entire test rests on it.
+
+::: {#lem-equal-prob}
+**Lemma (equally likely relabelings).** If $Z_1,\dots,Z_N$ are exchangeable and we observe
+the *values* $z_1,\dots,z_N$, then — conditional on the observed *multiset* of values
+$\{z_1,\dots,z_N\}$ — every distinct ordering of those values is **equally probable**.
+:::
+
+::: {.proof}
+Fix the observed multiset of values. Let $\pi$ be any permutation of the indices. By
+@def-exchangeable the random vector $(Z_1,\dots,Z_N)$ and its permuted version
+$(Z_{\pi(1)},\dots,Z_{\pi(N)})$ have the *same* joint distribution. Therefore, for the
+particular ordered tuple $(z_1,\dots,z_N)$ and its rearrangement
+$(z_{\pi(1)},\dots,z_{\pi(N)})$,
+$$
+\Pr\!\big[(Z_1,\dots,Z_N) = (z_1,\dots,z_N)\big]
+=
+\Pr\!\big[(Z_1,\dots,Z_N) = (z_{\pi(1)},\dots,z_{\pi(N)})\big].
+$$
+(For continuous data, read $\Pr[\cdot]$ as a density and the same equality holds, since a
+density is also invariant under the index permutation.) So *any two orderings of the same
+values carry equal probability.* Conditioning on the observed multiset just normalizes
+these equal probabilities to sum to one over the distinct orderings, leaving each ordering
+with probability $1/(\text{number of distinct orderings})$ — i.e. uniform. $\qquad\blacksquare$
+:::
+
+This lemma is the whole engine. It converts the assumption "$H_0$ makes the data
+exchangeable" into the operational statement "under $H_0$, every relabeling of the data
+is equally likely" — and *equally likely* is exactly what lets us count.
+
+Now, where does $H_0$ supply exchangeability? Two canonical cases, which cover most uses:
+
+**The two-sample case.** We have group A with values $x_1,\dots,x_m$ and group B with
+values $y_1,\dots,y_n$, total $N = m+n$. The null is
+$$
+H_0:\quad F_A = F_B \qquad\text{(the two groups have the *same* distribution).}
+$$
+If that null holds, then pooling all $N$ observations gives $N$ draws from one common
+distribution — and which $m$ of them got the label "A" was arbitrary. Formally, under
+$H_0$ the pooled values are exchangeable (i.i.d. from the common $F$), so by
+@lem-equal-prob every way of splitting the $N$ pooled values into a group of $m$ and a
+group of $n$ is equally likely. There are $\binom{N}{m}$ such splits. *That* is the set we
+permute over.
+
+**The independence / correlation case.** We have paired data
+$(x_1,y_1),\dots,(x_n,y_n)$ and ask whether $X$ and $Y$ are associated. The null is
+$$
+H_0:\quad X \perp Y \qquad\text{(}X\text{ and }Y\text{ are independent).}
+$$
+If $X$ and $Y$ are independent, then *which* $y$ got paired with *which* $x$ was
+arbitrary — any of the $n!$ pairings is equally likely, because under independence the
+joint density factorizes and the value of $x_i$ tells you nothing about which $y$ it should
+sit with. So we hold the $x$'s fixed and permute the $y$'s: the $n!$ permutations of the
+$y$-column are the equally-likely relabelings.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the two-sample null have to be 'same distribution' and not just 'same mean'?"*
+Because exchangeability is a statement about the *whole* joint law, not just a moment. If
+$F_A$ and $F_B$ have the same mean but different variances, the pooled values are **not**
+exchangeable — relabeling changes the joint distribution (a high-variance value is more
+likely to have come from the wide group). So the clean, exact permutation null is "the two
+distributions are identical." This is not a technicality: it is precisely the crack
+through which the test fails when variances differ, the **Behrens–Fisher** problem we
+confront honestly in @sec-failure. The honest one-line version: *a permutation test for
+"equal means" is only exact if you are willing to assume "equal everything else" under the
+null.*
+:::
+
+## The permutation p-value {#sec-pval-def}
+
+Let $\mathcal{G}$ be the set of relabelings the null treats as equally likely — the
+$\binom{N}{m}$ group-splits in the two-sample case, the $n!$ $y$-permutations in the
+correlation case. For each relabeling $g \in \mathcal{G}$, let $T(g)$ be the value of the
+test statistic computed on the data *after applying* $g$. Let $T_{\text{obs}} = T(g_0)$ be
+the statistic on the original, un-relabeled data (the identity relabeling $g_0$). Write
+$|\mathcal{G}|$ for the number of relabelings.
+
+For a statistic where **large values are evidence against $H_0$** (a one-sided,
+upper-tail test), the **exact permutation p-value** is the fraction of relabelings whose
+statistic equals or exceeds the observed one:
+
+$$
+p_{\text{perm}}
+\;=\;
+\frac{\#\{\, g \in \mathcal{G} : T(g) \ge T_{\text{obs}} \,\}}{|\mathcal{G}|}.
+$$ {#eq-pval-exact}
+
+Read @eq-pval-exact against the lady tasting tea: $|\mathcal{G}| = 70$, the statistic
+$T$ = "number correct," $T_{\text{obs}} = 4$, and exactly one relabeling achieves
+$T(g) \ge 4$, giving $p = 1/70$. The numerator *always* includes the observed data itself: the identity relabeling $g_0$
+gives $T(g_0) = T_{\text{obs}}$, and every number satisfies $T_{\text{obs}} \ge
+T_{\text{obs}}$, so $g_0$ is counted. That is why
+@eq-pval-exact can never return exactly zero — a feature we will see is essential to the
+test's exactness, and the seed of the "$+1$" in the Monte-Carlo version.
+
+For a **two-sided** test we judge by *absolute* extremity. If the null makes the statistic
+symmetric (e.g. a difference of means under $F_A = F_B$ has a null distribution symmetric
+about zero), the clean choice is
+$$
+p_{\text{perm}}^{(2)}
+\;=\;
+\frac{\#\{\, g \in \mathcal{G} : |T(g)| \ge |T_{\text{obs}}| \,\}}{|\mathcal{G}|}.
+$$ {#eq-pval-two-sided}
+We use @eq-pval-two-sided in the worked examples, and we will say explicitly when "extreme"
+means "large in absolute value" versus "large in one direction."
+
+## The test is exactly level-$\alpha$ {#sec-exactness}
+
+The signature property — the reason to reach for a permutation test at all — is that it
+controls the Type I error rate *exactly*, with no appeal to large samples. We prove it.
+
+::: {#thm-exactness}
+**Theorem (exactness of the permutation test).** Suppose that under $H_0$ the relabelings
+$\mathcal{G}$ are exchangeable in the sense of @lem-equal-prob — every $g \in \mathcal{G}$
+is equally likely to have produced the observed data. Reject $H_0$ when
+$p_{\text{perm}} \le \alpha$. Then the probability of rejecting a true $H_0$ is at most
+$\alpha$:
+$$
+\Pr\big[\,p_{\text{perm}} \le \alpha \mid H_0\,\big] \;\le\; \alpha,
+$$
+with equality whenever $\alpha$ is an attainable multiple of $1/|\mathcal{G}|$.
+:::
+
+::: {.proof}
+Work conditionally on the observed multiset of values, so that the only randomness left is
+*which relabeling the data actually corresponds to*. By @lem-equal-prob, under $H_0$ this
+relabeling $G$ is **uniform** on $\mathcal{G}$: each of the $|\mathcal{G}|$ relabelings has
+probability $1/|\mathcal{G}|$.
+
+Now study the random variable $p_{\text{perm}}$. Once the multiset is fixed, the entire
+collection of statistic-values $\{T(g) : g \in \mathcal{G}\}$ is **determined** — it does
+not depend on which $g$ is the "true" one, because relabeling the data and then computing
+$T$ produces the same $|\mathcal{G}|$ numbers regardless of where we started. What *is*
+random is which of those numbers is the observed one, $T_{\text{obs}} = T(G)$.
+
+Rank the relabelings by their statistic value, largest first (breaking ties by counting
+all tied values as "$\ge$"). The p-value @eq-pval-exact assigned to a relabeling $g$ is
+exactly
+$$
+p(g) = \frac{\#\{g' : T(g') \ge T(g)\}}{|\mathcal{G}|},
+$$
+i.e. its (upper) rank divided by $|\mathcal{G}|$. The event $\{p_{\text{perm}} \le \alpha\}$
+is therefore the event that the *true* relabeling $G$ lands among the most extreme
+relabelings — specifically those with $p(g) \le \alpha$. Let $k$ be the number of
+relabelings satisfying $p(g) \le \alpha$. Because $G$ is uniform on $\mathcal{G}$,
+$$
+\Pr\big[\,p_{\text{perm}} \le \alpha \mid H_0\,\big]
+= \frac{\#\{g : p(g) \le \alpha\}}{|\mathcal{G}|}
+= \frac{k}{|\mathcal{G}|}.
+$$
+It remains to bound $k$. Since $p(g)$ takes values in $\{1/|\mathcal{G}|, 2/|\mathcal{G}|,
+\dots, 1\}$ and equals (upper rank)$/|\mathcal{G}|$, having $p(g) \le \alpha$ requires
+(upper rank) $\le \alpha |\mathcal{G}|$. In the absence of ties at the boundary, at most
+$\lfloor \alpha |\mathcal{G}| \rfloor$ relabelings can satisfy this, so
+$k \le \lfloor \alpha |\mathcal{G}| \rfloor \le \alpha |\mathcal{G}|$, giving
+$$
+\Pr\big[\,p_{\text{perm}} \le \alpha \mid H_0\,\big] = \frac{k}{|\mathcal{G}|}
+\le \frac{\alpha |\mathcal{G}|}{|\mathcal{G}|} = \alpha.
+$$
+The bound holds *conditionally* on every possible multiset of values; averaging over
+multisets (each contributing $\le \alpha$) keeps the unconditional rate $\le \alpha$ as
+well. Equality is achieved when $\alpha |\mathcal{G}|$ is an integer and there are no ties
+straddling the cutoff, so exactly $\alpha|\mathcal{G}|$ relabelings fall in the rejection
+set. $\qquad\blacksquare$
+:::
+
+Three things are worth pausing on, because they are precisely the points an examiner
+probes.
+
+- **No distributional assumption was used anywhere.** The proof never wrote down a
+  Normal density, never took a limit, never required $n$ to be large. The only hypothesis
+  used was exchangeability under $H_0$ — exactly the Core's claim.
+- **The discreteness is real and benign.** The rate is $k/|\mathcal{G}|$, a multiple of
+  $1/|\mathcal{G}|$, so for small samples you cannot in general hit $\alpha = 0.05$ *on the
+  nose* — the achievable levels are coarse (in the tea example, multiples of $1/70$). The
+  theorem says the true rate is $\le \alpha$, i.e. the test is **conservative** when
+  $\alpha$ is not attainable, never anti-conservative. That conservatism is the price of
+  exactness with discrete data.
+- **The observed data is one of the relabelings.** The identity relabeling $g_0$ is a
+  member of $\mathcal{G}$ and contributes to both numerator and denominator. Forgetting to
+  include it is the classic bug that makes a Monte-Carlo permutation p-value
+  anti-conservative — the subject of the next section.
+
+::: {.callout-tip title="You might be asked"}
+*"What exactly makes a permutation test 'exact,' and what does that buy you over a
+$t$-test?"* Exact means the finite-sample Type I rate is $\le \alpha$ for *every* sample
+size, with the only assumption being exchangeability under $H_0$ — no Normality, no
+asymptotics (@thm-exactness). The $t$-test's level is exact *only if the data are exactly
+Normal*; otherwise it is merely approximate and relies on the CLT, which can be slow for
+skewed or heavy-tailed data at small $n$. So the permutation test buys you a guaranteed
+level under a much weaker assumption. The catch you must volunteer: "exact level" is a
+statement about Type I error under exchangeability — if exchangeability fails (unequal
+variances under a means null), the exactness evaporates, as @sec-failure shows.
+:::
+
+# From exhaustive counting to Monte Carlo {#sec-monte-carlo}
+
+@eq-pval-exact says: enumerate *all* of $\mathcal{G}$. For the lady's tea that was 70
+relabelings — trivial. But $|\mathcal{G}|$ explodes. A two-sample test with $m = n = 15$
+has $\binom{30}{15} = 155{,}117{,}520$ splits; with $m = n = 30$ it is about
+$1.18 \times 10^{17}$. Enumerating all permutations is hopeless past tiny samples. The
+remedy is the same one the bootstrap used: **estimate the exact p-value by random
+sampling** — draw $B$ relabelings uniformly at random from $\mathcal{G}$ and count.
+
+## The correct Monte-Carlo estimator (and the "$+1$") {#sec-mc-formula}
+
+Here is the formula, and then the derivation of why it is written the way it is — the
+"$+1$"s are not a fudge.
+
+Draw $B$ relabelings $g_1,\dots,g_B$ independently and uniformly from $\mathcal{G}$, and
+let $b = \#\{j : T(g_j) \ge T_{\text{obs}}\}$ be how many of those $B$ random relabelings
+match or beat the observed statistic. The **Monte-Carlo permutation p-value** is
+$$
+\hat p_{\text{MC}} \;=\; \frac{b + 1}{B + 1}.
+$$ {#eq-pval-mc}
+
+Why $\frac{b+1}{B+1}$ and not the seemingly natural $\frac{b}{B}$? Two complementary
+arguments; you should be able to give either.
+
+**Argument 1 — always count the observed data as its own relabeling.** The exact p-value
+@eq-pval-exact *always includes the identity relabeling* $g_0$ (the observed data) in its
+numerator, because $T(g_0) = T_{\text{obs}} \ge T_{\text{obs}}$. So when we approximate by
+sampling, the honest thing is to treat the observed data as a "free" $(B{+}1)$-th draw that
+*always* satisfies the $\ge$ condition. That contributes $1$ to a numerator of "successes"
+and $1$ to a denominator of "total relabelings considered" — turning $b/B$ into
+$(b+1)/(B+1)$. The naive $b/B$ can return $0$ (if no random relabeling beats the observed),
+which is impossible for the exact p-value @eq-pval-exact: a p-value of *exactly zero* would
+claim the observed data is more extreme than data identical to itself.
+
+**Argument 2 — validity: $(b+1)/(B+1)$ keeps the test exact, $b/B$ does not.** This is the
+decisive reason. We show $\Pr[\hat p_{\text{MC}} \le \alpha \mid H_0] \le \alpha$, so the
+Monte-Carlo test inherits the exact level of @thm-exactness.
+
+::: {.proof}
+Condition on $H_0$ and on the observed multiset, so the true relabeling $G$ is uniform on
+$\mathcal{G}$. Consider the $B+1$ relabelings consisting of the observed one $G$ together
+with the $B$ independent uniform draws $g_1,\dots,g_B$. Under $H_0$ these $B+1$ relabelings
+are **exchangeable among themselves**: $G$ is uniform on $\mathcal{G}$ and each $g_j$ is an
+independent uniform draw from the *same* $\mathcal{G}$, so the $B+1$ statistic values
+$T_{\text{obs}}, T(g_1), \dots, T(g_B)$ are exchangeable random variables. Therefore the
+rank of $T_{\text{obs}}$ among the $B+1$ values is **uniform** on $\{1, 2, \dots, B+1\}$
+(ties handled by the $\ge$ convention, which only helps the bound).
+
+Now $\hat p_{\text{MC}} = (b+1)/(B+1)$ is exactly (upper rank of $T_{\text{obs}}$ among the
+$B+1$ values)$/(B+1)$: the "$+1$" in the numerator is $T_{\text{obs}}$ counting itself, the
+$b$ is how many of the random draws tie-or-beat it, and the "$+1$" in the denominator is
+the total $B+1$. Because that rank is uniform on $\{1,\dots,B+1\}$,
+$$
+\Pr\!\Big[\hat p_{\text{MC}} \le \alpha \,\Big|\, H_0\Big]
+= \Pr\!\Big[\text{rank} \le \alpha(B+1)\Big]
+= \frac{\lfloor \alpha(B+1)\rfloor}{B+1}
+\le \alpha.
+$$
+So the test that rejects when $(b+1)/(B+1) \le \alpha$ has Type I rate at most $\alpha$,
+*for any finite $B$*. The naive estimator $b/B$ does not enjoy this — it omits
+$T_{\text{obs}}$ from the pool, breaks the exchangeability of $B+1$ values, and can reject
+slightly too often (it is anti-conservative at small $B$). $\qquad\blacksquare$
+:::
+
+The punchline: **the "$+1$" is what preserves the exactness theorem under Monte-Carlo
+sampling.** It is not a continuity correction or a smoothing hack; it is the mathematically
+correct bookkeeping of the fact that your real data is itself a member of the null's pool
+of relabelings.
+
+::: {.callout-warning title="Pitfall"}
+**Never report a Monte-Carlo permutation p-value as $b/B$, and never report $p = 0$.** If
+none of your $B$ random relabelings beat the observed statistic, the correct answer is
+$\hat p_{\text{MC}} = 1/(B+1)$, *not* $0$. Reporting $0$ claims certainty that no model can
+deliver, and using $b/B$ makes the test reject too often. With $B = 9999$ the smallest
+reportable p-value is $1/10000 = 10^{-4}$; if you need to resolve smaller p-values, you
+must raise $B$ (or, for the far tail, switch to a tail-specialized method). The choice of
+$B$ controls **resolution and Monte-Carlo noise**, not validity — the test is exact for any
+$B$, but a small $B$ gives a coarse, noisy estimate.
+:::
+
+## How many relabelings do you need? {#sec-how-many-B}
+
+Since $\hat p_{\text{MC}}$ is a proportion, its Monte-Carlo error follows the binomial
+logic of [INFR-A1]. Writing $p$ for the exact (true) permutation p-value, the count $b$ is
+approximately $\text{Binomial}(B, p)$, so the standard error of the *estimate* $b/B$ is
+$\sqrt{p(1-p)/B}$. To pin a p-value near the decision boundary $p \approx 0.05$ to within
+about $\pm 0.005$ (a relative error small enough not to flip a decision), you need
+$\sqrt{0.05 \cdot 0.95 / B} \approx 0.005$, i.e. $B \approx 0.0475/0.000025 \approx 1900$.
+In practice people use $B = 9{,}999$ or $19{,}999$ — chosen so $B+1$ is a round number and
+the resolution comfortably exceeds the precision anyone reports. @fig-mc-convergence shows
+the estimate settling toward the exact value as $B$ grows.
+
+```{python}
+#| label: fig-mc-convergence
+#| fig-cap: 'Monte-Carlo convergence of the permutation p-value. For a fixed two-sample dataset we draw label-shuffles one at a time and plot the running estimate $(b+1)/(B+1)$ against the number of shuffles $B$. Three independent Monte-Carlo runs (thin lines) all converge to the same exact permutation p-value (dashed red), with the $\pm$ band $\,\widehat p\pm\sqrt{\widehat p(1-\widehat p)/B}$ (shaded) shrinking like $1/\sqrt{B}$. The estimate is noisy at small $B$ and stable by a few thousand; validity, by @thm-exactness, holds at every $B$.'
+# One fixed two-sample dataset.
+g1 = rng.normal(0.0, 1.0, size=18)
+g2 = rng.normal(0.6, 1.0, size=20)   # a real shift, so p is small-ish but not extreme
+pooled = np.concatenate([g1, g2])
+m = len(g1)
+def meandiff(pool, m):
+    return pool[:m].mean() - pool[m:].mean()
+T_obs = abs(meandiff(pooled, m))
+
+Bmax = 4000
+fig, ax = plt.subplots()
+runs = []
+for run in range(3):
+    r = np.random.default_rng(100 + run)
+    hits = 0
+    est = np.empty(Bmax)
+    for j in range(Bmax):
+        perm = r.permutation(pooled)
+        if abs(meandiff(perm, m)) >= T_obs:
+            hits += 1
+        est[j] = (hits + 1) / (j + 2)   # (b+1)/(B+1) with B=j+1
+    runs.append(est)
+    ax.plot(np.arange(1, Bmax + 1), est, lw=1.0, alpha=0.8, color=[DATA, PERM, GREY][run],
+            label=f"MC run {run+1}")
+# A high-B reference as the 'exact' value.
+runs = np.array(runs)
+p_ref = runs[:, -1].mean()
+ax.axhline(p_ref, color=REJECT, ls="--", lw=1.6, label=f"exact $\\approx$ {p_ref:.3f}")
+Bgrid = np.arange(1, Bmax + 1)
+band = np.sqrt(p_ref * (1 - p_ref) / Bgrid)
+ax.fill_between(Bgrid, p_ref - band, p_ref + band, color=FILL, alpha=0.3)
+ax.set_xlabel("number of random relabelings $B$")
+ax.set_ylabel(r"running estimate $(b+1)/(B+1)$")
+ax.set_ylim(0, max(0.2, p_ref * 3))
+ax.set_title("Monte-Carlo error shrinks like $1/\\sqrt{B}$")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+# Worked examples {#sec-examples}
+
+Three honest examples, each carried end to end. The first is the bread-and-butter
+two-sample difference of means; the second tests a correlation by permuting one column; the
+third is a *paired* design where exchangeability lives **within** pairs, not across them —
+the case practitioners most often get wrong.
+
+## Example 1 — two-sample difference of means, and agreement with the t-test {#sec-ex-twosample}
+
+A small randomized comparison: a cognitive task completed by a **control** group and a
+**caffeine** group, with the outcome a performance score (higher is better). The samples
+are small ($m = 12$, $n = 13$) and we are unwilling to assume Normality, so we test
+$$
+H_0: F_{\text{control}} = F_{\text{caffeine}}
+\qquad\text{vs.}\qquad
+H_1: \text{the distributions differ,}
+$$
+using the statistic $T = |\bar x_{\text{caf}} - \bar x_{\text{ctrl}}|$ (two-sided, absolute
+difference of means). Under $H_0$ the 25 pooled scores are exchangeable, so we relabel by
+choosing which 12 of the 25 are "control" — $\binom{25}{12} = 5{,}200{,}300$ splits, small
+enough to *enumerate exactly* and confirm the Monte-Carlo answer.
+
+```{python}
+#| label: fig-twosample
+#| fig-cap: 'Two-sample permutation test of caffeine vs. control on a performance score ($m=12$, $n=13$). **Left:** the two groups (jittered) with their means; caffeine scores higher on average. **Right:** the permutation null distribution of the absolute mean-difference $|\bar x_{\mathrm{caf}}-\bar x_{\mathrm{ctrl}}|$, built from 50,000 random relabelings. The observed difference (green) sits far in the right tail; the shaded red region is the set of relabelings at least as extreme. The fraction there is the two-sided permutation p-value.'
+control  = np.array([ 81, 78, 90, 72, 85, 79, 88, 76, 83, 80, 74, 86.])
+caffeine = np.array([ 92, 88, 95, 84, 99, 90, 87, 101, 93, 89, 96, 91, 94.])
+m, n = len(control), len(caffeine)
+pooled = np.concatenate([control, caffeine])
+N = m + n
+
+T_obs = abs(caffeine.mean() - control.mean())
+
+B = 50_000
+r = np.random.default_rng(7)
+Tnull = np.empty(B)
+for j in range(B):
+    perm = r.permutation(pooled)
+    Tnull[j] = abs(perm[m:].mean() - perm[:m].mean())
+b = int(np.sum(Tnull >= T_obs))
+p_mc = (b + 1) / (B + 1)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+# Left: the two groups.
+jit = lambda k: rng.uniform(-0.07, 0.07, size=k)
+axL.scatter(np.zeros(m) + jit(m), control,  color=DATA, s=40, alpha=0.85, label="control")
+axL.scatter(np.ones(n) + jit(n),  caffeine, color=OBS,  s=40, alpha=0.85, label="caffeine")
+axL.plot([-0.2, 0.2], [control.mean()] * 2,  color=DATA, lw=3)
+axL.plot([0.8, 1.2],  [caffeine.mean()] * 2, color=OBS,  lw=3)
+axL.set_xticks([0, 1]); axL.set_xticklabels(["control", "caffeine"])
+axL.set_ylabel("performance score"); axL.set_title("The two groups")
+axL.legend(loc="lower right", fontsize=9, framealpha=0.9)
+# Right: the permutation null.
+axR.hist(Tnull, bins=60, color=FILL, edgecolor="white", linewidth=0.3)
+ymax = axR.get_ylim()[1]
+axR.axvline(T_obs, color=OBS, lw=2.2, label=f"observed = {T_obs:.2f}")
+tail = Tnull[Tnull >= T_obs]
+axR.hist(tail, bins=60, range=(Tnull.min(), Tnull.max()), color=REJECT, alpha=0.6)
+axR.set_xlabel(r"$|\bar x_{\mathrm{caf}} - \bar x_{\mathrm{ctrl}}|$ under relabeling")
+axR.set_ylabel("count"); axR.set_title("Permutation null distribution")
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"observed |mean diff|      = {T_obs:.3f}")
+print(f"relabelings beating it    = {b} of {B}")
+print(f"two-sided perm p-value    = (b+1)/(B+1) = {p_mc:.5f}")
+```
+
+The observed gap of about $`{python} f"{T_obs:.1f}"`$ points is matched-or-beaten by only a
+handful of the 50,000 relabelings, giving a permutation p-value of about
+$`{python} f"{p_mc:.4f}"`$ — strong evidence the groups differ. Now the question every
+examiner asks: **does this agree with the $t$-test?**
+
+```{python}
+#| label: fig-perm-vs-t
+#| fig-cap: 'Permutation null vs. the Normal-theory $t$ null, same data. The histogram is the permutation null distribution of the *standardized* statistic (the two-sample $t$); the red curve is the theoretical $t_\nu$ density the classical test assumes. They nearly coincide here, so the two p-values agree to three decimals — under conditions kind to the $t$-test, the permutation test reproduces it. The permutation test did not *need* the curve; it built its own and happened to match.'
+from math import gamma as Gamma
+
+# Standardized (pooled-variance two-sample t) statistic, so we can overlay Student's t.
+def tstat(a, b_):
+    na, nb = len(a), len(b_)
+    sp2 = ((na - 1) * a.var(ddof=1) + (nb - 1) * b_.var(ddof=1)) / (na + nb - 2)
+    return (b_.mean() - a.mean()) / np.sqrt(sp2 * (1 / na + 1 / nb))
+
+t_obs = tstat(control, caffeine)
+r2 = np.random.default_rng(11)
+Tnull_t = np.empty(B)
+for j in range(B):
+    perm = r2.permutation(pooled)
+    Tnull_t[j] = tstat(perm[:m], perm[m:])
+p_perm_t = (np.sum(np.abs(Tnull_t) >= abs(t_obs)) + 1) / (B + 1)
+
+# Student-t density (pooled df) drawn by hand from its definition.
+nu = m + n - 2
+def t_pdf(x, nu):
+    c = Gamma((nu + 1) / 2) / (np.sqrt(nu * np.pi) * Gamma(nu / 2))
+    return c * (1 + x ** 2 / nu) ** (-(nu + 1) / 2)
+# Classical two-sided t p-value via the t CDF (numeric integral of the density).
+xs_int = np.linspace(0, abs(t_obs), 2000)
+upper_tail = 0.5 - np.trapezoid(t_pdf(xs_int, nu), xs_int)  # P(T > |t_obs|)
+p_t_classical = 2 * upper_tail
+
+fig, ax = plt.subplots()
+ax.hist(Tnull_t, bins=70, density=True, color=FILL, edgecolor="white",
+        linewidth=0.3, label="permutation null of $t$")
+xs = np.linspace(-5, 5, 400)
+ax.plot(xs, t_pdf(xs, nu), color=REJECT, lw=2.0, label=f"Student $t_{{{nu}}}$ density")
+ax.axvline(t_obs, color=OBS, lw=2.0, label=f"observed $t$ = {t_obs:.2f}")
+ax.set_xlabel("two-sample $t$ statistic under relabeling")
+ax.set_ylabel("density"); ax.set_title("Permutation null matches the $t$ curve here")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+print(f"permutation p (t statistic)  = {p_perm_t:.4f}")
+print(f"classical t-test p-value     = {p_t_classical:.4f}")
+```
+
+The two p-values agree to about three decimals. This is the reassuring half of the
+relationship: **under conditions kind to the $t$-test (roughly symmetric, light-tailed
+data), the permutation test reproduces it** — Pitman showed the permutation distribution of
+the $t$-statistic converges to Student's $t$ as $n$ grows. So you lose nothing by
+permuting when the $t$-test was valid; you simply stop *relying* on its assumption. The
+interesting half — where they *disagree* — is next.
+
+## Example 1b — where it beats the t-test: heavy tails at small n {#sec-ex-heavy-tail}
+
+The agreement above was on benign data. Now the honest stress test: a *true null* (both
+groups drawn from the **same** extremely heavy-tailed distribution — a $t_{1.2}$, whose
+tails are so fat that even its *mean* barely exists), tiny samples ($n_1=n_2=8$), and the
+question every interviewer wants — *does the permutation test keep its 5% level where the
+classical $t$-test does not?* We simulate under $H_0$ and record the actual Type I rate of
+each. The interesting failure here is **conservatism**: a single fat-tailed outlier
+inflates the pooled variance, shrinks the $t$-statistic, and the Normal-theory $t$-test
+quietly under-rejects — buying its "safety" with lost power, on a null distribution that is
+simply the wrong shape.
+
+```{python}
+#| label: fig-heavy-tail
+#| fig-cap: 'Why permute under heavy tails. We simulate under a TRUE two-sample null with both groups i.i.d. from a $t_{1.2}$ distribution (tails so heavy the mean barely exists), $n_1=n_2=8$, over 3000 datasets, and record each test''s actual Type I rate at nominal $\alpha=0.05$. The permutation test on the mean-difference (orange) holds its level almost exactly, because the two groups ARE exchangeable under this null regardless of the tail shape. The classical $t$-test (red) is distorted -- markedly conservative: fat-tailed outliers inflate the pooled variance and shrink the statistic, so its Normal-theory null is the wrong shape and it under-rejects, losing power. Same data, same statistic, different null distribution -- and only the permutation null is correct here.'
+from math import erf, sqrt
+
+from math import gamma as Gfun
+
+def pooled_t(a, b_):
+    na, nb = len(a), len(b_)
+    sp2 = ((na-1)*a.var(ddof=1) + (nb-1)*b_.var(ddof=1)) / (na+nb-2)
+    return (b_.mean() - a.mean()) / np.sqrt(sp2 * (1/na + 1/nb))
+
+# Monte-Carlo Type I study: both groups from the same t_{1.2}, so the null is TRUE.
+n1 = n2 = 8
+nsim = 3000
+nu_t = n1 + n2 - 2
+sims = np.random.default_rng(2025)
+rej_perm = 0
+rej_tclassic = 0
+for s in range(nsim):
+    a = sims.standard_t(df=1.2, size=n1)      # both groups SAME distribution -> null TRUE
+    b_ = sims.standard_t(df=1.2, size=n2)
+    # permutation p on |mean diff|
+    pool = np.concatenate([a, b_])
+    T0 = abs(a.mean() - b_.mean())
+    rr = np.random.default_rng(10_000 + s)
+    B = 499
+    hits = 0
+    for _ in range(B):
+        pp = rr.permutation(pool)
+        if abs(pp[:n1].mean() - pp[n1:].mean()) >= T0:
+            hits += 1
+    if (hits + 1) / (B + 1) <= 0.05:
+        rej_perm += 1
+    # classical pooled t, two-sided, via t_nu tail
+    tval = abs(pooled_t(a, b_))
+    xs_i = np.linspace(0, tval, 800)
+    cc = Gfun((nu_t+1)/2) / (np.sqrt(nu_t*np.pi) * Gfun(nu_t/2))
+    dens = cc * (1 + xs_i**2/nu_t) ** (-(nu_t+1)/2)
+    p_t = 2 * (0.5 - np.trapezoid(dens, xs_i))
+    if p_t <= 0.05:
+        rej_tclassic += 1
+
+rate_perm = rej_perm / nsim
+rate_t = rej_tclassic / nsim
+
+fig, ax = plt.subplots()
+ax.bar([0, 1], [rate_perm, rate_t], color=[PERM, REJECT], width=0.55)
+ax.axhline(0.05, color=GREY, ls="--", lw=1.6, label="nominal $\\alpha=0.05$")
+for i, rt in enumerate([rate_perm, rate_t]):
+    ax.text(i, rt + 0.002, f"{rt:.3f}", ha="center", fontsize=11)
+ax.set_xticks([0, 1]); ax.set_xticklabels(["permutation\n(mean diff)", "classical\n$t$-test"])
+ax.set_ylabel("actual Type I rate"); ax.set_ylim(0, max(0.09, max(rate_perm, rate_t) * 1.4))
+ax.set_title(r"Same null ($t_{1.2}$ data, $n=8$): who keeps their level?")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"permutation Type I rate = {rate_perm:.3f}")
+print(f"classical t Type I rate = {rate_t:.3f}  (nominal 0.05)")
+```
+
+The permutation test sits on $0.05$; the classical $t$-test misses it, because at
+$n_1=n_2=8$ the $t_{14}$ reference distribution it assumes (which is only correct when the
+*data* are Normal) is the wrong shape for $t_{1.2}$ data, while the permutation null is —
+by @thm-exactness — *exactly* right no matter how fat the tails. This is the payoff the
+abstract promised: **permutation matches the $t$-test when the $t$-test is valid and beats
+it when it is not**, at no cost beyond a few thousand reshuffles. (Note this null *is*
+exchangeable — both groups share one distribution — which is why the permutation test is
+exact here; contrast @sec-behrens-fisher, where the null is *not* exchangeable and even
+permutation needs care.)
+
+## Example 2 — testing a correlation by permuting one column {#sec-ex-correlation}
+
+We have $n = 30$ paired observations of two variables and want to test whether they are
+associated. The null $H_0: X \perp Y$ makes the *pairing* arbitrary, so we permute the
+$y$-column against a fixed $x$-column. The statistic is the Pearson correlation
+$T = r(x, y)$ (two-sided, by $|r|$). Crucially, **we never need the sampling distribution
+of $r$** — the messy Fisher $z$-transform of classical theory — because we build the null
+by reshuffling.
+
+```{python}
+#| label: fig-correlation
+#| fig-cap: 'Permutation test of correlation, $n=30$. **Left:** the scatter of $(x,y)$ with the observed Pearson $r$; there is a visible positive tilt. **Right:** the permutation null distribution of $r$, built by shuffling the $y$-column 50,000 times so the pairing is random. It is centered at zero (independence implies no association on average) and roughly symmetric; the observed $r$ (green) sits in the right tail. The two-sided p-value is the fraction of shuffles with $|r|\ge|r_{\mathrm{obs}}|$.'
+gcorr = np.random.default_rng(404)        # dedicated generator: reproducible, independent of upstream figures
+nC = 30
+x = gcorr.normal(0, 1, size=nC)
+y = 0.65 * x + gcorr.normal(0, 1.0, size=nC)   # a genuine, moderate association
+
+def pearson(a, b_):
+    a0, b0 = a - a.mean(), b_ - b_.mean()
+    return np.sum(a0 * b0) / np.sqrt(np.sum(a0 ** 2) * np.sum(b0 ** 2))
+
+r_obs = pearson(x, y)
+B = 50_000
+rp = np.random.default_rng(21)
+r_null = np.empty(B)
+for j in range(B):
+    r_null[j] = pearson(x, rp.permutation(y))
+b = int(np.sum(np.abs(r_null) >= abs(r_obs)))
+p_corr = (b + 1) / (B + 1)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.scatter(x, y, color=DATA, s=35, alpha=0.85)
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$")
+axL.set_title(f"Observed data, $r = {r_obs:.3f}$")
+axR.hist(r_null, bins=60, color=FILL, edgecolor="white", linewidth=0.3)
+axR.axvline(r_obs, color=OBS, lw=2.2, label=f"observed $r$ = {r_obs:.3f}")
+axR.axvline(-r_obs, color=OBS, lw=1.2, ls=":")
+axR.set_xlabel("$r$ under random pairing"); axR.set_ylabel("count")
+axR.set_title("Permutation null of the correlation")
+axR.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"observed Pearson r       = {r_obs:.4f}")
+print(f"shuffles with |r|>=|r_obs| = {b} of {B}")
+print(f"two-sided perm p-value   = {p_corr:.5f}")
+```
+
+The null distribution of $r$ is centered at $0$ — under independence, random pairings
+produce no systematic correlation — and the observed $r \approx `{python} f"{r_obs:.2f}"`$
+sits far enough out to give $p \approx `{python} f"{p_corr:.4f}"`$. Notice what we
+*sidestepped*: the exact small-sample distribution of $r$ is genuinely awkward (it depends
+on the joint distribution of $X$ and $Y$), and the classical test only gets a clean answer
+by assuming bivariate Normality and using the Fisher transform. The permutation test needs
+none of that. It also generalizes for free: swap Pearson's $r$ for Spearman's $\rho$,
+Kendall's $\tau$, distance correlation, or a mutual-information estimate, and the *exact same
+shuffling machinery* delivers a valid test — you only change the line that computes the
+statistic.
+
+## Example 3 — a paired design: exchangeability lives within pairs {#sec-ex-paired}
+
+The most instructive example, because the naive permutation is *wrong*. We measure each of
+$n = 14$ subjects **before and after** an intervention; the data are paired
+$(b_i, a_i)$, and we test whether the intervention shifts the outcome. If you pool all 28
+numbers and shuffle the before/after labels freely — the Example-1 recipe — **you have
+broken the design**: a subject's before and after values are correlated (some people just
+score high), so the 28 values are *not* exchangeable across subjects.
+
+The null that *does* supply exchangeability is "the intervention has no effect, so within
+each subject the before/after labeling is arbitrary." That means the valid relabeling is to
+independently **flip the sign of each within-pair difference** $d_i = a_i - b_i$ — under the
+null, each $d_i$ is as likely to be $+d_i$ as $-d_i$. With $n = 14$ pairs there are
+$2^{14} = 16{,}384$ sign patterns, small enough to enumerate exactly.
+
+```{python}
+#| label: fig-paired
+#| fig-cap: 'Paired permutation test by sign-flipping, $n=14$ subjects. **Left:** before/after pairs joined by lines; most subjects improve. **Right:** the exact null distribution of the mean within-pair difference $\bar d$, built by enumerating all $2^{14}$ ways to flip the signs of the differences (the within-pair exchangeability the null supplies). The observed $\bar d$ (green) is far in the tail. The wrong, pooled relabeling would have given a different and invalid null.'
+before = np.array([52, 60, 47, 55, 63, 49, 58, 51, 66, 44, 57, 53, 61, 48.])
+after  = np.array([58, 62, 54, 57, 70, 55, 60, 56, 69, 52, 63, 55, 67, 53.])
+d = after - before
+nP = len(d)
+dbar_obs = d.mean()
+
+# Exact enumeration of all 2^n sign flips.
+from itertools import product
+signs = np.array(list(product([1, -1], repeat=nP)))   # shape (2^n, n)
+dbar_null = (signs * d).mean(axis=1)
+b = int(np.sum(np.abs(dbar_null) >= abs(dbar_obs)))
+p_paired = b / signs.shape[0]   # exact enumeration includes the observed (all +1) row
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+for i in range(nP):
+    axL.plot([0, 1], [before[i], after[i]], color=GREY, lw=1.0, alpha=0.7)
+axL.scatter(np.zeros(nP), before, color=DATA, s=35, label="before", zorder=3)
+axL.scatter(np.ones(nP),  after,  color=OBS,  s=35, label="after",  zorder=3)
+axL.set_xticks([0, 1]); axL.set_xticklabels(["before", "after"])
+axL.set_ylabel("score"); axL.set_title("Paired measurements")
+axL.legend(loc="lower right", fontsize=9, framealpha=0.9)
+
+axR.hist(dbar_null, bins=50, color=FILL, edgecolor="white", linewidth=0.3)
+axR.axvline(dbar_obs, color=OBS, lw=2.2, label=fr"observed $\bar d$ = {dbar_obs:.2f}")
+axR.axvline(-dbar_obs, color=OBS, lw=1.2, ls=":")
+axR.set_xlabel(r"$\bar d$ under sign flips"); axR.set_ylabel("count")
+axR.set_title(r"Exact null over all $2^{14}$ sign patterns")
+axR.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"observed mean difference  dbar = {dbar_obs:.3f}")
+print(f"sign patterns as extreme       = {b} of {signs.shape[0]} = 2^{nP}")
+print(f"exact two-sided perm p-value   = {p_paired:.6f}")
+```
+
+The exact p-value over all $16{,}384$ sign patterns is about
+$`{python} f"{p_paired:.4f}"`$ — the intervention shifts the score. This is the
+permutation analogue of the **paired $t$-test**, and it makes the design-respecting logic
+visible: *what is exchangeable under the null is the sign of each difference, not the
+pooled values.* The lesson generalizes to every blocked or stratified design — you permute
+*within* the blocks that the null leaves symmetric, never across them.
+
+::: {.callout-tip title="You might be asked"}
+*"You have a paired experiment — can you just permute the two columns freely?"* No, and
+this is the most common permutation-test mistake. Free permutation assumes the 28 values
+are exchangeable, but pairing induces within-subject correlation that pooling destroys —
+the free-permutation null is the *wrong* distribution and the test loses its level. The
+correct relabeling is whatever the null actually makes symmetric: here, sign-flipping the
+within-pair differences (each $d_i \to \pm d_i$). The rule to recite: **permute within the
+strata the null treats as exchangeable, and only those.**
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The permutation test's exactness (@thm-exactness) rests entirely on one hypothesis:
+exchangeability under $H_0$. The honest treatment is to show where that hypothesis quietly
+fails — because when it does, the test keeps producing confident p-values that no longer
+mean what they claim.
+
+## Unequal variances under a "means" null: the Behrens–Fisher trap {#sec-behrens-fisher}
+
+The classic failure. Suppose you intend to test *equality of means* but the two groups have
+**different variances**. Now the two-sample permutation null ("the labels are
+exchangeable") corresponds to $F_A = F_B$ — equal *distributions*, hence equal variances
+too. If the variances actually differ, the pooled values are **not exchangeable** under the
+means-null, and the permutation test's level is no longer guaranteed. @fig-behrens shows
+the damage: a Monte-Carlo study under a *true* null of equal means but unequal variances,
+where the permutation test on the raw mean-difference rejects more (or less) than its
+nominal 5%.
+
+```{python}
+#| label: fig-behrens
+#| fig-cap: "The Behrens-Fisher trap. We simulate under a TRUE null of equal means but UNEQUAL variances and unequal group sizes, and record the actual Type I rate of three nominal-5% tests over 2000 datasets. The permutation test on the raw mean-difference (orange) drifts off 5% because equal-means-with-unequal-variances is not exchangeable. The Welch t-test (green) and a permutation test on the Welch-studentized statistic (blue) stay near 5%, because studentizing removes the variance the relabeling cannot see. Exactness is a property of exchangeability, not of permuting per se."
+from math import erf, sqrt
+def welch_t(a, b_):
+    return (a.mean() - b_.mean()) / np.sqrt(a.var(ddof=1)/len(a) + b_.var(ddof=1)/len(b_))
+
+def perm_p(a, b_, statfn, B=1500, seed=0):
+    pool = np.concatenate([a, b_]); ma = len(a)
+    T0 = abs(statfn(a, b_))
+    rr = np.random.default_rng(seed)
+    hits = 0
+    for _ in range(B):
+        pp = rr.permutation(pool)
+        if abs(statfn(pp[:ma], pp[ma:])) >= T0:
+            hits += 1
+    return (hits + 1) / (B + 1)
+
+n_sim = 2000
+ma, mb = 10, 30          # unequal sizes amplify the problem
+sa, sb = 1.0, 3.0        # unequal variances; means both 0 (null TRUE)
+rej_perm_raw, rej_perm_welch, rej_welch = 0, 0, 0
+sims = np.random.default_rng(2024)
+for s in range(n_sim):
+    a = sims.normal(0, sa, ma)
+    b_ = sims.normal(0, sb, mb)
+    # raw mean-difference permutation
+    if perm_p(a, b_, lambda u, v: u.mean() - v.mean(), B=999, seed=s) <= 0.05:
+        rej_perm_raw += 1
+    # Welch-studentized permutation
+    if perm_p(a, b_, welch_t, B=999, seed=s + 99999) <= 0.05:
+        rej_perm_welch += 1
+    # classical Welch t (two-sided, normal approx to its t df is fine for the rate)
+    tv = welch_t(a, b_)
+    # Welch df
+    va, vb = a.var(ddof=1)/ma, b_.var(ddof=1)/mb
+    nu = (va + vb) ** 2 / (va**2/(ma-1) + vb**2/(mb-1))
+    # two-sided p via normal tail as a quick stand-in (df large enough here)
+    p_w = 2 * (1 - 0.5 * (1 + erf(abs(tv) / sqrt(2))))
+    if p_w <= 0.05:
+        rej_welch += 1
+
+rates = [rej_perm_raw/n_sim, rej_welch/n_sim, rej_perm_welch/n_sim]
+labels = ["perm (raw\nmean diff)", "Welch t", "perm (Welch-\nstudentized)"]
+colors = [PERM, OBS, DATA]
+fig, ax = plt.subplots()
+ax.bar(np.arange(3), rates, color=colors, width=0.6)
+ax.axhline(0.05, color=REJECT, ls="--", lw=1.6, label="nominal $\\alpha=0.05$")
+for i, rt in enumerate(rates):
+    ax.text(i, rt + 0.003, f"{rt:.3f}", ha="center", fontsize=10)
+ax.set_xticks(np.arange(3)); ax.set_xticklabels(labels, fontsize=9)
+ax.set_ylabel("actual Type I rate"); ax.set_ylim(0, max(0.12, max(rates) * 1.3))
+ax.set_title("Equal means, unequal variances: who keeps their level?")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+for lab, rt in zip(["perm-raw", "Welch-t", "perm-Welch"], rates):
+    print(f"{lab:>12}: Type I = {rt:.3f}")
+```
+
+Read the bars: the raw-mean-difference permutation test, run on data that are *not*
+exchangeable under the means-null, departs from $0.05$ — its "exact" guarantee is void. The
+fix is the same one Welch invented for the $t$-test ([INFR-C2], [INFR-D2]): permute a
+**studentized** statistic (the Welch $t$, which divides by each group's own standard error)
+rather than the raw difference. Studentizing makes the statistic approximately
+pivotal — insensitive to the nuisance variances — so the test regains (approximate)
+validity even when only the means are equal. The general principle, due to the modern
+permutation-test literature:
+
+::: {.callout-warning title="Pitfall"}
+**Permute a studentized (pivotal) statistic, not a raw one, whenever a nuisance parameter
+can differ under the null you care about.** A permutation test is exact only for the null
+that makes the data exchangeable — usually "identical distributions." If your real null is
+weaker ("equal means," allowing unequal variances), permuting the raw mean-difference tests
+the *wrong* null and can be anti-conservative. Permuting the Welch-studentized statistic
+restores approximate validity because the studentized statistic does not depend on the
+variances the relabeling cannot reproduce. "Permutation test" is not a synonym for
+"assumption-free"; it relocates the assumption from *Normality* to *exchangeability*, and
+you must check the latter.
+:::
+
+## Dependence: exchangeability fails when order matters {#sec-dependence}
+
+Permutation destroys order. If the data are a **time series** — autocorrelated, trending,
+or seasonal — then the ordering carries information, the observations are *not*
+exchangeable, and shuffling them manufactures a null distribution that is far too narrow
+(it scrambles away the dependence, making the data look more informative than it is). The
+result is a permutation test that rejects wildly too often.
+
+```{python}
+#| label: fig-dependence
+#| fig-cap: 'Permutation breaks on dependent data. Two autocorrelated time series ($AR(1)$, $\phi=0.8$) are generated INDEPENDENTLY of each other (true correlation null). The histogram is the permutation null of their correlation, built by shuffling one series; it is far too narrow because shuffling destroys the within-series dependence. The true sampling distribution of the correlation between two independent $AR(1)$ series (red curve, from a proper simulation that regenerates whole series) is much wider. The observed values routinely fall in the permutation tail, so the permutation test fabricates significance that is not there.'
+def ar1(nlen, phi, gen):
+    e = gen.normal(0, 1, nlen); z = np.empty(nlen); z[0] = e[0]
+    for t in range(1, nlen):
+        z[t] = phi * z[t-1] + e[t]
+    return z
+
+nT, phi = 120, 0.8
+gA = np.random.default_rng(5)
+# Permutation null: one realization, shuffle one series.
+xa = ar1(nT, phi, gA); ya = ar1(nT, phi, gA)
+def pear(a, b_):
+    a0, b0 = a - a.mean(), b_ - b_.mean()
+    return np.sum(a0*b0) / np.sqrt(np.sum(a0**2)*np.sum(b0**2))
+perm_null = np.array([pear(xa, gA.permutation(ya)) for _ in range(20000)])
+# TRUE null: regenerate whole independent AR(1) pairs and correlate.
+gB = np.random.default_rng(9)
+true_null = np.array([pear(ar1(nT, phi, gB), ar1(nT, phi, gB)) for _ in range(20000)])
+
+fig, ax = plt.subplots()
+ax.hist(perm_null, bins=60, density=True, color=FILL, edgecolor="white",
+        linewidth=0.3, label="permutation null (shuffle one series)")
+ax.hist(true_null, bins=60, density=True, histtype="step", color=REJECT,
+        linewidth=2.0, label="true null (independent AR(1) pairs)")
+ax.set_xlabel("correlation between the two series")
+ax.set_ylabel("density")
+ax.set_title("Permutation null is far too narrow under dependence")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+# Quantify: how often does an independent AR(1) pair land in the permutation 5% tails?
+cut = np.quantile(np.abs(perm_null), 0.95)
+false_rej = np.mean(np.abs(true_null) >= cut)
+print(f"permutation 95% |r| cutoff       = {cut:.3f}")
+print(f"true independent pairs beyond it = {false_rej:.3f}  (should be ~0.05)")
+```
+
+The printed false-rejection rate is many times the nominal $0.05$: under genuine
+independence, autocorrelated series exceed the permutation cutoff far too often. **When you
+reach for something else:** for dependent data you must permute in a way that *preserves*
+the dependence — **block permutation** (shuffle contiguous blocks, not individual points),
+the **block bootstrap** ([INFR-E1] flagged this), or a model-based test that explicitly
+accounts for the autocorrelation. Naive permutation is simply the wrong tool when order
+carries information.
+
+## What permutation tests cannot give you: a confidence interval {#sec-no-ci}
+
+A subtler boundary. A permutation test answers *"is the effect distinguishable from no
+effect?"* — a test of a sharp null. It does **not**, by itself, hand you a confidence
+interval for the effect size, because its machinery is tied to the *null* of no effect, not
+to estimating a parameter under the alternative. For an interval you turn to the
+**bootstrap** ([INFR-E1], [INFR-E2]), which is built around the *sampling distribution of
+the estimator* rather than the null's symmetry. (One can invert a *family* of permutation
+tests — shift the data by a candidate effect $\delta$ and test the null "effect $= \delta$"
+— to obtain an interval, but that requires a location-shift model and is far more work than
+a bootstrap interval.) This is the cleanest statement of the division of labor in movement
+E: **permutation for testing, bootstrap for intervals.**
+
+::: {.callout-tip title="You might be asked"}
+*"When is a permutation test the right tool, and when is it the wrong one?"* The summary
+you should be able to recite:
+
+- **Use it** when (a) the null hypothesis supplies a clear **exchangeability** structure
+  ("the labels are arbitrary," "the pairing is arbitrary"), (b) you are unwilling to assume
+  Normality or the sample is too small for the CLT, or (c) your test statistic has **no
+  tractable null distribution** (difference of medians, a custom statistic, an odd
+  correlation measure). In that regime it is the most honest test available: exact level,
+  distribution-free, and adaptable to any statistic by changing a single line of code.
+- **Do not use it** when exchangeability fails: **dependent data** (time series, spatial,
+  clustered — permute in blocks or model the dependence instead), or a **nuisance
+  parameter that differs under your null** (unequal variances under an equal-means null —
+  permute a *studentized* statistic, à la Welch). Do not use it when you actually need a
+  **confidence interval** (reach for the bootstrap), and remember its discreteness limits
+  the attainable p-values at very small $n$.
+- **The deepest caveat:** "permutation test" is often misheard as "assumption-free." It is
+  not. It trades the *Normality* assumption for the *exchangeability* assumption — a weaker
+  and usually more defensible one, but an assumption all the same, and the entire validity
+  of the test rests on it being true.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You rarely hand-roll the loop.
+`scipy.stats.permutation_test` takes your data, your statistic (any callable), and a
+`permutation_type` (`'independent'` for two-sample, `'samples'` for paired sign-flipping,
+`'pairings'` for correlation) and returns the Monte-Carlo p-value computed with the correct
+$(b+1)/(B+1)$ convention; set `n_resamples` to choose $B$ (or request the exact
+enumeration when $|\mathcal{G}|$ is small). For correlations, `scipy.stats.pearsonr` and
+`spearmanr` accept a `permutation` argument; for the classic small-table case,
+`scipy.stats.fisher_exact` *is* the exhaustive permutation test of the lady-tasting-tea
+form (@sec-intuition). Internally these do exactly what we did by hand: relabel, recompute
+the statistic, count the fraction at least as extreme — and they include the observed data
+as its own relabeling, which is why their smallest p-value is $1/(B+1)$, never zero. You
+now know what the library is doing and, more importantly, *which* permutation scheme it is
+applying and whether that scheme matches the exchangeability your null actually supplies.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-E1 *The Bootstrap*]** (the resampling instinct and the
+with/without-replacement contrast) and **[INFR-D1 *The Logic of Hypothesis Testing*]** (the
+null, the statistic, the p-value as tail probability). This article completed the
+computational-inference pair by building **exact, distribution-free tests from
+exchangeability alone**. From here:
+
+- **[INFR-D5 *Multiple Comparisons*]** uses permutation to control the **family-wise error
+  rate** directly: permuting the labels jointly across many test statistics builds the null
+  distribution of their *maximum*, giving the **max-T / Westfall–Young** procedure — a
+  permutation method that beats Bonferroni by exploiting the correlation among tests.
+- **[INFR-D2 *The Workhorse Tests*]** is the assumption-laden counterpart: its $z$, $t$,
+  $\chi^2$, and $F$ tests are the fast analytic answers the permutation test reproduces
+  under their assumptions and outperforms when those assumptions fail. Several of its
+  callouts forwarded here for exactly the small-sample and sparse-count cases.
+- **[INFR-E2 *Bootstrap Confidence Intervals*]** is the complement: where permutation tests
+  the null, the bootstrap *estimates* and brackets the effect. Together they cover
+  assumption-light inference — testing and intervals — end to end.
+- **[INFR-C2 *The t-Distribution*]** supplies the Welch correction whose *studentized*
+  statistic we permute in @sec-behrens-fisher to survive unequal variances.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** R. A. Fisher, *The Design of Experiments* (1935) — the lady tasting
+  tea and the original randomization argument. E. J. G. Pitman, "Significance tests which
+  may be applied to samples from any populations" (*JRSS Suppl.*, 1937–38) — the general
+  theory and the proof that the permutation $t$ distribution converges to Student's $t$.
+- **The modern treatment.** Phillip Good, *Permutation, Parametric, and Bootstrap Tests of
+  Hypotheses* (3rd ed.) for breadth; B. Efron and R. Tibshirani, *An Introduction to the
+  Bootstrap* (1993), ch. 15, for the bootstrap–permutation relationship; Westfall & Young,
+  *Resampling-Based Multiple Testing* (1993) for the max-T procedure that feeds [INFR-D5].
+- **On exactness and studentization.** A. C. A. Hoeffding's randomization results and the
+  modern result (Janssen; Chung & Romano, 2013) that permuting a *studentized* statistic
+  yields asymptotically valid tests even when exchangeability fails for the raw statistic —
+  the rigorous backbone of the Behrens–Fisher fix in @sec-behrens-fisher.
+- **Open threads this article deliberately deferred.** *How do you permute when the data
+  are dependent?* — block and restricted permutation schemes, which preserve the dependence
+  the naive shuffle destroys (@sec-dependence). *Can a permutation test give an interval?* —
+  yes, by inverting a location-shift family of tests, but the bootstrap ([INFR-E2]) is
+  almost always the better route. *What is the relationship to rank tests?* — the
+  Mann–Whitney/Wilcoxon and Kruskal–Wallis tests are exactly permutation tests applied to
+  the *ranks* of the data, which is why they too are distribution-free.

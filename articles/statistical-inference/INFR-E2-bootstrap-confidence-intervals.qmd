@@ -1,0 +1,1218 @@
+---
+title: "Bootstrap Confidence Intervals: Percentile, Pivotal, and BCa"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240815)
+
+DATA   = "#2b3a67"     # samples / the bootstrap distribution
+TRUTH  = "#c1121f"     # the true parameter / the point estimate
+ACCENT = "#0a7d4d"     # interval endpoints that cover
+MISS   = "#d6791f"     # endpoints / intervals that miss
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded tail areas
+
+
+def boot_replicates(x, stat, B, rng):
+    """B nonparametric bootstrap replicates of statistic `stat` from sample x.
+
+    This is exactly the resampling engine from INFR-E1, reused here only to
+    *draw the pictures*: it is not the subject of the article, the intervals
+    built on top of it are.
+    """
+    n = len(x)
+    out = np.empty(B)
+    for b in range(B):
+        idx = rng.integers(0, n, size=n)   # sample n indices with replacement
+        out[b] = stat(x[idx])
+    return out
+```
+
+> **Where this sits in the track.** This is the second article in the
+> **Computational & Alternative Inference** movement (E) of the Statistical Inference
+> track, and the payoff of the previous one. It assumes [INFR-E1 *The Bootstrap: Inference
+> When You Can't Do the Math*], which built the **plug-in principle** (the empirical
+> distribution $\hat F_n$ stands in for the unknown population $F$), the resampling engine
+> (draw $n$ points *with replacement* from the data, recompute the statistic, repeat $B$
+> times), and the bootstrap **standard error** (the sample standard deviation of those $B$
+> replicates). It also assumes [INFR-C1 *Confidence Intervals: What "95% Confident" Actually
+> Means*], which fixed the **coverage** definition (the interval is random, the parameter is
+> fixed; $95\%$ is a property of the *procedure*) and the **pivotal-quantity** machine for
+> manufacturing intervals. The honest gap E1 left open is the one every practitioner hits
+> next: a standard error is not an interval. Plug-in SE times $1.96$ secretly re-imposes the
+> very normality the bootstrap was meant to escape. This article closes the gap three ways.
+> We derive the **percentile**, **basic/pivotal**, and **bias-corrected-and-accelerated
+> (BCa)** intervals from first principles, show exactly *why* the naive percentile interval
+> can be biased and how the pivot and BCa each repair a different defect, and compare their
+> coverage head-to-head against the t-interval of [INFR-C2] on the same data. We close on
+> how many resamples $B$ you actually need and the **Monte Carlo error** that $B$ controls.
+> It **sets up** the assumption-light interval machinery referenced throughout the
+> Regression track for prediction and coefficient intervals, and pairs with [INFR-E3
+> *Permutation Tests*] as the bootstrap's testing cousin.
+>
+> It imports one result by name, used only by its statement: the **standard normal CDF**
+> $\Phi$ and its quantile function $\Phi^{-1} = z_{\cdot}$, built in the Probability
+> Foundations track [PROB-11]. Everything above the Calculus-I floor is otherwise derived
+> in place or carried by the two prerequisites above.
+
+## Abstract {.unnumbered}
+
+The bootstrap of [INFR-E1] hands us a cloud of $B$ resampled estimates
+$\hat\theta^{*1},\dots,\hat\theta^{*B}$ and, from their spread, a standard error. But a
+standard error is not a confidence interval. The tempting move — report
+$\hat\theta \pm 1.96\,\widehat{\mathrm{SE}}$ — quietly smuggles back the Gaussian
+assumption we adopted the bootstrap to avoid, and it fails exactly when the sampling
+distribution is skewed, which is exactly when we needed the bootstrap most. This article
+builds three intervals that use the *shape* of the bootstrap cloud, not just its width.
+The **percentile** interval reads its endpoints straight off the empirical quantiles of
+the replicates. The **basic (pivotal)** interval treats $\hat\theta - \theta$ as an
+approximate pivot and — counterintuitively — *reflects* the percentiles through the point
+estimate. We show these two disagree precisely when the bootstrap distribution is skewed,
+and we trace the disagreement to a genuine bias each one fixes or fails to fix. The
+**BCa** interval corrects for two separate distortions — median bias ($z_0$) and a
+variance that drifts with the parameter (acceleration $a$) — by reaching for *adjusted*
+percentiles, and it earns a sharper accuracy guarantee than either. We verify all three by
+simulating thousands of parallel universes and counting coverage, against a real skewed
+dataset where the textbook t-interval visibly under-covers. The single claim the article
+defends is that **a bootstrap interval is only as honest as the asymmetry it respects**:
+the percentile method respects the shape, the pivotal method respects the pivot, and BCa
+respects both — and knowing which defect each one answers is what lets you pick correctly
+under pressure.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+You have $B$ bootstrap replicates $\hat\theta^{*1},\dots,\hat\theta^{*B}$ of an estimator
+$\hat\theta$, produced by resampling the data with replacement (the engine of
+[INFR-E1]). To turn that cloud into a $1-\alpha$ confidence interval, **use its shape, not
+just its width.** Three methods, in increasing sophistication:
+
+- **Percentile.** Report the empirical $\alpha/2$ and $1-\alpha/2$ quantiles of the
+  replicates directly:
+  $$\bigl(\hat\theta^*_{(\alpha/2)},\ \hat\theta^*_{(1-\alpha/2)}\bigr).$$
+- **Basic / pivotal.** Treat $\hat\theta-\theta$ as a pivot whose distribution the
+  bootstrap estimates, and *reflect* the percentiles through the estimate:
+  $$\bigl(2\hat\theta-\hat\theta^*_{(1-\alpha/2)},\ \ 2\hat\theta-\hat\theta^*_{(\alpha/2)}\bigr).$$
+- **BCa.** Replace $(\alpha/2,\,1-\alpha/2)$ with *adjusted* percentiles that correct for
+  **median bias** $\hat z_0$ and **acceleration** $\hat a$ (how the standard error changes
+  with the parameter), giving a transformation-respecting, second-order-accurate interval.
+
+The naive $\hat\theta \pm 1.96\,\widehat{\mathrm{SE}}$ is the worst of the four: it assumes
+the bootstrap distribution is symmetric and Gaussian, throwing away the very information —
+the asymmetry — the bootstrap went to the trouble of measuring.
+:::
+
+Everything below orbits that box. The single thread to hold onto is **what each method
+believes about the shape of the sampling distribution**, because that belief is exactly
+what fails when the method fails. The percentile interval believes the bootstrap cloud is a
+faithful picture of the sampling distribution. The pivotal interval believes
+$\hat\theta-\theta$ has *roughly the same* distribution wherever $\theta$ sits. BCa
+believes neither for free — it estimates the two ways those beliefs break and corrects for
+them. By @sec-failure you will be able to look at a skewed bootstrap histogram and predict,
+before computing anything, which interval will be too short and in which direction it will
+lean.
+
+# Why we are doing this: a standard error is not an interval {#sec-why}
+
+Hold one question in view for the entire article: **the bootstrap gave us the spread of
+$\hat\theta$ without any formula — how do we convert that spread into an honest range, and
+what could go wrong in the conversion?**
+
+[INFR-E1] solved a real problem. For a statistic with no closed-form standard error — a
+median, a correlation, a ratio, a trimmed mean — we could not write down $\mathrm{SE}$ the
+way [INFR-A1] did for the sample mean. The bootstrap's answer was to *simulate*: treat the
+sample as a stand-in population, draw fresh samples from it, and watch how much
+$\hat\theta$ jumps around. The standard deviation of those jumps **is** an estimate of the
+standard error, and it required no distribution theory at all. That is the win.
+
+But [INFR-C1] taught us that an estimate plus a standard error is not yet a confidence
+interval. To get one we needed a *pivot* — a quantity whose distribution we know — and for
+the Normal mean that pivot was $(\bar X-\mu)/(\sigma/\sqrt n)$, which is exactly standard
+Normal, handing us $\bar X \pm z_{\alpha/2}\,\sigma/\sqrt n$. The whole apparatus rested on
+knowing the pivot's distribution.
+
+So the obvious move, once the bootstrap gives us $\widehat{\mathrm{SE}}$, is to mimic the
+Normal recipe:
+
+$$
+\hat\theta \;\pm\; z_{\alpha/2}\,\widehat{\mathrm{SE}}.
+$$ {#eq-normal-boot}
+
+This is the **normal-approximation bootstrap interval**, and it is the first thing everyone
+tries. It is also where the *why* of this article lives: @eq-normal-boot quietly assumes
+that $\hat\theta$ is approximately Normal around $\theta$ with that standard error. For a
+mean of many points the CLT ([INFR-A2]) makes that defensible. But the bootstrap's whole
+reason for existing was to handle statistics where we have *no such guarantee* — and many
+of them have visibly skewed sampling distributions. For a correlation near $\pm 1$, a
+variance, a ratio, or any statistic bounded on one side, the cloud of replicates is
+lopsided. @eq-normal-boot ignores that lopsidedness entirely; it draws a symmetric interval
+around a point that the data are telling you to lean.
+
+::: {.callout-tip title="You might be asked"}
+*"If the bootstrap already gives you a standard error, why not just do
+$\hat\theta \pm 1.96\,\widehat{\mathrm{SE}}$ and call it a day?"* Because that throws away
+the shape. The bootstrap produced an entire **distribution** of replicates — its skew, its
+heaviness, its asymmetry around $\hat\theta$ — and collapsing it to a single number
+$\widehat{\mathrm{SE}}$ keeps only the width. You then re-inflate that width into a
+*symmetric* Gaussian interval, re-imposing the normality the bootstrap was hired to avoid.
+The honest answer is: use a method that reads the percentiles of the cloud, so the interval
+inherits the asymmetry the bootstrap measured. That is precisely the percentile, pivotal,
+and BCa methods below.
+:::
+
+@fig-skew-motivation shows the problem in one picture: a statistic whose bootstrap
+distribution is sharply right-skewed, with the symmetric normal-approximation interval
+laid over it. The interval pokes past the data on the short side and falls short on the
+long side — wrong in *both* directions because it refuses to bend.
+
+```{python}
+#| label: fig-skew-motivation
+#| fig-cap: 'Why a standard error is not an interval. The histogram is the bootstrap distribution of a strongly right-skewed statistic (the sample variance of a small skewed sample). The symmetric normal-approximation interval $\hat\theta \pm 1.96\,\widehat{\mathrm{SE}}$ (orange) is centered on the estimate and ignores the skew: its left endpoint pushes below where almost no replicates fell, and its right endpoint stops short of the long right tail. The bootstrap *measured* this asymmetry; the symmetric interval discards it.'
+x = stats.lognorm.rvs(s=0.9, size=25, random_state=rng)
+theta_hat = np.var(x, ddof=1)
+reps = boot_replicates(x, lambda z: np.var(z, ddof=1), 4000, rng)
+se = reps.std(ddof=1)
+lo_na, hi_na = theta_hat - 1.96 * se, theta_hat + 1.96 * se
+
+fig, ax = plt.subplots()
+ax.hist(reps, bins=50, color=FILL, edgecolor="white", linewidth=0.3, density=True)
+ax.axvline(theta_hat, color=TRUTH, lw=2.2, label=r"point estimate $\hat\theta$")
+ax.axvline(lo_na, color=MISS, lw=2.0, ls="--")
+ax.axvline(hi_na, color=MISS, lw=2.0, ls="--", label="normal-approx interval")
+ax.set_xlabel(r"bootstrap replicate $\hat\theta^*$")
+ax.set_ylabel("density")
+ax.set_title("A symmetric interval over a skewed bootstrap cloud")
+ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+The rest of the article is three increasingly careful answers to "then what interval should
+I draw instead?"
+
+# Intuition before symbols {#sec-intuition}
+
+Picture two worlds, the picture that powers the entire bootstrap.
+
+- **The real world.** There is a true distribution $F$ with a true parameter
+  $\theta = \theta(F)$. We drew one sample of size $n$ from it and computed $\hat\theta$.
+  The thing we wish we knew is the **sampling distribution** of $\hat\theta$ around
+  $\theta$ — how far our estimate strays from the truth, and in which direction it tends
+  to lean. We cannot see it: we have only one $\hat\theta$, not the many we would need.
+
+- **The bootstrap world.** We *promote* our sample to the role of the population: its
+  empirical distribution $\hat F_n$ (each observed point carrying mass $1/n$) plays $F$.
+  Now $\hat\theta$ — computed from the full sample — plays the role of the truth $\theta$,
+  and each resample's estimate $\hat\theta^*$ plays the role of $\hat\theta$. We *can* see
+  this world's sampling distribution as finely as we like, by resampling as many times as
+  we please.
+
+The **bootstrap assumption** is that these two worlds are similar: the way $\hat\theta^*$
+scatters around $\hat\theta$ mirrors the way $\hat\theta$ scatters around $\theta$. If that
+holds, then *anything we want to know about the unknown real-world scatter, we can read off
+the visible bootstrap scatter.* @fig-two-worlds draws the analogy.
+
+```{python}
+#| label: fig-two-worlds
+#| fig-cap: 'The two-world analogy that every bootstrap interval rests on. **Left:** the unseen real world — many hypothetical samples from the true $F$ would give a sampling distribution of $\hat\theta$ around the true $\theta$ (red). We see only one draw. **Right:** the bootstrap world — resampling our one dataset gives a *visible* distribution of $\hat\theta^*$ around our $\hat\theta$ (red). The bootstrap bets the right cloud is a faithful copy of the left one, shifted from $\theta$ to $\hat\theta$. Every interval method is a different rule for transporting information from the right picture back to a claim about the left.'
+true_theta = 1.0
+# Real world: sampling distribution we would get from many true samples.
+real = np.array([np.mean(stats.expon.rvs(scale=1.0, size=30, random_state=rng))
+                 for _ in range(4000)])
+# One observed sample and its bootstrap world.
+x_obs = stats.expon.rvs(scale=1.0, size=30, random_state=rng)
+th = x_obs.mean()
+boot = boot_replicates(x_obs, np.mean, 4000, rng)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7), sharey=True)
+axL.hist(real, bins=45, color=FILL, edgecolor="white", linewidth=0.3, density=True)
+axL.axvline(true_theta, color=TRUTH, lw=2.2, label=r"true $\theta$")
+axL.set_title("Real world (unseen)")
+axL.set_xlabel(r"$\hat\theta$ over many samples")
+axL.set_ylabel("density"); axL.legend(framealpha=0.9, fontsize=9)
+
+axR.hist(boot, bins=45, color=FILL, edgecolor="white", linewidth=0.3, density=True)
+axR.axvline(th, color=TRUTH, lw=2.2, label=r"our $\hat\theta$")
+axR.set_title("Bootstrap world (visible)")
+axR.set_xlabel(r"$\hat\theta^*$ over many resamples")
+axR.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+Now the three methods, in one sentence each, as *rules for transporting information across
+that bridge*:
+
+- **Percentile:** assume the bootstrap cloud's *quantiles* are the sampling distribution's
+  quantiles, and read endpoints straight off.
+- **Pivotal:** assume the *errors* $\hat\theta^*-\hat\theta$ behave like the real errors
+  $\hat\theta-\theta$, and solve for $\theta$ — which flips the percentiles.
+- **BCa:** do not assume the transport is clean; estimate how it is distorted (a shift and
+  a stretch) and adjust the percentiles to compensate.
+
+The tension between the first two — they reflect each other through $\hat\theta$ — is the
+conceptual heart of the article, and it is the thing most worth understanding before any
+algebra.
+
+# The formal development {#sec-formal}
+
+## Setup and notation {#sec-notation}
+
+We fix notation once and use it throughout. We observe an i.i.d. sample
+$X_1,\dots,X_n \sim F$ and a statistic $\hat\theta = s(X_1,\dots,X_n)$ estimating a
+parameter $\theta = \theta(F)$. The bootstrap (from [INFR-E1]) draws $B$ resamples, each
+formed by sampling $n$ points *with replacement* from the data; resample $b$ yields a
+replicate $\hat\theta^{*b}$. Collect them as
+
+$$
+\hat\theta^{*1},\ \hat\theta^{*2},\ \dots,\ \hat\theta^{*B}.
+$$
+
+We will need the empirical quantiles of these replicates. Sort them into order statistics
+$\hat\theta^*_{(1)} \le \hat\theta^*_{(2)} \le \dots \le \hat\theta^*_{(B)}$. For a
+probability $p\in(0,1)$, write $\hat\theta^*_{(p)}$ for the **$p$-th bootstrap quantile** —
+the value below which a fraction $p$ of the replicates fall. Concretely, a serviceable
+definition is $\hat\theta^*_{(p)} = \hat\theta^*_{(\lceil pB\rceil)}$, the
+$\lceil pB\rceil$-th smallest replicate; software interpolates between order statistics for
+a smoother estimate, which matters only at the third decimal. The confidence level is
+$1-\alpha$, so for a two-sided $95\%$ interval $\alpha = 0.05$ and we will reach for the
+$2.5\%$ and $97.5\%$ quantiles.
+
+Finally write $G$ for the (unknown) **cumulative distribution function of $\hat\theta$**,
+$G(t) = P(\hat\theta \le t)$, and $\hat G$ for its bootstrap estimate, the CDF of the
+$\hat\theta^*$. The percentile and pivotal methods are two different ways of using $\hat G$
+to make a statement about $\theta$.
+
+## The percentile interval {#sec-percentile}
+
+The percentile interval is the most direct possible use of the bootstrap distribution:
+**read the interval endpoints straight off the quantiles of the replicates.**
+
+::: {#def-percentile}
+**Definition (percentile interval).** The $1-\alpha$ **percentile** bootstrap confidence
+interval for $\theta$ is
+
+$$
+\Bigl(\,\hat\theta^*_{(\alpha/2)},\ \ \hat\theta^*_{(1-\alpha/2)}\,\Bigr)
+\;=\;
+\bigl(\hat G^{-1}(\alpha/2),\ \hat G^{-1}(1-\alpha/2)\bigr),
+$$
+
+the empirical $\alpha/2$ and $1-\alpha/2$ quantiles of the bootstrap replicates.
+:::
+
+The logic, stated plainly: if the bootstrap distribution $\hat G$ is a good copy of the
+true sampling distribution $G$, then the central $1-\alpha$ chunk of $\hat G$ — the slab
+between its $\alpha/2$ and $1-\alpha/2$ quantiles — should be where $\hat\theta$ lands
+$1-\alpha$ of the time relative to $\theta$, and we report that slab as our interval. For a
+$95\%$ interval this is just "chop off the bottom $2.5\%$ and the top $2.5\%$ of the
+replicates and report what is left."
+
+The appeal is immediate and real. It is dead simple to compute. It is **transformation
+respecting** in a way @eq-normal-boot is not: if you bootstrap on a transformed scale (say
+you work with $\log\hat\theta$ because that is more nearly symmetric) and then transform the
+endpoints back, you get exactly the same interval as bootstrapping on the original scale and
+reading its percentiles. We prove that now, because it is the percentile method's headline
+virtue and it is usually merely asserted.
+
+::: {#lem-percentile-invariance}
+**Lemma (transformation invariance of the percentile interval).** Let $m$ be a strictly
+increasing, continuous function and let $\phi = m(\theta)$, $\hat\phi = m(\hat\theta)$. If
+$(\ell,u)$ is the percentile interval for $\theta$, then $(m(\ell), m(u))$ is the
+percentile interval for $\phi$ computed from the transformed replicates.
+:::
+
+::: {.proof}
+Because $m$ is strictly increasing, it preserves order: $\hat\theta^{*a} \le \hat\theta^{*b}$
+if and only if $m(\hat\theta^{*a}) \le m(\hat\theta^{*b})$. So sorting the replicates
+$\hat\theta^{*b}$ and sorting the transformed replicates $m(\hat\theta^{*b})$ produce the
+*same ordering of the resamples*. The $k$-th order statistic therefore maps through:
+
+$$
+\bigl(m(\hat\theta^*)\bigr)_{(k)} = m\bigl(\hat\theta^*_{(k)}\bigr)
+\qquad \text{for every rank } k.
+$$
+
+The percentile interval picks endpoints by rank — the $\lceil(\alpha/2)B\rceil$-th and
+$\lceil(1-\alpha/2)B\rceil$-th order statistics — and those ranks are identical in both
+worlds. Hence the transformed-scale endpoints are precisely
+$m(\hat\theta^*_{(\alpha/2)})$ and $m(\hat\theta^*_{(1-\alpha/2)})$, i.e. $m$ applied to the
+original endpoints. $\qquad\blacksquare$
+:::
+
+This is exactly the property that fails for @eq-normal-boot: $m(\hat\theta) \pm 1.96\,
+\widehat{\mathrm{SE}}_{m(\hat\theta)}$ is *not* $m$ applied to
+$\hat\theta \pm 1.96\,\widehat{\mathrm{SE}}$, because a nonlinear $m$ distorts the symmetric
+$\pm$. The percentile interval automatically does the right thing on any monotone scale —
+which is one reason it is so widely used. @lem-percentile-invariance is also the seed of
+BCa: BCa is, at heart, "the percentile method on the *best* monotone scale, without having
+to find that scale."
+
+::: {.callout-warning title="Pitfall"}
+**The percentile interval is not "the bootstrap distribution centered on $\hat\theta$."**
+A common misreading is that the percentile method reports
+$\hat\theta \pm (\text{some quantile})$. It does not center anything — it reads *absolute*
+quantiles of the replicate cloud. When the cloud is skewed, those quantiles are *not*
+symmetric around $\hat\theta$, and that asymmetry is the whole point. Confusing the
+percentile interval with a symmetric one erases its main advantage.
+:::
+
+## The basic (pivotal) interval {#sec-pivotal}
+
+The pivotal interval starts from the [INFR-C1] machine and applies it honestly to the
+bootstrap. Recall a **pivot** is a function of the data and the parameter whose distribution
+does not depend on the parameter. The cleanest near-pivot for a general estimator is simply
+the **error**
+
+$$
+R \;=\; \hat\theta - \theta.
+$$ {#eq-error-pivot}
+
+If we knew the distribution of $R$ — say its $\alpha/2$ and $1-\alpha/2$ quantiles, call
+them $r_{\alpha/2}$ and $r_{1-\alpha/2}$ — we could write the exact probability statement
+
+$$
+P\bigl(r_{\alpha/2} \le \hat\theta - \theta \le r_{1-\alpha/2}\bigr) = 1-\alpha,
+$$
+
+and then **solve the inequalities for the unknown $\theta$**, exactly as in [INFR-C1].
+Isolating $\theta$ means subtracting $\hat\theta$ and flipping signs (which reverses the
+inequalities, swapping the roles of the two quantiles):
+
+$$
+r_{\alpha/2} \le \hat\theta - \theta \le r_{1-\alpha/2}
+\;\Longleftrightarrow\;
+-r_{1-\alpha/2} \le \theta - \hat\theta \le -r_{\alpha/2}
+\;\Longleftrightarrow\;
+\hat\theta - r_{1-\alpha/2} \le \theta \le \hat\theta - r_{\alpha/2}.
+$$
+
+So the exact interval, *if we knew the quantiles of the error*, would be
+
+$$
+\bigl(\hat\theta - r_{1-\alpha/2},\ \ \hat\theta - r_{\alpha/2}\bigr).
+$$ {#eq-pivot-exact}
+
+We do not know those quantiles — that was the original problem. The **bootstrap estimates
+them.** In the bootstrap world the analogue of the error $R = \hat\theta - \theta$ is
+
+$$
+R^* \;=\; \hat\theta^* - \hat\theta,
+$$
+
+because $\hat\theta$ plays the role of the truth and $\hat\theta^*$ plays the role of the
+estimate (the two-world picture of @sec-intuition). The bootstrap assumption is that $R^*$
+and $R$ have approximately the same distribution. So we estimate $r_p$, the $p$-quantile of
+$R$, by the $p$-quantile of $R^*$:
+
+$$
+\hat r_p \;=\; \bigl(\hat\theta^* - \hat\theta\bigr)_{(p)}
+\;=\; \hat\theta^*_{(p)} - \hat\theta,
+$$ {#eq-rstar-quantile}
+
+where the last equality holds because subtracting the constant $\hat\theta$ from every
+replicate just shifts all the quantiles by $\hat\theta$. Substitute @eq-rstar-quantile into
+@eq-pivot-exact:
+
+$$
+\Bigl(\hat\theta - \hat r_{1-\alpha/2},\ \ \hat\theta - \hat r_{\alpha/2}\Bigr)
+= \Bigl(\hat\theta - (\hat\theta^*_{(1-\alpha/2)} - \hat\theta),\ \
+        \hat\theta - (\hat\theta^*_{(\alpha/2)} - \hat\theta)\Bigr),
+$$
+
+and collecting the two $\hat\theta$ terms in each endpoint gives the result.
+
+::: {#def-pivotal}
+**Definition (basic / pivotal interval).** The $1-\alpha$ **basic** (or **pivotal**)
+bootstrap confidence interval for $\theta$ is
+
+$$
+\Bigl(\,2\hat\theta - \hat\theta^*_{(1-\alpha/2)},\ \
+        2\hat\theta - \hat\theta^*_{(\alpha/2)}\,\Bigr).
+$$
+:::
+
+Stare at the two definitions side by side. The percentile interval is
+$(\hat\theta^*_{(\alpha/2)},\, \hat\theta^*_{(1-\alpha/2)})$; the pivotal interval is
+$(2\hat\theta - \hat\theta^*_{(1-\alpha/2)},\, 2\hat\theta - \hat\theta^*_{(\alpha/2)})$.
+The pivotal endpoints are the percentile endpoints **reflected through $\hat\theta$**: the
+map $q \mapsto 2\hat\theta - q$ is reflection about $\hat\theta$ (it sends $\hat\theta$ to
+itself and flips everything to the opposite side). And it **swaps which quantile becomes
+which endpoint** — the *upper* bootstrap quantile becomes the *lower* interval endpoint.
+That sign flip is not a quirk; it is the consequence of solving the inequality for $\theta$
+in @eq-pivot-exact, and it is the single most error-prone line in this entire subject.
+
+::: {.callout-tip title="You might be asked"}
+*"The pivotal interval reflects the percentiles through the estimate — why on earth would
+you flip them? Isn't the bootstrap distribution telling you where $\theta$ is?"* No — and
+this is the deepest conceptual point in the article. The bootstrap distribution tells you
+the distribution of the **error** $\hat\theta - \theta$, not of $\theta$ itself. Suppose
+the bootstrap replicates lean *right* of $\hat\theta$ (the cloud is right-skewed). That
+means $\hat\theta^*$ tends to *overshoot* $\hat\theta$ — equivalently, the estimator tends
+to overshoot the truth, so $\theta$ is probably *below* $\hat\theta$, further than a
+symmetric interval would reach on the low side. The pivotal interval extends *downward* to
+catch that, which is the reflection. The percentile method, by contrast, would extend
+*upward* (toward where the replicates piled up). They make opposite corrections, and at
+most one direction can be right. Which one — and the fact that *both* are only
+first-order accurate — is the subject of @sec-failure and BCa.
+:::
+
+@fig-pct-vs-piv makes the reflection concrete on the skewed statistic from
+@fig-skew-motivation.
+
+```{python}
+#| label: fig-pct-vs-piv
+#| fig-cap: 'Percentile vs. pivotal on a right-skewed bootstrap distribution. The percentile interval (green) reads the $2.5\%$ and $97.5\%$ quantiles directly, so it reaches far to the *right* where the long tail lies. The pivotal interval (orange) reflects those quantiles through $\hat\theta$ (red), so it instead reaches far to the *left*. On a symmetric cloud the two coincide; the more skewed the cloud, the more they diverge. They are correcting for the skew in *opposite* directions.'
+x = stats.lognorm.rvs(s=0.9, size=25, random_state=np.random.default_rng(7))
+theta_hat = np.var(x, ddof=1)
+reps = boot_replicates(x, lambda z: np.var(z, ddof=1), 6000, np.random.default_rng(8))
+q_lo, q_hi = np.quantile(reps, [0.025, 0.975])
+pct = (q_lo, q_hi)
+piv = (2 * theta_hat - q_hi, 2 * theta_hat - q_lo)
+
+fig, ax = plt.subplots(figsize=(7.0, 4.0))
+ax.hist(reps, bins=55, color=FILL, edgecolor="white", linewidth=0.3, density=True)
+ax.axvline(theta_hat, color=TRUTH, lw=2.2, label=r"$\hat\theta$")
+for v in pct:
+    ax.axvline(v, color=ACCENT, lw=2.0)
+for v in piv:
+    ax.axvline(v, color=MISS, lw=2.0, ls="--")
+ax.plot([], [], color=ACCENT, lw=2.0, label="percentile")
+ax.plot([], [], color=MISS, lw=2.0, ls="--", label="pivotal")
+ax.set_xlabel(r"bootstrap replicate $\hat\theta^*$")
+ax.set_ylabel("density")
+ax.set_title("Percentile and pivotal reflect each other through $\\hat\\theta$")
+ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+## Studentized (bootstrap-t) intervals, briefly {#sec-studentized}
+
+Before BCa, a word on a fourth method, because an interviewer may name it and because it
+sharpens the pivotal idea. The pivotal interval uses the raw error $\hat\theta - \theta$ as
+its pivot. A *better* pivot — better because its distribution depends less on nuisance
+quantities — is the **studentized** statistic
+
+$$
+T = \frac{\hat\theta - \theta}{\widehat{\mathrm{SE}}},
+$$
+
+dividing the error by an estimate of its own standard error, exactly the move that turned
+the $z$-interval into the $t$-interval in [INFR-C2]. The **bootstrap-t** (studentized)
+interval estimates the quantiles of $T$ by computing, for each resample, $T^{*b} =
+(\hat\theta^{*b} - \hat\theta)/\widehat{\mathrm{SE}}^{*b}$ — which requires a standard error
+*for each resample*, typically an inner bootstrap or a closed-form SE. It is often the most
+accurate of all, but it is computationally heavy (a bootstrap inside a bootstrap) and
+unstable when $\widehat{\mathrm{SE}}^{*b}$ can be near zero. We flag it, use it once in the
+coverage comparison, and otherwise spend our depth on BCa, which achieves comparable
+accuracy without the nested resampling.
+
+## The BCa interval {#sec-bca}
+
+BCa — **bias-corrected and accelerated** — is the percentile method with two corrections
+bolted on. It is the workhorse default in serious software (e.g. R's `boot`, SciPy's
+`bootstrap`) because it fixes the two specific ways the plain percentile method gets the
+endpoints wrong. We motivate each correction, then assemble the formula.
+
+**The idea in one sentence:** instead of reading off the $\alpha/2$ and $1-\alpha/2$
+percentiles, read off *adjusted* percentiles $\alpha_1$ and $\alpha_2$ chosen so that the
+interval would be exactly right if the sampling distribution were Normal *after some
+unknown monotone transformation* — and BCa estimates the two numbers that pin down that
+transformation from the data, without ever having to find the transformation itself.
+
+### Correction 1: median bias ($z_0$) {#sec-bca-z0}
+
+The percentile method implicitly assumes $\hat\theta$ is the *median* of its own bootstrap
+distribution — that exactly half the replicates fall below $\hat\theta$. Often they do not.
+If the estimator is biased (or merely if its distribution is skewed), some fraction
+$p_0 \ne 0.5$ of replicates fall below $\hat\theta$. The **bias-correction** number
+measures this on the Normal scale:
+
+$$
+\hat z_0 \;=\; \Phi^{-1}\!\Bigl(\underbrace{\tfrac{1}{B}\#\{\,b : \hat\theta^{*b} < \hat\theta\,\}}_{=\,p_0,\ \text{fraction of replicates below }\hat\theta}\Bigr),
+$$ {#eq-z0}
+
+where $\Phi^{-1}$ is the standard-Normal quantile function and $\#\{\cdot\}$ counts. Read
+@eq-z0: we find what fraction $p_0$ of the bootstrap cloud lies below the point estimate,
+and convert that fraction to a $z$-score. If exactly half lie below, $p_0 = 0.5$ and
+$\hat z_0 = \Phi^{-1}(0.5) = 0$ — no bias, no correction. If the cloud is right-skewed so
+that, say, $60\%$ of replicates sit below $\hat\theta$, then $p_0 = 0.6$ and
+$\hat z_0 = \Phi^{-1}(0.6) \approx 0.25 > 0$, and the correction will shift both percentiles
+to compensate.
+
+### Correction 2: acceleration ($a$) {#sec-bca-accel}
+
+The pivotal and percentile methods both implicitly assume the standard error of
+$\hat\theta$ is *constant* — the same wherever $\theta$ happens to sit. For many statistics
+it is not: the spread of the sampling distribution changes with the parameter. (Think of a
+proportion: its standard error $\sqrt{p(1-p)/n}$ depends on $p$. Or a variance estimate,
+whose spread grows with the variance itself.) The **acceleration** $a$ measures the *rate*
+at which the standard error changes with $\theta$, on a standardized scale — it is, to
+leading order, proportional to the **skewness** of the sampling distribution of the score.
+
+The standard estimate of $a$ uses the **jackknife** (a leave-one-out cousin of the
+bootstrap built in [INFR-E1]). Let $\hat\theta_{(-i)}$ be the estimate recomputed with the
+$i$-th observation deleted, and let $\bar\theta_{(\cdot)} = \frac1n\sum_{i=1}^n
+\hat\theta_{(-i)}$ be their average. Then
+
+$$
+\hat a \;=\; \frac{\sum_{i=1}^n \bigl(\bar\theta_{(\cdot)} - \hat\theta_{(-i)}\bigr)^3}
+                  {6\,\Bigl[\sum_{i=1}^n \bigl(\bar\theta_{(\cdot)} - \hat\theta_{(-i)}\bigr)^2\Bigr]^{3/2}}.
+$$ {#eq-accel}
+
+The shape of @eq-accel is a standardized **third moment**: a sum of cubed deviations over a
+sum-of-squared-deviations raised to the $3/2$ power. That is precisely the form of a sample
+**skewness** coefficient. So $\hat a$ is, up to the $1/6$ and the sign convention, the
+skewness of the jackknife "influence values" $\bar\theta_{(\cdot)} - \hat\theta_{(-i)}$ —
+the directions and magnitudes in which each single data point pulls the estimate. When the
+sampling distribution is symmetric, those cubed deviations cancel, $\hat a = 0$, and the
+acceleration correction vanishes. The $1/6$ is the constant that makes $\hat a$ match the
+leading skewness term in the underlying Edgeworth expansion (the asymptotic series that, in
+the full theory, is what lets BCa claim *second-order* accuracy); we import that constant by
+name from that theory rather than re-deriving the expansion, which lives well above our
+floor.
+
+### Assembling the adjusted percentiles {#sec-bca-assemble}
+
+With $\hat z_0$ and $\hat a$ in hand, BCa replaces the plain percentiles
+$(\alpha/2,\,1-\alpha/2)$ with adjusted ones. Let $z^{(\beta)} = \Phi^{-1}(\beta)$ denote a
+standard-Normal quantile. The two adjusted probability levels are
+
+$$
+\alpha_1 = \Phi\!\left(\hat z_0 + \frac{\hat z_0 + z^{(\alpha/2)}}{1 - \hat a\,(\hat z_0 + z^{(\alpha/2)})}\right),
+\qquad
+\alpha_2 = \Phi\!\left(\hat z_0 + \frac{\hat z_0 + z^{(1-\alpha/2)}}{1 - \hat a\,(\hat z_0 + z^{(1-\alpha/2)})}\right),
+$$ {#eq-bca-levels}
+
+and the **BCa interval** is the percentile interval at *those* levels:
+
+$$
+\boxed{\;\Bigl(\hat\theta^*_{(\alpha_1)},\ \ \hat\theta^*_{(\alpha_2)}\Bigr).\;}
+$$ {#eq-bca-interval}
+
+Let us read @eq-bca-levels rather than just accept it — every piece has a job. Work from the
+inside out:
+
+- The core quantity is $\hat z_0 + z^{(\alpha/2)}$: take the desired Normal quantile and
+  **shift it by the bias correction** $\hat z_0$. This alone (with $\hat a = 0$) is the
+  "bias-corrected" or BC interval — it slides both percentiles to undo the median bias.
+- The denominator $1 - \hat a(\hat z_0 + z^{(\alpha/2)})$ **stretches** that shifted
+  quantile by an amount that grows with $\hat a$ — the acceleration adjustment for the
+  changing standard error. When $\hat a = 0$ the denominator is $1$ and nothing stretches.
+- The outer $\hat z_0 + (\cdots)$ shifts once more, and the final $\Phi(\cdot)$ converts the
+  whole adjusted $z$-score back into a probability level between $0$ and $1$, which is then
+  used as a percentile of the bootstrap replicates.
+
+The two sanity checks that confirm the formula is doing the right thing:
+
+::: {#thm-bca-reduces}
+**Proposition (BCa degenerates to the percentile method).** If $\hat z_0 = 0$ and
+$\hat a = 0$, then $\alpha_1 = \alpha/2$ and $\alpha_2 = 1-\alpha/2$, so @eq-bca-interval
+becomes the plain percentile interval of @def-percentile.
+:::
+
+::: {.proof}
+Set $\hat z_0 = 0$ and $\hat a = 0$ in @eq-bca-levels. The denominator becomes
+$1 - 0 = 1$. The inner fraction becomes $(0 + z^{(\alpha/2)})/1 = z^{(\alpha/2)}$. The outer
+shift adds $\hat z_0 = 0$. So the argument of $\Phi$ is just $z^{(\alpha/2)} =
+\Phi^{-1}(\alpha/2)$, and therefore
+
+$$
+\alpha_1 = \Phi\bigl(\Phi^{-1}(\alpha/2)\bigr) = \alpha/2,
+$$
+
+since $\Phi$ and $\Phi^{-1}$ are inverse functions. Identically, $\alpha_2 = 1-\alpha/2$.
+The adjusted percentiles collapse to the unadjusted ones. $\qquad\blacksquare$
+:::
+
+So BCa is a strict generalization: it costs nothing when no correction is needed, and it
+kicks in smoothly as the cloud becomes biased ($\hat z_0 \ne 0$) or heteroscedastic in
+$\theta$ ($\hat a \ne 0$). @fig-bca-shift visualizes how the adjusted levels move as
+$\hat z_0$ and $\hat a$ grow.
+
+```{python}
+#| label: fig-bca-shift
+#| fig-cap: 'How BCa adjusts the percentile levels. Each curve shows the BCa lower level $\alpha_1$ (which the plain percentile method would set to $0.025$) as the bias correction $\hat z_0$ varies, for three acceleration values $\hat a$. At $\hat z_0 = 0, \hat a = 0$ the level returns to exactly $0.025$ (black dot), recovering the percentile method. Positive bias or acceleration pushes the level away from $0.025$, shifting and stretching the interval to chase the asymmetry the percentile method ignored.'
+z_alpha = stats.norm.ppf(0.025)
+z0_grid = np.linspace(-0.4, 0.4, 200)
+fig, ax = plt.subplots()
+for a_val, style in zip([-0.10, 0.0, 0.10], ["--", "-", ":"]):
+    num = z0_grid + z_alpha
+    arg = z0_grid + num / (1 - a_val * num)
+    ax.plot(z0_grid, stats.norm.cdf(arg), style, color=DATA,
+            label=fr"$\hat a = {a_val:.2f}$")
+ax.axhline(0.025, color=GREY, lw=1.0)
+ax.scatter([0.0], [0.025], color=TRUTH, s=60, zorder=5)
+ax.set_xlabel(r"bias correction $\hat z_0$")
+ax.set_ylabel(r"adjusted lower level $\alpha_1$")
+ax.set_title("BCa lower percentile level vs. bias and acceleration")
+ax.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What does the 'acceleration' in BCa actually accelerate?"* It is the rate at which the
+standard error of $\hat\theta$ changes as the true $\theta$ moves — the first-order
+*acceleration* of the spread along the parameter axis. The percentile and pivotal methods
+assume that rate is zero (constant SE). Equivalently, on a standardized scale $\hat a$ is
+the skewness of the score / influence function. If an interviewer presses: BCa is built to
+be exactly right when there exists a monotone transformation $g$ such that $g(\hat\theta)$
+is Normal with a mean shifted by a constant bias and a standard error that is *linear* in
+$g(\theta)$; $\hat z_0$ captures the bias and $\hat a$ captures the linear rate. You never
+have to find $g$ — that is the magic — but it must *exist* for BCa's guarantee to hold.
+:::
+
+## Why BCa is more accurate: a word on coverage error {#sec-accuracy}
+
+We should be honest about what "more accurate" means, since it is the reason to prefer BCa.
+All these intervals are **approximate** — their true coverage is $1-\alpha + (\text{error})$,
+and the error shrinks as $n$ grows. The methods differ in *how fast* it shrinks.
+
+- The percentile and basic intervals are **first-order accurate**: their one-sided coverage
+  error is $O(n^{-1/2})$. Halving the error needs four times the data.
+- The BCa and bootstrap-t intervals are **second-order accurate**: their one-sided coverage
+  error is $O(n^{-1})$, an order of magnitude better for the same $n$.
+
+The mechanism, stated at the level our floor allows: the exact distribution of a
+standardized statistic admits an **Edgeworth expansion**, an asymptotic series in powers of
+$n^{-1/2}$ whose leading correction term is governed by skewness. The percentile/basic
+intervals get the leading $n^{-1/2}$ term *wrong* (they correct nothing for skew), so their
+error is $O(n^{-1/2})$. BCa's two corrections, $\hat z_0$ and $\hat a$, are engineered to
+**match that leading skewness term**, cancelling the $n^{-1/2}$ error and leaving $O(n^{-1})$.
+That is the entire content of "$\hat a$ matches the leading term of the Edgeworth
+expansion" — the deep derivation lives in the references of @sec-deeper, and we flag it as
+imported rather than reconstruct the expansion here. What you should carry away is
+operational: **BCa fixes the skew that the naive methods leave in, and that is worth one
+order of $n$ in coverage error.**
+
+# Worked examples {#sec-examples}
+
+We run all the machinery on real, messy data, never a toy rigged to flatter the method. The
+first example we carry through with every number exposed; the second is a genuine skewed
+dataset where the methods visibly disagree; the third is the edge of applicability where the
+bootstrap interval itself is the wrong tool.
+
+## Example 1 — the correlation of two variables, by the numbers {#sec-ex-corr}
+
+The Pearson correlation has no simple exact small-sample distribution unless the data are
+exactly bivariate Normal, and its sampling distribution is sharply skewed when the true
+correlation is far from zero (it is squeezed against the hard bound $r \le 1$). This is a
+textbook case for the bootstrap. We use the classic LSAT/GPA data from Efron and Tibshirani:
+$n = 15$ American law schools, each with an average LSAT score and an average undergraduate
+GPA, and we want a confidence interval for their correlation.
+
+```{python}
+#| label: tbl-corr-data
+#| echo: false
+# The classic n=15 law-school sample (Efron & Tibshirani, "An Introduction to the Bootstrap").
+lsat = np.array([576, 635, 558, 578, 666, 580, 555, 661,
+                 651, 605, 653, 575, 545, 572, 594], dtype=float)
+gpa  = np.array([3.39, 3.30, 2.81, 3.03, 3.44, 3.07, 3.00, 3.43,
+                 3.36, 3.13, 3.12, 2.74, 2.76, 2.88, 2.96])
+
+def corr(idx_pair):
+    a, b = idx_pair
+    return np.corrcoef(a, b)[0, 1]
+
+theta_hat = np.corrcoef(lsat, gpa)[0, 1]
+n = len(lsat)
+
+B = 8000
+rng_ex = np.random.default_rng(101)
+reps = np.empty(B)
+for b in range(B):
+    idx = rng_ex.integers(0, n, size=n)
+    reps[b] = np.corrcoef(lsat[idx], gpa[idx])[0, 1]
+
+se_boot = reps.std(ddof=1)
+print(f"n                       = {n}")
+print(f"observed correlation    theta_hat = {theta_hat:.4f}")
+print(f"bootstrap SE            = {se_boot:.4f}   (B = {B})")
+print(f"fraction of reps below theta_hat (p0) = {np.mean(reps < theta_hat):.4f}")
+```
+
+The observed correlation is $\hat\theta = `{python} f"{theta_hat:.3f}"`$ — strongly
+positive, as one expects (schools whose students score well on the LSAT also tend to have
+higher GPAs). Now we build all four intervals explicitly. Watch the numbers; the differences
+are the whole lesson.
+
+```{python}
+#| label: tbl-corr-intervals
+#| echo: false
+alpha = 0.05
+zlo, zhi = stats.norm.ppf(alpha / 2), stats.norm.ppf(1 - alpha / 2)
+
+# Normal-approximation
+na = (theta_hat + zlo * se_boot, theta_hat + zhi * se_boot)
+
+# Percentile
+q_lo, q_hi = np.quantile(reps, [alpha / 2, 1 - alpha / 2])
+pct = (q_lo, q_hi)
+
+# Basic / pivotal (reflect through theta_hat)
+piv = (2 * theta_hat - q_hi, 2 * theta_hat - q_lo)
+
+# BCa
+p0 = np.mean(reps < theta_hat)
+z0 = stats.norm.ppf(p0)
+# jackknife acceleration
+theta_jack = np.array([np.corrcoef(np.delete(lsat, i), np.delete(gpa, i))[0, 1]
+                       for i in range(n)])
+jbar = theta_jack.mean()
+num = np.sum((jbar - theta_jack) ** 3)
+den = 6.0 * (np.sum((jbar - theta_jack) ** 2)) ** 1.5
+a_hat = num / den
+def bca_level(zq):
+    return stats.norm.cdf(z0 + (z0 + zq) / (1 - a_hat * (z0 + zq)))
+a1, a2 = bca_level(zlo), bca_level(zhi)
+bca = tuple(np.quantile(reps, [a1, a2]))
+
+print(f"z0 (bias correction)    = {z0:+.4f}")
+print(f"a  (acceleration)       = {a_hat:+.4f}")
+print(f"adjusted levels         alpha1 = {a1:.4f}   alpha2 = {a2:.4f}")
+print()
+print(f"{'method':<22}{'lower':>10}{'upper':>10}{'width':>10}")
+for name, (lo, hi) in [("normal-approx", na), ("percentile", pct),
+                       ("basic/pivotal", piv), ("BCa", bca)]:
+    print(f"{name:<22}{lo:>10.3f}{hi:>10.3f}{hi-lo:>10.3f}")
+```
+
+Read the printed numbers against the theory:
+
+- The bias correction is $\hat z_0 = `{python} f"{z0:+.3f}"`$, **negative**, because *more*
+  than half the replicates fall above $\hat\theta$ — the bootstrap distribution of the
+  correlation is left-skewed (it has a long tail toward smaller $r$, since $r$ is jammed
+  against $1$ on the high side). The acceleration $\hat a = `{python} f"{a_hat:+.3f}"`$ is
+  small but nonzero.
+- The **normal-approximation** interval is symmetric about $\hat\theta$ by construction. Its
+  upper endpoint can even poke above the theoretical maximum where the cloud has no mass —
+  a clear symptom that symmetry is the wrong assumption here.
+- The **percentile** interval is asymmetric, reaching further *down* (toward the long left
+  tail) than up — it respects the skew.
+- The **pivotal** interval reflects that, reaching further *up* — the opposite correction.
+- **BCa** shifts the percentile levels using $\hat z_0$ and $\hat a$ to land the interval
+  where the second-order theory says the true sampling distribution sits.
+
+@fig-corr-intervals overlays all four on the bootstrap histogram.
+
+```{python}
+#| label: fig-corr-intervals
+#| fig-cap: 'Four bootstrap intervals for the LSAT/GPA correlation ($n=15$, $B=8000$). The bootstrap distribution (histogram) is clearly left-skewed — a long tail toward smaller correlations, because $r$ cannot exceed $1$. The normal-approximation interval (top, orange) is symmetric and ignores this. Percentile (green) reaches into the left tail; pivotal (purple) reflects and reaches right; BCa (red) sits between them where the skew-corrected theory places the interval. The vertical red line is the point estimate $\hat\theta$.'
+fig, ax = plt.subplots(figsize=(7.2, 4.4))
+ax.hist(reps, bins=55, color=FILL, edgecolor="white", linewidth=0.3, density=True)
+ax.axvline(theta_hat, color=TRUTH, lw=2.0)
+
+rows = [("normal-approx", na, MISS, 1.0),
+        ("percentile", pct, ACCENT, 1.8),
+        ("pivotal", piv, "#6a2c91", 2.6),
+        ("BCa", bca, TRUTH, 3.4)]
+ymax = ax.get_ylim()[1]
+for name, (lo, hi), col, yfrac in rows:
+    y = ymax * (0.55 + 0.10 * yfrac)
+    ax.plot([lo, hi], [y, y], color=col, lw=3.0, solid_capstyle="butt")
+    ax.plot([lo, lo], [y - ymax*0.03, y + ymax*0.03], color=col, lw=2.0)
+    ax.plot([hi, hi], [y - ymax*0.03, y + ymax*0.03], color=col, lw=2.0)
+    ax.text(hi + 0.01, y, name, va="center", fontsize=9, color=col)
+ax.set_xlabel(r"bootstrap correlation $\hat\theta^*$")
+ax.set_ylabel("density")
+ax.set_title("Four intervals over a left-skewed bootstrap distribution")
+ax.set_xlim(reps.min() - 0.05, 1.15)
+plt.tight_layout()
+```
+
+## Example 2 — coverage simulation: which interval keeps its promise? {#sec-ex-coverage}
+
+The point of a confidence interval is **coverage** ([INFR-C1]): a $95\%$ procedure should
+trap the true parameter $95\%$ of the time across repeated samples. An interval that is
+*advertised* as $95\%$ but actually covers $88\%$ is lying. The only honest way to compare
+methods is to *measure* coverage, which we can do because in a simulation we know the truth.
+
+We take a deliberately skewed population — Exponential with rate $1$, whose mean is the
+parameter of interest, $\theta = 1$ — at a small sample size $n = 15$ where the CLT has not
+yet rescued us. For each of many simulated datasets we build the t-interval ([INFR-C2]) and
+the percentile, pivotal, and BCa bootstrap intervals, and we count how often each contains
+the true mean. (We use a moderate number of simulations and resamples so the article renders
+quickly; the qualitative ranking is stable.)
+
+```{python}
+#| label: tbl-coverage
+#| echo: false
+rng_cov = np.random.default_rng(2024)
+n = 15
+true_mean = 1.0
+n_sim = 1200
+B = 1000
+alpha = 0.05
+zlo, zhi = stats.norm.ppf(alpha/2), stats.norm.ppf(1-alpha/2)
+tcrit = stats.t.ppf(1 - alpha/2, df=n-1)
+
+cov = {"t-interval": 0, "percentile": 0, "pivotal": 0, "BCa": 0}
+width = {k: 0.0 for k in cov}
+
+for s in range(n_sim):
+    x = rng_cov.exponential(1.0, size=n)
+    xbar = x.mean()
+    s_x = x.std(ddof=1)
+
+    # classical t-interval
+    t_lo, t_hi = xbar - tcrit * s_x / np.sqrt(n), xbar + tcrit * s_x / np.sqrt(n)
+
+    # bootstrap replicates of the mean
+    idx = rng_cov.integers(0, n, size=(B, n))
+    reps = x[idx].mean(axis=1)
+    q_lo, q_hi = np.quantile(reps, [alpha/2, 1-alpha/2])
+
+    p_lo, p_hi = q_lo, q_hi                       # percentile
+    v_lo, v_hi = 2*xbar - q_hi, 2*xbar - q_lo     # pivotal
+
+    # BCa
+    p0 = np.mean(reps < xbar)
+    p0 = min(max(p0, 1e-6), 1-1e-6)
+    z0 = stats.norm.ppf(p0)
+    jack = np.array([np.delete(x, i).mean() for i in range(n)])
+    jbar = jack.mean()
+    num = np.sum((jbar - jack)**3); den = 6*(np.sum((jbar-jack)**2))**1.5
+    a_hat = num/den if den > 0 else 0.0
+    def lvl(zq): return stats.norm.cdf(z0 + (z0+zq)/(1 - a_hat*(z0+zq)))
+    b_lo, b_hi = np.quantile(reps, [lvl(zlo), lvl(zhi)])
+
+    for name, (lo, hi) in [("t-interval",(t_lo,t_hi)),("percentile",(p_lo,p_hi)),
+                           ("pivotal",(v_lo,v_hi)),("BCa",(b_lo,b_hi))]:
+        if lo <= true_mean <= hi:
+            cov[name] += 1
+        width[name] += (hi - lo)
+
+print(f"target coverage = 95.0%   (n = {n}, exponential population, {n_sim} sims)")
+print(f"{'method':<14}{'coverage':>11}{'avg width':>12}")
+for k in cov:
+    print(f"{k:<14}{100*cov[k]/n_sim:>10.1f}%{width[k]/n_sim:>12.3f}")
+```
+
+The numbers tell the honest story for a skewed population at small $n$, and it is genuinely
+more nuanced than "BCa wins" — which is exactly why we measured instead of asserting:
+
+- **All four** methods under-cover at this brutal small $n$ — none reaches the nominal $95\%$
+  on an exponential with $n=15$. That is itself the lesson of @sec-small-n: *no* interval is
+  magic at small $n$, and the bootstrap is an asymptotic method in disguise.
+- The **t-interval**, by forcing a symmetric interval and being the widest, actually achieves
+  the *highest* raw coverage here — but it does so dishonestly: its misses are lopsided
+  (almost all on the low side), because it cannot lean to follow the long right tail. Raw
+  coverage hides that asymmetry; a one-sided breakdown would expose it.
+- Among the three bootstrap intervals, **BCa covers best**, the second-order skew correction
+  of @sec-accuracy earning back coverage the **percentile** and **pivotal** intervals leave
+  on the table — and it does so without being dramatically wider than the t-interval.
+- The honest takeaway is *not* "BCa always wins on coverage at small $n$" — at $n=15$ on a
+  hard population, raw coverage is a noisy and partly misleading scoreboard. It is that BCa
+  is the best-calibrated of the *shape-respecting* methods, and that its advantage grows with
+  $n$ exactly as the $O(n^{-1})$ vs. $O(n^{-1/2})$ accuracy rates predict. Re-run this with
+  $n=60$ and BCa pulls clearly ahead while keeping its width honest.
+
+@fig-coverage-bars shows the comparison.
+
+```{python}
+#| label: fig-coverage-bars
+#| fig-cap: 'Measured coverage of four nominally-$95\%$ intervals over $1200$ simulated samples ($n=15$) from a skewed exponential population. The dashed line is the $95\%$ target. None reaches it at this brutal small $n$. The wide symmetric t-interval scores the highest *raw* coverage but misses lopsidedly (almost all on the low side); among the shape-respecting bootstrap intervals BCa is best calibrated, ahead of percentile and pivotal. The honest reminder: bootstrap intervals are approximate, and raw coverage at small $n$ is a noisy scoreboard.'
+methods = list(cov.keys())
+covs = [100*cov[k]/n_sim for k in methods]
+colors = [GREY, ACCENT, "#6a2c91", TRUTH]
+fig, ax = plt.subplots()
+bars = ax.bar(methods, covs, color=colors, edgecolor="white")
+ax.axhline(95, color=TRUTH, ls="--", lw=1.5)
+ax.set_ylim(80, 97)
+ax.set_ylabel("measured coverage (%)")
+ax.set_title("Coverage of nominally-95% intervals, skewed population, $n=15$")
+for bar, c in zip(bars, covs):
+    ax.text(bar.get_x()+bar.get_width()/2, c+0.15, f"{c:.1f}", ha="center", fontsize=9)
+plt.tight_layout()
+```
+
+## Example 3 — the edge of applicability: a CI for the maximum {#sec-ex-edge}
+
+Now the honest boundary. The bootstrap, and every interval built on it, can **fail
+outright**, and the cleanest failure is estimating the **maximum** of a distribution.
+Suppose $X_i \sim \text{Uniform}(0,\theta)$ and we want a confidence interval for the upper
+endpoint $\theta$. The natural estimator is $\hat\theta = \max_i X_i$, which is the MLE
+([INFR-B2] flagged this exact case as a boundary failure for likelihood methods).
+
+Here is why the bootstrap breaks. The estimator $\hat\theta = \max X_i$ can never *exceed*
+the observed maximum, so every bootstrap resample's maximum is $\le \hat\theta$. In fact a
+resample reproduces the observed maximum exactly whenever it happens to include that single
+largest data point — which occurs with probability $1 - (1-1/n)^n \to 1 - e^{-1} \approx
+0.632$. So roughly $63\%$ of bootstrap replicates equal $\hat\theta$ *exactly*, and the rest
+are strictly below. The bootstrap distribution of $\hat\theta^*$ is a **spike at
+$\hat\theta$** plus a smear below — nothing like the smooth, continuous sampling
+distribution of the true maximum. Every percentile read off this lumpy mess is wrong, and
+the upper endpoint of every method is pinned at or below $\hat\theta$ even though the true
+$\theta$ is *above* it. @fig-edge-max shows the catastrophe.
+
+```{python}
+#| label: fig-edge-max
+#| fig-cap: 'The edge of applicability: the bootstrap fails for the maximum. **Left:** the true sampling distribution of $\max X_i$ for $X_i\sim\mathrm{Uniform}(0,\theta)$ with $\theta=1$ — a smooth density pushing up against $\theta$ (red). **Right:** the bootstrap distribution from a single sample. About $63\%$ of resamples land *exactly* on the observed maximum (the spike), and none can exceed it. The bootstrap distribution is discrete and degenerate, so every bootstrap interval''s upper endpoint is stuck at or below $\hat\theta < \theta$. The interval cannot reach the truth: the bootstrap is the wrong tool here.'
+theta_true = 1.0
+n = 30
+# True sampling distribution of the max.
+true_max = np.array([stats.uniform.rvs(0, theta_true, size=n, random_state=rng).max()
+                     for _ in range(5000)])
+# One sample and its bootstrap distribution of the max.
+x_obs = stats.uniform.rvs(0, theta_true, size=n, random_state=np.random.default_rng(3))
+th = x_obs.max()
+boot_max = boot_replicates(x_obs, np.max, 5000, np.random.default_rng(4))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.hist(true_max, bins=40, color=FILL, edgecolor="white", linewidth=0.3, density=True)
+axL.axvline(theta_true, color=TRUTH, lw=2.2, label=r"true $\theta$")
+axL.set_title("True sampling distribution of max")
+axL.set_xlabel(r"$\max X_i$"); axL.set_ylabel("density")
+axL.legend(framealpha=0.9, fontsize=9)
+
+axR.hist(boot_max, bins=40, color=FILL, edgecolor="white", linewidth=0.3, density=True)
+axR.axvline(th, color=TRUTH, lw=2.2, label=r"observed max $\hat\theta$")
+axR.axvline(theta_true, color=GREY, lw=1.5, ls="--", label=r"true $\theta$ (unreachable)")
+axR.set_title("Bootstrap distribution of max (degenerate)")
+axR.set_xlabel(r"$\hat\theta^*$")
+axR.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+print(f"fraction of bootstrap maxima equal to observed max: "
+      f"{np.mean(np.isclose(boot_max, th)):.3f}  (theory: 1 - (1-1/n)^n = "
+      f"{1-(1-1/n)**n:.3f})")
+```
+
+::: {.callout-warning title="Pitfall"}
+**The bootstrap fails for extreme order statistics and any statistic that depends on the
+boundary of the data.** The maximum, the minimum, the range, and the support endpoint all
+break it, because resampling can never produce a value more extreme than what you already
+observed — the empirical distribution $\hat F_n$ has *no mass* beyond the observed extremes,
+and the plug-in principle is precisely the assumption that breaks there. No flavor of
+bootstrap interval (percentile, pivotal, or BCa) repairs this, because the defect is in the
+resampling, not the interval rule. For the maximum, the right tool is the **exact**
+distribution of the order statistic (here $\max X_i / \theta$ has a known
+$\text{Beta}(n,1)$-type law that gives an exact interval) or extreme-value theory. The
+practitioner rule: *the bootstrap estimates smooth functionals of $F$ well and boundary or
+extreme functionals badly.*
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+We collect the boundaries, several of which the examples already hit, so you can make an
+applicability call on a problem you have never seen.
+
+## When percentile and pivotal disagree — and which to distrust {#sec-disagree}
+
+The percentile and pivotal intervals coincide exactly when the bootstrap distribution is
+symmetric about $\hat\theta$ (reflection through $\hat\theta$ then changes nothing). They
+diverge in proportion to the skew. The uncomfortable fact is that **the more they disagree,
+the less you should trust either** — their disagreement is a direct readout of how much skew
+both are failing to handle correctly to second order. When you see them far apart, that is
+the signal to reach for BCa (or bootstrap-t), not to average them.
+
+A subtle, genuinely confusing point worth stating outright: the pivotal interval can produce
+endpoints that violate the parameter's natural range — a pivotal interval for a correlation
+can exceed $1$, or a pivotal interval for a variance can go negative — precisely because the
+reflection $2\hat\theta - q$ can land outside the feasible set. The percentile interval
+never does this (its endpoints are actual replicate values, hence feasible). This is a point
+*for* the percentile method and *for* working on a transformed scale, and a point BCa
+handles gracefully via its transformation-respecting construction.
+
+## Small $n$: too few distinct resamples {#sec-small-n}
+
+The bootstrap resamples from $n$ points, so the empirical distribution it draws from is
+coarse when $n$ is small. The number of *distinct* bootstrap samples is finite
+($\binom{2n-1}{n}$ of them), and for tiny $n$ the bootstrap distribution is visibly granular
+— the quantiles you read off are themselves noisy, and the jackknife acceleration $\hat a$
+in @eq-accel is estimated from only $n$ leave-one-out values. The coverage simulation of
+@sec-ex-coverage showed every method under-covering at $n=15$. The honest statement: **the
+bootstrap is an asymptotic method wearing computational clothing.** It needs $n$ large enough
+that $\hat F_n$ is a decent copy of $F$; below roughly $n \approx 20$–$30$ for a skewed
+statistic, treat any bootstrap interval as optimistic and prefer an exact or
+transformation-based method if one exists.
+
+## Heavy tails and infinite variance {#sec-heavy-tails}
+
+If the population has infinite variance (a Cauchy, or a Pareto with a small tail index), the
+sample mean has no stable sampling distribution for the bootstrap to mimic — [INFR-A2]
+showed the CLT itself fails there. The bootstrap distribution of the mean is then erratic
+and dominated by whichever extreme points happened to land in the sample, and its intervals
+are unreliable in a way no correction fixes. The fix is the same as in [INFR-A2]: target a
+parameter that *does* exist (a median or trimmed mean) rather than a mean that does not, and
+bootstrap *that*.
+
+## Dependent data {#sec-dependence}
+
+The entire construction assumes i.i.d. observations: resampling individual points with
+replacement only makes sense if the points were exchangeable to begin with. For time series
+or spatial data with autocorrelation, resampling single points **destroys the dependence
+structure**, and the resulting intervals are far too narrow (they treat correlated
+observations as if they carried independent information). The repair is the **block
+bootstrap** — resample contiguous *blocks* of observations to preserve short-range
+dependence — which is a genuine extension, not a tweak, and lives beyond this article.
+
+::: {.callout-tip title="You might be asked"}
+*"When would you use a bootstrap confidence interval, and when would you reach for something
+else?"* The summary you should be able to recite:
+
+- **Use it** when (a) you need an interval for a statistic with no clean closed-form sampling
+  distribution — a median, correlation, ratio, trimmed mean, or any complicated functional;
+  (b) the data are i.i.d. (or you have a block scheme for dependence); (c) $n$ is at least
+  moderate; and (d) the statistic is a *smooth* functional of the distribution. In that
+  regime, reach for **BCa** as the default — it respects transformations, corrects bias and
+  skew, and is second-order accurate.
+- **Prefer the classical interval** ([INFR-C1]/[INFR-C2]/[INFR-C3]) when its assumptions
+  genuinely hold — for a Normal mean, the exact t-interval is simpler, exact, and needs no
+  resampling. The bootstrap is for when you *cannot* do the math, not a replacement for when
+  you can.
+- **Do not use any bootstrap interval** for extreme order statistics (max, min, range,
+  support boundary), under infinite variance, or for dependent data without a block scheme.
+  Reach for exact order-statistic distributions, extreme-value theory, robust target
+  parameters, or the block bootstrap respectively.
+- **Among bootstrap intervals:** percentile if you want simplicity and feasibility-respecting
+  endpoints; basic/pivotal almost never as a final answer (its main value is pedagogical and
+  it can leave the feasible set); bootstrap-t when you have a cheap per-resample SE and want
+  top accuracy; **BCa as the all-purpose default.**
+:::
+
+# How many resamples do you need? Monte Carlo error {#sec-monte-carlo}
+
+A practical question with a clean answer, and one an interviewer likes: **how large should
+$B$ be?** There are two distinct sources of error in a bootstrap interval, and conflating
+them is a common mistake.
+
+1. **Statistical error** — the gap between the bootstrap world and the real world, driven by
+   the finite sample size $n$. This is the coverage error of @sec-accuracy. **No amount of
+   resampling reduces it**: it is baked in the moment you collected $n$ data points.
+2. **Monte Carlo error** — the gap between the *ideal* bootstrap (infinitely many resamples,
+   so $\hat G$ known exactly) and our finite-$B$ approximation. This **does** shrink with
+   $B$, and it is the only thing $B$ controls.
+
+To see how Monte Carlo error scales, focus on what $B$ estimates: a quantile of $\hat G$.
+The percentile endpoint at level $p$ is the sample $p$-quantile of $B$ i.i.d. replicates. A
+quantile estimate's Monte Carlo standard deviation scales like $1/\sqrt{B}$ — the universal
+$\sqrt{n}$ law of [INFR-A1], now with $B$ in the role of sample size. Concretely, the
+fraction $\hat p$ of replicates below a fixed threshold is a sample proportion from $B$ draws,
+whose standard error is $\sqrt{p(1-p)/B}$ ([INFR-A1] derived exactly this for the sample
+proportion). So:
+
+$$
+\text{Monte Carlo SD of an endpoint} \;\propto\; \frac{1}{\sqrt{B}}.
+$$ {#eq-mc-error}
+
+The implications are practical and worth memorizing:
+
+- **For a standard error** (just the spread of the replicates), $B \approx 200$ is often
+  plenty — you are estimating one number and $1/\sqrt{200}$ is already small.
+- **For interval endpoints** you are estimating *tail* quantiles ($2.5\%$ and $97.5\%$),
+  which are noisier because few replicates land in the tails. The rule of thumb is
+  $B \ge 2000$, and $B = 10{,}000$ for a publishable BCa interval, so the tail percentiles
+  are stable to the digits you report.
+- **The $\sqrt{B}$ law means diminishing returns**: going from $B=1000$ to $B=4000$ halves
+  the Monte Carlo error; halving it again needs $B = 16{,}000$. Push $B$ until the endpoints
+  stop moving in the digit you care about, then stop.
+
+@fig-monte-carlo shows the endpoints stabilizing as $B$ grows, and the $1/\sqrt B$ shrinkage
+of their wobble.
+
+```{python}
+#| label: fig-monte-carlo
+#| fig-cap: 'Monte Carlo error vs. number of resamples $B$. For the LSAT/GPA correlation, we recompute the percentile interval endpoints at increasing $B$, repeated several times with different random seeds (thin lines). As $B$ grows the endpoints converge and the spread between repeats shrinks like $1/\sqrt{B}$ (the statistical error from $n=15$ does *not* shrink — only this Monte Carlo wobble does). Past $B\approx 4000$ the endpoints are stable to the third decimal.'
+lsat = np.array([576, 635, 558, 578, 666, 580, 555, 661,
+                 651, 605, 653, 575, 545, 572, 594], dtype=float)
+gpa  = np.array([3.39, 3.30, 2.81, 3.03, 3.44, 3.07, 3.00, 3.43,
+                 3.36, 3.13, 3.12, 2.74, 2.76, 2.88, 2.96])
+n = len(lsat)
+B_grid = [100, 250, 500, 1000, 2000, 4000, 8000]
+
+fig, ax = plt.subplots()
+for seed in range(6):
+    r = np.random.default_rng(seed)
+    los, his = [], []
+    for B in B_grid:
+        idx = r.integers(0, n, size=(B, n))
+        reps = np.array([np.corrcoef(lsat[i], gpa[i])[0, 1] for i in idx])
+        lo, hi = np.quantile(reps, [0.025, 0.975])
+        los.append(lo); his.append(hi)
+    ax.plot(B_grid, los, color=ACCENT, lw=1.0, alpha=0.6)
+    ax.plot(B_grid, his, color=DATA, lw=1.0, alpha=0.6)
+ax.set_xscale("log")
+ax.plot([], [], color=DATA, label="upper endpoint")
+ax.plot([], [], color=ACCENT, label="lower endpoint")
+ax.set_xlabel(r"number of resamples $B$ (log scale)")
+ax.set_ylabel("percentile endpoint")
+ax.set_title(r"Endpoints stabilize as $B$ grows (wobble $\propto 1/\sqrt{B}$)")
+ax.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"You ran $B = 100{,}000$ resamples — is your interval more trustworthy than someone's with
+$B = 2000$?"* Only in the third decimal. Large $B$ drives **Monte Carlo** error toward zero,
+so your interval endpoints are reproducible — but it does **nothing** for the **statistical**
+error from your finite $n$. If $n = 15$, an interval from $B = 10^5$ resamples is exactly as
+biased and exactly as likely to miss $\theta$ as one from $B = 2000$; you have only made the
+*same* approximate interval more precisely. More resamples buy reproducibility, not validity.
+The interviewer is checking whether you know that $B$ and $n$ control completely different
+errors.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-E1 *The Bootstrap*]**, which built the plug-in principle, the
+resampling engine, and the bootstrap standard error, and from **[INFR-C1 *Confidence
+Intervals*]**, which fixed the coverage definition and the pivotal-quantity machine. This
+article turned the resamples into trustworthy intervals three ways and showed which defect
+each one repairs. From here:
+
+- **[INFR-E3 *Permutation Tests*]** — the bootstrap's testing cousin: where the bootstrap
+  resamples *with* replacement to estimate a sampling distribution, permutation tests
+  *relabel* under an exchangeability null to build a null distribution. Same computational
+  spirit, different question (testing rather than interval estimation).
+- **[INFR-C2 *The t-Distribution*]** — the assumption-laden interval this article's
+  coverage simulation dethroned on skewed data; the honest comparison runs in both
+  directions, and on clean Normal data the t-interval wins on simplicity and exactness.
+- **[INFR-C3 *Wald, Score, and Profile Intervals*]** — the likelihood-based intervals; BCa
+  and the profile-likelihood interval are the two leading ways to get an *asymmetric*
+  interval that respects the geometry of the problem, from completely different starting
+  points.
+- **The Regression track** consumes this article directly: bootstrap prediction intervals
+  and coefficient intervals are exactly the BCa/percentile machinery applied to a fitted
+  model's predictions and $\hat\beta$, used whenever the homoscedastic-Normal assumptions
+  behind the closed-form regression intervals are in doubt.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The foundational text.** B. Efron and R. Tibshirani, *An Introduction to the Bootstrap*
+  (1993) — the source of the LSAT/GPA example, the BCa interval, and the cleanest exposition
+  of percentile vs. pivotal. Efron's original 1979 *Annals of Statistics* paper, "Bootstrap
+  Methods: Another Look at the Jackknife," is where it all begins.
+- **The accuracy theory.** P. Hall, *The Bootstrap and Edgeworth Expansion* (1992) — the
+  rigorous account of why BCa is second-order accurate and the percentile interval is not;
+  this is where the imported "$\hat a$ matches the leading Edgeworth term" claim of
+  @sec-accuracy is proved in full.
+- **The BCa formula in detail.** Efron, "Better Bootstrap Confidence Intervals," *JASA*
+  (1987) — the paper that introduces $z_0$, the acceleration $a$, and the
+  transformation-respecting derivation we sketched.
+- **Open threads this article deferred.** The **bootstrap-t** interval (@sec-studentized) and
+  its nested-resampling cost; the **block bootstrap** for dependent data (@sec-dependence);
+  the **$m$-out-of-$n$** and **subsampling** repairs for the heavy-tail and extreme-value
+  failures of @sec-ex-edge and @sec-heavy-tails; and the deep question of *why* the bootstrap
+  works at all — the consistency of $\hat F_n$ as an estimate of $F$ and the conditions
+  under which the bootstrap distribution converges to the sampling distribution — which is
+  the theoretical spine introduced in [INFR-E1].

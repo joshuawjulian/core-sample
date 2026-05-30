@@ -1,0 +1,1198 @@
+---
+title: "When You Do Not Know the SD: the t-Distribution and Small-Sample Intervals"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240611)
+
+DATA   = "#2b3a67"     # samples / histograms / the t-curve
+NORMAL = "#c1121f"     # the Gaussian reference curve
+ACCENT = "#0a7d4d"     # highlights / exact values / coverage hits
+GREY   = "#6c757d"
+
+def normal_pdf(t, mu=0.0, sigma=1.0):
+    """The Gaussian density — the n -> infinity limit the t-curve relaxes onto."""
+    return np.exp(-0.5 * ((t - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+```
+
+> **Where this sits in the track.** This is the second article in the **Interval
+> Estimation** movement. It assumes [INFR-C1 *Confidence Intervals: What "95% Confident"
+> Actually Means*], which built the **coverage** definition (the interval is random, the
+> parameter is fixed) and the **pivotal-quantity** recipe for turning a known sampling
+> distribution into an interval, then ran that recipe on the one case where everything is
+> clean: a Normal mean with **known** variance, giving $\bar X_n \pm z_{\alpha/2}\,
+> \sigma/\sqrt n$. It also leans on [INFR-A2 *LLN and the CLT*] for the sampling
+> distribution of $\bar X_n$ and on [INFR-A1 *The Estimator as a Random Variable*] for the
+> standard-error idea. The honest gap C1 left open is the one every real dataset hits: **you
+> never know $\sigma$.** This article closes it. We build the **chi-square distribution of
+> the sample variance** from scratch (we need it here and again in [INFR-D2]), assemble the
+> **Student t-distribution** as a Normal divided by a scaled chi-square root, derive its
+> density, and from it the small-sample interval for a mean. We extend to **two samples**
+> and the **Welch** correction for unequal variances, and we close at the edge — non-normal
+> small samples where the t-interval's coverage quietly fails, pointing forward to the
+> bootstrap [INFR-E2]. It **sets up** [INFR-D2 *The Workhorse Tests*] (the one- and
+> two-sample t-tests are this exact machinery turned into a decision) and stands as the
+> assumption-laden foil to the assumption-light bootstrap.
+>
+> It imports three results by name, each built from scratch in the Probability track and
+> used here only by its statement: the **Normal and chi-square distributions** and that a
+> sum of squared independent standard Normals is chi-square [PROB-14]; the **Gamma function
+> and Gamma density** that the chi-square is a special case of [PROB-15]; and a
+> **change-of-variables formula for densities** [PROB-11]. Everything above the Calculus-I
+> floor that those carry is flagged at the point of use.
+
+## Abstract {.unnumbered}
+
+The confidence interval $\bar X_n \pm z_{\alpha/2}\,\sigma/\sqrt n$ from [INFR-C1] has a
+fatal practical defect: it contains $\sigma$, the population standard deviation, which we
+never know. The obvious fix is to plug in the sample standard deviation $s$ — but $s$ is
+*itself* a noisy estimate, and pretending it is the truth makes the interval too short, so
+it covers less often than advertised. This article repairs the interval exactly. We show
+that when the data are Normal, the quantity $(n-1)s^2/\sigma^2$ follows a **chi-square
+distribution** with $n-1$ degrees of freedom — which we build from the ground up,
+including the non-obvious fact that $\bar X_n$ and $s^2$ are independent — and that
+$\bar X_n$ and $s^2$ combine into a pivot, the **t-statistic** $T = (\bar X_n - \mu)/(s/\sqrt
+n)$, whose distribution is a Normal divided by the square root of a scaled independent
+chi-square. We derive the density of that distribution — **Student's $t$ with $n-1$ degrees
+of freedom** — in full, read its fatter tails as the price of estimating $\sigma$, and
+show analytically that it relaxes back onto the Gaussian as $n\to\infty$. The payoff is the
+small-sample interval $\bar X_n \pm t_{n-1,\,\alpha/2}\, s/\sqrt n$, which we extend to the
+two-sample problem and the Welch correction. The single claim the article defends: **the
+$t$ is not a different idea from the $z$, it is the same pivot honestly accounting for one
+more estimated quantity** — and the moment the data stop being Normal in a small sample,
+even that honesty is not enough, and you reach for the bootstrap.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Let $X_1,\dots,X_n$ be independent draws from $\mathcal N(\mu,\sigma^2)$ with **both**
+$\mu$ and $\sigma^2$ unknown. Estimate the mean by $\bar X_n=\frac1n\sum X_i$ and the
+variance by the sample variance $s^2=\frac{1}{n-1}\sum (X_i-\bar X_n)^2$. Then the
+studentized pivot
+$$
+T \;=\; \frac{\bar X_n - \mu}{s/\sqrt n}
+$$
+does **not** follow a standard Normal — it follows **Student's $t$-distribution with
+$n-1$ degrees of freedom**, a symmetric bell curve like the Normal but with **heavier
+tails**, because the denominator $s$ is itself random and occasionally small, blowing $T$
+up. The honest confidence interval for $\mu$ is therefore
+$$
+\boxed{\;\bar X_n \;\pm\; t_{n-1,\,\alpha/2}\,\frac{s}{\sqrt n}\;}
+$$
+with $t_{n-1,\alpha/2}$ the upper-$\alpha/2$ quantile of that $t$ distribution — *wider*
+than the Normal interval, by exactly the amount needed to pay for not knowing $\sigma$. As
+$n\to\infty$ the extra width vanishes and $t\to z$: with enough data, estimating $\sigma$
+costs nothing.
+:::
+
+Everything orbits that box. The whole article is the answer to one question: *what is the
+exact distribution of $T$ when we have replaced the known $\sigma$ by the estimated $s$?*
+The replacement looks innocent, but it converts a clean Normal pivot into something
+genuinely new, and getting the interval right means getting that something right —
+exactly, not approximately, when the data are Normal.
+
+# Why we are doing this: the problem that forced the t {#sec-why}
+
+Hold one question in view for the entire article: **when we do not know $\sigma$ and must
+estimate it from the same small sample, how much wider must the interval be to stay
+honest?** Every derivation below is an answer to some piece of that.
+
+## What [INFR-C1] gave us, and the crack in it {#sec-crack}
+
+[INFR-C1] built the confidence interval for a Normal mean by the **pivot** method. The key
+object was the standardized mean
+$$
+Z \;=\; \frac{\bar X_n - \mu}{\sigma/\sqrt n},
+$$ {#eq-z-pivot}
+which — when the $X_i$ are Normal, or by the CLT [INFR-A2] when $n$ is large — is a
+*standard Normal*, $\mathcal N(0,1)$. The defining feature of a pivot is that its
+distribution does **not** depend on the unknown parameter: $Z$ is $\mathcal N(0,1)$ no
+matter what $\mu$ and $\sigma$ are. That is what let us write
+$P(-z_{\alpha/2}\le Z\le z_{\alpha/2}) = 1-\alpha$ and algebraically rearrange the
+inequality to trap $\mu$:
+$$
+\bar X_n - z_{\alpha/2}\frac{\sigma}{\sqrt n}
+\;\le\; \mu \;\le\;
+\bar X_n + z_{\alpha/2}\frac{\sigma}{\sqrt n}.
+$$ {#eq-z-interval}
+
+Read @eq-z-interval and find the lie. It contains $\sigma$ — the population standard
+deviation. In the entire history of applied statistics, the number of times an analyst
+knew $\sigma$ but not $\mu$ is essentially zero: if you knew how variable the population
+was, you would almost certainly know its center too. Knowing $\sigma$ is a classroom
+fiction. **The interval as written cannot be computed from data.**
+
+## The tempting fix, and why it is not free {#sec-tempting}
+
+The fix everyone reaches for first: estimate $\sigma$ from the sample. The natural estimate
+is the **sample standard deviation** $s=\sqrt{s^2}$, with
+$$
+s^2 \;=\; \frac{1}{n-1}\sum_{i=1}^n (X_i-\bar X_n)^2 .
+$$ {#eq-s2-def}
+(The $n-1$ rather than $n$ is the unbiasedness correction; [INFR-A1] derived
+$\mathbb E[s^2]=\sigma^2$ with this divisor, and @sec-chisq below re-derives the same
+fact as a by-product of a deeper result. We will explain the $n-1$ *mechanically* in
+@sec-df.) Then just substitute $s$ for $\sigma$ and use the interval
+$\bar X_n \pm z_{\alpha/2}\, s/\sqrt n$.
+
+For large $n$ this is exactly right, and [INFR-A2] told us why: $s\to\sigma$ in
+probability (LLN on the squared deviations), and **Slutsky's theorem** says replacing a
+known constant in a converging-in-distribution sequence by something that converges to that
+constant leaves the limit untouched. So $(\bar X_n-\mu)/(s/\sqrt n)\xrightarrow{d}\mathcal
+N(0,1)$, and for big samples plugging in $s$ is asymptotically free.
+
+But "asymptotically free" is a promise about the limit. For a **small** sample it is not
+free at all, and here is the intuition for why. We have replaced one fixed number,
+$\sigma$, by a *random* one, $s$. On some samples $s$ comes out smaller than $\sigma$ —
+and when it does, the denominator $s/\sqrt n$ is small, so the ratio
+$(\bar X_n-\mu)/(s/\sqrt n)$ is *large*. The studentized quantity therefore takes extreme
+values more often than a standard Normal would: its tails are **heavier**. If we keep using
+the Normal quantile $z_{\alpha/2}=1.96$ as though nothing changed, our interval is too
+short for how wild the ratio actually gets, and it covers the truth *less* than the
+advertised $95\%$. @fig-undercoverage measures the damage directly.
+
+```{python}
+#| label: fig-undercoverage
+#| fig-cap: 'The cost of pretending $s=\sigma$. From a true $\mathcal N(0,1)$ source we draw 20000 samples at each of several sizes $n$, and for each form the *naive* interval $\bar X_n \pm 1.96\,s/\sqrt n$ (using the Normal quantile but the estimated $s$). The bars show how often that interval actually covers the true mean $\mu=0$. At $n=2$ it covers only about 70%; the shortfall shrinks as $n$ grows but is still visible at $n=10$. The honest fix — using the wider $t$ quantile instead of 1.96 — restores coverage to the dashed 95% target exactly (green).'
+ns = [2, 3, 5, 10, 30]
+B = 20000
+naive_cov, t_cov = [], []
+for n in ns:
+    samp = rng.standard_normal((B, n))
+    xbar = samp.mean(axis=1)
+    s = samp.std(axis=1, ddof=1)
+    se = s / np.sqrt(n)
+    naive = np.mean(np.abs(xbar) <= 1.96 * se)
+    tq = stats.t.ppf(0.975, df=n - 1)
+    tcov = np.mean(np.abs(xbar) <= tq * se)
+    naive_cov.append(naive); t_cov.append(tcov)
+
+xpos = np.arange(len(ns))
+fig, ax = plt.subplots()
+ax.bar(xpos - 0.2, naive_cov, width=0.4, color=NORMAL, label=r"naive: $\bar X \pm 1.96\,s/\sqrt{n}$")
+ax.bar(xpos + 0.2, t_cov, width=0.4, color=ACCENT, label=r"$t$: $\bar X \pm t_{n-1}\,s/\sqrt{n}$")
+ax.axhline(0.95, color=GREY, ls="--", lw=1.5, label="target 95%")
+ax.set_xticks(xpos); ax.set_xticklabels([f"n={n}" for n in ns])
+ax.set_ylabel("actual coverage"); ax.set_ylim(0.6, 1.0)
+ax.set_title("Using 1.96 with estimated $s$ undercovers at small $n$")
+ax.legend(loc="lower right", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+for n, nc in zip(ns, naive_cov):
+    print(f"n={n:>2}: naive coverage = {nc:.3f}")
+```
+
+The naive interval is not a rounding error at small $n$ — at $n=2$ it covers barely $70\%$
+of the time while claiming $95\%$. That gap is the entire reason the $t$-distribution
+exists.
+
+## The history: a brewer with a sample of four {#sec-history}
+
+The distribution is named for "Student," the pen name of **William Sealy Gosset**, a
+chemist and statistician at the Guinness brewery in Dublin who published it in *Biometrika*
+in 1908. Guinness's problem was the small-sample problem in its purest form. To monitor the
+quality of barley, hops, and yeast, Gosset could afford only a handful of measurements —
+sometimes as few as four. The large-sample Normal theory of the day (Karl Pearson's world)
+was useless to him: with $n=4$ the estimate $s$ of the variability is itself wildly
+uncertain, and treating it as known gave intervals and tests that were dangerously
+overconfident — exactly the undercoverage of @fig-undercoverage.
+
+Gosset's contribution was to work out the *exact* distribution of $(\bar X-\mu)/(s/\sqrt
+n)$ for finite $n$ under Normal data, accounting for the randomness of $s$ in the
+denominator. (Guinness forbade employees from publishing under their own names, lest
+competitors learn the brewery used statistics — hence "Student.") Ronald Fisher, a few
+years later, supplied the rigorous derivation via the geometry of $n$-dimensional Normal
+samples and connected it to the chi-square distribution; that is essentially the
+derivation we give below. The lesson Gosset forced onto statistics is the *why* of this
+whole article: **when the sample is small and $\sigma$ is estimated, you must pay for the
+estimation, and the $t$-distribution is the exact bill.**
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just use the Normal and accept a little undercoverage — surely it washes out?"*
+It does wash out — *asymptotically*, and we will prove $t\to z$ in @sec-limit. But the
+regime where you do not know $\sigma$ is overwhelmingly the regime where $n$ is small (if
+$n$ were huge you would know $\sigma$ essentially exactly). So the correction matters
+exactly when you cannot afford to ignore it. The $t$ costs you nothing when $n$ is large
+(the quantile is within a hair of $z$) and saves you from real overconfidence when $n$ is
+small — there is no reason *not* to use it. The honest one-liner: *use $t$ whenever you
+estimate $\sigma$; it can only help.*
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, hold three pictures.
+
+**One: the denominator is now a random variable.** In the $z$-pivot @eq-z-pivot the
+denominator $\sigma/\sqrt n$ is a fixed number. In the $t$-pivot it is $s/\sqrt n$, and
+$s$ jitters from sample to sample. The $t$-statistic is therefore a ratio of *two* random
+things — a Normal numerator and a random denominator — not a Normal rescaled by a constant.
+A ratio of randoms is heavier in the tails than the numerator alone, because the two ways
+to get a big ratio (big numerator *or* small denominator) both contribute.
+
+**Two: degrees of freedom is "how much information is left to estimate spread."** We use
+$n$ data points; one degree of freedom is spent locating the center $\bar X_n$, leaving
+$n-1$ to measure spread around it. The fewer leftover degrees of freedom, the noisier $s$
+is, the heavier the $t$'s tails. With $n-1$ huge, $s$ is essentially $\sigma$ and the $t$
+is essentially Normal.
+
+**Three: the $t$ is a Normal smeared by an independent random scale.** This is the precise
+version of picture one, and it is the engine of the whole derivation. Write
+$$
+T \;=\; \frac{\bar X_n-\mu}{s/\sqrt n}
+\;=\; \frac{(\bar X_n-\mu)\big/(\sigma/\sqrt n)}{s/\sigma}
+\;=\; \frac{Z}{s/\sigma},
+$$
+where $Z=(\bar X_n-\mu)/(\sigma/\sqrt n)$ is *exactly* the standard Normal from @eq-z-pivot,
+and $s/\sigma$ is a random positive scale near $1$. So $T$ is a standard Normal divided by a
+random number that is *usually* close to $1$ but sometimes noticeably less. @fig-ratio-intuition
+shows what dividing a clean Normal by that wobbly scale does to the shape.
+
+```{python}
+#| label: fig-ratio-intuition
+#| fig-cap: 'Why the tails fatten. We draw $Z\sim\mathcal N(0,1)$ (the numerator) and an independent scale $W=s/\sigma$ for $n=4$ (so $s$ is very noisy), then histogram both $Z$ alone (red outline) and the ratio $T=Z/W$ (blue fill). Dividing by a scale that is often below 1 throws extra mass into the tails: the blue distribution has the same center and symmetry as the Normal but is visibly heavier far from zero. That heavier tail is the $t$-distribution, and it is the reason 1.96 is not enough.'
+n_demo = 4
+B = 200000
+Z = rng.standard_normal(B)
+# s/sigma for N(mu, sigma^2): (n-1) s^2 / sigma^2 ~ chi^2_{n-1}, derived in sec-chisq.
+chi2 = rng.chisquare(df=n_demo - 1, size=B)
+W = np.sqrt(chi2 / (n_demo - 1))
+T = Z / W
+
+grid = np.linspace(-6, 6, 400)
+fig, ax = plt.subplots()
+ax.hist(T, bins=300, range=(-6, 6), density=True, color=DATA, alpha=0.55,
+        label=r"$T=Z/(s/\sigma)$  (this is $t_3$)")
+ax.hist(Z, bins=300, range=(-6, 6), density=True, histtype="step",
+        color=NORMAL, lw=1.8, label=r"$Z\sim N(0,1)$")
+ax.plot(grid, normal_pdf(grid), color=NORMAL, lw=1.0, alpha=0.6)
+ax.set_xlim(-6, 6); ax.set_xlabel("value"); ax.set_ylabel("density")
+ax.set_title(r"A Normal divided by a random scale has heavier tails")
+ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+print(f"P(|Z|>3)  = {np.mean(np.abs(Z)>3):.4f}")
+print(f"P(|T|>3)  = {np.mean(np.abs(T)>3):.4f}   <- much larger: fat tails")
+```
+
+The printed tail probabilities make picture one quantitative: $|T|$ exceeds $3$ several
+times more often than $|Z|$ does. To turn these pictures into an exact interval we need the
+exact distribution of the denominator $s$, which is the chi-square story, and then the
+exact distribution of the ratio, which is Gosset's $t$.
+
+# The distribution of the sample variance: chi-square from scratch {#sec-chisq}
+
+Everything hinges on the distribution of $s^2$. We build it now. The destination is:
+
+::: {#thm-chisq}
+**Theorem (sampling distribution of $s^2$).** If $X_1,\dots,X_n$ are independent
+$\mathcal N(\mu,\sigma^2)$, then
+$$
+\frac{(n-1)s^2}{\sigma^2}
+\;=\; \frac{1}{\sigma^2}\sum_{i=1}^n (X_i-\bar X_n)^2
+\;\sim\; \chi^2_{\,n-1},
+$$
+a **chi-square distribution with $n-1$ degrees of freedom**, and moreover $\bar X_n$ and
+$s^2$ are **independent**.
+:::
+
+We need three ingredients, each established below in its own subsection: what the
+chi-square distribution *is* (@sec-chisq-def), the algebraic identity that splits the total
+squared spread into a mean part and a variance part (@sec-split), and the geometric/
+orthogonality argument that makes those two parts independent and counts the degrees of
+freedom (@sec-orthogonal).
+
+## What the chi-square distribution is {#sec-chisq-def}
+
+::: {#def-chisq}
+**Definition (chi-square).** If $Z_1,\dots,Z_k$ are independent standard Normals, the
+distribution of
+$$
+Q \;=\; Z_1^2 + Z_2^2 + \cdots + Z_k^2
+$$
+is the **chi-square distribution with $k$ degrees of freedom**, written $Q\sim\chi^2_k$.
+:::
+
+This is the *defining* fact we import from [PROB-14]: the sum of $k$ independent squared
+standard Normals has a specific, named distribution. We will need its density and one
+moment. Both follow from a single computation we do once here so nothing is left
+floating — the $k=1$ density — and then a known closure property we flag.
+
+**The $\chi^2_1$ density (derived).** Let $Z\sim\mathcal N(0,1)$ and $Q=Z^2$. We find the
+density of $Q$ by the change-of-variables technique (the cumulative-distribution method,
+which needs only Calc-1). For $q>0$,
+$$
+F_Q(q) = P(Z^2 \le q) = P(-\sqrt q \le Z \le \sqrt q)
+= \Phi(\sqrt q) - \Phi(-\sqrt q),
+$$
+where $\Phi$ is the standard Normal CDF. Differentiate in $q$ using the chain rule and
+$\Phi'=\phi$ (the Normal density), with $\frac{d}{dq}\sqrt q=\frac{1}{2\sqrt q}$ and
+$\frac{d}{dq}(-\sqrt q)=-\frac{1}{2\sqrt q}$:
+$$
+f_Q(q) = \phi(\sqrt q)\frac{1}{2\sqrt q} - \phi(-\sqrt q)\Bigl(-\frac{1}{2\sqrt q}\Bigr)
+= \frac{1}{2\sqrt q}\bigl[\phi(\sqrt q)+\phi(-\sqrt q)\bigr].
+$$
+The Normal density is symmetric, $\phi(-u)=\phi(u)=\frac{1}{\sqrt{2\pi}}e^{-u^2/2}$, so
+$\phi(\sqrt q)+\phi(-\sqrt q)=\frac{2}{\sqrt{2\pi}}e^{-q/2}$ (note $(\sqrt q)^2=q$). Hence
+$$
+f_{\chi^2_1}(q) = \frac{1}{2\sqrt q}\cdot\frac{2}{\sqrt{2\pi}}e^{-q/2}
+= \frac{1}{\sqrt{2\pi}}\,q^{-1/2}e^{-q/2},
+\qquad q>0 .
+$$ {#eq-chisq1}
+
+This is a **Gamma density** in disguise. Recall the Gamma$(\alpha,\beta)$ density from
+[PROB-15], $f(x)=\frac{\beta^\alpha}{\Gamma(\alpha)}x^{\alpha-1}e^{-\beta x}$, where the
+**Gamma function** $\Gamma(\alpha)=\int_0^\infty t^{\alpha-1}e^{-t}\,dt$ generalizes the
+factorial. Matching exponents in @eq-chisq1: $x^{\alpha-1}=q^{-1/2}$ gives $\alpha=\tfrac12$,
+and $e^{-\beta x}=e^{-q/2}$ gives $\beta=\tfrac12$. So $\chi^2_1 = \text{Gamma}(\tfrac12,
+\tfrac12)$, and the normalizing constant checks out because $\Gamma(\tfrac12)=\sqrt\pi$
+(also from [PROB-15]): $\frac{\beta^\alpha}{\Gamma(\alpha)}=\frac{(1/2)^{1/2}}{\sqrt\pi}
+=\frac{1}{\sqrt{2\pi}}$, exactly the constant in @eq-chisq1.
+
+**The general $\chi^2_k$ density.** Gamma distributions with the same rate $\beta$ add their
+shape parameters when independent variables are summed — that is, if $Q_1\sim\text{Gamma}
+(\alpha_1,\beta)$ and $Q_2\sim\text{Gamma}(\alpha_2,\beta)$ are independent, then
+$Q_1+Q_2\sim\text{Gamma}(\alpha_1+\alpha_2,\beta)$. This additivity is a standard
+moment-generating-function result proved in [PROB-15]; we flag it as imported rather than
+re-derive it here, because the MGF machinery lives in the Probability track. Summing $k$
+independent $\chi^2_1 = \text{Gamma}(\tfrac12,\tfrac12)$ pieces therefore gives
+$\text{Gamma}(\tfrac k2,\tfrac12)$:
+$$
+f_{\chi^2_k}(q) = \frac{(1/2)^{k/2}}{\Gamma(k/2)}\,q^{k/2-1}e^{-q/2}
+= \frac{1}{2^{k/2}\Gamma(k/2)}\,q^{k/2-1}e^{-q/2},
+\qquad q>0 .
+$$ {#eq-chisq-k}
+We will need this density in @sec-t-density to build the $t$. We also note its mean for
+later: since each $Z_i^2$ has $\mathbb E[Z_i^2]=\operatorname{Var}(Z_i)=1$, linearity gives
+$\mathbb E[\chi^2_k]=k$. @fig-chisq draws the family.
+
+```{python}
+#| label: fig-chisq
+#| fig-cap: 'The chi-square family $\chi^2_k$, the distribution of a sum of $k$ squared standard Normals (@eq-chisq-k). For $k=1$ the density diverges at 0 (it is $q^{-1/2}$ there); as $k$ grows the distribution shifts right (its mean is exactly $k$) and grows more symmetric, foreshadowing that for large degrees of freedom $s^2$ concentrates tightly around $\sigma^2$. The sample variance lives on this family: $(n-1)s^2/\sigma^2 \sim \chi^2_{n-1}$.'
+q = np.linspace(0.01, 20, 500)
+fig, ax = plt.subplots()
+for k, c in zip([1, 2, 4, 8], [DATA, ACCENT, GREY, NORMAL]):
+    ax.plot(q, stats.chi2.pdf(q, df=k), color=c, label=fr"$k={k}$ (mean ${k}$)")
+ax.set_ylim(0, 0.55); ax.set_xlabel("$q$"); ax.set_ylabel("density")
+ax.set_title(r"The $\chi^2_k$ family")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+```
+
+## The algebraic split: total squared spread = mean part + variance part {#sec-split}
+
+Now to $s^2$ itself. The numerator of $s^2$ is $\sum_i (X_i-\bar X_n)^2$. We relate it to
+the simpler $\sum_i (X_i-\mu)^2$ — squared deviations from the *true* mean, which are
+clean because each $(X_i-\mu)/\sigma$ is a standard Normal. The bridge is a pure algebra
+identity. Insert and subtract $\bar X_n$ inside each term:
+$$
+\sum_{i=1}^n (X_i-\mu)^2
+= \sum_{i=1}^n \bigl[(X_i-\bar X_n)+(\bar X_n-\mu)\bigr]^2 .
+$$
+Expand the square inside the sum with $(a+b)^2=a^2+2ab+b^2$, taking $a=X_i-\bar X_n$ and
+$b=\bar X_n-\mu$ (note $b$ does not depend on $i$):
+$$
+= \sum_i (X_i-\bar X_n)^2
+\;+\; 2(\bar X_n-\mu)\sum_i (X_i-\bar X_n)
+\;+\; \sum_i (\bar X_n-\mu)^2 .
+$$
+The middle sum vanishes: $\sum_i (X_i-\bar X_n) = \sum_i X_i - n\bar X_n
+= n\bar X_n - n\bar X_n = 0$, because $\bar X_n$ is by definition the value that makes the
+deviations sum to zero. The last term is $(\bar X_n-\mu)^2$ summed $n$ times, i.e.
+$n(\bar X_n-\mu)^2$. So
+$$
+\sum_{i=1}^n (X_i-\mu)^2
+\;=\; \underbrace{\sum_{i=1}^n (X_i-\bar X_n)^2}_{\text{spread about }\bar X_n}
+\;+\; \underbrace{n(\bar X_n-\mu)^2}_{\text{the mean's own deviation}} .
+$$ {#eq-split}
+
+Divide @eq-split through by $\sigma^2$ and read it as a statement about chi-squares:
+$$
+\underbrace{\sum_i \Bigl(\frac{X_i-\mu}{\sigma}\Bigr)^2}_{\textstyle A}
+\;=\;
+\underbrace{\frac{1}{\sigma^2}\sum_i (X_i-\bar X_n)^2}_{\textstyle B \,=\, (n-1)s^2/\sigma^2}
+\;+\;
+\underbrace{\Bigl(\frac{\bar X_n-\mu}{\sigma/\sqrt n}\Bigr)^2}_{\textstyle C} .
+$$ {#eq-split-chisq}
+(The last term rearranges as $n(\bar X_n-\mu)^2/\sigma^2 = \bigl((\bar X_n-\mu)/(\sigma/
+\sqrt n)\bigr)^2$.) Now identify the pieces:
+
+- **$A$** is a sum of $n$ independent squared standard Normals — each $(X_i-\mu)/\sigma$ is
+  $\mathcal N(0,1)$ — so $A\sim\chi^2_n$ by @def-chisq.
+- **$C$** is the square of $(\bar X_n-\mu)/(\sigma/\sqrt n)$. We know from [INFR-A1] that
+  $\bar X_n\sim\mathcal N(\mu,\sigma^2/n)$ exactly for Normal data, so that ratio is a
+  *single* standard Normal, and $C\sim\chi^2_1$.
+- **$B$** is the thing we want, $(n-1)s^2/\sigma^2$.
+
+So @eq-split-chisq reads $\chi^2_n = B + \chi^2_1$. If we could show $B$ and $C$ are
+independent, then $B$ would have to be a $\chi^2_{n-1}$ — a $\chi^2_n$ is a $\chi^2_{n-1}$
+plus an independent $\chi^2_1$ (add an $(n-1)$-term sum of squares to a $1$-term one). The
+degrees-of-freedom arithmetic $n = (n-1) + 1$ is the whole content of @thm-chisq. Everything
+now rests on independence, which is the subtle part.
+
+## Why $\bar X_n$ and $s^2$ are independent: orthogonality {#sec-orthogonal}
+
+That $\bar X_n$ (which drives $C$) and $s^2$ (which is $B$) are independent is *not*
+obvious — both are computed from the same data, and for non-Normal data it is generally
+**false**. It is a special gift of the Normal distribution, and the cleanest argument is
+geometric. We give it in full because it both proves independence and *counts* the degrees
+of freedom, answering the "what is a degree of freedom" question mechanically.
+
+Center the data: let $Y_i = (X_i-\mu)/\sigma$, so $Y=(Y_1,\dots,Y_n)$ is a vector of $n$
+independent $\mathcal N(0,1)$'s. Two facts about this vector, both imported from [PROB-14]
+and flagged here:
+
+1. **Rotational symmetry of the standard Normal.** The joint density of $Y$ is
+   $\prod_i \frac{1}{\sqrt{2\pi}}e^{-y_i^2/2} = (2\pi)^{-n/2}e^{-\|y\|^2/2}$, which depends
+   on $y$ *only through its length* $\|y\|^2=\sum y_i^2$. A density that depends only on
+   length is unchanged by any rotation (orthogonal transformation) of the coordinates. So
+   if $O$ is any orthogonal matrix, $OY$ has the same distribution as $Y$ — again $n$
+   independent $\mathcal N(0,1)$'s. This is the defining geometric property of the standard
+   multivariate Normal.
+2. **Orthogonal pieces of a standard Normal vector are independent.** Because the
+   coordinates of $OY$ are again independent standard Normals, any group of them is
+   independent of any disjoint group. So if we split $\mathbb R^n$ into orthogonal
+   subspaces and look at the components of $Y$ in each, those components are independent.
+
+Now choose the rotation cleverly. Let $\mathbf 1=(1,1,\dots,1)/\sqrt n$ be the unit vector
+along the diagonal. Decompose $Y$ into its component along $\mathbf 1$ and the part
+orthogonal to $\mathbf 1$:
+$$
+Y \;=\; \underbrace{(Y\cdot\mathbf 1)\,\mathbf 1}_{\text{along }\mathbf 1}
+\;+\; \underbrace{\bigl(Y-(Y\cdot\mathbf 1)\mathbf 1\bigr)}_{\text{orthogonal to }\mathbf 1}.
+$$
+Compute the projection coefficient: $Y\cdot\mathbf 1 = \frac{1}{\sqrt n}\sum_i Y_i
+= \sqrt n\,\bar Y$, where $\bar Y=\frac1n\sum Y_i$. So:
+
+- The **component along $\mathbf 1$** has squared length $(Y\cdot\mathbf 1)^2 = n\bar Y^2$.
+  But $\bar Y = (\bar X_n-\mu)/\sigma$, so $n\bar Y^2 = n(\bar X_n-\mu)^2/\sigma^2 = C$ from
+  @eq-split-chisq. This piece *is* the mean. It lives in a **1-dimensional** subspace
+  (the line through $\mathbf 1$).
+- The **orthogonal component** has squared length $\|Y\|^2 - (Y\cdot\mathbf 1)^2
+  = \sum_i Y_i^2 - n\bar Y^2$. Writing $Y_i^2 = ((X_i-\mu)/\sigma)^2$ and using the split
+  @eq-split-chisq, this equals $A - C = B = (n-1)s^2/\sigma^2$. This piece *is* the sample
+  variance. It lives in the **$(n-1)$-dimensional** subspace orthogonal to $\mathbf 1$.
+
+By fact 2, the projection onto the line (giving $\bar X_n$) and the projection onto the
+orthogonal $(n-1)$-dimensional complement (giving $s^2$) are **independent**, because they
+are the components of a rotated standard Normal vector in disjoint orthogonal subspaces.
+That proves the independence claim of @thm-chisq.
+
+And it counts the degrees of freedom *mechanically*: the variance piece lives in an
+$(n-1)$-dimensional space, so it is a sum of squares of $n-1$ independent standard Normals
+(pick any orthonormal basis of that subspace; the coordinates of $Y$ in it are $n-1$
+independent $\mathcal N(0,1)$'s, and $B$ is the sum of their squares). Hence $B\sim
+\chi^2_{n-1}$, completing @thm-chisq. @fig-chisq-empirical confirms it by simulation.
+
+```{python}
+#| label: fig-chisq-empirical
+#| fig-cap: 'Confirming @thm-chisq. For Normal data with $n=6$ we draw 100000 samples, compute $(n-1)s^2/\sigma^2$ for each, and histogram it (blue) against the theoretical $\chi^2_{5}$ density (red). They match. The right panel scatters $\bar X_n$ against $s^2$ across samples: the cloud shows no tilt or funnel — the two estimates are uncorrelated, the visible signature of the independence the orthogonality argument proved (and which holds *only* because the data are Normal).'
+n = 6
+B = 100000
+samp = rng.standard_normal((B, n))   # sigma=1, mu=0
+xbar = samp.mean(axis=1)
+s2 = samp.var(axis=1, ddof=1)
+stat = (n - 1) * s2 / 1.0
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.hist(stat, bins=120, density=True, color=DATA, alpha=0.6, label="empirical $(n-1)s^2/\\sigma^2$")
+qq = np.linspace(0.01, 25, 400)
+axL.plot(qq, stats.chi2.pdf(qq, df=n - 1), color=NORMAL, label=fr"$\chi^2_{{{n-1}}}$ density")
+axL.set_xlim(0, 25); axL.set_xlabel("value"); axL.set_ylabel("density")
+axL.set_title(r"$(n-1)s^2/\sigma^2 \sim \chi^2_{n-1}$"); axL.legend(framealpha=0.9, fontsize=9)
+
+axR.scatter(xbar[:3000], s2[:3000], s=5, color=DATA, alpha=0.25)
+axR.set_xlabel(r"$\bar X_n$"); axR.set_ylabel(r"$s^2$")
+axR.set_title(f"corr = {np.corrcoef(xbar, s2)[0,1]:+.3f}  (independent)")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why exactly $n-1$ degrees of freedom — give me the mechanical reason, not just the
+unbiasedness correction."* Because estimating the variance uses the deviations $X_i-\bar
+X_n$, and those deviations are **not** free: they are forced to sum to zero
+($\sum_i(X_i-\bar X_n)=0$, shown in @sec-split). One linear constraint removes one degree
+of freedom from the $n$ data points, leaving $n-1$ truly free directions in which the data
+can deviate from their own mean. Geometrically (this article's argument), the deviation
+vector $X-\bar X_n\mathbf 1$ is *orthogonal* to the all-ones direction, so it lives in an
+$(n-1)$-dimensional subspace and is a sum of squares of $n-1$ independent Normals. The
+$n-1$ divisor in $s^2$ and the $n-1$ degrees of freedom are the *same* fact viewed two
+ways: you spent one observation's worth of information locating the center.
+:::
+
+# Assembling the t-distribution {#sec-t-build}
+
+We now have the two independent pieces. Combine them.
+
+::: {#def-t}
+**Definition (Student's $t$).** If $Z\sim\mathcal N(0,1)$ and $Q\sim\chi^2_k$ are
+**independent**, then
+$$
+T \;=\; \frac{Z}{\sqrt{Q/k}}
+$$
+follows **Student's $t$-distribution with $k$ degrees of freedom**, written $T\sim t_k$.
+:::
+
+The pivot is exactly this shape. From @sec-intuition, $T=(\bar X_n-\mu)/(s/\sqrt n)$ can be
+written
+$$
+T \;=\; \frac{(\bar X_n-\mu)\big/(\sigma/\sqrt n)}{\,\sqrt{\,s^2/\sigma^2\,}\,}
+\;=\; \frac{Z}{\sqrt{\,\dfrac{(n-1)s^2/\sigma^2}{\,n-1\,}\,}}
+\;=\; \frac{Z}{\sqrt{Q/(n-1)}},
+$$ {#eq-t-as-ratio}
+where $Z=(\bar X_n-\mu)/(\sigma/\sqrt n)\sim\mathcal N(0,1)$ and $Q=(n-1)s^2/\sigma^2\sim
+\chi^2_{n-1}$ — and these two are **independent** by @thm-chisq. So by @def-t,
+$$
+\boxed{\;T = \frac{\bar X_n-\mu}{s/\sqrt n} \sim t_{\,n-1}.\;}
+$$ {#eq-t-pivot}
+
+Note the unknown $\sigma$ cancelled completely in @eq-t-as-ratio: it divides out of the
+numerator and the denominator. **That cancellation is what makes $T$ a pivot** — its
+distribution ($t_{n-1}$) depends on neither $\mu$ nor $\sigma$, only on the known sample
+size. This is the same pivotal logic as [INFR-C1], now surviving the replacement of $\sigma$
+by $s$ because of how the two pieces were built from the *same* $\sigma$.
+
+## The density of the t-distribution {#sec-t-density}
+
+We derive the $t_k$ density from @def-t — no "it can be shown." We have independent
+$Z\sim\mathcal N(0,1)$ and $Q\sim\chi^2_k$, and want the density of $T=Z/\sqrt{Q/k}$.
+
+The clean route is to first find the joint density of $(T,Q)$ via a change of variables
+from $(Z,Q)$, then integrate $Q$ out. Define the transformation
+$$
+T = \frac{Z}{\sqrt{Q/k}}, \qquad Q = Q,
+$$
+i.e. we keep $Q$ and replace $Z$ by $T$. Solve for the old variables in terms of the new:
+$Z = T\sqrt{Q/k}$ and $Q=Q$. The change-of-variables formula for densities ([PROB-11])
+says $f_{T,Q}(t,q) = f_{Z,Q}\bigl(z(t,q),q\bigr)\,\bigl|\det J\bigr|$, where $J$ is the
+Jacobian of $(z,q)$ with respect to $(t,q)$. Compute it:
+$$
+J = \begin{pmatrix} \dfrac{\partial z}{\partial t} & \dfrac{\partial z}{\partial q} \\[8pt]
+\dfrac{\partial q}{\partial t} & \dfrac{\partial q}{\partial q}\end{pmatrix}
+= \begin{pmatrix} \sqrt{q/k} & \dfrac{t}{2\sqrt{kq}} \\[8pt] 0 & 1 \end{pmatrix},
+\qquad |\det J| = \sqrt{q/k}.
+$$
+(The determinant is the product of the diagonal since the lower-left is $0$; only the
+$\partial z/\partial t = \sqrt{q/k}$ entry survives.) Because $Z$ and $Q$ are independent,
+the joint density factors: $f_{Z,Q}(z,q)=\phi(z)\,f_{\chi^2_k}(q)$ with $\phi(z)=
+\frac{1}{\sqrt{2\pi}}e^{-z^2/2}$ and $f_{\chi^2_k}$ from @eq-chisq-k. Substitute $z=t\sqrt{q/k}$,
+so $z^2 = t^2 q/k$:
+$$
+f_{T,Q}(t,q)
+= \frac{1}{\sqrt{2\pi}}e^{-t^2 q/(2k)}
+\cdot \frac{1}{2^{k/2}\Gamma(k/2)}\,q^{k/2-1}e^{-q/2}
+\cdot \sqrt{q/k}.
+$$
+Now integrate out $q$ over $(0,\infty)$ to get the marginal $f_T(t)$. Collect the powers
+of $q$ — we have $q^{k/2-1}\cdot q^{1/2}=q^{(k+1)/2-1}$ — and the exponentials —
+$e^{-t^2 q/(2k)}e^{-q/2}=\exp\!\bigl(-\tfrac{q}{2}(1+t^2/k)\bigr)$. Pull constants out:
+$$
+f_T(t) = \frac{1}{\sqrt{2\pi}\,2^{k/2}\Gamma(k/2)\sqrt k}
+\int_0^\infty q^{(k+1)/2-1}\,
+\exp\!\Bigl(-\frac{q}{2}\bigl(1+\tfrac{t^2}{k}\bigr)\Bigr)\,dq .
+$$ {#eq-t-integral}
+The integral is a **Gamma integral**. Recall $\int_0^\infty x^{a-1}e^{-bx}\,dx
+= \Gamma(a)/b^{a}$ for $a,b>0$ — this is just the definition of $\Gamma$ after the
+substitution $u=bx$ (a Calc-1 substitution; we are flagging the Gamma-function identity as
+imported from [PROB-15]). Here $a=\frac{k+1}{2}$ and $b=\frac12(1+t^2/k)$, so
+$$
+\int_0^\infty q^{(k+1)/2-1}e^{-bq}\,dq
+= \frac{\Gamma\!\bigl(\frac{k+1}{2}\bigr)}{b^{(k+1)/2}}
+= \Gamma\!\Bigl(\tfrac{k+1}{2}\Bigr)\Bigl[\tfrac12\bigl(1+\tfrac{t^2}{k}\bigr)\Bigr]^{-(k+1)/2}.
+$$
+Substitute back into @eq-t-integral. The factor $[\tfrac12]^{-(k+1)/2}=2^{(k+1)/2}$
+combines with the $2^{-k/2}$ out front to give $2^{1/2}=\sqrt2$, which cancels the $\sqrt2$
+hiding in $\sqrt{2\pi}=\sqrt2\sqrt\pi$:
+$$
+f_T(t) = \frac{\Gamma\!\bigl(\frac{k+1}{2}\bigr)}{\sqrt{2\pi}\,2^{k/2}\Gamma(k/2)\sqrt k}
+\cdot 2^{(k+1)/2}\Bigl(1+\tfrac{t^2}{k}\Bigr)^{-(k+1)/2}
+= \frac{\Gamma\!\bigl(\frac{k+1}{2}\bigr)}{\sqrt{\pi k}\,\Gamma(k/2)}
+\Bigl(1+\tfrac{t^2}{k}\Bigr)^{-(k+1)/2}.
+$$
+So we have derived, with every constant accounted for:
+
+::: {#thm-t-density}
+**Theorem (Student's $t$ density).** The $t_k$ distribution has density
+$$
+f_{t_k}(t) = \frac{\Gamma\!\bigl(\frac{k+1}{2}\bigr)}{\sqrt{k\pi}\;\Gamma\!\bigl(\frac{k}{2}\bigr)}
+\Bigl(1+\frac{t^2}{k}\Bigr)^{-\frac{k+1}{2}},
+\qquad t\in\mathbb R .
+$$
+:::
+
+Two features of this formula are the whole story. It is **symmetric** in $t$ (only $t^2$
+appears), so the $t$ is centered and symmetric like the Normal. And its tails are a **power
+law**, which we read straight off the density rather than assert. For large $|t|$ the
+inside of the bracket is dominated by the $t^2/k$ term — $1+t^2/k \approx t^2/k$ — so
+$$
+f_{t_k}(t) \;\approx\; \frac{\Gamma\!\bigl(\tfrac{k+1}{2}\bigr)}{\sqrt{k\pi}\,\Gamma\!\bigl(\tfrac{k}{2}\bigr)}
+\Bigl(\tfrac{t^2}{k}\Bigr)^{-\frac{k+1}{2}}
+= \underbrace{\frac{\Gamma\!\bigl(\tfrac{k+1}{2}\bigr)\,k^{k/2}}{\sqrt{\pi}\,\Gamma\!\bigl(\tfrac{k}{2}\bigr)}}_{\text{a constant in }t}\;
+|t|^{-(k+1)},
+$$
+using $(t^2)^{-(k+1)/2}=|t|^{-(k+1)}$ and pulling the $k$-powers into the constant. So the
+density decays only **polynomially**, like $|t|^{-(k+1)}$, whereas the Normal density
+$e^{-t^2/2}$ decays super-exponentially. A polynomial tail is *much* heavier than the
+Normal's: that is the fat tail of @fig-ratio-intuition, now exact. The smaller $k$ is, the
+slower the decay and the heavier the tail. @fig-t-family draws the family converging onto
+the Normal.
+
+```{python}
+#| label: fig-t-family
+#| fig-cap: 'Student''s $t_k$ density (@thm-t-density) for several degrees of freedom, with the standard Normal (black dashed) as the $k\to\infty$ limit. Every $t$ is symmetric and bell-shaped but has heavier tails and a lower peak than the Normal; the deficit is dramatic at $k=1$ (the Cauchy distribution, which has no mean) and already nearly invisible by $k=30$. The inset zooms the right tail near $t=3$, where the practical difference lives: the $t_2$ density there is several times the Normal''s, which is exactly why the $t$ quantile is larger.'
+t = np.linspace(-5, 5, 600)
+fig, ax = plt.subplots()
+for k, c in zip([1, 2, 5, 30], [NORMAL, ACCENT, GREY, DATA]):
+    ax.plot(t, stats.t.pdf(t, df=k), color=c, label=fr"$t_{{{k}}}$")
+ax.plot(t, normal_pdf(t), color="black", ls="--", lw=1.5, label=r"$N(0,1)$")
+ax.set_xlim(-5, 5); ax.set_xlabel("$t$"); ax.set_ylabel("density")
+ax.set_title(r"$t_k \to N(0,1)$ as $k$ grows")
+ax.legend(framealpha=0.9, fontsize=9)
+
+axins = ax.inset_axes([0.62, 0.45, 0.34, 0.4])
+tt = np.linspace(2.5, 5, 200)
+for k, c in zip([1, 2, 5, 30], [NORMAL, ACCENT, GREY, DATA]):
+    axins.plot(tt, stats.t.pdf(tt, df=k), color=c)
+axins.plot(tt, normal_pdf(tt), color="black", ls="--", lw=1.2)
+axins.set_title("right tail", fontsize=8); axins.tick_params(labelsize=7)
+plt.tight_layout()
+```
+
+## The t relaxes onto the Normal as n grows {#sec-limit}
+
+The Core promised $t\to z$ as $n\to\infty$. We prove it from @thm-t-density — analytically,
+every step. Fix $t$ and let $k\to\infty$. Split the density into the constant prefactor and
+the $t$-dependent bracket:
+$$
+f_{t_k}(t) = \underbrace{\frac{\Gamma\!\bigl(\frac{k+1}{2}\bigr)}{\sqrt{k\pi}\,\Gamma\!\bigl(\frac{k}{2}\bigr)}}_{c_k}
+\cdot \Bigl(1+\frac{t^2}{k}\Bigr)^{-\frac{k+1}{2}} .
+$$
+
+**The bracket.** Take logs of the bracket and use the limit definition of the exponential
+— the *one* limit from Calc 1 we lean on, $\lim_{k\to\infty}(1+a/k)^k=e^a$. Write
+$$
+\ln\Bigl(1+\frac{t^2}{k}\Bigr)^{-\frac{k+1}{2}}
+= -\frac{k+1}{2}\,\ln\Bigl(1+\frac{t^2}{k}\Bigr).
+$$
+For large $k$, $\ln(1+t^2/k) = \frac{t^2}{k} - \frac{1}{2}\frac{t^4}{k^2}+\cdots$ (the
+Calc-1 Taylor expansion of $\ln(1+u)$ at $u=0$). Multiply by $-\frac{k+1}{2}$:
+$$
+-\frac{k+1}{2}\Bigl(\frac{t^2}{k}-\frac{t^4}{2k^2}+\cdots\Bigr)
+= -\frac{t^2}{2}\cdot\frac{k+1}{k} + O(1/k)
+\;\xrightarrow[k\to\infty]{}\; -\frac{t^2}{2}.
+$$
+Exponentiating, the bracket $\to e^{-t^2/2}$ — the kernel of the standard Normal density.
+
+**The prefactor.** We must show $c_k\to\frac{1}{\sqrt{2\pi}}$ so that the limit is the
+*normalized* Normal. The one imported tool is **Stirling's approximation**
+$\Gamma(z+1)\sim\sqrt{2\pi z}\,(z/e)^z$ as $z\to\infty$ (flagged as imported from [PROB-15]
+rather than re-derived). The general fact we need is the ratio of two Gamma values a
+half-step apart: $\Gamma(z+\tfrac12)/\Gamma(z)\sim\sqrt z$. Get it from Stirling in the
+convenient form $\ln\Gamma(z)\sim (z-\tfrac12)\ln z - z + \tfrac12\ln(2\pi)$ by subtracting
+the two log-Gammas (everything but the $\ln z$ terms cancels to leading order):
+$$
+\ln\Gamma\!\bigl(z+\tfrac12\bigr) - \ln\Gamma(z)
+\sim \bigl(z\bigr)\ln\bigl(z+\tfrac12\bigr) - \bigl(z-\tfrac12\bigr)\ln z - \tfrac12
+\;\xrightarrow{z\to\infty}\; \tfrac12\ln z,
+$$
+so $\Gamma(z+\tfrac12)/\Gamma(z)\sim\sqrt z$. Apply this with $z=\frac{k}{2}$, so
+$z+\tfrac12=\frac{k+1}{2}$:
+$$
+\frac{\Gamma\!\bigl(\frac{k+1}{2}\bigr)}{\Gamma\!\bigl(\frac{k}{2}\bigr)}
+\sim \sqrt{\tfrac{k}{2}},
+\qquad\text{hence}\qquad
+c_k = \frac{\Gamma\!\bigl(\frac{k+1}{2}\bigr)}{\sqrt{k\pi}\,\Gamma\!\bigl(\frac{k}{2}\bigr)}
+\sim \frac{\sqrt{k/2}}{\sqrt{k\pi}}
+= \frac{1}{\sqrt{2\pi}}.
+$$
+Therefore $f_{t_k}(t)\to\frac{1}{\sqrt{2\pi}}e^{-t^2/2}=\phi(t)$ pointwise. The $t$ density
+converges to the standard Normal density. Equivalently and more intuitively: as $n\to\infty$
+the denominator piece $s/\sigma\to 1$ (the LLN, @sec-tempting), the random scale in
+@sec-intuition stops jittering, and the ratio $Z/(s/\sigma)$ becomes just $Z$. The fat
+tails were entirely the price of a noisy $s$; with enough data $s$ is essentially $\sigma$
+and the price drops to zero. This is the analytic content of the Slutsky argument from
+[INFR-A2], now made exact at every finite $n$ by @thm-t-density.
+
+::: {.callout-tip title="You might be asked"}
+*"At what $n$ can I just use $z=1.96$ instead of the $t$ quantile?"* There is no magic
+threshold (the "use $t$ below 30, $z$ above" rule of thumb is folklore, not a theorem).
+Look at the quantiles directly: $t_{29,\,0.025}=2.045$ versus $z=1.960$ — about a 4% wider
+interval at $n=30$, often negligible. At $n=10$ it is $t_9=2.262$, a 15% widening; at $n=5$
+it is $t_4=2.776$, a 42% widening; at $n=2$ it is $t_1=12.71$, a sixfold blowup. The
+correct answer is *always use $t$ when you estimated $\sigma$* — it converges to $z$ for
+free, so there is never a reason to switch. The "30" folklore is just the point where the
+difference becomes small enough that people stop caring.
+:::
+
+# The one-sample interval {#sec-one-sample}
+
+We can now state and use the interval the whole article was built for. Because $T=(\bar
+X_n-\mu)/(s/\sqrt n)\sim t_{n-1}$ is a pivot (@eq-t-pivot), run the [INFR-C1] recipe with
+the $t$ quantile in place of the $z$ quantile. Let $t_{n-1,\alpha/2}$ be the value with
+$P(T>t_{n-1,\alpha/2})=\alpha/2$. Because the $t_{n-1}$ density depends on $t$ only through
+$t^2$ (the symmetry we read off @thm-t-density), it is an even function, so the lower tail
+matches the upper: $P(T<-t_{n-1,\alpha/2})=\alpha/2$ as well. The two tails together carry
+$\alpha$, leaving $P(-t_{n-1,\alpha/2}\le T\le t_{n-1,\alpha/2})=1-\alpha$. Substitute the
+definition of $T$ and solve the inequality for $\mu$:
+$$
+-t_{n-1,\alpha/2} \;\le\; \frac{\bar X_n-\mu}{s/\sqrt n} \;\le\; t_{n-1,\alpha/2}
+\;\Longleftrightarrow\;
+\bar X_n - t_{n-1,\alpha/2}\frac{s}{\sqrt n}
+\;\le\;\mu\;\le\;
+\bar X_n + t_{n-1,\alpha/2}\frac{s}{\sqrt n}.
+$$
+(Multiplying the chain by the positive quantity $s/\sqrt n$ preserves the inequalities;
+then add $\bar X_n$ and flip signs, which reverses the chain back to the natural order.)
+That is the boxed interval of the Core:
+
+::: {#thm-t-interval}
+**Theorem (one-sample $t$ interval).** For $X_1,\dots,X_n\sim\mathcal N(\mu,\sigma^2)$ i.i.d.
+with $\mu,\sigma^2$ unknown, the random interval
+$$
+\Bigl[\,\bar X_n - t_{n-1,\alpha/2}\,\tfrac{s}{\sqrt n},\;\;
+\bar X_n + t_{n-1,\alpha/2}\,\tfrac{s}{\sqrt n}\,\Bigr]
+$$
+has **exact** coverage $1-\alpha$: it contains $\mu$ with probability exactly $1-\alpha$,
+for every $n\ge 2$ and every value of $\mu,\sigma^2$.
+:::
+
+"Exact" is the word to savor. Unlike the CLT-based Normal interval, which is only
+*approximately* $1-\alpha$ and improves with $n$, the $t$ interval is *exactly* $1-\alpha$
+at every sample size — *provided the data really are Normal*. That proviso is the entire
+subject of @sec-failure.
+
+## Worked example 1 — calibrating a lab instrument with $n=8$ {#sec-ex-lab}
+
+A metrology lab certifies a reference mass and must report a $95\%$ confidence interval for
+its true value from a handful of weighings on a precision balance. Repeated weighings of a
+physical standard are about as Normal as real data get — the noise is a sum of many tiny
+independent mechanical and thermal perturbations, the CLT's own habitat — but the lab can
+afford only $n=8$ measurements per certification. This is the $t$'s home turf: genuinely
+Normal, genuinely small, $\sigma$ genuinely unknown.
+
+```{python}
+#| label: fig-lab
+#| fig-cap: "A reference mass measured $n=8$ times (deviations from nominal, in micrograms). **Left:** the measurements with the sample mean (green) and the $t$-based 95% interval (blue band). **Right:** the same interval compared with the naive Normal ($z$) interval — the $t$ interval is visibly wider, and that extra width is what buys honest 95% coverage at $n=8$."
+# Eight weighings: deviation from nominal in micrograms.
+y = np.array([12.4, 9.8, 11.1, 13.5, 10.2, 12.9, 8.7, 11.6])
+n = len(y)
+ybar = y.mean()
+s = y.std(ddof=1)
+se = s / np.sqrt(n)
+tq = stats.t.ppf(0.975, df=n - 1)
+zq = stats.norm.ppf(0.975)
+t_lo, t_hi = ybar - tq * se, ybar + tq * se
+z_lo, z_hi = ybar - zq * se, ybar + zq * se
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.scatter(y, np.zeros_like(y), color=DATA, s=45, zorder=3, label="weighings")
+axL.axvspan(t_lo, t_hi, color=DATA, alpha=0.18, label="95% $t$ interval")
+axL.axvline(ybar, color=ACCENT, lw=2, label=fr"$\bar y={ybar:.2f}$")
+axL.set_yticks([]); axL.set_xlabel("deviation from nominal ($\\mu$g)")
+axL.set_title(f"$n={n}$ weighings"); axL.legend(framealpha=0.9, fontsize=8, loc="upper left")
+
+axR.errorbar([0], [ybar], yerr=[[ybar - t_lo], [t_hi - ybar]], fmt="o", color=DATA,
+             capsize=8, lw=2, label=f"$t$: [{t_lo:.2f}, {t_hi:.2f}]")
+axR.errorbar([1], [ybar], yerr=[[ybar - z_lo], [z_hi - ybar]], fmt="o", color=NORMAL,
+             capsize=8, lw=2, label=f"$z$: [{z_lo:.2f}, {z_hi:.2f}]")
+axR.set_xlim(-0.6, 1.6); axR.set_xticks([0, 1]); axR.set_xticklabels(["$t$ interval", "$z$ interval"])
+axR.set_ylabel("$\\mu$g"); axR.set_title("$t$ is wider (and honest)")
+axR.legend(framealpha=0.9, fontsize=8)
+plt.tight_layout()
+print(f"ybar = {ybar:.3f},  s = {s:.3f},  se = s/sqrt(n) = {se:.3f}")
+print(f"t_(7, .025) = {tq:.4f}   vs   z_.025 = {zq:.4f}")
+print(f"95% t interval: [{t_lo:.3f}, {t_hi:.3f}]   half-width {tq*se:.3f}")
+print(f"95% z interval: [{z_lo:.3f}, {z_hi:.3f}]   half-width {zq*se:.3f}")
+```
+
+Walk the numbers. The eight weighings average $\bar y=`{python} f"{ybar:.2f}"`\,\mu$g with
+sample SD $s=`{python} f"{s:.2f}"`$, so the standard error is
+$s/\sqrt n=`{python} f"{se:.3f}"`$. With $7$ degrees of freedom the $t$ quantile is
+$t_{7,0.025}=`{python} f"{tq:.3f}"`$, not $1.96$. The half-width is
+$`{python} f"{tq:.3f}"`\times`{python} f"{se:.3f}"`=`{python} f"{tq*se:.3f}"`$, giving
+$\mu\in[`{python} f"{t_lo:.2f}", "`, `{python} f"{t_hi:.2f}"`]$ micrograms with $95\%$
+confidence. The naive $z$ interval would have been
+$[`{python} f"{z_lo:.2f}"`, `{python} f"{z_hi:.2f}"`]$ — narrower by about
+$`{python} f"{100*(tq-zq)/zq:.0f}"`\%$, and that extra narrowness is exactly the
+overconfidence @fig-undercoverage warned about. Here the data are Normal, so the $t$
+interval's $95\%$ is *exact*.
+
+## Worked example 2 — a paired difference (the $t$'s most common real use) {#sec-ex-paired}
+
+The single most common honest deployment of the one-sample $t$ is the **paired design**,
+where each subject is measured twice and we analyze the *differences*. Pairing cancels
+per-subject baseline variation, and the differences are usually far more Normal than the
+raw measurements. Suppose a sleep study measures reaction time (ms) for $n=10$ participants
+before and after a night of restricted sleep; we want a $95\%$ interval for the mean change.
+
+```{python}
+#| label: fig-paired
+#| fig-cap: "A paired before/after design, $n=10$. **Left:** each participant's reaction time before (grey) and after (red) sleep restriction; lines connect the same person, so the analysis is on the within-person *differences*, which removes between-person baseline variation. **Right:** the 10 differences with the 95% one-sample $t$ interval for the mean change. The interval excludes zero, so the mean slowing is distinguishable from no effect at the 95% level."
+before = np.array([248, 262, 271, 255, 239, 268, 277, 251, 244, 259.])
+after  = np.array([263, 271, 290, 268, 250, 289, 295, 260, 261, 270.])
+diff = after - before
+n = len(diff)
+dbar = diff.mean(); sd = diff.std(ddof=1); se = sd / np.sqrt(n)
+tq = stats.t.ppf(0.975, df=n - 1)
+lo, hi = dbar - tq * se, dbar + tq * se
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+for b, a in zip(before, after):
+    axL.plot([0, 1], [b, a], color=GREY, lw=1, alpha=0.7)
+axL.scatter(np.zeros(n), before, color=GREY, s=35, zorder=3, label="before")
+axL.scatter(np.ones(n), after, color=NORMAL, s=35, zorder=3, label="after")
+axL.set_xlim(-0.4, 1.4); axL.set_xticks([0, 1]); axL.set_xticklabels(["before", "after"])
+axL.set_ylabel("reaction time (ms)"); axL.set_title("Paired measurements")
+axL.legend(framealpha=0.9, fontsize=8)
+
+axR.scatter(diff, np.zeros(n), color=DATA, s=45, zorder=3)
+axR.axvspan(lo, hi, color=DATA, alpha=0.18)
+axR.axvline(dbar, color=ACCENT, lw=2, label=fr"$\bar d={dbar:.1f}$ ms")
+axR.axvline(0, color=NORMAL, lw=1.5, ls="--", label="no change")
+axR.set_yticks([]); axR.set_xlabel("change in reaction time (ms)")
+axR.set_title(f"95% CI: [{lo:.1f}, {hi:.1f}]"); axR.legend(framealpha=0.9, fontsize=8)
+plt.tight_layout()
+print(f"mean difference dbar = {dbar:.2f} ms,  s_d = {sd:.2f},  se = {se:.3f}")
+print(f"95% t interval for mean change: [{lo:.2f}, {hi:.2f}] ms")
+```
+
+The mean slowing is $\bar d=`{python} f"{dbar:.1f}"`$ ms with a $95\%$ interval
+$[`{python} f"{lo:.1f}"`, `{python} f"{hi:.1f}"`]$ ms. Because the interval lies entirely
+above zero, "no change" is not a plausible value of the mean effect at the $95\%$ level —
+this is the **duality between intervals and tests** that [INFR-D1] formalizes and that the
+paired $t$-test in [INFR-D2] turns into an explicit decision. The reason this is a
+*one*-sample problem despite "two" measurements per person: pairing reduces it to a single
+column of differences, and we run the one-sample machinery on that column.
+
+# Two samples: comparing two means {#sec-two-sample}
+
+The everyday question is rarely "what is one mean" — it is "do two groups differ." Given an
+independent sample $X_1,\dots,X_{n_1}\sim\mathcal N(\mu_1,\sigma_1^2)$ and
+$Y_1,\dots,Y_{n_2}\sim\mathcal N(\mu_2,\sigma_2^2)$, we want an interval for the difference
+$\mu_1-\mu_2$. The natural estimate is $\bar X-\bar Y$, and since the two samples are
+independent, [INFR-A1]'s variance-of-a-difference rule gives
+$$
+\operatorname{Var}(\bar X-\bar Y) = \frac{\sigma_1^2}{n_1}+\frac{\sigma_2^2}{n_2},
+$$ {#eq-two-var}
+(variances of independent quantities add). With both $\sigma$'s unknown we again estimate
+them and pay a $t$-style price — but *how* we estimate them forks the problem into two
+classic cases.
+
+## The equal-variance (pooled) case {#sec-pooled}
+
+If we are willing to assume $\sigma_1^2=\sigma_2^2=\sigma^2$ (a common variance), then both
+samples carry information about the *same* $\sigma^2$, and we should combine them. The
+**pooled variance** is the degrees-of-freedom-weighted average of the two sample variances:
+$$
+s_p^2 = \frac{(n_1-1)s_1^2 + (n_2-1)s_2^2}{n_1+n_2-2}.
+$$ {#eq-pooled}
+The logic is exactly the chi-square arithmetic of @sec-chisq. Each $(n_i-1)s_i^2/\sigma^2
+\sim\chi^2_{n_i-1}$, and they are independent (different samples), so their sum is
+$\chi^2_{(n_1-1)+(n_2-1)} = \chi^2_{n_1+n_2-2}$ — *degrees of freedom add when independent
+chi-squares add*, the same fact from @sec-chisq-def. Thus $(n_1+n_2-2)s_p^2/\sigma^2
+\sim\chi^2_{n_1+n_2-2}$, and $s_p^2$ is the best pooled estimate of the shared $\sigma^2$
+on $n_1+n_2-2$ degrees of freedom. Under equal variances @eq-two-var becomes
+$\sigma^2(\tfrac{1}{n_1}+\tfrac{1}{n_2})$, so the pivot
+$$
+T = \frac{(\bar X-\bar Y)-(\mu_1-\mu_2)}{s_p\sqrt{\tfrac{1}{n_1}+\tfrac{1}{n_2}}}
+\;\sim\; t_{\,n_1+n_2-2}
+$$ {#eq-pooled-t}
+matches @def-t exactly. The **numerator**, standardized, is
+$\bigl[(\bar X-\bar Y)-(\mu_1-\mu_2)\bigr]/\bigl(\sigma\sqrt{\tfrac1{n_1}+\tfrac1{n_2}}\bigr)
+\sim\mathcal N(0,1)$, because $\bar X-\bar Y$ is Normal with mean $\mu_1-\mu_2$ and the
+variance just computed. The **denominator** carries $s_p/\sigma=\sqrt{Q/(n_1+n_2-2)}$ with
+$Q=(n_1+n_2-2)s_p^2/\sigma^2\sim\chi^2_{n_1+n_2-2}$. These two are independent, and we can
+see exactly why without hand-waving: the numerator is a function of $(\bar X,\bar Y)$ only,
+while $Q$ is a function of $(s_1^2,s_2^2)$ only. Within sample 1, $\bar X\perp s_1^2$ by
+@thm-chisq; within sample 2, $\bar Y\perp s_2^2$; and the two samples are independent of
+each other by assumption. So the pair $(\bar X,\bar Y)$ is independent of the pair
+$(s_1^2,s_2^2)$, hence numerator $\perp$ denominator. Writing $T=Z/\sqrt{Q/(n_1+n_2-2)}$
+with $Z\perp Q$ is precisely @def-t with $k=n_1+n_2-2$, so $T\sim t_{n_1+n_2-2}$ and the
+$\sigma$ cancels just as in @eq-t-as-ratio. The interval is
+$(\bar X-\bar Y)\pm t_{n_1+n_2-2,\alpha/2}\,s_p\sqrt{\tfrac1{n_1}+\tfrac1{n_2}}$.
+
+## The unequal-variance case: the Welch correction {#sec-welch}
+
+The pooled interval is *exact* — but only if the variances really are equal, which is a
+strong and often false assumption. If $\sigma_1\ne\sigma_2$, pooling is wrong: it mixes a
+small variance and a large one into a single number that describes neither group. The
+robust default is **Welch's** approach, which estimates each variance separately and never
+assumes they are equal. The statistic is
+$$
+T = \frac{(\bar X-\bar Y)-(\mu_1-\mu_2)}{\sqrt{\tfrac{s_1^2}{n_1}+\tfrac{s_2^2}{n_2}}} .
+$$ {#eq-welch-t}
+Here is the honest subtlety, and it is worth stating plainly rather than hiding. The
+denominator of @eq-welch-t is a sum of two *independent scaled chi-squares with different
+scales* ($s_1^2/n_1$ and $s_2^2/n_2$). A weighted sum of chi-squares with unequal weights
+is **not** itself a chi-square, so $T$ does **not** follow an exact $t$-distribution — there
+is no finite $n$ at which @eq-welch-t is exactly $t$. This is a genuine theoretical wrinkle,
+not a detail to wave away.
+
+Welch's solution is an **approximation**: match the first two moments of the messy
+denominator's distribution to those of a scaled chi-square, and use the degrees of freedom
+that makes the match work. The result is the **Welch–Satterthwaite** degrees of freedom
+$$
+\nu = \frac{\bigl(\tfrac{s_1^2}{n_1}+\tfrac{s_2^2}{n_2}\bigr)^2}
+{\dfrac{(s_1^2/n_1)^2}{n_1-1}+\dfrac{(s_2^2/n_2)^2}{n_2-1}},
+$$ {#eq-welch-df}
+which is generally **not an integer** and lies between $\min(n_1,n_2)-1$ and $n_1+n_2-2$.
+The interval is then $(\bar X-\bar Y)\pm t_{\nu,\alpha/2}\sqrt{s_1^2/n_1+s_2^2/n_2}$,
+treating $T\approx t_\nu$. The Satterthwaite moment-matching that produces @eq-welch-df is a
+calculation in its own right; we flag it as a documented approximation rather than claim it
+is exact, because it is not — its job is to make the *coverage* close to nominal, and it
+does so remarkably well across unequal variances and unequal sample sizes.
+
+::: {.callout-tip title="You might be asked"}
+*"Pooled or Welch — which should be the default?"* **Welch.** The pooled $t$ is exact under
+equal variances but can be badly miscalibrated when they differ, especially with unequal
+sample sizes (the classic failure: a small sample with large variance paired with a large
+sample with small variance). Welch is only approximate but is robust to unequal variances
+*and* reduces to essentially the pooled answer when the variances happen to match — so it
+rarely costs anything and often saves you. Modern software (including R's `t.test`) defaults
+to Welch for exactly this reason. The only argument for pooling is when you have strong
+prior reason to believe the variances are equal *and* want the extra degrees of freedom in
+a very small study; even then, check it. Do **not** select between them by first running a
+variance-equality test on the same data — that two-stage procedure distorts the final
+coverage.
+:::
+
+```{python}
+#| label: fig-two-sample
+#| fig-cap: 'Two-sample comparison of battery lifetimes (hours) for two manufacturing lots with clearly unequal spread ($n_1=9$, $n_2=7$). **Left:** the two groups; lot B is both lower and far more variable. **Right:** three 95% intervals for $\mu_A-\mu_B$ — pooled, Welch, and (for reference) a $z$ interval. The pooled interval is misleadingly narrow because it averages B''s large variance into A''s small one; Welch is wider and honest. All exclude zero, so the lots genuinely differ, but only Welch reports the uncertainty correctly.'
+lotA = np.array([41.2, 40.8, 41.5, 40.9, 41.1, 41.3, 40.7, 41.4, 41.0])  # tight
+lotB = np.array([38.1, 35.2, 40.3, 33.8, 39.9, 36.0, 41.2])              # spread
+nA, nB = len(lotA), len(lotB)
+mA, mB = lotA.mean(), lotB.mean()
+sA2, sB2 = lotA.var(ddof=1), lotB.var(ddof=1)
+diff = mA - mB
+
+# pooled
+sp2 = ((nA-1)*sA2 + (nB-1)*sB2) / (nA+nB-2)
+se_pool = np.sqrt(sp2*(1/nA + 1/nB))
+tq_pool = stats.t.ppf(0.975, df=nA+nB-2)
+# welch
+se_w = np.sqrt(sA2/nA + sB2/nB)
+nu = (sA2/nA + sB2/nB)**2 / ((sA2/nA)**2/(nA-1) + (sB2/nB)**2/(nB-1))
+tq_w = stats.t.ppf(0.975, df=nu)
+# naive z
+zq = stats.norm.ppf(0.975)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.scatter(np.full(nA, 0), lotA, color=DATA, s=40, zorder=3, label=f"lot A (s={np.sqrt(sA2):.2f})")
+axL.scatter(np.full(nB, 1), lotB, color=NORMAL, s=40, zorder=3, label=f"lot B (s={np.sqrt(sB2):.2f})")
+axL.set_xlim(-0.5, 1.5); axL.set_xticks([0, 1]); axL.set_xticklabels(["lot A", "lot B"])
+axL.set_ylabel("lifetime (hours)"); axL.set_title("Unequal spread"); axL.legend(framealpha=0.9, fontsize=8)
+
+labels = ["pooled", f"Welch\n($\\nu$={nu:.1f})", "naive $z$"]
+ses = [tq_pool*se_pool, tq_w*se_w, zq*se_w]
+colors = [GREY, ACCENT, NORMAL]
+for i, (hw, c) in enumerate(zip(ses, colors)):
+    axR.errorbar([i], [diff], yerr=[[hw], [hw]], fmt="o", color=c, capsize=8, lw=2)
+axR.axhline(0, color=GREY, ls="--", lw=1.2)
+axR.set_xticks([0, 1, 2]); axR.set_xticklabels(labels, fontsize=9)
+axR.set_ylabel(r"$\mu_A-\mu_B$ (hours)"); axR.set_title("95% intervals for the difference")
+plt.tight_layout()
+print(f"mean A={mA:.2f} (s^2={sA2:.3f}),  mean B={mB:.2f} (s^2={sB2:.3f})")
+print(f"diff = {diff:.3f}")
+print(f"pooled: t_df={nA+nB-2}, half-width {tq_pool*se_pool:.3f} -> [{diff-tq_pool*se_pool:.2f}, {diff+tq_pool*se_pool:.2f}]")
+print(f"Welch : nu={nu:.2f},   half-width {tq_w*se_w:.3f} -> [{diff-tq_w*se_w:.2f}, {diff+tq_w*se_w:.2f}]")
+```
+
+The pooled and Welch half-widths differ noticeably here precisely because the variances are
+so unequal; pooling B's large scatter with A's tight cluster understates the uncertainty in
+the difference. Welch's $\nu=`{python} f"{nu:.1f}"`$ degrees of freedom — between the
+groups' individual counts, and not an integer — is the price the approximation charges for
+honesty.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The $t$ interval's exactness in @thm-t-interval rests on **one** load-bearing assumption:
+the data are Normal. Drop it and "exact" becomes "approximate," sometimes badly so. This is
+the section that separates "can compute a $t$ interval" from "knows when to trust one."
+
+## Non-normal small samples: where coverage quietly fails {#sec-nonnormal}
+
+The $t$-distribution accounts *exactly* for the randomness of $s$ **only when the
+numerator is Normal and the chi-square structure of @thm-chisq holds** — both of which
+require the underlying data to be Normal. For non-Normal data:
+
+- The CLT [INFR-A2] still pulls $\bar X_n$ toward Normal as $n$ grows, so for *large* $n$
+  the $t$ interval is approximately valid regardless of the data's shape (and the $t$
+  quantile is nearly $z$ anyway). The $t$ machinery is asymptotically robust.
+- But for *small* $n$ — exactly the regime where you reach for the $t$ — the CLT has not
+  kicked in, and the interval's coverage can drift far from nominal. **Skewness is the
+  killer.** When the data are skewed, $\bar X_n$ and $s$ become *correlated* (the
+  independence of @sec-orthogonal fails off-Normal), and the interval systematically misses
+  on one side: for right-skewed data the one-sample $t$ interval tends to sit too low and
+  *undercovers*.
+
+@fig-coverage-breakdown measures this honestly across distributions of increasing
+non-Normality.
+
+```{python}
+#| label: fig-coverage-breakdown
+#| fig-cap: "The edge of applicability. For each of three source distributions — Normal (the assumption), a moderately skewed Exponential, and a heavy-skew Lognormal — we draw 30000 samples at each size $n$, build the nominal-95% one-sample $t$ interval, and record actual coverage. For Normal data coverage is exactly 95% at every $n$ (the theorem). For the skewed sources it is well below 95% at small $n$ — the Lognormal covers under 90% at $n=5$ — and only crawls back toward 95% as the CLT takes over. The $t$ interval's '95%' is a promise that holds for Normal data and degrades smoothly with skew."
+dists = {
+    "Normal":     lambda size: rng.standard_normal(size),
+    "Exponential":lambda size: rng.exponential(1.0, size),
+    "Lognormal":  lambda size: rng.lognormal(0.0, 1.0, size),
+}
+truth = {"Normal": 0.0, "Exponential": 1.0, "Lognormal": np.exp(0.5)}
+ns = [5, 10, 20, 50, 100]
+B = 30000
+fig, ax = plt.subplots()
+for (name, draw), c in zip(dists.items(), [DATA, ACCENT, NORMAL]):
+    covs = []
+    mu = truth[name]
+    for n in ns:
+        S = draw((B, n))
+        xbar = S.mean(axis=1); s = S.std(axis=1, ddof=1)
+        half = stats.t.ppf(0.975, df=n-1) * s/np.sqrt(n)
+        covs.append(np.mean(np.abs(xbar - mu) <= half))
+    ax.plot(ns, covs, "o-", color=c, label=name)
+ax.axhline(0.95, color=GREY, ls="--", lw=1.5, label="nominal 95%")
+ax.set_xlabel("sample size $n$"); ax.set_ylabel("actual coverage of 95% $t$ interval")
+ax.set_ylim(0.82, 0.97); ax.set_title("Non-normal small samples: coverage degrades with skew")
+ax.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+The Normal line sits dead on $0.95$ at every $n$ — the theorem made visible. The skewed
+lines sag below it at small $n$, worst for the heavily skewed Lognormal, and recover only
+as $n$ grows and the CLT rescues the numerator. The lesson is sharp: **the $t$ interval
+inherits the Normal-data assumption from its very construction**, and when that assumption
+fails in a small sample, no amount of using the "right" quantile fixes it, because the
+*whole pivot* is mis-specified.
+
+::: {.callout-warning title="Pitfall"}
+**The $t$ does not make your data Normal — it assumes they already are.** A widespread
+misconception treats the $t$-distribution as a fix for non-Normality ("use the $t$ for
+small samples" as though the $t$ launders skew away). It does no such thing. The $t$ corrects
+for one specific thing only: the **extra uncertainty from estimating $\sigma$**, *under the
+assumption that the data are Normal*. If the data are skewed or heavy-tailed and $n$ is
+small, the $t$ interval can quietly undercover, as @fig-coverage-breakdown shows. Always
+look at the data (a histogram, a normal-quantile plot) before trusting a small-sample $t$
+interval, exactly as you would always plot residuals before trusting a regression line.
+:::
+
+## Outliers and heavy tails: the denominator betrayed {#sec-outliers}
+
+The $t$ interval depends on $\bar X_n$ *and* $s$, and **both** are non-robust. A single
+gross outlier inflates $s$ (widening the interval) and shifts $\bar X_n$ (moving it) — and
+because the interval's width is driven by $s$, one bad point can make the interval
+uselessly wide or, if it drags $\bar X_n$ with it, point in the wrong place. Heavy-tailed
+data (occasional huge values) do this routinely even without a data-entry error. The $t$ was
+*derived* for Normal data, whose tails are thin; using it on genuinely heavy-tailed data
+violates the premise.
+
+## What you reach for instead {#sec-alternatives}
+
+When the small-sample-and-non-Normal corner bites, the $t$ is the wrong tool. The honest
+alternatives:
+
+- **The bootstrap** ([INFR-E1], [INFR-E2]). Instead of assuming a Normal sampling
+  distribution and looking up a $t$ quantile, *resample the data* to build the sampling
+  distribution of $\bar X_n$ empirically — no distributional assumption at all. The
+  bootstrap percentile and BCa intervals are the assumption-light replacements for the $t$
+  interval, and [INFR-E2] compares their coverage against the $t$ on the very same kinds of
+  skewed data as @fig-coverage-breakdown. This is the single most important pointer in the
+  article: *when the $t$'s Normality assumption is the problem, the bootstrap is the answer.*
+- **Permutation / rank methods** ([INFR-E3]) for two-sample comparisons, which assume only
+  exchangeability under the null rather than Normality.
+- **A transformation.** Right-skewed positive data (incomes, durations, concentrations) are
+  often near-Normal on the log scale; a $t$ interval on $\log X$, back-transformed, can be
+  far better calibrated — though it then estimates the mean of $\log X$ (a geometric-mean
+  notion), not the mean of $X$, which is a different target you must own up to.
+- **More data.** The cleanest fix when available: the CLT makes the $t$ interval
+  asymptotically valid for *any* finite-variance distribution, so larger $n$ both validates
+  the Normal approximation and shrinks the $t$-vs-$z$ gap to nothing.
+
+::: {.callout-tip title="You might be asked"}
+*"When is the $t$ interval the right tool, and when is it the wrong one?"* The summary to be
+able to recite:
+
+- **Use it** when (a) you want an interval (or test) for a mean or a difference of means,
+  (b) $\sigma$ is unknown and estimated from the sample (essentially always), and (c) the
+  data are plausibly Normal *or* $n$ is large enough for the CLT. In its home regime —
+  Normal data, small $n$, unknown $\sigma$ (Gosset's brewery) — it is *exactly* correct and
+  unbeatable.
+- **Do not lean on it** when $n$ is small *and* the data are clearly skewed or heavy-tailed
+  (coverage degrades — use the bootstrap), when outliers dominate (the mean and $s$ are both
+  corrupted — consider robust or rank methods), or when the two-sample variances differ
+  (use Welch, not pooled).
+- **The deepest point:** the $t$ buys you exactness for the price of a Normality assumption.
+  The bootstrap buys you robustness for the price of needing enough data to resample
+  meaningfully and giving up exactness. Knowing which price you can afford on a given dataset
+  *is* the practitioner's judgment this track is training.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-C1 *Confidence Intervals*]**, which built coverage and the pivot
+method and produced the known-$\sigma$ interval $\bar X_n\pm z_{\alpha/2}\sigma/\sqrt n$.
+This article removed the known-$\sigma$ fiction: it built the chi-square distribution of
+$s^2$, assembled the $t$-distribution, and produced the honest small-sample interval
+$\bar X_n\pm t_{n-1,\alpha/2}s/\sqrt n$. From here:
+
+- **[INFR-C3 *Intervals From the Likelihood*]** generalizes interval construction beyond the
+  mean to *any* MLE-estimated parameter (Wald, score, profile intervals), where the $t$ is
+  one special, exact case of a broader asymptotic story.
+- **[INFR-D1 *The Logic of Hypothesis Testing*]** formalizes the interval/test duality we
+  used informally in @sec-ex-paired — every interval here has a test on the other side of it.
+- **[INFR-D2 *The Workhorse Tests*]** is the immediate sequel: the one- and two-sample
+  $t$-tests, the chi-square test, and the F-test are this exact machinery (the same $t$, the
+  same $\chi^2$, and their ratio the F) *turned into a decision*. The chi-square distribution
+  built in @sec-chisq and the pooled-variance arithmetic of @sec-pooled are consumed there
+  directly.
+- **[INFR-E2 *Bootstrap Confidence Intervals*]** is the assumption-light alternative this
+  article kept pointing to: when the Normality premise fails in a small sample
+  (@sec-failure), the bootstrap is what you reach for, and E2 races it against the $t$ on the
+  same skewed data.
+
+This article is also consumed by **Regression**: the $t$ interval and $t$ statistic are
+exactly how a fitted coefficient's confidence interval and significance are reported
+($\hat\beta\pm t_{\,\text{df}}\cdot\widehat{\operatorname{se}}(\hat\beta)$), with the
+residual degrees of freedom playing the role of $n-1$.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The original.** "Student" [W. S. Gosset], "The Probable Error of a Mean,"
+  *Biometrika* 6 (1908): 1–25 — the paper that introduced the distribution, written from the
+  brewery's small-sample necessity. Worth reading for how concretely the small-$n$ problem
+  is posed.
+- **The rigorous derivation.** R. A. Fisher's geometric derivation (1925) recasts the $t$
+  via the $n$-dimensional geometry of a Normal sample — the orthogonality argument of
+  @sec-orthogonal is its descendant. Any mathematical-statistics text (Casella & Berger,
+  *Statistical Inference*, Ch. 5) carries the modern treatment of @thm-chisq and
+  @thm-t-density.
+- **Welch's approximation.** B. L. Welch, "The generalization of 'Student's' problem when
+  several different population variances are involved," *Biometrika* 34 (1947), and
+  F. E. Satterthwaite's 1946 moment-matching note behind @eq-welch-df — the honest
+  acknowledgment that the unequal-variance problem has no exact $t$ solution.
+- **Open threads deliberately deferred.** *Is $\bar X_n\pm t\,s/\sqrt n$ the best possible
+  interval?* — it is the natural pivotal one and is exact under Normality, but likelihood-based
+  intervals ([INFR-C3]) and the bootstrap ([INFR-E2]) generalize it in different directions.
+  *What if even $s$ is a bad summary because the data are heavy-tailed?* — robust scale
+  estimates and rank-based intervals, touched in [INFR-E3]. *Why does Normality, of all
+  shapes, give the clean independence of $\bar X$ and $s^2$?* — it is essentially a
+  characterization: the independence of the sample mean and sample variance holds *only* for
+  the Normal (the Lukacs theorem), a deep fact left for the Probability track.

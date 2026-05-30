@@ -1,0 +1,846 @@
+---
+title: "Confidence Intervals: What \"95% Confident\" Actually Means"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240701)
+
+DATA   = "#2b3a67"     # samples / point estimates
+TRUTH  = "#c1121f"     # the fixed parameter / limiting object
+ACCENT = "#0a7d4d"     # intervals that cover
+MISS   = "#d6791f"     # intervals that miss
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas
+
+def normal_pdf(t, mu=0.0, sigma=1.0):
+    """The Gaussian density — used to draw the pivot and the tail areas."""
+    return np.exp(-0.5 * ((t - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+```
+
+> **Where this sits in the track.** This opens the **Interval Estimation** movement (C) of
+> the Statistical Inference track. It assumes two earlier articles. From [INFR-A1 *The
+> Estimator as a Random Variable*] it takes the central idea that an estimator
+> $\hat\theta$ is a *random variable* with a **sampling distribution**, whose standard
+> deviation is the **standard error** $\mathrm{SE}=\sigma/\sqrt n$. From [INFR-A2 *LLN and
+> the CLT*] it takes the **Central Limit Theorem** — that the standardized sample mean
+> $(\bar X_n-\mu)/(\sigma/\sqrt n)$ converges in distribution to a standard Gaussian. The
+> only thing imported from outside the track is the existence and value of the **standard
+> normal quantiles** $z_{\alpha/2}$ (e.g. $z_{0.025}=1.96$), built in the Probability
+> Foundations track [PROB-11]; we use them here only by name. This article installs the
+> *concept* of interval estimation — what a confidence interval claims, the pivotal-quantity
+> machine that constructs one, and the misinterpretations that sink most people in an exam
+> or interview. It **sets up** [INFR-C2 *The t-Distribution and Small-Sample Intervals*]
+> (what to do when $\sigma$ is unknown), [INFR-C3 *Wald, Score, and Profile Intervals*]
+> (intervals for any MLE), the bootstrap interval [INFR-E2], and the deliberate contrast
+> with the Bayesian **credible interval** [INFR-E4].
+
+## Abstract {.unnumbered}
+
+A point estimate is a single number with no honesty about its own error; a **confidence
+interval** is the honest version — a *random interval* engineered so that, across the
+many samples we might have drawn, a fixed fraction of them trap the true parameter. This
+article builds that idea from the ground up. We define **coverage** carefully — the
+interval is random, the parameter is fixed, and "$95\%$" is a property of the *procedure*,
+not of the one interval in your hands. We derive the general **pivotal-quantity** method,
+the single machine that manufactures intervals, and run it end-to-end on the canonical
+case: a confidence interval for a Normal mean with known variance, $\bar X \pm
+z_{\alpha/2}\,\sigma/\sqrt n$. We verify coverage by simulating ten thousand parallel
+universes and counting how many intervals catch the truth. Then we spend real effort on
+the four classic misinterpretations — the ones an interviewer is hoping you will stumble
+into — and state precisely what the interval does and does not say. The single claim the
+article defends is that **the confidence is in the factory, not the widget**: a procedure
+that succeeds $95\%$ of the time produces, this once, an interval that either contains the
+parameter or does not, with no probability left over to attach to it.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Fix a confidence level $1-\alpha$ (e.g. $95\%$, so $\alpha=0.05$). A **confidence
+interval** is a pair of statistics $\bigl(L(X_1,\dots,X_n),\,U(X_1,\dots,X_n)\bigr)$ —
+*functions of the random sample*, hence themselves random — with the **coverage**
+property
+$$
+P\bigl(L \le \theta \le U\bigr) \;=\; 1-\alpha
+\qquad\text{for every possible value of the fixed parameter } \theta.
+$$
+
+Read the probability correctly: **$\theta$ is a fixed (unknown) constant; the randomness
+lives entirely in $L$ and $U$**, which move from sample to sample. "$95\%$ confidence"
+describes the *procedure* — repeat the experiment many times and about $95\%$ of the
+intervals it produces will straddle the true $\theta$. It does **not** say the one
+interval you computed has a $95\%$ chance of containing $\theta$: that interval is already
+cast, and $\theta$ either lies in it or it does not.
+
+For a Normal mean with known variance, the machine produces
+$$
+\bar X \;\pm\; z_{\alpha/2}\,\frac{\sigma}{\sqrt n},
+$$
+and the whole article is the derivation of that formula and the careful unpacking of what
+the probability above means.
+:::
+
+Everything below orbits that box. The single hardest thing to keep straight — and the
+thing every exam and interview probes — is *where the randomness is*. Before we have data,
+$L$ and $U$ are random and the coverage statement is a genuine probability. After we have
+data, $L$ and $U$ are numbers, $\theta$ is a number, and the only honest statements left
+are "$\theta$ is in it" or "$\theta$ is not in it." The $95\%$ never attached to $\theta$;
+it attached to the *recipe*.
+
+# Why we are doing this: the problem that forced the interval {#sec-why}
+
+Hold one question in view for the whole article: **how do we report not just an estimate,
+but how much to trust it — and what exactly are we promising when we do?**
+
+INFR-A1 made the problem sharp. A point estimate like the sample mean $\bar X$ is a single
+draw from a sampling distribution; collect a different sample and you get a different
+number. Reporting "the mean income is \$54,300" with no qualifier is dishonest in a
+specific way: it hides the fact that the estimate wobbles, and gives the reader no way to
+tell a precise estimate from a noisy one. INFR-A2 then handed us the *size* and *shape* of
+that wobble — the standard error $\sigma/\sqrt n$ and the Gaussian shape from the CLT. We
+now have everything we need to turn "here is my estimate" into "here is my estimate, and
+here is a range I am willing to stand behind."
+
+The naive first attempt is to slap a standard error onto the estimate: report
+$\bar X \pm \mathrm{SE}$. That is the right *shape* but it leaves the crucial question
+unanswered: **stand behind it how strongly?** A range of one standard error means
+something different from a range of two, and until we say *what fraction of the time the
+range is right*, "$\pm\,\mathrm{SE}$" is just decoration. The confidence interval is the
+disciplined version: we choose the strength up front (the level $1-\alpha$), and we build
+the range so that it delivers exactly that strength — not in any one use, but across the
+long run of uses.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just report the standard error and let the reader decide?"* You can, and many
+papers do — but the standard error alone does not tell the reader *how often* a range of a
+given width is correct. That mapping from width to reliability requires knowing the shape
+of the sampling distribution, which is exactly what the CLT (or an exact distributional
+result) supplies. The confidence interval bundles the standard error with that shape and a
+chosen reliability into one object. The point estimate answers "what is my best guess";
+the standard error answers "how much does the guess wobble"; the confidence interval
+answers "what range am I willing to stand behind, and how often will I be right to do so."
+:::
+
+## A two-paragraph history
+
+The modern confidence interval is younger than most of the statistics around it. Through
+the 1920s, statisticians reported estimates with "probable errors," and there was real
+confusion about whether one could attach a probability to a statement about a fixed
+parameter — the very confusion this article is built to dissolve. The Bayesian answer (put
+a probability distribution on $\theta$ directly) existed but was contested.
+
+In 1937 **Jerzy Neyman** cut the knot in a paper to the Royal Society. His move was to
+*refuse* to put probability on $\theta$ and instead put it on the **procedure**: design an
+interval-producing rule whose long-run success rate is controllable, and report that rate.
+This is the frequentist confidence interval, and its defining feature — that the
+confidence is a property of the method, not of any single interval — is precisely what
+trips people up to this day. Neyman was explicit that the interval makes *no* probability
+statement about the particular $\theta$; that distinction is the spine of everything below,
+and the deliberate contrast with the Bayesian **credible interval**, which *does* put
+probability on $\theta$, is taken up in [INFR-E4].
+
+# Intuition before symbols: the dragstrip of intervals {#sec-intuition}
+
+Before any algebra, here is the picture that makes coverage click. Imagine running your
+study not once but thousands of times, each time drawing a fresh sample from the same
+population and computing an interval by the same recipe. The true parameter $\theta$ is a
+fixed vertical line. Each study produces a horizontal interval at its own height; some
+straddle the line, some sit entirely to one side and miss.
+
+A *valid $95\%$ procedure* is one whose intervals catch the line about $95$ times in $100$
+over this imagined repetition. @fig-coverage-intuition draws exactly this — fifty
+intervals from fifty samples, the misses flagged. Stare at it and absorb the one lesson:
+**the parameter never moves; the intervals do.** Any single interval is a frozen snapshot
+— it has caught the line or it has not. The "$95\%$" is a statement about the *collection*.
+
+```{python}
+#| label: fig-coverage-intuition
+#| fig-cap: 'Coverage, made literal. The true mean $\mu=10$ is the fixed vertical red line. We draw 50 independent samples (each $n=25$, $\sigma=4$) and from each build the 95% interval $\bar X \pm 1.96\,\sigma/\sqrt n$. Each horizontal bar is one interval at its own height; green bars cover $\mu$, orange bars miss. Across many such samples the fraction that cover converges to 95%. The parameter is fixed; the intervals are the random things — that is the entire meaning of ''confidence''.'
+mu_true, sigma, n = 10.0, 4.0, 25
+n_intervals = 50
+z = 1.96
+se = sigma / np.sqrt(n)
+
+fig, ax = plt.subplots(figsize=(6.4, 5.2))
+n_miss = 0
+for k in range(n_intervals):
+    sample = rng.normal(mu_true, sigma, size=n)
+    xbar = sample.mean()
+    lo, hi = xbar - z * se, xbar + z * se
+    covers = lo <= mu_true <= hi
+    if not covers:
+        n_miss += 1
+    color = ACCENT if covers else MISS
+    ax.plot([lo, hi], [k, k], color=color, lw=1.8, solid_capstyle="round")
+    ax.plot([xbar], [k], "o", color=color, ms=3)
+ax.axvline(mu_true, color=TRUTH, lw=2.0, label=fr"true mean $\mu={mu_true:.0f}$")
+ax.set_yticks([])
+ax.set_xlabel(r"value")
+ax.set_title(f"50 intervals, {n_miss} miss the truth (expect ~2-3 at 95%)")
+ax.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"After I compute one interval, say $[9.1, 11.3]$, isn't there a $95\%$ chance the mean is
+in it?"* No — and this is the single most common error on the topic. Once the interval is
+computed it is a fixed pair of numbers, and the mean is a fixed number; the statement
+"$9.1 \le \mu \le 11.3$" is either true or false, with no probability between. The $95\%$
+was spent on the *procedure* that generated the endpoints. The honest gloss is: "this
+interval was produced by a method that captures the truth $95\%$ of the time." We make this
+precise in @sec-misinterpret, where it is the first of four classic traps.
+:::
+
+# The formal development {#sec-formal}
+
+## What a confidence interval is, exactly {#sec-definition}
+
+::: {#def-ci}
+**Definition (confidence interval).** Let $X_1,\dots,X_n$ be a sample whose distribution
+depends on an unknown parameter $\theta$. A **confidence interval** for $\theta$ at
+**confidence level** $1-\alpha$ is a pair of statistics
+$L = L(X_1,\dots,X_n)$ and $U = U(X_1,\dots,X_n)$, with $L\le U$, such that
+$$
+P_\theta\bigl(L \le \theta \le U\bigr) \;=\; 1-\alpha
+\qquad\text{for every } \theta.
+$$
+The quantity $1-\alpha$ is the **coverage probability**. When the equality is replaced by
+$\ge 1-\alpha$ the interval is **conservative** (it covers at least as often as advertised).
+:::
+
+Three things in this definition carry the entire weight, and we name each so no symbol is a
+mystery.
+
+- **$L$ and $U$ are statistics**, i.e. functions of the random sample. They inherit the
+  sample's randomness, so they are random variables with their own distributions. This is
+  the same move as in INFR-A1: a function of a random sample is random.
+- **$\theta$ is a fixed constant.** It is unknown to us, but it is not random — there is a
+  single true mean income, a single true defect rate. The subscript on $P_\theta$ records
+  that the probability is computed *as if* $\theta$ were the true value; the coverage must
+  hold whatever that value is.
+- **The probability is over the randomness in $L,U$.** The event $\{L\le\theta\le U\}$ is
+  random *because its endpoints are random*, not because $\theta$ is. Read the event as
+  "the random interval $[L,U]$ happens to land around the fixed point $\theta$."
+
+::: {.callout-important title="Where the randomness lives"}
+In INFR-A1 the conceptual pivot was that an *estimate* is a draw from a distribution. Here
+the pivot is the twin of that: an *interval* is a draw from a distribution of intervals.
+Before you see data, $P(L\le\theta\le U)=0.95$ is a genuine probability statement about a
+random interval. After you see data, $L$ and $U$ are numbers and the statement is just true
+or false. Holding this straight is the whole game; every misinterpretation in
+@sec-misinterpret is a failure to hold it.
+:::
+
+## The pivotal-quantity machine {#sec-pivot}
+
+We need a *general* way to manufacture an $[L,U]$ with guaranteed coverage, not a lucky
+guess. The standard machine is the **pivotal quantity**, and it is worth meeting in the
+abstract because every interval in this track — t-intervals, Wald intervals, even the
+bootstrap's pivotal interval — is the same trick.
+
+::: {#def-pivot}
+**Definition (pivotal quantity).** A **pivot** is a function
+$Q = Q(X_1,\dots,X_n;\theta)$ of *both* the data and the parameter whose distribution is
+**completely known** — the same for every value of $\theta$. It is allowed to contain
+$\theta$; what it may not contain is any *other* unknown.
+:::
+
+The idea is almost sleight of hand, and it is worth saying slowly *why* it works. If $Q$'s
+distribution is known and free of unknowns, we can find fixed numbers $a$ and $b$ — read
+straight off that known distribution — that trap $Q$ with the desired probability:
+$$
+P\bigl(a \le Q \le b\bigr) = 1-\alpha .
+$$
+This is a true probability statement that requires no knowledge of $\theta$, precisely
+because $Q$'s distribution does not depend on $\theta$. Now comes the move that turns it
+into an interval: if we can **algebraically rearrange** the double inequality
+$a \le Q \le b$ so that $\theta$ sits alone in the middle,
+$$
+a \le Q(X_1,\dots,X_n;\theta) \le b
+\quad\Longleftrightarrow\quad
+L(X_1,\dots,X_n) \le \theta \le U(X_1,\dots,X_n),
+$$
+then the *same probability* transfers to the rearranged event, because the two events are
+**identical** — every sample making one true makes the other true. Therefore
+$$
+P\bigl(L \le \theta \le U\bigr) = P\bigl(a\le Q\le b\bigr) = 1-\alpha,
+$$
+which is exactly @def-ci. The endpoints $L,U$ came out of the rearrangement, so they are
+functions of the data alone — no $\theta$ left in them, which is mandatory, since you
+cannot report an interval whose endpoints depend on the unknown you are estimating.
+
+::: {.callout-tip title="You might be asked"}
+*"Why must the pivot's distribution not depend on $\theta$?"* Because the numbers $a,b$ are
+chosen from that distribution *before* we know $\theta$. If the distribution shifted with
+$\theta$, the cutoffs that trap $Q$ with probability $1-\alpha$ would themselves depend on
+the unknown, and we could not compute them. The "distribution-free-of-$\theta$" requirement
+is exactly what lets us pick $a,b$ once and have the coverage hold for *every* $\theta$ — the
+"for every $\theta$" clause in @def-ci. This is the structural reason the t-statistic (next
+article) is built as a *ratio* that cancels the unknown $\sigma$: cancelling unknowns is how
+you manufacture a pivot.
+:::
+
+## Building the canonical interval: a Normal mean, known variance {#sec-build}
+
+Now we run the machine on the case that started it all. Let $X_1,\dots,X_n$ be i.i.d. with
+unknown mean $\mu$ and **known** variance $\sigma^2$. (Known variance is the honest
+simplification that isolates the *idea*; INFR-C2 removes it, and the removal is exactly
+what forces the t-distribution. We flag the assumption loudly rather than hide it.)
+
+**Step 1 — find a pivot.** From INFR-A1, the sample mean $\bar X = \frac1n\sum X_i$ has
+$\mathbb E[\bar X]=\mu$ and $\operatorname{Var}(\bar X)=\sigma^2/n$. Standardize it:
+$$
+Z \;=\; \frac{\bar X - \mu}{\sigma/\sqrt n}.
+$$ {#eq-pivot}
+Is this a pivot? It is a function of the data ($\bar X$) and the parameter ($\mu$). Its
+distribution: if the $X_i$ are themselves Normal, then $\bar X$ is exactly Normal and $Z$
+is exactly **standard Normal** $\mathcal N(0,1)$; if the $X_i$ are not Normal, the **Central
+Limit Theorem** from INFR-A2 says $Z \xrightarrow{d}\mathcal N(0,1)$, so $Z$ is
+*approximately* standard Normal for large $n$. Either way the distribution of $Z$ — standard
+Normal — contains **no unknown**: $\mu$ has been subtracted off and $\sigma$ is known. So
+$Z$ is a (exact or asymptotic) pivot. This is the precise point where the whole track's
+foundation pays off: *the CLT is what makes $Z$ a pivot when the data are not Normal.*
+
+**Step 2 — trap the pivot.** We want the central chunk holding probability $1-\alpha$,
+leaving $\alpha/2$ in each tail. Define $z_{\alpha/2}$ as the value with upper-tail area
+$\alpha/2$, i.e. $P(Z > z_{\alpha/2}) = \alpha/2$. (These quantiles are tabulated and built
+in [PROB-11]; for $\alpha=0.05$, $z_{0.025}=1.959963\ldots\approx 1.96$.)
+
+First note the standard-Normal density is **even**: writing $\varphi(t) =
+e^{-t^2/2}/\sqrt{2\pi}$, replacing $t$ by $-t$ leaves $(-t)^2=t^2$ unchanged, so
+$\varphi(-t)=\varphi(t)$ — the curve is its own mirror image across $0$. Integrating this
+mirror symmetry, the area in the left tail below $-z_{\alpha/2}$ equals the area in the
+right tail above $+z_{\alpha/2}$:
+$$
+P\bigl(Z < -z_{\alpha/2}\bigr)
+= \int_{-\infty}^{-z_{\alpha/2}}\!\varphi(t)\,dt
+\;\overset{t\to -t}{=}\;
+\int_{z_{\alpha/2}}^{\infty}\!\varphi(t)\,dt
+= P\bigl(Z > z_{\alpha/2}\bigr) = \frac{\alpha}{2},
+$$
+where the middle step substitutes $t \mapsto -t$ (which flips the limits and, via
+$\varphi(-t)=\varphi(t)$, leaves the integrand alone). So the lower cutoff is
+$-z_{\alpha/2}$, and the two tails together carry $\alpha/2+\alpha/2=\alpha$. The total
+probability is $1$, so the central region keeps the rest:
+$$
+P\bigl(-z_{\alpha/2} \le Z \le z_{\alpha/2}\bigr)
+= 1 - P\bigl(Z < -z_{\alpha/2}\bigr) - P\bigl(Z > z_{\alpha/2}\bigr)
+= 1 - \tfrac{\alpha}{2} - \tfrac{\alpha}{2}
+= 1-\alpha.
+$$ {#eq-trap}
+@fig-pivot-tails draws this: the central shaded mass is $1-\alpha$, the two tails are
+$\alpha/2$ each.
+
+```{python}
+#| label: fig-pivot-tails
+#| fig-cap: 'Trapping the pivot. The standard Normal density of $Z=(\bar X-\mu)/(\sigma/\sqrt n)$. The central shaded region between $-z_{\alpha/2}$ and $+z_{\alpha/2}$ holds probability $1-\alpha=0.95$; each unshaded tail holds $\alpha/2=0.025$. The cutoff $z_{0.025}=1.96$ is read straight off this fixed, known curve — it does not depend on the unknown $\mu$, which is exactly what makes the construction work.'
+zc = 1.96
+t = np.linspace(-4, 4, 600)
+pdf = normal_pdf(t)
+
+fig, ax = plt.subplots()
+ax.plot(t, pdf, color=TRUTH)
+mask = (t >= -zc) & (t <= zc)
+ax.fill_between(t[mask], pdf[mask], color=FILL, alpha=0.7,
+                label=r"central mass $= 1-\alpha = 0.95$")
+ax.fill_between(t[t <= -zc], pdf[t <= -zc], color=MISS, alpha=0.6)
+ax.fill_between(t[t >= zc], pdf[t >= zc], color=MISS, alpha=0.6,
+                label=r"each tail $= \alpha/2 = 0.025$")
+for s in (-zc, zc):
+    ax.axvline(s, color=GREY, ls="--", lw=1.2)
+ax.text(zc + 0.05, 0.05, r"$+z_{\alpha/2}=1.96$", fontsize=9)
+ax.text(-zc - 0.05, 0.05, r"$-z_{\alpha/2}$", fontsize=9, ha="right")
+ax.set_xlabel(r"$Z = (\bar X - \mu)/(\sigma/\sqrt{n})$")
+ax.set_ylabel("density")
+ax.set_title("The pivot's known distribution sets the cutoffs")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+**Step 3 — rearrange to isolate $\mu$.** This is pure algebra on the inequality inside
+@eq-trap, and we show every step because the rearrangement is where students lose the
+thread. Substitute the pivot @eq-pivot:
+$$
+-z_{\alpha/2} \;\le\; \frac{\bar X - \mu}{\sigma/\sqrt n} \;\le\; z_{\alpha/2}.
+$$
+Multiply all three parts by $\sigma/\sqrt n$, which is a **positive** number (it is a
+standard deviation), so the inequality directions are preserved:
+$$
+-z_{\alpha/2}\,\frac{\sigma}{\sqrt n}
+\;\le\; \bar X - \mu \;\le\;
+z_{\alpha/2}\,\frac{\sigma}{\sqrt n}.
+$$
+Subtract $\bar X$ from all three parts:
+$$
+-\bar X - z_{\alpha/2}\,\frac{\sigma}{\sqrt n}
+\;\le\; -\mu \;\le\;
+-\bar X + z_{\alpha/2}\,\frac{\sigma}{\sqrt n}.
+$$
+Multiply through by $-1$. **Multiplying by a negative number flips both inequality signs**
+— the single step everyone forgets — so the chain reverses:
+$$
+\bar X + z_{\alpha/2}\,\frac{\sigma}{\sqrt n}
+\;\ge\; \mu \;\ge\;
+\bar X - z_{\alpha/2}\,\frac{\sigma}{\sqrt n}.
+$$
+Read right-to-left to put it in increasing order:
+$$
+\bar X - z_{\alpha/2}\,\frac{\sigma}{\sqrt n}
+\;\le\; \mu \;\le\;
+\bar X + z_{\alpha/2}\,\frac{\sigma}{\sqrt n}.
+$$ {#eq-rearranged}
+
+The event in @eq-rearranged is *the very same event* as the one in @eq-trap — we only did
+reversible algebra, so a sample satisfies one exactly when it satisfies the other.
+Therefore they carry the identical probability $1-\alpha$. Matching @eq-rearranged against
+@def-ci, we read off the endpoints:
+$$
+\boxed{\;
+L = \bar X - z_{\alpha/2}\,\frac{\sigma}{\sqrt n},
+\qquad
+U = \bar X + z_{\alpha/2}\,\frac{\sigma}{\sqrt n},
+\;}
+$$ {#eq-ci-mean}
+i.e. the interval $\bar X \pm z_{\alpha/2}\,\sigma/\sqrt n$. We have proved:
+
+::: {#thm-ci-mean}
+**Theorem (CI for a Normal mean, known variance).** If $X_1,\dots,X_n$ are i.i.d.
+$\mathcal N(\mu,\sigma^2)$ with $\sigma^2$ known, then
+$$
+\Bigl[\;\bar X - z_{\alpha/2}\,\tfrac{\sigma}{\sqrt n},\;\;
+\bar X + z_{\alpha/2}\,\tfrac{\sigma}{\sqrt n}\;\Bigr]
+$$
+is an *exact* $(1-\alpha)$ confidence interval for $\mu$. If the $X_i$ are not Normal but
+have finite variance, the same interval has coverage $\to 1-\alpha$ as $n\to\infty$ by the
+CLT (an *approximate* interval).
+:::
+
+::: {.proof}
+The pivot $Z=(\bar X-\mu)/(\sigma/\sqrt n)$ is standard Normal (exactly, under Normality of
+the $X_i$, since a linear combination of independent Normals is Normal — established in the
+Probability track; asymptotically otherwise, by the CLT of INFR-A2). Equation @eq-trap
+holds by the definition of $z_{\alpha/2}$ and the symmetry of the standard Normal. The chain
+@eq-pivot–@eq-rearranged is a sequence of reversible algebraic operations (multiply by a
+positive constant, subtract a constant, multiply by $-1$ flipping the signs), so the event
+$\{-z_{\alpha/2}\le Z\le z_{\alpha/2}\}$ equals the event $\{L\le\mu\le U\}$ pointwise in the
+sample space. Equal events have equal probability, hence $P(L\le\mu\le U)=1-\alpha$, which is
+@def-ci. $\qquad\blacksquare$
+:::
+
+Read the formula for its meaning, the same way we read the OLS slope. The interval is
+**centered at the estimate** $\bar X$ (your best guess sits in the middle), and its
+**half-width** is $z_{\alpha/2}\cdot\mathrm{SE}$ — the standard error scaled by how much
+confidence you demanded. Three levers set the width, and each makes intuitive sense:
+
+- **More confidence widens it.** Larger $1-\alpha$ means smaller tails, larger
+  $z_{\alpha/2}$, wider interval. To be right more often you must claim a bigger net. ($95\%
+  \to 1.96$, $99\%\to 2.576$.)
+- **More data narrows it**, like $1/\sqrt n$ through the standard error — the same
+  $\sqrt n$ from the CLT. Quadrupling the sample halves the width.
+- **More noise widens it**, linearly in $\sigma$. A noisier population needs a bigger net
+  for the same reliability.
+
+::: {.callout-tip title="You might be asked"}
+*"Why $z_{\alpha/2}$ and not $z_\alpha$?"* Because we split the missing $\alpha$ probability
+*equally* between the two tails — $\alpha/2$ above and $\alpha/2$ below — to get the
+shortest symmetric interval for a symmetric distribution. Putting all $\alpha$ in one tail
+gives a valid *one-sided* interval (a confidence bound), e.g. "$\mu \ge \bar X - z_\alpha\,
+\sigma/\sqrt n$ with $95\%$ confidence," which is the right tool when you only care about
+one direction (a lower bound on a safety margin, an upper bound on a defect rate). Two-sided
+with equal tails is the default because it is shortest when the pivot is symmetric and we
+have no reason to favor a side.
+:::
+
+# Worked examples {#sec-examples}
+
+## Example 1 — calibrating a scale, by hand {#sec-scale}
+
+A lab calibrates a digital scale by weighing a certified $100.0$ g reference mass $n=12$
+times. The measurement noise is known from the manufacturer's spec to have standard
+deviation $\sigma=0.8$ g (this is the genuine "known variance" regime — the instrument's
+precision is a documented constant, while the *true* reading $\mu$, possibly biased away
+from $100$, is what we estimate). We carry every number in the open.
+
+```{python}
+#| label: ex-scale
+#| echo: true
+sigma_scale = 0.8
+n_scale = 12
+z95 = 1.959963984540054   # z_{0.025}, the exact 95% two-sided quantile
+readings = np.array([100.3, 99.6, 100.9, 100.1, 99.8, 100.5,
+                     100.2, 99.9, 100.7, 100.0, 100.4, 100.2])
+xbar = readings.mean()
+se = sigma_scale / np.sqrt(n_scale)
+half = z95 * se
+lo, hi = xbar - half, xbar + half
+print(f"n            = {n_scale}")
+print(f"sample mean  xbar = {xbar:.4f} g")
+print(f"std error    SE   = sigma/sqrt(n) = {sigma_scale}/sqrt({n_scale}) = {se:.4f} g")
+print(f"half-width   z*SE = 1.95996 * {se:.4f} = {half:.4f} g")
+print(f"95% CI for mu     = [{lo:.4f}, {hi:.4f}] g")
+```
+
+Walk the arithmetic against @eq-ci-mean:
+
+- The estimate is $\bar X = `{python} f"{xbar:.3f}"`$ g — the scale reads slightly high on
+  average.
+- The standard error is $\mathrm{SE}=\sigma/\sqrt n = 0.8/\sqrt{12} =
+  `{python} f"{se:.4f}"`$ g.
+- The half-width is $z_{0.025}\cdot\mathrm{SE} = 1.96\times `{python} f"{se:.4f}"` =
+  `{python} f"{half:.4f}"`$ g.
+- So the $95\%$ interval is $`{python} f"{xbar:.3f}"` \pm `{python} f"{half:.4f}"` =
+  [`{python} f"{lo:.3f}"`,\, `{python} f"{hi:.3f}"`]$ g.
+
+The honest reading: $100.0$ g lies inside this interval, so the calibration data are
+**consistent with** the scale being unbiased at the $95\%$ level — we have not detected a
+bias. We have *not* shown the scale is perfectly calibrated; we have shown the data do not
+rule out $100.0$. (That "fail to reject" framing is the bridge to hypothesis testing,
+INFR-D1, where we prove the interval and the test are two views of one thing.)
+
+## Example 2 — does the interval actually cover? A simulation {#sec-sim}
+
+The coverage claim is testable, and we should test it rather than trust it. We play
+$10{,}000$ parallel universes: in each, draw a fresh sample from a *known* truth, build the
+$95\%$ interval, and count how often it caught the true mean. We run three regimes that
+isolate the two assumptions behind @thm-ci-mean — Normality of the pivot, and known
+variance:
+
+1. **Normal data, known $\sigma$** — both assumptions hold, so the interval is *exact*.
+2. **Skewed (Exponential) data, known $\sigma$** — Normality of the pivot is only
+   *asymptotic* (it leans on the CLT), but the variance is still genuinely known.
+3. **Skewed data, $\sigma$ *estimated*** — the realistic regime, where we plug the sample
+   standard deviation into the standard error. This is *outside* @thm-ci-mean and is exactly
+   what INFR-C2 will fix; we include it to show what breaks.
+
+```{python}
+#| label: fig-coverage-sim
+#| fig-cap: 'Empirical coverage over 10,000 simulated studies, dissecting the two assumptions. **Left, known $\sigma$:** with the true variance plugged in, coverage stays close to nominal 95% (dashed) for both Normal data (exact, flat at 95%) and Exponential data (the skew costs almost nothing here, since the only error is the pivot''s non-Normality, which the CLT controls). **Right, estimated $\sigma$:** the *realistic* case — plugging the sample SD into a z-interval *undercovers* badly at small $n$ (around 81% at $n=5$), because a noisy variance estimate makes the symmetric Normal cutoffs too tight. This is the gap INFR-C2 closes with Student''s t. The honest lesson: it is the *unknown variance*, more than mild skew, that breaks the small-sample z-interval.'
+def coverage(mode, n, mu_true, sigma_true, reps=10000):
+    """mode in {'normal_known', 'exp_known', 'exp_estimated'}."""
+    z = 1.959963984540054
+    hits = 0
+    for _ in range(reps):
+        if mode == "normal_known":
+            s = rng.normal(mu_true, sigma_true, size=n)
+            half = z * sigma_true / np.sqrt(n)
+        elif mode == "exp_known":
+            s = rng.exponential(mu_true, size=n)   # mean = sd = mu_true
+            half = z * sigma_true / np.sqrt(n)
+        else:  # exp_estimated: plug in the sample SD (the realistic z-interval)
+            s = rng.exponential(mu_true, size=n)
+            half = z * s.std(ddof=1) / np.sqrt(n)
+        xbar = s.mean()
+        if xbar - half <= mu_true <= xbar + half:
+            hits += 1
+    return hits / reps
+
+ns = [5, 10, 20, 40, 80, 160]
+cov_normal = [coverage("normal_known", n, 10.0, 4.0) for n in ns]
+cov_exp_kn = [coverage("exp_known", n, 10.0, 10.0) for n in ns]
+cov_exp_es = [coverage("exp_estimated", n, 10.0, 10.0) for n in ns]
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8), sharey=True)
+axL.axhline(0.95, color=TRUTH, ls="--", lw=1.4, label="nominal 95%")
+axL.plot(ns, cov_normal, "o-", color=DATA, label="Normal (known $\\sigma$)")
+axL.plot(ns, cov_exp_kn, "s-", color=ACCENT, label="Exponential (known $\\sigma$)")
+axL.set_title("Known variance: both fine")
+axL.set_ylabel("empirical coverage")
+axL.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
+
+axR.axhline(0.95, color=TRUTH, ls="--", lw=1.4, label="nominal 95%")
+axR.plot(ns, cov_exp_es, "D-", color=MISS, label="Exponential (estimated $\\sigma$)")
+axR.set_title("Estimated variance: undercovers")
+axR.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
+
+for ax in (axL, axR):
+    ax.set_xscale("log"); ax.set_xticks(ns); ax.set_xticklabels(ns)
+    ax.set_xlabel("sample size $n$"); ax.set_ylim(0.84, 0.98)
+plt.tight_layout()
+print("Normal,      known sigma:", [f"{c:.3f}" for c in cov_normal])
+print("Exponential, known sigma:", [f"{c:.3f}" for c in cov_exp_kn])
+print("Exponential, est.  sigma:", [f"{c:.3f}" for c in cov_exp_es])
+```
+
+The left panel is the theory keeping its promise. Under Normality the pivot is *exactly*
+standard Normal, so coverage hugs $95\%$ at every $n$, even $n=5$. For skewed Exponential
+data *with the variance still known*, coverage also stays close to $95\%$ — the only
+imperfection is that the pivot $Z$ is not quite Normal at small $n$, and the CLT keeps that
+error small. So, perhaps surprisingly, **mild skew alone barely dents the known-variance
+interval.**
+
+The right panel is where the wheels come off, and it is the realistic case: we no longer
+know $\sigma$, so we plug in the sample standard deviation. Now coverage collapses to around
+$81\%$ at $n=5$ and is still only $\approx 87\%$ at $n=10$, climbing back toward $95\%$ only
+as $n$ grows into the dozens. The culprit is not the
+skew — it is that a *noisy estimate of the variance* makes the symmetric cutoffs
+$\pm 1.96$ too tight: when the sample happens to underestimate $\sigma$, the interval is too
+narrow and misses more often than $5\%$ of the time. This is precisely the failure that
+**Student's t-distribution** repairs by widening the cutoffs to account for the extra
+uncertainty in $\hat\sigma$ — the entire subject of [INFR-C2]. The honest lesson, and the
+one this simulation was built to teach: the assumption that quietly matters most for a
+small-sample interval is **known variance**, not Normality.
+
+## Example 3 — a polling proportion at the edge of applicability {#sec-poll}
+
+A pollster surveys $n=1000$ likely voters and finds $\hat p = 0.52$ supporting a measure.
+A proportion is a mean of $0/1$ indicators, so the same machine applies, with one wrinkle
+that makes it an honest *edge* case: **the variance is not separately known** — for a
+Bernoulli$(p)$ the variance is $p(1-p)$, which depends on the very unknown we are
+estimating. The textbook move is to *plug in* $\hat p$ for $p$ in the standard error, giving
+the **Wald interval** $\hat p \pm z_{\alpha/2}\sqrt{\hat p(1-\hat p)/n}$. This is no longer
+strictly the known-variance case of @thm-ci-mean — it is an approximation on top of an
+approximation — and it is famous for behaving badly when $p$ is near $0$ or $1$.
+
+```{python}
+#| label: fig-poll
+#| fig-cap: 'A proportion is a mean of 0/1 indicators, so the z-interval machine applies — but the variance $p(1-p)$ must be estimated, making it an approximation. **Left:** the Wald 95% interval for the poll, $\hat p=0.52$, $n=1000$. **Right:** the edge of applicability — empirical coverage of the Wald interval (red) as the true $p$ approaches the boundary, with $n=40$. Near $p=0.05$ or $p=0.95$ the Wald interval badly *undercovers* (well below nominal 95%), because the Normal approximation to a near-degenerate binomial fails. The Wilson interval (green) repairs it. This failure is the launch point for INFR-C3.'
+# Left: the poll's Wald interval.
+phat, n_poll = 0.52, 1000
+se_p = np.sqrt(phat * (1 - phat) / n_poll)
+half_p = 1.959963984540054 * se_p
+lo_p, hi_p = phat - half_p, phat + half_p
+
+# Right: Wald vs Wilson coverage as p approaches the boundary, n = 40.
+def wald_wilson_coverage(p, n=40, reps=4000):
+    z = 1.959963984540054
+    wald_hits, wilson_hits = 0, 0
+    for _ in range(reps):
+        x = rng.binomial(n, p)
+        ph = x / n
+        # Wald
+        h = z * np.sqrt(ph * (1 - ph) / n)
+        if ph - h <= p <= ph + h:
+            wald_hits += 1
+        # Wilson
+        denom = 1 + z**2 / n
+        center = (ph + z**2 / (2 * n)) / denom
+        margin = (z / denom) * np.sqrt(ph * (1 - ph) / n + z**2 / (4 * n**2))
+        if center - margin <= p <= center + margin:
+            wilson_hits += 1
+    return wald_hits / reps, wilson_hits / reps
+
+ps = np.array([0.05, 0.10, 0.20, 0.35, 0.50])
+wald_cov, wilson_cov = zip(*[wald_wilson_coverage(p) for p in ps])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.errorbar([0], [phat], yerr=[[half_p], [half_p]], fmt="o", color=DATA,
+             capsize=6, ms=8, lw=2)
+axL.axhline(0.5, color=GREY, ls="--", lw=1.2, label="p = 0.50 (a tie)")
+axL.set_xlim(-1, 1); axL.set_xticks([])
+axL.set_ylabel("support proportion")
+axL.set_title(fr"Wald 95% CI: [{lo_p:.3f}, {hi_p:.3f}]")
+axL.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
+axR.axhline(0.95, color=GREY, ls="--", lw=1.4, label="nominal 95%")
+axR.plot(ps, wald_cov, "o-", color=TRUTH, label="Wald")
+axR.plot(ps, wilson_cov, "s-", color=ACCENT, label="Wilson")
+axR.set_xlabel("true proportion $p$")
+axR.set_ylabel("empirical coverage")
+axR.set_title("Edge of applicability ($n=40$)")
+axR.set_ylim(0.80, 1.0)
+axR.legend(loc="lower right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"Poll Wald 95% CI for support: [{lo_p:.4f}, {hi_p:.4f}]")
+print(f"Wald coverage by p:   {[f'{c:.3f}' for c in wald_cov]}")
+print(f"Wilson coverage by p: {[f'{c:.3f}' for c in wilson_cov]}")
+```
+
+For the headline poll ($\hat p=0.52$, $n=1000$), the interval is $[`{python}
+f"{lo_p:.3f}"`,\, `{python} f"{hi_p:.3f}"`]$ — comfortably straddling $0.50$, so the data do
+*not* establish majority support: a tie is inside the interval. (The "$\pm 3$ points margin
+of error" you hear on the news is exactly $z_{\alpha/2}\sqrt{\hat p(1-\hat p)/n}\approx
+`{python} f"{half_p:.3f}"`$, computed at $\hat p=0.5$ where it is widest.)
+
+The right panel is the honest boundary. With a small sample ($n=40$) and a true $p$ near
+$0.05$, the Wald interval's *actual* coverage collapses well below the advertised $95\%$ —
+sometimes catastrophically, because a near-degenerate binomial is poorly approximated by a
+Normal, and the plug-in $\hat p(1-\hat p)$ can be wildly off (it is literally $0$ when the
+sample happens to be all-$0$ or all-$1$, producing a zero-width interval that covers
+nothing). **This is the edge of applicability of the basic z/Wald interval**, and the fix is
+to use a better pivot — the **Wilson** interval (green, which inverts a test rather than
+plugging in) or **Agresti–Coull** — both of which restore coverage near the boundary. That
+repair is the explicit subject of [INFR-C3], which builds Wald, score, and profile intervals
+and shows exactly why the score-based Wilson interval wins here.
+
+::: {.callout-warning title="Pitfall"}
+**The z-interval assumes either Normal data or a large enough $n$ for the CLT — and known
+variance.** The proportion example violated "known variance" (we plugged in $\hat p$), and
+the simulation showed coverage degrading near the boundary and at small $n$. Two general
+lessons: (1) when $\sigma$ must be *estimated*, the correct pivot is no longer Normal but
+**Student's t** — the entire point of [INFR-C2]; (2) when the sampling distribution is
+skewed or the parameter is near a boundary, the symmetric $\pm z\cdot\mathrm{SE}$ form
+under-covers, and you reach for a better pivot (Wilson/score, [INFR-C3]) or an
+assumption-light method (the **bootstrap**, [INFR-E2]). The formula @eq-ci-mean is correct
+*given its assumptions*; honesty is knowing when they hold.
+:::
+
+# What a confidence interval is *not*: the four classic traps {#sec-misinterpret}
+
+This is the interview-and-exam heart of the article. Each misreading below is one a sharp
+examiner will dangle in front of you; each is a failure to keep straight *where the
+randomness lives* (@sec-definition). We name the trap, state the correct reading, and say
+why.
+
+**Trap 1 — "There is a $95\%$ probability that $\mu$ lies in *this* interval $[9.1,
+11.3]$."** This is the cardinal error. Once computed, $[9.1, 11.3]$ is a fixed pair of
+numbers and $\mu$ is a fixed number; the statement "$9.1\le\mu\le 11.3$" is simply true or
+false. There is no random quantity left to carry a probability. **Correct reading:** the
+*procedure* that produced these endpoints captures $\mu$ in $95\%$ of repetitions; this
+particular interval is one realization, either right or wrong. The probability lived in
+$L,U$ *before* you plugged in data, and you spent it.
+
+**Trap 2 — "$95\%$ of the data / of future observations fall in the interval."** No — the
+interval is about the *parameter* $\mu$ (a property of the population's center), not about
+individual data points. A $95\%$ CI for the mean is typically *far narrower* than the spread
+of the data, and shrinks to a point as $n\to\infty$, whereas $95\%$ of the data occupy a
+fixed-width band no matter how much data you collect. The object that contains $95\%$ of
+*future observations* is a **prediction interval**, a different and wider thing (it must
+account for the new point's own noise, not just the uncertainty in $\bar X$).
+@fig-ci-vs-pi makes the gap vivid.
+
+```{python}
+#| label: fig-ci-vs-pi
+#| fig-cap: 'Trap 2, defused. For $n=200$ draws from $\mathcal N(50, 8^2)$: the **confidence interval for the mean** (green, narrow) pins down where the *center* is and is much narrower than the data spread; the **prediction interval** (orange, wide) is where a *new observation* would land and roughly matches the data''s $\pm 2\sigma$ scatter. They answer different questions. As $n$ grows the CI shrinks toward a point while the PI converges to a fixed width — a confidence interval is not a range for the data.'
+mu_d, sigma_d, n_d = 50.0, 8.0, 200
+data = rng.normal(mu_d, sigma_d, size=n_d)
+xbar_d = data.mean()
+se_d = sigma_d / np.sqrt(n_d)
+z = 1.959963984540054
+ci = (xbar_d - z * se_d, xbar_d + z * se_d)
+# Prediction interval (known sigma): xbar +/- z * sigma * sqrt(1 + 1/n).
+pi_half = z * sigma_d * np.sqrt(1 + 1 / n_d)
+pi = (xbar_d - pi_half, xbar_d + pi_half)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+ax.hist(data, bins=24, color=FILL, alpha=0.7, label="observed data")
+ax.axvspan(ci[0], ci[1], color=ACCENT, alpha=0.5,
+           label=f"95% CI for mean (width {ci[1]-ci[0]:.2f})")
+ax.axvspan(pi[0], pi[1], color=MISS, alpha=0.25,
+           label=f"95% prediction interval (width {pi[1]-pi[0]:.1f})")
+ax.axvline(xbar_d, color=TRUTH, lw=1.6)
+ax.set_xlabel("value"); ax.set_ylabel("count")
+ax.set_title("A CI for the mean is not a range for the data")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"CI for mean:        [{ci[0]:.2f}, {ci[1]:.2f}]   width {ci[1]-ci[0]:.2f}")
+print(f"Prediction interval:[{pi[0]:.2f}, {pi[1]:.2f}]  width {pi[1]-pi[0]:.2f}")
+```
+
+**Trap 3 — "A $95\%$ CI means $95\%$ of *all my study's* parameters are in their
+intervals" / confusing it with replication probability.** The coverage is per-interval over
+hypothetical repetitions of *the same* experiment, not a tally across different parameters
+in one study, and it is **not** the probability that a replication's estimate lands inside
+your interval (that probability is different and generally lower). The interval says nothing
+direct about what the *next study* will find; it says the *method* traps the *fixed truth*
+$95\%$ of the time.
+
+**Trap 4 — "A wider interval means a worse / less confident result."** Width and confidence
+are different axes. At a *fixed* level $1-\alpha$, a wide interval means an *imprecise*
+estimate (small $n$ or large $\sigma$), not a less reliable procedure — the coverage is
+still $95\%$. Conversely you can always make an interval narrower by *lowering* the
+confidence level, which is not "a better result," just a weaker promise. The honest summary
+of a study reports the interval *and* its level; quoting a narrow interval without its level
+is meaningless.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me the one-sentence correct interpretation of a $95\%$ confidence interval."* — *"It
+is one realization of a procedure that, used repeatedly on fresh samples, would contain the
+true parameter $95\%$ of the time."* If pressed for the contrast: *"It is not a $95\%$
+probability statement about this particular interval — that is the Bayesian **credible
+interval**, which requires a prior and treats the parameter as random ([INFR-E4])."* Being
+able to say both the correct frequentist reading *and* name the Bayesian object that *does*
+license the tempting interpretation is exactly the depth an interviewer is checking for.
+:::
+
+# The duality you will keep meeting {#sec-duality}
+
+One structural fact is worth planting now because it recurs through the whole testing
+movement (D): **a confidence interval and a hypothesis test are two views of the same
+machine.** The $(1-\alpha)$ interval for $\mu$ is *exactly the set of null values
+$\mu_0$ that a level-$\alpha$ two-sided test would not reject.* This is not a coincidence to
+take on faith — it is the *same algebra* we already did in Step 3, read in the other
+direction, so we do it here in full.
+
+A level-$\alpha$ two-sided test of $H_0:\mu=\mu_0$ uses the test statistic
+$Z_0 = (\bar X - \mu_0)/(\sigma/\sqrt n)$ — note this is the pivot @eq-pivot with the
+*hypothesized* value $\mu_0$ in place of the unknown $\mu$, so under $H_0$ it is standard
+Normal. The test **fails to reject** $H_0$ exactly when $Z_0$ lands in the same central
+region @eq-trap that we used to build the interval:
+$$
+-z_{\alpha/2} \;\le\; \frac{\bar X - \mu_0}{\sigma/\sqrt n} \;\le\; z_{\alpha/2}.
+$$
+But this is character-for-character the inequality at the top of Step 3, with $\mu_0$ where
+$\mu$ stood. So we may rerun the *identical* reversible algebra — multiply by the positive
+$\sigma/\sqrt n$, subtract $\bar X$, multiply by $-1$ and flip — and it lands at the same
+place @eq-rearranged:
+$$
+\bar X - z_{\alpha/2}\,\frac{\sigma}{\sqrt n}
+\;\le\; \mu_0 \;\le\;
+\bar X + z_{\alpha/2}\,\frac{\sigma}{\sqrt n}.
+$$
+The left side is "the test does not reject $\mu_0$"; the right side is "$\mu_0$ lies in our
+interval @eq-ci-mean." They are the same set of $\mu_0$. So "is $\mu_0$ in the $95\%$ CI?"
+and "does the level-$0.05$ test reject $\mu_0$?" are the same question. This is why, in
+Example 1, "$100$ g is inside the interval" was the same statement as "we fail to reject
+that the scale is unbiased." We prove this duality at full generality — for any pivot, not
+just this one — and use it relentlessly in [INFR-D1].
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the Foundations movement: **[INFR-A1]** made the estimator a random
+variable with a sampling distribution and a standard error, and **[INFR-A2]** pinned the
+size ($\sigma/\sqrt n$) and shape (Gaussian, via the CLT) of that distribution. This article
+turned those into the first *interval* and, crucially, fixed what the interval claims. From
+here the Interval movement continues:
+
+- **[INFR-C2 *The t-Distribution and Small-Sample Intervals*]** — drops the artificial
+  "known $\sigma$" assumption of @thm-ci-mean. Plugging in an estimate $\hat\sigma$ breaks
+  the Normal pivot; the repaired pivot follows **Student's t**, and we build it (and the
+  chi-square distribution of the sample variance) from scratch. This is the interval you
+  actually use in practice.
+- **[INFR-C3 *Wald, Score, and Profile Intervals*]** — generalizes the pivot machine to
+  *any* MLE-estimated parameter, and fixes the proportion failure of @sec-poll with the
+  Wilson/score interval.
+- **[INFR-D1 *The Logic of Hypothesis Testing*]** — collects the duality of @sec-duality and
+  makes the test/interval correspondence a theorem.
+- **[INFR-E2 *Bootstrap Confidence Intervals*]** — builds intervals by resampling when no
+  clean pivot exists, the assumption-light alternative previewed in the Pitfall.
+- **[INFR-E4 *The Bayesian Turn*]** — the deliberate foil: the **credible interval**, which
+  *does* put $95\%$ probability on the parameter, and the philosophical price of doing so.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding source.** J. Neyman, "Outline of a Theory of Statistical Estimation Based
+  on the Classical Theory of Probability," *Phil. Trans. R. Soc. A* 236 (1937): the paper
+  that defined confidence intervals as a property of the procedure and insisted, against the
+  Bayesian reading, that no probability attaches to the individual interval.
+- **The proportion disaster, in full.** L. D. Brown, T. T. Cai, A. DasGupta, "Interval
+  Estimation for a Binomial Proportion," *Statistical Science* 16 (2001): the definitive
+  account of why the Wald interval of @sec-poll fails and why the Wilson/score interval is
+  the right default — read it before [INFR-C3].
+- **Open threads deliberately deferred.** *What if $\sigma$ is unknown?* — the t-interval,
+  [INFR-C2]. *What if there is no clean pivot at all?* — the bootstrap, [INFR-E1]–[INFR-E2].
+  *Can I legitimately say "$95\%$ probability $\mu$ is in here"?* — only under a prior, and
+  then it is a credible interval, [INFR-E4]. *Is the equal-tailed interval optimal?* — for a
+  symmetric pivot it is shortest; for skewed pivots the shortest interval is *not*
+  equal-tailed, a subtlety [INFR-C3] takes up.

@@ -1,0 +1,982 @@
+---
+title: "The Bootstrap: Inference When You Cannot Do the Math"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+DATA   = "#2b3a67"     # observed sample / data points
+TRUTH  = "#c1121f"     # the true value / population / theoretical curve
+ACCENT = "#0a7d4d"     # the point estimate / highlights
+BOOT   = "#d6791f"     # bootstrap quantities
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # histograms / shaded areas
+
+rng = np.random.default_rng(20240801)
+```
+
+> **Where this sits in the track.** This opens the final movement (E) of the **Statistical
+> Inference** track — *computational and alternative inference*. It assumes two things from
+> the Foundations movement, each built there from the ground up. From [INFR-A1 *The
+> Estimator as a Random Variable*] it takes the central object of the whole track: an
+> estimator $\hat\theta = g(X_1,\dots,X_n)$ is itself a **random variable** with a
+> **sampling distribution**, and the quantity we want is the *standard deviation* of that
+> distribution, the **standard error**. From [INFR-A2 *LLN and the CLT*] it takes the
+> **law of large numbers** — that an average of i.i.d. draws converges to its expectation
+> — which is the engine that makes Monte-Carlo resampling work. From the Probability
+> Foundations track it borrows the **empirical distribution function** and **sampling with
+> replacement** [PROB-09], which we restate where we use them. The previous four movements
+> built sampling distributions and intervals *analytically* — the CLT, the $t$, the
+> $\chi^2$, the Wald formula — each of which demanded a formula you could differentiate or
+> a limit you could take. This article installs the escape hatch for when **no such formula
+> exists**. It **sets up** [INFR-E2 *Bootstrap Confidence Intervals*] (turning resamples
+> into calibrated intervals) and [INFR-E3 *Permutation Tests*] (the same resampling idea
+> turned into a hypothesis test).
+
+## Abstract {.unnumbered}
+
+For a sample mean we have a formula for the standard error — $s/\sqrt n$ — handed to us by
+the central limit theorem. For the **median**, a **correlation**, a **ratio of means**, or
+a **trimmed mean**, no such tidy formula exists, and deriving one by hand ranges from
+painful to impossible. The **bootstrap**, introduced by Bradley Efron in 1979, sidesteps
+the mathematics entirely with one audacious substitution: it treats the *observed sample*
+as if it were the whole population and *resamples from it*, with replacement, to manufacture
+the sampling distribution by brute force. This article derives the bootstrap from its one
+foundational idea — the **plug-in principle** — and shows, every step on the page, *why*
+substituting the empirical distribution $\hat F_n$ for the unknown true $F$ works: the
+"bootstrap world" is a miniature copy of the real world in which we know the answer exactly,
+so we can simulate what we could never compute. We compute bootstrap standard errors for
+three statistics with no closed-form SE — the median, a Pearson correlation, and a ratio —
+checking each against an analytic answer where one exists. Then we take the bootstrap to its
+**edge of applicability** and watch it fail honestly: on the maximum of a uniform, on a
+heavy-tailed mean, and on dependent time-series data, where the i.i.d. resample is the wrong
+model of the world. The single claim the article defends is that **the bootstrap replaces a
+derivation you cannot do with a computation you can**, and that knowing *why* it works is
+exactly what tells you when it will not.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+You want the sampling distribution of a statistic $\hat\theta = g(X_1,\dots,X_n)$ — how it
+would scatter if you could redraw the sample from the true population $F$ over and over. You
+cannot, because you have only one sample and you do not know $F$. The **bootstrap** makes one
+substitution: use the **empirical distribution** $\hat F_n$ — the dataset itself, each point
+weighted $1/n$ — as a stand-in for $F$. Drawing a sample from $\hat F_n$ is exactly
+**sampling your own data with replacement**. So:
+
+> *Resample $n$ points from your data with replacement, recompute $\hat\theta$, repeat $B$
+> times. The spread of those $B$ values estimates the standard error of $\hat\theta$; their
+> distribution estimates its sampling distribution.*
+
+It works because $\hat F_n \to F$ as $n$ grows (the law of large numbers, applied to the
+CDF), so the **bootstrap world is a faithful miniature of the real world** — and in the
+bootstrap world we know the "population" exactly, so we can simulate what we could never
+derive. No formula for the SE is ever required.
+:::
+
+Everything below orbits that box. The audacious word is *substitution*: we never learn the
+true $F$, we simply replace it with the best estimate of it we have — the data — and then do
+exactly what we wish we could have done to $F$. The reason this is not a swindle is the
+quiet convergence $\hat F_n \to F$, which we make precise and *see* in @sec-plug-in. The rest
+of the article is consequences: how to estimate the standard error (@sec-se), why it is
+*right* (@sec-why-works), three statistics where it is the only practical tool (@sec-examples),
+and — the half that separates competence from mastery — exactly where the substitution breaks
+(@sec-failure).
+
+# Why we are doing this: the problem that forced the idea {#sec-why}
+
+Keep one question in view for the entire article: **when there is no formula for the standard
+error, what do we do?** Every move below is an answer to a piece of that question. If a step
+feels like a trick, return here.
+
+## The original problem: the formula runs out
+
+The first four movements of this track were, in a sense, a hunt for formulas. The sample
+mean has a standard error of $\sigma/\sqrt n$ — the CLT (@sec-why, [INFR-A2]) hands it to us
+and even tells us the *shape* is Gaussian. When $\sigma$ is unknown we plug in $s$ and pay
+for it with the $t$-distribution ([INFR-C2]). The maximum-likelihood estimator has an
+asymptotic variance of $1/I(\theta)$, the inverse Fisher information ([INFR-B4]), and the
+Wald interval ([INFR-C3]) is built on it. Every one of these is a *derived* answer: someone
+sat down, wrote the estimator as a function of the data, and pushed an exact or asymptotic
+calculation through to a closed form.
+
+Now ask for the standard error of the **sample median**. The median is $\hat\theta = $ the
+middle order statistic. Its variance does have an asymptotic formula —
+$1/(4 n f(\text{median})^2)$ — but it depends on the *density* $f$ at the median, a quantity
+you do not know and cannot easily estimate (estimating a density is itself a hard problem).
+Ask for the standard error of a **Pearson correlation** $\hat\rho$ between two variables:
+the exact sampling distribution is a notorious mess, and the usual answer leans on a variance-
+stabilizing transform (Fisher's $z$) that assumes the two variables are jointly Gaussian — an
+assumption you often cannot defend. Ask for the standard error of a **ratio of two means**,
+$\bar Y / \bar X$ — the kind of quantity that appears constantly in economics (a per-capita
+rate), epidemiology (a relative risk), and finance (a Sharpe ratio): the estimator is a
+*nonlinear* function of two random averages, and its variance requires the delta method
+([INFR-B4]) plus a covariance you must estimate, and even then the approximation is only
+asymptotic and can be poor in small samples.
+
+The pattern is clear and it is the problem this article solves:
+
+::: {.callout-important title="The gap the bootstrap fills"}
+For a *handful* of statistics — chiefly the mean and things linear in it — we have exact or
+asymptotic formulas for the sampling distribution. For *most* statistics a working data
+scientist actually computes — medians, quantiles, correlations, ratios, trimmed means, the
+output of a fitted model, the difference of two AUCs — the formula is unavailable, ugly, or
+rests on assumptions you cannot check. The bootstrap gives a *single, mechanical* procedure
+that produces a standard error and a sampling distribution for **any** statistic, with **no**
+derivation, using only the data and a computer.
+:::
+
+## What came before, and why it was not enough
+
+Before 1979 the practitioner facing a no-formula statistic had three options, each
+unsatisfying. (1) **Find or invent an asymptotic formula** — possible for an expert, but it
+requires a fresh derivation for every new statistic, often rests on normality or large-$n$
+assumptions, and is exactly the labor we are trying to avoid. (2) **The jackknife** (Quenouille
+1949, Tukey 1958) — recompute the statistic $n$ times, each time deleting one observation, and
+use the spread of those *leave-one-out* values to estimate the standard error. The jackknife is
+the bootstrap's clever older cousin and works for smooth statistics, but it *fails for
+non-smooth ones* — notably the median, the very case we most need — because deleting one point
+of $n$ barely moves the middle of the data. (3) **Just report the point estimate with no
+uncertainty**, which abandons the entire charter of this track.
+
+Bradley Efron's 1979 paper *Bootstrap Methods: Another Look at the Jackknife* unified and
+surpassed all three. The name is the American idiom "to pull oneself up by one's own
+bootstraps" — to accomplish something seemingly impossible with no external help. That is
+exactly the trick: with no knowledge of the population and no formula, the sample lifts *itself*
+into a full sampling distribution. The idea was only practical because cheap computation had
+just arrived; it is the first major statistical method designed *for* the computer rather than
+*around* its absence, which is why it opens the "computational inference" movement of this
+track.
+
+::: {.callout-tip title="You might be asked"}
+*"Why couldn't they just do this before 1979 — the idea seems simple?"* Two reasons, and both
+are worth stating. First, **compute**: a bootstrap with $B=10{,}000$ resamples recomputes the
+statistic ten thousand times. By hand, or on the machines of 1960, that was prohibitive; by
+1979 it was a few seconds. The bootstrap is a method that *trades human derivation for machine
+cycles*, and it only makes sense once the cycles are cheap. Second, **the conceptual leap**:
+treating your own sample as the population — sampling *from your data* — feels circular until
+you see the plug-in principle that justifies it (@sec-plug-in). Efron's contribution was as
+much making that substitution respectable as it was noticing you could compute it.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Here is the whole idea in one picture, with no mathematics. There are **two worlds**, stacked
+one inside the other.
+
+**The real world (which we cannot access).** Somewhere out there is a true population,
+described by a distribution $F$. If we could, we would draw many independent samples of size
+$n$ from $F$, compute $\hat\theta$ on each, and watch the histogram of those estimates take
+shape. That histogram *is* the sampling distribution; its width *is* the standard error. The
+tragedy of statistics is that we get **one** sample and never see $F$, so this histogram is
+forever out of reach.
+
+**The bootstrap world (which we build).** We do not know $F$, but we have its best
+single-sample estimate: the observed data, treated as a population of exactly $n$ equally-likely
+values. Call this miniature population $\hat F_n$. Now play the real-world game *inside it*: draw
+many samples of size $n$ from $\hat F_n$ — i.e. resample the data with replacement — compute
+$\hat\theta$ on each, and watch *that* histogram take shape. We *can* do this, because we know
+$\hat F_n$ perfectly: it is just our data.
+
+The bootstrap's bet is that **the bootstrap world is a scale model of the real world.** The
+relationship "$\hat\theta$ scatters around $\theta$" in the real world is mirrored by
+"$\hat\theta^*$ scatters around $\hat\theta$" in the bootstrap world — and the *width* of the
+scatter, the thing we are after, is nearly the same in both because $\hat F_n$ is close to $F$.
+@fig-two-worlds draws the two worlds side by side.
+
+```{python}
+#| label: fig-two-worlds
+#| fig-cap: 'The two worlds of the bootstrap. **Top (real world, unattainable):** the true population $F$ spawns many size-$n$ samples; each yields an estimate $\hat\theta$, and their histogram is the true sampling distribution we want. We get to draw exactly one sample. **Bottom (bootstrap world, buildable):** we treat the one observed sample as a miniature population $\hat F_n$ and resample it with replacement; each resample yields a $\hat\theta^*$, and their histogram approximates the one above. The bootstrap''s claim is that the lower histogram is a faithful scale model of the upper one.'
+fig, axes = plt.subplots(2, 1, figsize=(7.4, 5.6))
+
+# --- Real world: many samples from the true population ---
+ax = axes[0]
+true_mu = 5.0
+many = np.array([rng.normal(true_mu, 2.0, size=40).mean() for _ in range(4000)])
+ax.hist(many, bins=45, color=FILL, edgecolor="white", density=True)
+ax.axvline(true_mu, color=TRUTH, lw=2.2, label=r"true $\theta$")
+ax.set_title("Real world: resample from the TRUE population $F$  (we cannot do this)")
+ax.set_xlabel(r"$\hat\theta$ over many samples from $F$")
+ax.set_yticks([])
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
+# --- Bootstrap world: one fixed sample, resampled with replacement ---
+ax = axes[1]
+one_sample = rng.normal(true_mu, 2.0, size=40)
+theta_hat = one_sample.mean()
+boot = np.array([rng.choice(one_sample, size=40, replace=True).mean()
+                 for _ in range(4000)])
+ax.hist(boot, bins=45, color="#f2c79b", edgecolor="white", density=True)
+ax.axvline(theta_hat, color=ACCENT, lw=2.2, label=r"observed $\hat\theta$")
+ax.set_title("Bootstrap world: resample your DATA with replacement  (we can do this)")
+ax.set_xlabel(r"$\hat\theta^*$ over many resamples of the one sample")
+ax.set_yticks([])
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
+plt.tight_layout()
+print(f"real-world spread of theta-hat   (std) = {many.std():.4f}")
+print(f"bootstrap-world spread of theta*  (std) = {boot.std():.4f}")
+print(f"the textbook formula sigma/sqrt(n)      = {2.0/np.sqrt(40):.4f}")
+```
+
+The two histograms have almost the same *width* — and for the mean, that width matches the
+known formula $\sigma/\sqrt n$ to two decimals. The bootstrap reproduced, by brute force, an
+answer we could have derived. The point of the rest of the article is that the same brute force
+keeps working when the derivation is unavailable.
+
+::: {.callout-tip title="You might be asked"}
+*"The bootstrap histogram is centered on $\hat\theta$, not on the true $\theta$ — isn't that a
+problem?"* No, and seeing why is the crux. The bootstrap is **not** trying to recover the
+*location* of the sampling distribution (where it is centered) — that is just your point
+estimate, which can be biased and which the bootstrap cannot fix by itself. The bootstrap
+estimates the *shape and spread* of the sampling distribution: how far $\hat\theta$ typically
+lands from its own center, the **standard error**, and the asymmetry of the scatter. The real-
+world relationship is "$\hat\theta$ deviates from $\theta$"; the bootstrap mirrors it as
+"$\hat\theta^*$ deviates from $\hat\theta$." It is the *deviations*, not the centers, that the
+two worlds share.
+:::
+
+# The formal development {#sec-formal}
+
+## The empirical distribution: the data as a population {#sec-edf}
+
+Everything rests on one object, so we define it carefully and then *see* it.
+
+::: {#def-edf}
+**Definition (empirical distribution function).** Given a sample $X_1,\dots,X_n$, the
+**empirical distribution** $\hat F_n$ is the probability distribution that places mass exactly
+$1/n$ on each observed value. Its cumulative distribution function is
+$$
+\hat F_n(t) \;=\; \frac{1}{n}\sum_{i=1}^{n} \mathbf{1}\{X_i \le t\},
+$$ {#eq-edf}
+where $\mathbf{1}\{\cdot\}$ is the **indicator**: it equals $1$ when the condition inside holds
+and $0$ otherwise. In words, $\hat F_n(t)$ is simply *the fraction of the data that is $\le t$*.
+:::
+
+So $\hat F_n$ is a step function: flat between data points, jumping up by $1/n$ at each
+observation (by $k/n$ if a value is repeated $k$ times). It is a genuine, if lumpy, probability
+distribution — its jumps are nonnegative and sum to $1$ — and it is the most honest description
+of the population we can give using *only* the data, assuming nothing about a parametric form.
+
+The reason $\hat F_n$ is a legitimate stand-in for $F$ is a convergence result. By the law of
+large numbers ([INFR-A2]) applied to the indicator variables $\mathbf{1}\{X_i \le t\}$: each has
+expectation $\mathbb{E}[\mathbf{1}\{X_i \le t\}] = \Pr(X_i \le t) = F(t)$, so their average
+$\hat F_n(t)$ converges to $F(t)$ as $n \to \infty$, for every fixed $t$. (The stronger
+statement that the convergence is *uniform* in $t$ — the Glivenko–Cantelli theorem, $\sup_t
+|\hat F_n(t) - F(t)| \to 0$ — is proved in the Probability track [PROB-09]; we need only the
+pointwise version here.) @fig-edf shows $\hat F_n$ hugging the true $F$ ever more tightly as
+$n$ grows.
+
+```{python}
+#| label: fig-edf
+#| fig-cap: 'The empirical CDF $\hat F_n$ (blue step function) against the true CDF $F$ (red, here a standard Normal) for $n=15, 50, 500$. Each step rises by $1/n$ at a data point. As $n$ grows the staircase converges to the smooth truth — this is the law of large numbers applied to the indicator $\mathbf{1}\{X_i \le t\}$, and it is the entire license for using $\hat F_n$ as a stand-in for $F$.'
+from scipy import stats
+
+fig, axes = plt.subplots(1, 3, figsize=(9.2, 3.3), sharey=True)
+grid = np.linspace(-3.2, 3.2, 400)
+for ax, n in zip(axes, (15, 50, 500)):
+    x = np.sort(rng.normal(0, 1, size=n))
+    ecdf = np.arange(1, n + 1) / n
+    ax.step(np.concatenate([[-3.2], x]), np.concatenate([[0], ecdf]),
+            where="post", color=DATA, lw=1.6, label=r"$\hat F_n$")
+    ax.plot(grid, stats.norm.cdf(grid), color=TRUTH, lw=2.0, label=r"true $F$")
+    ax.set_title(f"$n = {n}$")
+    ax.set_xlabel("$t$")
+axes[0].set_ylabel(r"$\hat F_n(t)$,  $F(t)$")
+axes[0].legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-important title="The pivot: a statistic is a function of a distribution"}
+The conceptual hinge of the whole method is to see your statistic as a function not of *data*
+but of a *distribution*. The mean is $\theta(F) = \int t\,dF(t) = \mathbb{E}_F[X]$. The median
+is $\theta(F) = F^{-1}(1/2)$. The variance is $\theta(F) = \int (t-\mathbb{E}_F[X])^2 dF(t)$.
+Each is a rule $\theta(\cdot)$ that eats a distribution and returns a number. Your *estimate*
+is then nothing but the same rule applied to the empirical distribution:
+$\hat\theta = \theta(\hat F_n)$. The mean of $\hat F_n$ is the sample mean; the median of
+$\hat F_n$ is the sample median; the variance of $\hat F_n$ is the sample variance. **This is
+the plug-in principle, and it is what makes the substitution $F \to \hat F_n$ a single, uniform
+idea rather than a per-statistic trick.**
+:::
+
+## The plug-in principle, stated {#sec-plug-in}
+
+::: {#def-plugin}
+**Definition (plug-in principle).** Let the quantity of interest be a *functional* of the
+population distribution, $\theta = \theta(F)$. The **plug-in estimate** is the same functional
+evaluated at the empirical distribution,
+$$
+\hat\theta \;=\; \theta(\hat F_n).
+$$ {#eq-plugin}
+:::
+
+The plug-in estimate is the statistic you were already computing — the sample mean, sample
+median, sample correlation are all $\theta(\hat F_n)$ for the appropriate $\theta(\cdot)$. The
+point of naming it is that it makes the *next* substitution obvious.
+
+We actually want two things about $\hat\theta$, neither of which we can get directly:
+
+1. Its **standard error**, $\mathrm{SE}_F(\hat\theta) = \sqrt{\operatorname{Var}_F(\hat\theta)}$ —
+   the spread of $\hat\theta$ across samples drawn from $F$. The subscript $F$ is the whole
+   problem: this number *depends on the unknown $F$*.
+2. More generally, the **sampling distribution** of $\hat\theta$ under $F$.
+
+The bootstrap applies the plug-in principle *one level up*. The standard error is itself a
+functional of $F$: $\mathrm{SE}_F(\hat\theta)$ is a number you could compute if you knew $F$.
+So plug in $\hat F_n$ for $F$:
+$$
+\mathrm{SE}_{\text{boot}} \;=\; \mathrm{SE}_{\hat F_n}(\hat\theta^*),
+$$ {#eq-boot-se-ideal}
+the standard error of the statistic *as if $\hat F_n$ were the true population*. In words:
+pretend your data is the population, and ask how much the statistic would scatter across samples
+drawn from it. **That is the ideal bootstrap standard error** — and unlike $\mathrm{SE}_F$, we
+can get at it, because we know $\hat F_n$ exactly.
+
+::: {.callout-tip title="You might be asked"}
+*"Isn't this circular — using the data to estimate the uncertainty of a statistic computed from
+the same data?"* It feels circular but is not, and the reason is the layering. We are **not**
+using the data to certify its own point estimate is correct. We are using the data's *empirical
+distribution* — which we know provably converges to $F$ — as a plug-in for $F$ inside a
+**separate** functional, the standard-error functional. The legitimacy comes entirely from
+$\hat F_n \to F$: if the empirical distribution is close to the truth, then the standard error
+*computed under* $\hat F_n$ is close to the standard error *computed under* $F$. The
+circularity dissolves once you see there are two distinct functionals and one provably-good
+substitution feeding both.
+:::
+
+## From the ideal bootstrap to the Monte-Carlo bootstrap {#sec-se}
+
+There is one more obstacle, and it is purely computational. The ideal bootstrap standard error
+@eq-boot-se-ideal is *defined* as the exact standard deviation of $\hat\theta^*$ over **all**
+possible resamples of $\hat F_n$. How many resamples are there? A resample is an ordered draw of
+$n$ values, each chosen from $n$ possibilities with replacement, so there are $n^n$ of them
+(fewer if we ignore order, but still astronomically many). For $n=40$ that is $40^{40} \approx
+10^{64}$ — we cannot enumerate them. So we estimate the ideal bootstrap SE the same way we
+estimate any expectation we cannot compute exactly: by **Monte Carlo**, drawing a large but
+finite number $B$ of resamples at random and using their sample standard deviation. This is
+where the law of large numbers earns its keep a second time. The full procedure:
+
+::: {#def-boot-algorithm}
+**Definition (the nonparametric bootstrap).** Given data $x_1,\dots,x_n$ and a statistic
+$\hat\theta = g(x_1,\dots,x_n)$:
+
+1. **For** $b = 1,\dots,B$:
+   a. Draw a **bootstrap resample** $x_1^{*b},\dots,x_n^{*b}$ by sampling $n$ values from
+      $\{x_1,\dots,x_n\}$ *with replacement* (each draw picks each original point with
+      probability $1/n$).
+   b. Compute the **bootstrap replicate** $\hat\theta^{*b} = g(x_1^{*b},\dots,x_n^{*b})$.
+2. The **bootstrap estimate of the standard error** is the sample standard deviation of the
+   replicates:
+   $$
+   \widehat{\mathrm{SE}}_{\text{boot}}
+   = \sqrt{\frac{1}{B-1}\sum_{b=1}^{B}\bigl(\hat\theta^{*b} - \bar\theta^{*}\bigr)^2},
+   \qquad
+   \bar\theta^{*} = \frac{1}{B}\sum_{b=1}^{B}\hat\theta^{*b}.
+   $$ {#eq-boot-se}
+3. The histogram of $\{\hat\theta^{*b}\}$ is the **bootstrap distribution**, the estimate of the
+   sampling distribution of $\hat\theta$.
+:::
+
+There are now **two** approximations stacked, and a careful reader must separate them, because
+they behave completely differently:
+
+- **The statistical approximation** $\hat F_n \approx F$. This is the substitution that can be
+  *wrong* — if $\hat F_n$ is a poor model of $F$ (small $n$, or a statistic that depends on the
+  tails $\hat F_n$ represents badly), the bootstrap is biased no matter how much you compute.
+  This error shrinks only by collecting **more data** ($n \uparrow$), and it is the source of
+  every failure mode in @sec-failure.
+- **The Monte-Carlo approximation** $\widehat{\mathrm{SE}}_{\text{boot}} \approx
+  \mathrm{SE}_{\hat F_n}$. This is just the error from using $B$ resamples instead of all $n^n$
+  of them. It shrinks like $1/\sqrt B$ (the standard-error-of-an-average rate from [INFR-A1]),
+  and you control it for free by **turning up $B$**. With a fast computer, set $B$ large enough
+  that this error is negligible and forget about it.
+
+::: {.callout-warning title="Pitfall"}
+**Do not confuse $n$ and $B$.** They fix different errors and you cannot trade one for the
+other. $B$ (the number of resamples) controls only the *Monte-Carlo* noise — making $B$ huge
+gives you the *ideal* bootstrap answer to many decimal places, but if that ideal answer is wrong
+because $\hat F_n$ is a bad stand-in for $F$, no amount of $B$ rescues it. The bootstrap's
+*statistical* accuracy is governed entirely by $n$. A common beginner error is to crank $B$ to
+a million on a sample of $n=8$ and believe the resulting tight, stable number is accurate. It is
+*precise* (low Monte-Carlo error) and *wrong* (high statistical error). $B$ buys precision; only
+$n$ buys accuracy.
+:::
+
+## Why it works: the bootstrap world mirrors the real world {#sec-why-works}
+
+We can now assemble the justification we have been circling, with each link explicit. We want
+the real-world standard error $\mathrm{SE}_F(\hat\theta)$. We compute, instead, the bootstrap
+SE. The chain connecting them is:
+
+$$
+\underbrace{\mathrm{SE}_F(\hat\theta)}_{\text{what we want}}
+\;\;\overset{(\mathrm{i})}{\approx}\;\;
+\underbrace{\mathrm{SE}_{\hat F_n}(\hat\theta^*)}_{\text{ideal bootstrap}}
+\;\;\overset{(\mathrm{ii})}{\approx}\;\;
+\underbrace{\widehat{\mathrm{SE}}_{\text{boot}}}_{\text{what we compute}} .
+$$
+
+**Link (ii)** is the Monte-Carlo step and is uncontroversial: $\widehat{\mathrm{SE}}_{\text{boot}}$
+is a sample standard deviation of $B$ i.i.d. draws from the bootstrap distribution, so by the LLN
+it converges to the exact bootstrap SE as $B \to \infty$, at rate $1/\sqrt B$. We make this error
+as small as we like.
+
+**Link (i)** is the statistical step, and it is the one that carries content. We argue it
+informally but completely — a rigorous treatment requires the Glivenko–Cantelli theorem and a
+continuity argument and is the subject of [PROB-09] and the bootstrap-consistency literature,
+flagged in @sec-deeper. The argument is: the standard error is a functional of the underlying
+distribution, $\mathrm{SE}_{(\cdot)}(\hat\theta)$. We established in @sec-edf that $\hat F_n \to
+F$. **If** the standard-error functional is *continuous* in the distribution — meaning small
+changes in the distribution produce small changes in the standard error — **then** $\hat F_n$
+close to $F$ forces $\mathrm{SE}_{\hat F_n}$ close to $\mathrm{SE}_F$, which is exactly link (i).
+
+That single *if* is the entire theory of when the bootstrap works:
+
+::: {.callout-important title="The one condition, and where it fails"}
+The bootstrap is consistent — link (i) holds — precisely when the statistic's sampling
+distribution depends on the underlying distribution $F$ in a **smooth (continuous)** way, so
+that the good approximation $\hat F_n \approx F$ transfers to a good approximation of the
+sampling distribution. For the **mean, median, correlation, ratio, trimmed mean, regression
+coefficients** — smooth functionals of $F$ — it holds. It **fails** for statistics that depend
+*discontinuously* on $F$: the prime example is the **maximum** (@sec-edge-max), whose sampling
+distribution near its endpoint changes abruptly with $F$, so $\hat F_n \approx F$ does not
+transfer. It also degrades when $\hat F_n$ is simply a *bad* estimate of $F$ in the region the
+statistic cares about — **heavy tails** (@sec-edge-tails) and **tiny $n$**. Every failure in
+@sec-failure is a violation of this one smoothness-and-faithfulness condition.
+:::
+
+The honest summary: the bootstrap replaces *deriving* the sampling distribution with *simulating*
+it, and the price of the trade is that you must believe $\hat F_n$ is a good enough copy of $F$
+for the statistic at hand. Usually it is. Knowing the exceptions is mastery.
+
+# Worked examples {#sec-examples}
+
+We now run the procedure on three statistics that genuinely have no convenient standard-error
+formula — the situations the bootstrap was built for — and we check it against an analytic answer
+wherever one exists, so you trust the machine before we take it to its limits.
+
+```{python}
+#| label: boot-helper
+#| echo: true
+def bootstrap(data, statistic, B=10_000, seed=0):
+    """Nonparametric bootstrap. `data` is an (n, ...) array; `statistic`
+    maps a resample to a scalar. Returns the array of B replicates.
+    This is *exactly* Definition (the nonparametric bootstrap), no more."""
+    local = np.random.default_rng(seed)
+    n = data.shape[0]
+    reps = np.empty(B)
+    for b in range(B):
+        idx = local.integers(0, n, size=n)   # sample row-indices with replacement
+        reps[b] = statistic(data[idx])
+    return reps
+```
+
+The helper resamples **indices** with replacement (so paired data stay paired — essential for
+the correlation below) and applies the statistic. That is the entire bootstrap; everything else
+is choosing a statistic and reading the output.
+
+## Example 1 — the median of a skewed income sample {#sec-example-median}
+
+The median is the textbook no-formula case. We have $n=60$ household incomes (in thousands of
+dollars) from a right-skewed population — exactly where the median is preferred over the mean as
+a measure of "typical." We want a standard error for the sample median. There *is* an asymptotic
+formula, $\mathrm{SE} \approx 1/(2\sqrt n\, f(m))$ where $f$ is the density at the median $m$, but
+it needs the unknown density $f(m)$ — precisely the obstacle the bootstrap routes around.
+
+```{python}
+#| label: fig-boot-median
+#| fig-cap: "Bootstrapping the median of $n=60$ right-skewed incomes. **Left:** the observed sample (a rug of points) with the sample median marked. **Right:** the bootstrap distribution of the median over $B=10{,}000$ resamples. Its standard deviation is the bootstrap standard error. Note the distribution is *discrete and lumpy* — the resampled median can only land on one of the observed data values — a fingerprint of the median that the bootstrap captures and a closed-form Gaussian SE would miss."
+income = rng.lognormal(mean=3.9, sigma=0.55, size=60)   # skewed, ~ tens of thousands
+theta_hat = np.median(income)
+
+reps = bootstrap(income[:, None], lambda d: np.median(d[:, 0]), B=10_000, seed=11)
+se_boot = reps.std(ddof=1)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+axL.eventplot(income, orientation="horizontal", colors=DATA, lineoffsets=0.5,
+              linelengths=0.8, linewidths=1.2)
+axL.axvline(theta_hat, color=ACCENT, lw=2.2, label=f"sample median = {theta_hat:.1f}")
+axL.set_yticks([]); axL.set_xlabel("income ($000)")
+axL.set_title("The one observed sample ($n=60$)")
+axL.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
+axR.hist(reps, bins=40, color=FILL, edgecolor="white", density=True)
+axR.axvline(theta_hat, color=ACCENT, lw=2.0, label="observed median")
+axR.set_xlabel(r"bootstrap median $\hat\theta^*$"); axR.set_yticks([])
+axR.set_title("Bootstrap distribution of the median")
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"sample median            = {theta_hat:.3f}")
+print(f"bootstrap SE of median   = {se_boot:.3f}")
+# Compare to the asymptotic formula using a smooth density estimate at the median:
+kde = stats.gaussian_kde(income)
+f_at_median = kde(theta_hat)[0]
+se_asymp = 1.0 / (2 * np.sqrt(len(income)) * f_at_median)
+print(f"asymptotic formula SE    = {se_asymp:.3f}   (needs a density estimate f(m)={f_at_median:.4f})")
+```
+
+The bootstrap SE and the asymptotic formula agree to within their own noise — but look at what
+each required. The asymptotic route forced us to *estimate a density at a point*, itself a
+delicate procedure with its own tuning (the kernel bandwidth) and its own error. The bootstrap
+required nothing but the definition of the median and a loop. And it captured a feature the
+formula's smooth Gaussian cannot: the bootstrap distribution is visibly **lumpy**, because a
+resampled median must equal one of the actual data values. That honest granularity is exactly
+the kind of small-sample texture the bootstrap preserves and a formula erases.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not use the jackknife for the median?"* Because it fails. The jackknife recomputes the
+median $n$ times, deleting one point each time. But deleting a single point from $60$ moves the
+middle of the sorted data by at most one position — most leave-one-out medians are *identical*,
+so the jackknife sees almost no variation and badly *underestimates* the standard error. The
+median is non-smooth in the data, and the jackknife's one-point perturbation is too gentle to
+probe it. The bootstrap's full resample reshuffles which values are present and how often, so it
+moves the median around realistically. This concrete failure is the historical reason Efron's
+paper is subtitled *Another Look at the Jackknife*.
+:::
+
+## Example 2 — the standard error of a correlation {#sec-example-corr}
+
+Now a *paired* statistic, where the bootstrap's resample-the-indices design matters. We have
+$n=50$ paired measurements — say, a biomarker level and a clinical score across patients — and
+we report Pearson's correlation $\hat\rho$. The exact sampling distribution of $\hat\rho$ is
+intractable; the standard analytic route is **Fisher's $z$-transform**, $z = \operatorname{arctanh}(\hat\rho)$,
+which is approximately Normal with SE $1/\sqrt{n-3}$ — *but only under joint normality of the two
+variables*. Pushed back to the $\rho$ scale, that normal-theory SE becomes
+$\operatorname{SE}(\hat\rho)\approx (1-\hat\rho^{2})/\sqrt{n}$: the factor $1-\hat\rho^{2}$ is
+exactly $1/\frac{d}{d\rho}\operatorname{arctanh}\rho$, since $\frac{d}{d\rho}\operatorname{arctanh}\rho
+= 1/(1-\rho^{2})$, so the delta method (a first-order Taylor step, [INFR-B4]) carries the constant
+$z$-scale SE back through the transform. That is the number we compute below as the
+*normal-theory SE on the $\rho$ scale* (using $\sqrt{n-1}$, a finite-sample variant of $\sqrt n$),
+and compare against the bootstrap. Our data are not jointly Normal, so the bootstrap is the
+honest tool.
+
+```{python}
+#| label: fig-boot-corr
+#| fig-cap: 'Bootstrapping a Pearson correlation on $n=50$ non-Gaussian paired data. **Left:** the scatter, with the observed correlation. **Right:** the bootstrap distribution of $\hat\rho^*$ — note it is *skewed* (correlations are bounded in $[-1,1]$, so the distribution cannot be symmetric near a moderate-to-high $\rho$). The bootstrap captures this asymmetry directly; Fisher''s formula assumes it away. Resampling is done on the paired rows so each $(x_i,y_i)$ moves together.'
+# Non-Gaussian paired data: a latent factor with skewed marginals.
+z_latent = rng.gamma(2.0, 1.0, size=50)
+x = z_latent + rng.gamma(2.0, 1.0, size=50)
+y = 0.9 * z_latent + rng.gamma(2.0, 1.0, size=50)
+paired = np.column_stack([x, y])
+rho_hat = np.corrcoef(x, y)[0, 1]
+
+reps = bootstrap(paired, lambda d: np.corrcoef(d[:, 0], d[:, 1])[0, 1], B=10_000, seed=23)
+se_boot = reps.std(ddof=1)
+se_fisher = (1 - rho_hat**2) / np.sqrt(len(x) - 1)   # delta-method SE on rho scale
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+axL.scatter(x, y, color=DATA, s=28, alpha=0.85)
+axL.set_xlabel("biomarker"); axL.set_ylabel("clinical score")
+axL.set_title(fr"paired data, $\hat\rho = {rho_hat:.3f}$")
+
+axR.hist(reps, bins=40, color=FILL, edgecolor="white", density=True)
+axR.axvline(rho_hat, color=ACCENT, lw=2.0, label=r"observed $\hat\rho$")
+axR.set_xlabel(r"bootstrap correlation $\hat\rho^*$"); axR.set_yticks([])
+axR.set_title("Bootstrap distribution of $\\hat\\rho$")
+axR.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"observed correlation        = {rho_hat:.3f}")
+print(f"bootstrap SE                = {se_boot:.3f}")
+print(f"Gaussian/delta-method SE    = {se_fisher:.3f}   (assumes joint normality)")
+print(f"bootstrap skew of rho*      = {stats.skew(reps): .3f}   (a symmetric formula sets this to 0)")
+```
+
+The bootstrap SE and the normality-based SE are in the same ballpark, but the bootstrap reveals
+something the formula cannot: the sampling distribution of $\hat\rho$ is **skewed**, because
+correlation is bounded by $1$ and a moderate-to-strong $\hat\rho$ has more room to scatter
+downward than up. A symmetric $\hat\rho \pm z\cdot\mathrm{SE}$ interval would mishandle this; the
+bootstrap distribution's actual shape is the input to the better intervals of [INFR-E2]. This is
+the deeper value of the method: it returns not just a number but the *whole shape* of the
+sampling distribution, asymmetries and all.
+
+::: {.callout-warning title="Pitfall — resample the right thing"}
+For paired data you must resample **rows, not columns independently**. If you bootstrapped the
+$x$'s and the $y$'s separately, you would *destroy the pairing* — every resample would look like
+independent variables, driving the bootstrap correlation toward zero and producing a nonsense SE.
+Our helper resamples a single index vector and applies it to both columns, so each
+$(x_i, y_i)$ travels together. The general rule: **resample the unit of independence.** Whatever
+object your i.i.d. assumption attaches to — a patient, a household, a row — is what gets sampled
+with replacement. Getting this wrong is the single most common bootstrap bug.
+:::
+
+## Example 3 — a ratio, where the delta method is a slog {#sec-example-ratio}
+
+The ratio of two means, $\hat\theta = \bar Y / \bar X$, is everywhere: cost per click, revenue
+per user, a per-capita rate, a relative risk. It is a *nonlinear* function of two correlated
+random averages, so even writing down its asymptotic SE requires the multivariate delta method
+([INFR-B4]) — a Taylor expansion, a gradient, and an estimate of the full covariance matrix of
+$(\bar X, \bar Y)$. The bootstrap gets the same answer with the same three-line loop as before.
+
+We use $n=80$ paired records: each unit has a "cost" $X$ and a "value" $Y$, and we want the
+standard error of the aggregate ratio $\bar Y/\bar X$.
+
+```{python}
+#| label: fig-boot-ratio
+#| fig-cap: 'Bootstrapping the ratio of means $\bar Y/\bar X$ on $n=80$ paired records. The bootstrap distribution (histogram) is centered near the plug-in estimate (green) and gives a standard error with no delta-method calculus at all. The overlaid red curve is the delta-method Gaussian approximation; the two agree, validating the bootstrap against the analytic answer on a case where the analytic answer is genuinely laborious to derive.'
+cost = rng.gamma(3.0, 2.0, size=80) + 1.0          # X, strictly positive
+value = 1.4 * cost + rng.gamma(2.0, 1.5, size=80)  # Y, correlated with X
+paired = np.column_stack([cost, value])
+ratio_hat = value.mean() / cost.mean()
+
+reps = bootstrap(paired, lambda d: d[:, 1].mean() / d[:, 0].mean(), B=10_000, seed=37)
+se_boot = reps.std(ddof=1)
+
+# Delta-method SE for R = Ybar/Xbar (the calculus the bootstrap let us skip):
+xb, yb = cost.mean(), value.mean()
+n = len(cost)
+sx2, sy2 = cost.var(ddof=1), value.var(ddof=1)
+sxy = np.cov(cost, value, ddof=1)[0, 1]
+var_delta = (1.0 / xb**2) * (sy2 - 2 * (yb / xb) * sxy + (yb / xb)**2 * sx2) / n
+se_delta = np.sqrt(var_delta)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+ax.hist(reps, bins=45, color=FILL, edgecolor="white", density=True, label="bootstrap")
+grid = np.linspace(reps.min(), reps.max(), 300)
+ax.plot(grid, stats.norm.pdf(grid, ratio_hat, se_delta), color=TRUTH, lw=2.0,
+        label="delta-method Gaussian")
+ax.axvline(ratio_hat, color=ACCENT, lw=2.0, label=fr"$\hat\theta=\bar Y/\bar X={ratio_hat:.3f}$")
+ax.set_xlabel(r"bootstrap ratio $\bar Y^*/\bar X^*$"); ax.set_yticks([])
+ax.set_title("Bootstrap vs. delta method for a ratio")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"plug-in ratio Ybar/Xbar  = {ratio_hat:.4f}")
+print(f"bootstrap SE             = {se_boot:.4f}")
+print(f"delta-method SE          = {se_delta:.4f}   (required the full covariance calc above)")
+```
+
+Read the printed standard errors: the bootstrap matches the delta-method answer to the third
+decimal. But compare the *work*. The delta method demanded a linearization, the gradient of
+$f(x,y)=y/x$, and the sample covariance matrix of $(\bar X,\bar Y)$ — and that is for a ratio,
+about the *simplest* nonlinear statistic there is. The bootstrap was the same `lambda` and loop
+that handled the median and the correlation. **This is the bootstrap's real argument: one
+procedure, learned once, that retires an entire catalogue of bespoke variance derivations.**
+
+::: {.callout-tip title="You might be asked"}
+*"How many bootstrap resamples $B$ do I actually need?"* For a **standard error**, surprisingly
+few — $B = 200$ to $1{,}000$ usually has Monte-Carlo error well below the statistical error you
+cannot fix anyway. For **confidence-interval endpoints** ([INFR-E2]), which read off the
+$2.5\%$ and $97.5\%$ *quantiles* of the bootstrap distribution, you need more — $B = 2{,}000$ to
+$10{,}000$ — because estimating an extreme tail quantile precisely is harder than estimating a
+center spread. The practical rule: since the Monte-Carlo error falls like $1/\sqrt B$ and compute
+is cheap, set $B=10{,}000$ for anything you will report and stop worrying. Just remember
+(@sec-se) this only buys *precision*, never *accuracy*.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The bootstrap's universality makes it dangerously easy to apply where it does not belong. Every
+failure traces to the one condition of @sec-why-works: either the statistic depends on $F$
+*discontinuously*, or $\hat F_n$ is a *bad copy* of $F$ in the region that matters. We show all
+three classic failures honestly — and crucially, we show that the bootstrap output often *looks
+perfectly healthy while being wrong*, which is what makes these failures dangerous.
+
+## The maximum: a discontinuous functional {#sec-edge-max}
+
+Suppose the data are uniform on $[0,\theta]$ and we estimate the upper endpoint by the sample
+maximum, $\hat\theta = X_{(n)}$. This is the canonical place the bootstrap *breaks*, and the
+reason is structural, not statistical. In the real world, the maximum of a fresh sample can land
+anywhere up to $\theta$ — its sampling distribution is continuous, packed just below $\theta$. In
+the **bootstrap world**, a resample is drawn from the observed data, whose largest value is the
+single number $X_{(n)}$. A bootstrap resample's maximum **can never exceed $X_{(n)}$**, and it
+*equals* $X_{(n)}$ exactly whenever that point is drawn at least once — which happens with
+probability $1 - (1 - 1/n)^n \to 1 - e^{-1} \approx 0.632$. So about $63\%$ of bootstrap
+replicates are *pinned to the single value* $X_{(n)}$, and the rest sit strictly below it. The
+bootstrap distribution is a spike plus a stub — nothing like the smooth real-world distribution.
+
+```{python}
+#| label: fig-edge-max
+#| fig-cap: 'The bootstrap fails for the maximum. **Left (truth):** the real sampling distribution of $X_{(n)}$ from $\mathrm{Uniform}[0,\theta]$ — a smooth density pressed up against $\theta$ (red). **Right (bootstrap):** the bootstrap distribution from one sample is a *spike* at the observed maximum (about 63% of mass) with a few discrete lower values — it has the wrong shape entirely. No increase in $B$ fixes this; the failure is that the maximum depends on $F$ discontinuously, so $\hat F_n\approx F$ does not transfer.'
+theta = 10.0
+n = 50
+
+# Real-world sampling distribution of the maximum (many fresh samples).
+true_max = np.array([rng.uniform(0, theta, size=n).max() for _ in range(20_000)])
+
+# Bootstrap from a SINGLE observed sample.
+one = rng.uniform(0, theta, size=n)
+obs_max = one.max()
+boot_max = bootstrap(one[:, None], lambda d: d[:, 0].max(), B=20_000, seed=5)
+frac_pinned = np.mean(np.isclose(boot_max, obs_max))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6), sharex=True)
+axL.hist(true_max, bins=50, color=FILL, edgecolor="white", density=True)
+axL.axvline(theta, color=TRUTH, lw=2.2, label=r"true $\theta$")
+axL.set_title("Truth: smooth distribution of the max")
+axL.set_xlabel(r"$X_{(n)}$"); axL.set_yticks([])
+axL.legend(loc="upper left", fontsize=9, framealpha=0.9)
+
+axR.hist(boot_max, bins=50, color="#f2c79b", edgecolor="white", density=True)
+axR.axvline(obs_max, color=ACCENT, lw=2.2, label=f"observed max = {obs_max:.2f}")
+axR.set_title(f"Bootstrap: {frac_pinned:.0%} of mass on one spike")
+axR.set_xlabel(r"$X_{(n)}^*$"); axR.set_yticks([])
+axR.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"fraction of bootstrap maxima pinned at the observed max = {frac_pinned:.3f}")
+print(f"theory: 1 - (1 - 1/n)^n = {1 - (1 - 1/n)**n:.3f}  -->  1 - 1/e = {1 - np.exp(-1):.3f}")
+```
+
+The fraction of pinned replicates matches the predicted $1-e^{-1}\approx 0.632$ to the decimal —
+the failure is not random, it is structural and predictable. **When you reach for something
+else:** for endpoint/extreme-value parameters, use a method built for the tail — fit an extreme-
+value distribution, use a likelihood-based interval ([INFR-C3]), or a *parametric* bootstrap that
+resamples from the fitted $\mathrm{Uniform}[0,\hat\theta]$ rather than from the lumpy empirical
+distribution. The lesson generalizes: **any statistic sitting at the boundary of the data's
+support — max, min, range, the support endpoint of any distribution — is poison for the
+nonparametric bootstrap.**
+
+## Heavy tails: $\hat F_n$ is a bad copy where it counts {#sec-edge-tails}
+
+The mean is a smooth functional, so the bootstrap is *consistent* for it — yet on **heavy-tailed**
+data the bootstrap can still be badly unreliable in any finite sample, for a subtler reason. The
+mean of a heavy-tailed distribution is dominated by rare, enormous observations in the far tail.
+The empirical distribution $\hat F_n$ can only represent tail values it actually *sampled* — and
+with a heavy tail, a sample of size $n$ usually *misses* the extreme region that drives the true
+variance. So $\hat F_n$ is systematically *too light in the tail*, and the bootstrap, faithfully
+resampling that too-light copy, **underestimates the true variability** — and does so while
+looking calm and confident. We contrast a well-behaved Normal with a heavy-tailed Pareto.
+
+```{python}
+#| label: fig-edge-tails
+#| fig-cap: "The bootstrap of the mean under heavy tails. For each of many *independent* datasets we run a bootstrap and record its estimated SE of the mean; we compare the spread of those bootstrap SEs to the truth. **Left (Normal, light tail):** bootstrap SEs cluster tightly on the true SE (red) — reliable. **Right (Pareto, heavy tail, finite variance but huge):** the bootstrap SE is wildly unstable from dataset to dataset and systematically below the truth, because most samples miss the tail that dominates the variance. The bootstrap is *consistent* here in the limit but *untrustworthy* at this $n$."
+n = 80
+n_datasets = 600
+
+def boot_se_of_mean(data, B=400, seed=0):
+    loc = np.random.default_rng(seed)
+    m = data.shape[0]
+    return np.array([data[loc.integers(0, m, m)].mean() for _ in range(B)]).std(ddof=1)
+
+# Normal: true SE of the mean is sigma/sqrt(n).
+normal_true_se = 3.0 / np.sqrt(n)
+normal_boot_ses = np.array([
+    boot_se_of_mean(rng.normal(0, 3.0, n), seed=k) for k in range(n_datasets)])
+
+# Pareto with shape a=2.5: finite variance, but very heavy.
+a = 2.5
+pareto_var = a / ((a - 1)**2 * (a - 2))      # variance of standard Pareto(a)
+pareto_true_se = np.sqrt(pareto_var / n)
+pareto_boot_ses = np.array([
+    boot_se_of_mean((rng.pareto(a, n) + 1), seed=1000 + k) for k in range(n_datasets)])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.6))
+axL.hist(normal_boot_ses, bins=40, color=FILL, edgecolor="white", density=True)
+axL.axvline(normal_true_se, color=TRUTH, lw=2.2, label="true SE")
+axL.set_title("Light tail (Normal): reliable")
+axL.set_xlabel("bootstrap SE of the mean"); axL.set_yticks([])
+axL.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
+axR.hist(pareto_boot_ses, bins=40, color="#f2c79b", edgecolor="white", density=True)
+axR.axvline(pareto_true_se, color=TRUTH, lw=2.2, label="true SE")
+axR.set_title("Heavy tail (Pareto): unstable & biased low")
+axR.set_xlabel("bootstrap SE of the mean"); axR.set_yticks([])
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"Normal: true SE = {normal_true_se:.3f},  mean bootstrap SE = {normal_boot_ses.mean():.3f}")
+print(f"Pareto: true SE = {pareto_true_se:.3f},  mean bootstrap SE = {pareto_boot_ses.mean():.3f}")
+print(f"Pareto: fraction of bootstrap SEs BELOW the truth = {np.mean(pareto_boot_ses < pareto_true_se):.2f}")
+```
+
+On the Normal the bootstrap SEs cluster neatly around the truth. On the Pareto they are erratic
+and most fall *below* the true SE — the bootstrap quietly reports too much confidence. And this is
+the *benign* heavy-tailed case: when the tail is heavy enough that the variance is **infinite**
+(Pareto shape $\le 2$, or the Cauchy of [INFR-A2]), the bootstrap of the mean does not merely
+mislead — it is *inconsistent*, converging to the wrong thing no matter how large $n$ grows,
+because the object it is estimating (a finite SE) does not exist. **When you reach for something
+else:** target a robust statistic the tail cannot dominate — a **trimmed mean** or the **median**
+(which the bootstrap handles well, @sec-example-median) — or model the tail explicitly with
+extreme-value methods. The diagnostic habit: before bootstrapping a mean, *look at the tail*.
+
+## Dependent data: the i.i.d. resample is the wrong world {#sec-edge-dependent}
+
+The nonparametric bootstrap of @sec-se has an i.i.d. assumption welded into its first line:
+"sample $n$ values *independently* with replacement." If the data are **dependent** — a time
+series, spatial data, repeated measures on the same subject — then resampling points
+independently *shatters the dependence structure* the way shuffling a deck destroys a sorted
+order. The resamples look like independent data even though the original is correlated, so the
+bootstrap **underestimates the variance of any statistic sensitive to the dependence**, because
+positively-correlated observations carry less independent information than their count suggests
+(the "effective sample size" is smaller than $n$).
+
+```{python}
+#| label: fig-edge-dependent
+#| fig-cap: "The bootstrap on autocorrelated data. We simulate an AR(1) time series (each point correlated with the previous), and for many such series compare the naive i.i.d. bootstrap SE of the mean to the truth. The naive bootstrap (orange) systematically *underestimates* the true SE (red): by resampling points independently it pretends the correlated series carries as much information as $n$ independent points. The fix — a block bootstrap that resamples contiguous chunks to preserve local dependence — recovers the truth (green)."
+import numpy as _np
+
+def ar1(n, phi, sigma, gen):
+    e = gen.normal(0, sigma, size=n)
+    x = _np.empty(n)
+    x[0] = e[0] / _np.sqrt(1 - phi**2)
+    for t in range(1, n):
+        x[t] = phi * x[t-1] + e[t]
+    return x
+
+n, phi, sigma = 200, 0.7, 1.0
+# True SE of the mean of an AR(1): Var(mean) inflated by the dependence factor.
+var_x = sigma**2 / (1 - phi**2)
+infl = (1 + phi) / (1 - phi)                 # long-run variance inflation for the mean
+true_se = _np.sqrt(var_x * infl / n)
+
+def block_boot_se(x, L, B=400, seed=0):
+    g = _np.random.default_rng(seed); m = len(x); k = int(_np.ceil(m / L))
+    out = _np.empty(B)
+    for b in range(B):
+        starts = g.integers(0, m - L + 1, size=k)
+        samp = _np.concatenate([x[s:s+L] for s in starts])[:m]
+        out[b] = samp.mean()
+    return out.std(ddof=1)
+
+naive, block = [], []
+for k in range(300):
+    g = _np.random.default_rng(7000 + k)
+    x = ar1(n, phi, sigma, g)
+    naive.append(_np.array([x[g.integers(0, n, n)].mean() for _ in range(400)]).std(ddof=1))
+    block.append(block_boot_se(x, L=20, seed=8000 + k))
+naive, block = _np.array(naive), _np.array(block)
+
+fig, ax = plt.subplots(figsize=(6.8, 4.0))
+ax.hist(naive, bins=35, color="#f2c79b", edgecolor="white", density=True, alpha=0.85,
+        label="naive i.i.d. bootstrap")
+ax.hist(block, bins=35, color="#bfe3cf", edgecolor="white", density=True, alpha=0.85,
+        label="block bootstrap (L=20)")
+ax.axvline(true_se, color=TRUTH, lw=2.4, label="true SE")
+ax.set_xlabel("estimated SE of the mean"); ax.set_yticks([])
+ax.set_title("AR(1) data: naive bootstrap is biased low")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"true SE of the mean             = {true_se:.4f}")
+print(f"mean NAIVE  bootstrap SE        = {naive.mean():.4f}   (too small)")
+print(f"mean BLOCK  bootstrap SE        = {block.mean():.4f}   (recovers the truth)")
+```
+
+The naive bootstrap's SEs sit well below the truth; the **block bootstrap** — which resamples
+contiguous blocks of length $L$ rather than individual points, so each block carries its internal
+correlation intact — corrects most of the gap. **When you reach for something else:** for
+dependent data use a dependence-aware resampling scheme (block bootstrap, stationary bootstrap,
+or sieve/model-based bootstrap), choosing the block length to span the data's correlation range.
+The general principle restated once more: **the bootstrap can only be as good as its model of how
+the data were generated.** The default is i.i.d.; when that is false, the default fails, and you
+must encode the true structure into *how you resample*.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me a one-sentence test for whether the bootstrap is safe."* Two checks. (1) **Is the
+statistic a smooth functional of the distribution?** Means, medians, correlations, ratios,
+quantiles in the interior, model coefficients — yes; extremes (max, min, support endpoints) — no.
+(2) **Does the i.i.d. resample match how the data were actually generated?** Independent
+observations — yes; time series, clustered, or spatial data — no, you need a structured
+resampling scheme. If both pass and $n$ is not tiny and the tails are not pathological, the
+bootstrap is trustworthy. If any fail, you have named exactly what to fix.
+:::
+
+::: {.callout-warning title="Pitfall — small $n$ and the discreteness floor"}
+The bootstrap cannot conjure information the sample does not contain. With $n$ very small (say
+$n \le 10$), the empirical distribution $\hat F_n$ is a crude, blocky approximation of $F$, and
+the bootstrap distribution is correspondingly coarse — for a median it can take only a handful of
+distinct values. The bootstrap will still *return a number*, calmly, but that number inherits all
+the unreliability of a tiny sample's $\hat F_n$. **The bootstrap is an asymptotic method wearing
+a small-sample disguise.** It shines at moderate $n$ where deriving a formula is hard but the
+data are plentiful enough that $\hat F_n \approx F$; it does *not* rescue you from genuinely
+small samples, and at $n \le 10$ an exact or parametric method usually beats it.
+:::
+
+# The parametric bootstrap: a brief, important variant {#sec-parametric}
+
+Everything above is the **nonparametric** bootstrap: it assumes *nothing* about $F$ beyond the
+data, resampling from $\hat F_n$. There is a sibling worth knowing because it cures two of the
+failures above. If you are *willing to assume a parametric model* $F_\theta$ — say the data are
+$\mathrm{Uniform}[0,\theta]$, or Normal, or Poisson — then fit it (e.g. by maximum likelihood,
+[INFR-B2]) to get $\hat\theta$, and resample by **drawing fresh samples from the fitted
+distribution $F_{\hat\theta}$** instead of from the empirical $\hat F_n$. Recompute the statistic
+on each simulated dataset exactly as before. Because the resampling distribution
+$F_{\hat\theta}$ is now *smooth*, the parametric bootstrap can handle the very cases the
+nonparametric one cannot — the maximum of a uniform, for instance, because simulated maxima can
+exceed the observed one and trace out the true continuous shape. The trade is the usual
+modeling bargain: you buy smoothness and small-sample stability at the price of an assumption
+that, if wrong, biases the answer. The nonparametric bootstrap assumes only the data; the
+parametric one assumes a model and is more powerful exactly when that model is true.
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You will rarely write the resampling
+loop by hand for production work. `scipy.stats.bootstrap` takes your data and a statistic
+function and returns standard errors and confidence intervals (it defaults to the BCa interval of
+[INFR-E2]); the key argument is `vectorized` (whether your statistic can act on an axis of stacked
+resamples at once, which is far faster than a Python loop) and, for paired data, passing the
+columns as a *tuple of samples* with `paired=True` so rows stay aligned. R users have the
+venerable `boot` package. Three operational reminders that the derivation above makes obvious:
+use a **fixed random seed** so a reported SE is reproducible; **resample the unit of
+independence** (rows for paired data, clusters for clustered data — @sec-example-corr); and set
+$B$ large (10,000) for anything you report, remembering that $B$ buys only Monte-Carlo precision,
+never statistical accuracy (@sec-se). Under the hood every one of these tools is doing exactly
+@def-boot-algorithm — drawing indices with replacement, recomputing your statistic, and reading
+the spread — so you now know precisely what the library is doing and, more importantly, when to
+distrust its calm output.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the Foundations movement: [INFR-A1 *The Estimator as a Random Variable*] gave
+you the sampling distribution and the standard error as the objects of interest, and [INFR-A2
+*LLN and the CLT*] gave you the two limit theorems — the LLN powers both the convergence
+$\hat F_n \to F$ that licenses the bootstrap and the Monte-Carlo averaging that computes it. This
+article installs the **bootstrap principle**: replace the unknown $F$ with the empirical $\hat
+F_n$, and simulate the sampling distribution you cannot derive. From here:
+
+- **[INFR-E2 *Bootstrap Confidence Intervals: Percentile, Pivotal, and BCa*]** — we have the
+  bootstrap *distribution*; the natural next question is how to turn it into a calibrated interval.
+  The skewness we saw for the correlation (@sec-example-corr) is exactly why the naive percentile
+  interval can be biased and why the **BCa** correction exists.
+- **[INFR-E3 *Permutation Tests: Testing Without a Model*]** — the same resampling instinct turned
+  into a hypothesis test: instead of resampling *with* replacement to estimate a spread, you
+  *permute* labels under the null to build a null distribution. Bootstrap is to estimation as
+  permutation is to testing.
+- **Backward links.** Where the bootstrap *succeeds*, it reproduces the analytic answers of
+  earlier articles: the $\sigma/\sqrt n$ of [INFR-A1], the delta-method SE of [INFR-B4], the
+  $t$-interval of [INFR-C2]. It is the assumption-light alternative those articles point to, and
+  it is consumed throughout the Regression track for prediction and coefficient intervals when the
+  closed-form ones are untrustworthy.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding paper.** B. Efron, *Bootstrap Methods: Another Look at the Jackknife*, *Annals
+  of Statistics* 7 (1979): the entire idea, including the comparison to the jackknife that gives
+  Example 1 its punchline.
+- **The standard book-length treatment.** B. Efron and R. Tibshirani, *An Introduction to the
+  Bootstrap* (1993): the comprehensive, readable reference for everything in this article and the
+  next, including the interval methods of [INFR-E2].
+- **The theory we flagged but did not prove.** Link (i) of @sec-why-works — that the bootstrap is
+  *consistent* when the statistic is a smooth functional — is made rigorous via the **functional
+  delta method** and **Hadamard differentiability** (van der Vaart, *Asymptotic Statistics*, ch.
+  23). The convergence $\hat F_n \to F$ we used is the **Glivenko–Cantelli theorem**, with its
+  rate given by the **Dvoretzky–Kiefer–Wolfowitz inequality**, both in the Probability track
+  [PROB-09]. The maximum's failure (@sec-edge-max) was pinned down rigorously by Bickel and
+  Freedman (1981), the same paper that established bootstrap consistency for the mean.
+- **Open threads this article deliberately deferred.** *How do I get a confidence interval, not
+  just an SE?* — [INFR-E2], where the bootstrap distribution's *shape* (not just its width) does
+  the work. *What if my data are dependent?* — the block and stationary bootstraps previewed in
+  @sec-edge-dependent are a literature of their own (Künsch 1989; Politis–Romano 1994). *Is there
+  a resampling method for testing rather than estimation?* — yes, the permutation test of
+  [INFR-E3], which assumes even less than the bootstrap.

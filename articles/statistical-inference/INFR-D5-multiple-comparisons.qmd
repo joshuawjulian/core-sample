@@ -1,0 +1,1155 @@
+---
+title: "When You Run Many Tests: the Multiple-Comparisons Problem"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240517)
+
+NULLC  = "#2b3a67"     # the null world / data
+ALTC   = "#0a7d4d"     # the alternative world / true discoveries
+REJECT = "#c1121f"     # rejections / false alarms / thresholds
+ACCENT = "#d6791f"     # highlights
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas
+
+def bh_threshold(pvals, q):
+    """Benjamini-Hochberg: return the largest k such that p_(k) <= (k/m) q, the
+    cutoff index, and the boolean reject vector. Used only to draw the pictures;
+    the procedure itself is derived in the text."""
+    m = len(pvals)
+    order = np.argsort(pvals)
+    p_sorted = pvals[order]
+    thresh = (np.arange(1, m + 1) / m) * q
+    below = p_sorted <= thresh
+    if not below.any():
+        return 0, np.zeros(m, dtype=bool)
+    k = np.max(np.where(below)[0]) + 1          # 1-based largest passing rank
+    reject = np.zeros(m, dtype=bool)
+    reject[order[:k]] = True
+    return k, reject
+```
+
+> **Where this sits in the track.** This article closes the **Hypothesis Testing**
+> movement (D) of the Statistical Inference track. It assumes [INFR-D1 *The Logic of
+> Hypothesis Testing*], from which it takes the entire decision frame — the null
+> hypothesis $H_0$, the significance level $\alpha$ as a *per-test* false-alarm rate, the
+> **p-value** as a tail probability computed under the null, and the base-rate trap that
+> @sec-fdr now turns into a procedure. It assumes [INFR-D4 *Power and Sample Size*] for
+> the notion of **power** $1-\beta$ — the probability a test rejects a genuinely false
+> null — which governs how many true effects each procedure recovers. From outside the
+> track it borrows one fact, built in the Probability Foundations track: **under a
+> continuous null, a p-value is uniform on $[0,1]$**, and the machinery of **order
+> statistics** for the sorted p-values $p_{(1)}\le\cdots\le p_{(m)}$ ([PROB-08],
+> [PROB-12]); we state both at the point of use and reason from them. This article
+> **sets up** nothing further in movement D — it is the capstone — but it feeds
+> practitioner judgment used pervasively in **E** (the permutation-based error control of
+> [INFR-E3]) and in **Regression** model selection, where "test every coefficient" is
+> exactly the multiplicity problem under a new name.
+
+## Abstract {.unnumbered}
+
+Run one test at level $\alpha=0.05$ and you accept a one-in-twenty chance of a false
+alarm. Run a thousand tests and, if every null is true, you should *expect fifty* false
+alarms — "significance" stops meaning anything. This article makes that inflation precise
+and then repairs it. We derive the **family-wise error rate** (FWER), show that under
+independence it grows as $1-(1-\alpha)^m$ and is bounded above for *any* dependence by
+$m\alpha$ (Boole's inequality, proved), and from that bound read off the **Bonferroni**
+correction $\alpha/m$. We sharpen it to the uniformly more powerful **Holm** step-down
+procedure and prove it still controls the FWER. We then argue that controlling the
+probability of *even one* false discovery is often the wrong, paralysing goal when $m$ is
+in the thousands, and define the **false discovery rate** (FDR) — the expected *fraction*
+of declared discoveries that are false. We derive the **Benjamini–Hochberg** procedure
+step by step, give the order-statistic argument for why it controls the FDR at level $q$
+under independence, and contrast the two philosophies on genomics and A/B-testing data
+where the choice is unavoidable. The single claim the article defends is that **the
+correction you owe depends on the error you are willing to tolerate**: FWER when any false
+positive is costly, FDR when you are screening for leads and can pay for a controlled
+minority of them to be wrong.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A level-$\alpha$ test promises that *one* test rejects a true null with probability
+$\alpha$. The moment you run **many** tests, that guarantee no longer protects the
+**family** of conclusions: with $m$ independent true nulls the chance of **at least one**
+false alarm is
+
+$$
+\text{FWER} = 1-(1-\alpha)^m \;\xrightarrow{\;m\to\infty\;}\; 1 ,
+$$
+
+so enough tests make a false "discovery" a near-certainty. There are two honest ways to
+respond, distinguished by *which* error you control:
+
+- **Family-wise error rate (FWER)** — the probability of **even one** false rejection.
+  Control it with **Bonferroni** (test each at $\alpha/m$) or the strictly better
+  **Holm** step-down. Use when a single false positive is expensive.
+- **False discovery rate (FDR)** — the *expected fraction* of your rejections that are
+  false. Control it with **Benjamini–Hochberg**, which compares the $k$-th smallest
+  p-value to $\tfrac{k}{m}q$. Use when you are screening many hypotheses and can tolerate
+  a known minority of mistakes among your hits.
+
+FWER is conservative and protects against any false claim; FDR trades a controlled slice
+of false discoveries for far more power. **The right choice is a statement about the cost
+of being wrong, not a statistical technicality.**
+:::
+
+Everything below orbits that box. Two ideas inside it are the ones every exam and
+interview probes. First: **the unit of guarantee has changed** — $\alpha$ was a promise
+about *one* test, and the whole problem is that a promise per test says nothing about the
+collection. Second: **FWER and FDR answer different questions** — "what is the chance I
+make *any* false claim?" versus "of the claims I make, what fraction are false?" — and
+confusing them is the most common multiplicity mistake there is.
+
+# Why we are doing this: the problem that forced the correction {#sec-why}
+
+Hold one question in view for the entire article: **what does "$p<0.05$" mean once you
+have run it five hundred times, and how do we restore an honest guarantee?** Every
+derivation below answers a piece of that.
+
+## The original problem
+
+The single test of [INFR-D1] was built for a single, pre-registered question: *does this
+drug lower blood pressure?* You fix $H_0$, fix $\alpha$, collect data, decide. The level
+$\alpha=0.05$ means that across the many trials we *might* have run on a drug that truly
+does nothing, only one in twenty would falsely fire. That is a real, defensible guarantee
+— for *one* test.
+
+Science and industry stopped asking one question at a time. A microarray measures the
+expression of twenty thousand genes at once and asks, for *each*, "is this gene
+differentially expressed between healthy and tumour tissue?" — twenty thousand
+simultaneous tests. A tech company runs an A/B experiment and then slices the result by
+country, device, browser, and signup cohort, asking "did the button change help *this*
+segment?" — dozens of tests off one experiment. A psychologist measures forty outcomes and
+reports the three that came out significant. In every case the per-test guarantee is
+intact and *useless*: if you run enough true nulls, some will cross $0.05$ by chance, and
+reporting those as discoveries is how a field fills with results that will not replicate.
+
+The reckoning came twice. In the mid-twentieth century, **John Tukey** and others built
+the FWER machinery — Bonferroni's inequality, Tukey's own range tests — for the modest
+multiplicities of designed experiments (a handful of treatment contrasts). Then genomics
+arrived with $m$ in the tens of thousands, and Bonferroni's "divide $\alpha$ by $m$"
+became so conservative it found nothing. In **1995, Yoav Benjamini and Yosef Hochberg**
+reframed the goal: do not demand *zero* false discoveries, demand that false discoveries
+be a controlled *minority* of your hits. That reframing — the false discovery rate — is
+why modern high-throughput science is possible at all, and it is the second half of this
+article.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is running many tests a problem at all — isn't each one still valid?"* Each test
+is individually valid, and that is precisely the trap. The level $\alpha$ is a promise
+about the **long-run behaviour of one decision rule**; it says nothing about a
+*collection* of decisions. The error rates compound across the family exactly the way the
+probability of "at least one head" climbs as you flip more coins. The interviewer wants to
+hear that you distinguish a *per-comparison* guarantee from a *family-wise* one, and that
+"valid per test" and "valid as a body of claims" are different promises.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any algebra, the picture. Imagine every null is *true* — nothing is going on
+anywhere — and you run $m$ tests at $\alpha=0.05$. Each test is a coin that comes up
+"false alarm" with probability $0.05$. Asking "will I make at least one false discovery?"
+is asking "across $m$ such coins, will at least one come up false-alarm?" — and that
+probability marches toward certainty as $m$ grows, for the same reason you are nearly
+guaranteed a head if you flip a coin a hundred times. @fig-compounding draws this
+relentless climb.
+
+```{python}
+#| label: fig-compounding
+#| fig-cap: 'The compounding of false alarms when every null is true. **Left:** the family-wise error rate $1-(1-\alpha)^m$ — the chance of at least one false discovery among $m$ independent tests — for three per-test levels $\alpha$. At $\alpha=0.05$ it passes $50\%$ by $m=14$ tests and is essentially certain by $m=100$. **Right:** the *expected number* of false alarms, $m\alpha$, which grows without bound: a thousand tests of true nulls yield fifty false ''discoveries'' on average. The per-test guarantee is intact; the family guarantee has evaporated.'
+m = np.arange(1, 201)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+for a, c in [(0.01, ALTC), (0.05, NULLC), (0.10, REJECT)]:
+    axL.plot(m, 1 - (1 - a) ** m, color=c, label=fr"$\alpha={a}$")
+axL.axhline(0.5, color=GREY, ls="--", lw=1.1)
+axL.set_xlabel("number of tests $m$")
+axL.set_ylabel("P(at least one false alarm)")
+axL.set_title("Family-wise error rate, all nulls true")
+axL.legend(loc="lower right", fontsize=9, framealpha=0.9)
+
+axR.plot(m, 0.05 * m, color=NULLC, label=r"$\alpha=0.05$")
+axR.plot(m, 0.01 * m, color=ALTC, label=r"$\alpha=0.01$")
+axR.set_xlabel("number of tests $m$")
+axR.set_ylabel("expected # false alarms")
+axR.set_title("Expected false alarms $= m\\alpha$")
+axR.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The two panels already preview the two repairs. The left panel — the probability of *even
+one* false alarm — is the quantity FWER methods drive back down to $\alpha$. The right
+panel — the *number* of false alarms relative to the number of discoveries — is what FDR
+methods control. Keep both pictures in mind: one asks "*any* mistake?", the other asks
+"*what share* of my hits are mistakes?"
+
+::: {.callout-tip title="You might be asked"}
+*"If I only care about the one test that came out significant, why do I have to pay for
+the others I ran?"* Because the *act of selecting* the significant one out of many is what
+inflates the error. The p-value of your chosen test is honest only as the minimum of a
+collection, and the minimum of $m$ uniforms is far from uniform — it is stochastically
+tiny (we compute its distribution in @sec-fwer). Reporting the winner without accounting
+for the field it won against is exactly the file-drawer / p-hacking error [INFR-D4]
+warned about. You pay for the tests you *ran*, not the ones you *reported*.
+:::
+
+# The formal development: family-wise error {#sec-fwer}
+
+## Setting up the family {#sec-family}
+
+::: {#def-family}
+**Definition (the testing family and its errors).** We run $m$ hypothesis tests
+simultaneously, with null hypotheses $H_{0,1},\dots,H_{0,m}$ and observed p-values
+$p_1,\dots,p_m$. Among the $m$ nulls, an unknown number $m_0$ are **true** and
+$m_1=m-m_0$ are **false** (real effects). A procedure **rejects** some subset of the
+nulls. Cross-classify the outcomes:
+
+| | declared non-significant | declared significant (rejected) | total |
+|---|---|---|---|
+| **$H_0$ true** | $U$ | $V$ | $m_0$ |
+| **$H_0$ false** | $T$ | $S$ | $m_1$ |
+| **total** | $m-R$ | $R$ | $m$ |
+
+Here $R=V+S$ is the number of rejections (the discoveries we *announce*), of which $V$ are
+**false discoveries** (true nulls wrongly rejected) and $S$ are **true discoveries**. Only
+$R$ is observable; $V$ and $S$ are not, because we never know which nulls were really true.
+:::
+
+This $2\times2$ table is the entire bookkeeping of the article, so dwell on it. Everything
+that follows is a statement about the random variable $V$ — the count of false discoveries
+— or about $V$ relative to $R$. The two error-control philosophies are simply two different
+functionals of $V$:
+
+$$
+\underbrace{\text{FWER} = P(V\ge 1)}_{\text{any false discovery at all}},
+\qquad
+\underbrace{\text{FDR} = \mathbb{E}\!\left[\frac{V}{\max(R,1)}\right]}_{\text{expected share of discoveries that are false}}.
+$$ {#eq-two-rates}
+
+The $\max(R,1)$ in the denominator is a bookkeeping convenience that makes the ratio $0$
+when $R=0$ (we made no discoveries, so none are false); we justify it carefully in
+@sec-fdr-def. For now, read the two definitions slowly: FWER asks a **yes/no** question
+about whether $V$ is at least one; FDR asks for the **expected proportion** $V/R$. When
+$m=1$ they nearly coincide, but as $m$ grows they pull apart violently, and that gap is the
+whole story.
+
+## How $\alpha$ compounds {#sec-compound}
+
+Take the worst case for intuition: **every** null is true ($m_0=m$), so any rejection is a
+false discovery. Suppose the $m$ tests are **independent** and each is run at level
+$\alpha$, meaning each true null is rejected with probability exactly $\alpha$. We want
+$P(V\ge1)$, the chance of at least one false alarm.
+
+The clean route is through the complement. Let $A_j$ be the event "test $j$ falsely
+rejects," with $P(A_j)=\alpha$. Then "no false alarm at all" is the event that *every*
+$A_j$ fails:
+
+$$
+P(V=0) = P\!\left(\bigcap_{j=1}^m A_j^c\right)
+\overset{\text{indep.}}{=}\prod_{j=1}^m P(A_j^c)
+= \prod_{j=1}^m (1-\alpha)
+= (1-\alpha)^m .
+$$
+
+The middle equality is where independence does its work: the probability of a *joint*
+event factors into a product only because the events do not inform one another. (This is
+the i.i.d. product rule built in [PROB-05]; we use it by name.) Taking the complement,
+
+$$
+\boxed{\;\text{FWER} = P(V\ge1) = 1-(1-\alpha)^m.\;}
+$$ {#eq-fwer-indep}
+
+This is the left panel of @fig-compounding. To see *how fast* it climbs, expand for small
+$\alpha$. The binomial theorem gives
+$(1-\alpha)^m = 1 - m\alpha + \binom{m}{2}\alpha^2 - \cdots$, so
+
+$$
+\text{FWER} = 1-(1-\alpha)^m = m\alpha - \binom{m}{2}\alpha^2 + \cdots \approx m\alpha
+\quad(\text{for small }\alpha).
+$$ {#eq-fwer-approx}
+
+So to first order the family-wise error grows **linearly in the number of tests**: ten
+tests at $\alpha=0.05$ give roughly a $40\%$ chance of a false alarm
+($1-0.95^{10}=`{python} f"{1-0.95**10:.3f}"`$), and a hundred tests give
+$`{python} f"{1-0.95**100:.3f}"`$ — near-certainty. The per-test promise is intact; the
+family promise is gone.
+
+::: {.callout-tip title="You might be asked"}
+*"What if the tests are correlated — does the $1-(1-\alpha)^m$ formula still hold?"* No —
+that exact formula needed independence. But the *upper bound* survives without any
+independence assumption, and that is what the corrections actually rely on. We prove it
+next (Boole's inequality). Positive correlation between tests generally makes the true
+FWER *smaller* than the independent value (the false alarms cluster together rather than
+spreading across tests), so Bonferroni — built on the worst-case bound — is conservative
+under positive dependence, sometimes badly so. Knowing that the *bound* and the *exact
+value* are different objects, and which one the methods use, is the mark of someone who
+understands the machinery rather than memorising it.
+:::
+
+## The distribution-free bound: Boole's inequality {#sec-boole}
+
+The exact formula @eq-fwer-indep assumed independence, which we almost never have (gene
+expressions are co-regulated; A/B segments overlap). The corrections instead lean on a
+bound that holds **for any dependence whatsoever**.
+
+::: {#lem-boole}
+**Lemma (Boole's inequality / the union bound).** For any events $A_1,\dots,A_m$,
+$$
+P\!\left(\bigcup_{j=1}^m A_j\right) \le \sum_{j=1}^m P(A_j) .
+$$
+:::
+
+::: {.proof}
+We prove it by induction on $m$, using only the two-event addition rule. For two events,
+the inclusion–exclusion identity (built from the axioms of probability in [PROB-02]) is
+$$
+P(A_1\cup A_2) = P(A_1)+P(A_2) - P(A_1\cap A_2).
+$$
+A probability is never negative, so $P(A_1\cap A_2)\ge 0$, and subtracting a nonnegative
+quantity can only decrease the right-hand side:
+$$
+P(A_1\cup A_2) = P(A_1)+P(A_2) - P(A_1\cap A_2) \le P(A_1)+P(A_2).
+$$
+That is the base case $m=2$. Now assume the bound holds for some $m-1$ events. Write the
+union of $m$ events as the union of two things — the first $m-1$ events lumped together,
+and the last one — and apply the two-event case just proved:
+$$
+P\!\left(\bigcup_{j=1}^m A_j\right)
+= P\!\left(\Bigl(\bigcup_{j=1}^{m-1} A_j\Bigr)\cup A_m\right)
+\le P\!\left(\bigcup_{j=1}^{m-1} A_j\right) + P(A_m).
+$$
+By the induction hypothesis the first term is at most $\sum_{j=1}^{m-1}P(A_j)$, so the
+whole expression is at most $\sum_{j=1}^{m}P(A_j)$. The induction closes. $\qquad\blacksquare$
+:::
+
+Note what the proof did *not* use: nothing about independence, nothing about the
+distributions. It used only that probabilities are nonnegative and that overlaps get
+subtracted. That is why the bound is *distribution-free* — it is the worst case, attained
+when the events never overlap. Applied to false alarms, with $A_j$ = "true null $j$ is
+rejected" and $P(A_j)=\alpha_j$ the per-test level,
+
+$$
+\text{FWER} = P\!\left(\bigcup_{j:\,H_{0,j}\text{ true}} A_j\right)
+\le \sum_{j:\,H_{0,j}\text{ true}} \alpha_j \le \sum_{j=1}^m \alpha_j .
+$$ {#eq-boole-fwer}
+
+The first sum runs only over the *true* nulls (only they can be falsely rejected), and we
+bounded it upward by including all $m$ tests since we do not know which are true. This one
+inequality is the foundation of Bonferroni.
+
+## Bonferroni: the correction that falls out of the bound {#sec-bonferroni}
+
+We want a procedure whose family-wise error is at most a target $\alpha$ (now the
+*family* level, e.g. $0.05$ for the whole study). @eq-boole-fwer says FWER
+$\le\sum_j\alpha_j$. If we make every per-test level equal to $\alpha/m$, the bound becomes
+
+$$
+\text{FWER} \le \sum_{j=1}^m \frac{\alpha}{m} = m\cdot\frac{\alpha}{m} = \alpha .
+$$
+
+That is the whole derivation. It is not a heuristic — it is the union bound with the
+per-test levels chosen to make the right-hand side equal $\alpha$.
+
+::: {#thm-bonferroni}
+**Theorem (Bonferroni correction).** Reject $H_{0,j}$ whenever $p_j \le \alpha/m$.
+Then, for *any* joint dependence among the tests,
+$$
+\text{FWER} = P(V\ge 1) \le \alpha .
+$$
+:::
+
+::: {.proof}
+Let $A_j$ be the event that true null $j$ is rejected, i.e. $\{p_j\le\alpha/m\}$. By the
+definition of a valid p-value, under a true null $p_j$ is stochastically at least uniform,
+so $P(A_j)=P(p_j\le\alpha/m)\le\alpha/m$. (For a continuous test statistic the p-value is
+*exactly* uniform on $[0,1]$ under the null — built in [PROB-12] and revisited in
+@sec-bh-proof — giving $P(A_j)=\alpha/m$ exactly.) A false discovery occurs iff at least one
+true null is rejected, i.e. iff $\bigcup_{j\,\text{true}}A_j$ occurs. By @lem-boole,
+$$
+\text{FWER} = P\!\left(\bigcup_{j\,\text{true}}A_j\right)
+\le \sum_{j\,\text{true}} P(A_j)
+\le \sum_{j\,\text{true}} \frac{\alpha}{m}
+= m_0\cdot\frac{\alpha}{m}
+\le \alpha,
+$$
+the last step because $m_0\le m$. No independence was used anywhere. $\qquad\blacksquare$
+:::
+
+Three things to read off this proof. First, it controls FWER under **arbitrary
+dependence** — the only assumption is that each marginal p-value is valid. That robustness
+is Bonferroni's great strength. Second, the bound is *loose* by exactly the factor
+$m_0/m$: if half the nulls are false, Bonferroni is spending error budget on tests that
+cannot produce false alarms, so the true FWER is nearer $\alpha/2$. Third — and this is the
+cost — dividing the threshold by $m$ makes each test brutally strict. With $m=20{,}000$
+genes and $\alpha=0.05$, each gene must clear $p\le 2.5\times10^{-6}$ to be called
+significant. Real effects with honest $p=10^{-4}$ are thrown away. **Bonferroni controls
+the wrong-discovery probability by refusing to discover much of anything**, which is the
+tension the FDR will resolve.
+
+```{python}
+#| label: fig-bonferroni
+#| fig-cap: 'Bonferroni in action on $m=20$ tests. The dots are observed p-values, sorted. The uncorrected line $\alpha=0.05$ (grey dashed) would reject every p-value below it — here catching several true nulls (open circles) as false alarms. The Bonferroni line $\alpha/m=0.0025$ (red) is twenty times lower; only p-values beneath it are rejected. It cleanly excludes the true-null cluster but is so strict that a borderline true effect at $p\approx 0.01$ (green, an effect that is real) is missed. This is the FWER-vs-power trade in one picture.'
+m = 20
+# 16 true nulls (uniform p-values) and 4 real effects (small p-values).
+p_null = rng.uniform(0, 1, size=16)
+p_alt  = np.array([0.0004, 0.0009, 0.0021, 0.0102])   # last one is a near-miss
+is_alt = np.array([False] * 16 + [True] * 4)
+pvals = np.concatenate([p_null, p_alt])
+order = np.argsort(pvals)
+pvals, is_alt = pvals[order], is_alt[order]
+
+alpha = 0.05
+ranks = np.arange(1, m + 1)
+fig, ax = plt.subplots(figsize=(7.2, 4.2))
+ax.scatter(ranks[~is_alt], pvals[~is_alt], facecolors="none", edgecolors=NULLC,
+           s=55, label="true null", zorder=3)
+ax.scatter(ranks[is_alt], pvals[is_alt], color=ALTC, s=55,
+           label="real effect", zorder=3)
+ax.axhline(alpha, color=GREY, ls="--", lw=1.3, label=r"uncorrected $\alpha=0.05$")
+ax.axhline(alpha / m, color=REJECT, lw=1.6, label=fr"Bonferroni $\alpha/m={alpha/m:.4f}$")
+ax.set_yscale("log")
+ax.set_xlabel("rank of p-value")
+ax.set_ylabel("p-value (log scale)")
+ax.set_title("Bonferroni: one strict threshold for all")
+ax.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+n_uncorr = int((pvals <= alpha).sum())
+n_bonf = int((pvals <= alpha / m).sum())
+print(f"uncorrected rejections: {n_uncorr}   Bonferroni rejections: {n_bonf}")
+```
+
+## Holm: the same guarantee, uniformly more power {#sec-holm}
+
+Bonferroni uses a single threshold $\alpha/m$ for every test. We can do strictly better
+without giving up any FWER protection. The key realisation: once we have rejected the
+*most* significant hypothesis, only $m-1$ hypotheses remain in contention, so the next one
+need only be compared against $\alpha/(m-1)$, then $\alpha/(m-2)$, and so on. The
+thresholds *relax* as we go. This is **Holm's step-down procedure** (1979).
+
+::: {#def-holm}
+**Definition (Holm's step-down procedure).** Sort the p-values in increasing order,
+$p_{(1)}\le p_{(2)}\le\cdots\le p_{(m)}$, with $H_{(j)}$ the hypothesis attached to
+$p_{(j)}$. Step through $j=1,2,\dots$ and compare
+$$
+p_{(j)} \;\le\; \frac{\alpha}{m-j+1}.
+$$
+Let $k$ be the **first** index $j$ at which this *fails*. Reject
+$H_{(1)},\dots,H_{(k-1)}$ and retain all the rest. (If it never fails, reject everything;
+if it fails at $j=1$, reject nothing.)
+:::
+
+The denominators are $m, m-1, m-2, \dots$ — so the first test faces exactly Bonferroni's
+$\alpha/m$, but every subsequent test faces a *larger* (easier) threshold. Holm therefore
+rejects **everything Bonferroni rejects, and possibly more**: it is *uniformly more
+powerful* while controlling the same error. The "step-down" name is because we step from
+the smallest p-value downward in significance, stopping the first time a hypothesis fails
+its (relaxing) bar — and once one fails, all less-significant ones are retained too.
+
+::: {#thm-holm}
+**Theorem (Holm controls the FWER).** Holm's procedure satisfies $\text{FWER}\le\alpha$
+for any joint dependence among the p-values.
+:::
+
+::: {.proof}
+We must show $P(V\ge 1)\le\alpha$, i.e. the probability that Holm rejects *at least one
+true null* is at most $\alpha$. Let $I_0\subseteq\{1,\dots,m\}$ be the (unknown) set of
+indices of the $m_0$ true nulls. Suppose a false discovery occurs; we show this forces a
+small p-value among the true nulls, an event of probability $\le\alpha$ by the union bound.
+
+Let $p_{\min}=\min_{j\in I_0}p_j$ be the smallest p-value among the true nulls, attained at
+some true null $j^\*$. Because a false discovery occurred, Holm rejected $j^\*$. Consider
+the rank $\ell$ that $p_{j^\*}=p_{\min}$ occupies in the *full* sorted list. Every p-value
+strictly smaller than $p_{\min}$ belongs to a **false** null (since $p_{\min}$ is the
+minimum over true nulls), so among the $\ell-1$ p-values ranked ahead of $j^\*$, all are
+false nulls — there are at most $m_1=m-m_0$ of them. Hence the rank satisfies
+$\ell \le m_1 + 1 = m-m_0+1$.
+
+For Holm to reach and reject $j^\*$ at rank $\ell$, it must have passed the threshold at
+that step:
+$$
+p_{\min}=p_{(\ell)} \le \frac{\alpha}{m-\ell+1}.
+$$
+Since $\ell\le m-m_0+1$, we have $m-\ell+1 \ge m_0$, so $\dfrac{\alpha}{m-\ell+1} \le
+\dfrac{\alpha}{m_0}$. Therefore a false discovery implies
+$$
+p_{\min} \le \frac{\alpha}{m_0},
+\qquad\text{i.e.}\qquad
+\min_{j\in I_0} p_j \le \frac{\alpha}{m_0}.
+$$
+That event — *some* true-null p-value falls below $\alpha/m_0$ — has probability, by the
+union bound (@lem-boole) over the $m_0$ true nulls each valid with
+$P(p_j\le \alpha/m_0)\le\alpha/m_0$,
+$$
+P\!\left(\min_{j\in I_0}p_j \le \frac{\alpha}{m_0}\right)
+\le \sum_{j\in I_0} P\!\left(p_j\le\frac{\alpha}{m_0}\right)
+\le m_0\cdot\frac{\alpha}{m_0} = \alpha .
+$$
+Since "false discovery occurs" $\subseteq$ "$\min_{j\in I_0}p_j\le\alpha/m_0$," we conclude
+$P(V\ge1)\le\alpha$. No independence was used. $\qquad\blacksquare$
+:::
+
+The proof is worth re-reading because it shows *why* Holm can afford the relaxing
+thresholds: the false nulls ranked ahead of the first true null "use up" ranks for free —
+they were going to be rejected anyway and cannot cause a false discovery — so the true
+null we worry about effectively faces a denominator of $m_0$, not $m$. Holm extracts the
+slack that Bonferroni left on the table (the $m_0/m$ looseness of @thm-bonferroni) without
+ever needing to know $m_0$.
+
+```{python}
+#| label: fig-holm
+#| fig-cap: 'Holm''s step-down vs. Bonferroni on the same $m=20$ p-values. The flat red line is Bonferroni''s single threshold $\alpha/m$. The rising orange staircase is Holm''s relaxing thresholds $\alpha/(m-j+1)$ at each rank $j$. Holm steps down from the left, rejecting while $p_{(j)}$ stays below its bar; the first failure (marked) stops the procedure and everything to its right is retained. Because Holm''s bar sits at or above Bonferroni''s everywhere, Holm rejects every Bonferroni rejection and sometimes one or two more — same FWER guarantee, more power.'
+holm_thresh = alpha / (m - ranks + 1)
+# find first failure
+fails = pvals > holm_thresh
+first_fail = int(np.argmax(fails)) if fails.any() else m
+fig, ax = plt.subplots(figsize=(7.2, 4.2))
+ax.step(ranks, holm_thresh, where="mid", color=ACCENT, lw=1.8,
+        label=r"Holm $\alpha/(m-j+1)$")
+ax.axhline(alpha / m, color=REJECT, lw=1.5, label=fr"Bonferroni $\alpha/m={alpha/m:.4f}$")
+ax.scatter(ranks[~is_alt], pvals[~is_alt], facecolors="none", edgecolors=NULLC,
+           s=50, label="true null", zorder=3)
+ax.scatter(ranks[is_alt], pvals[is_alt], color=ALTC, s=50,
+           label="real effect", zorder=3)
+ax.axvline(first_fail + 0.5, color=GREY, ls=":", lw=1.3)
+ax.set_yscale("log")
+ax.set_xlabel("rank $j$ of p-value")
+ax.set_ylabel("p-value / threshold (log scale)")
+ax.set_title("Holm relaxes the threshold as it steps down")
+ax.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+n_holm = int(min(first_fail, m))
+print(f"Holm rejects {n_holm}; Bonferroni rejects {n_bonf}")
+```
+
+# When zero false discoveries is the wrong goal: the false discovery rate {#sec-fdr}
+
+## The problem with FWER at scale {#sec-fdr-why}
+
+FWER control is the right discipline when **even one** false positive is a disaster — a
+clinical trial declaring an unsafe drug effective, a physics experiment claiming a new
+particle. There, you want the probability of *any* false claim held to $5\%$, and you pay
+for it with power.
+
+But consider the genomics screen: $m=20{,}000$ genes, of which perhaps $m_1=200$ are truly
+differentially expressed. You are not making a final claim about any single gene — you are
+generating a **shortlist of leads** for the lab to follow up. If your shortlist of 100
+genes contains 5 false positives, that is a completely acceptable price: the lab will
+sieve them out at the bench, and you found 95 real leads. Demanding *zero* false
+discoveries (FWER) would shrink the shortlist to a handful and miss most of the real
+biology. Here the sensible target is not "did I make *any* mistake?" but "what *fraction*
+of my shortlist is junk?"
+
+That is the **false discovery rate**, and the reframing is the single most consequential
+idea in modern multiple testing.
+
+::: {#def-fdr}
+**Definition (false discovery rate).** With $V$ the number of false discoveries and $R$ the
+total number of rejections (from @def-family), the **false discovery proportion** is
+$$
+\text{FDP} = \begin{cases} V/R & R>0,\\[2pt] 0 & R=0,\end{cases}
+$$
+and the **false discovery rate** is its expectation,
+$$
+\text{FDR} = \mathbb{E}[\text{FDP}] = \mathbb{E}\!\left[\frac{V}{\max(R,1)}\right].
+$$
+:::
+
+### The $\max(R,1)$ convention {#sec-fdr-def}
+
+The convention "$\text{FDP}=0$ when $R=0$" is not a fudge: if you make no discoveries,
+*none of your discoveries are false*, so the proportion of false ones is genuinely $0$.
+Writing $\max(R,1)$ in the denominator implements exactly that — when $R=0$, both $V=0$ and
+the denominator is $1$, giving $0/1=0$.
+
+::: {.callout-important title="FWER and FDR are different promises"}
+The relationship between the two is exact and worth carrying: **when all nulls are true**
+($m_0=m$, so $S=0$ and any rejection is false), $R=V$, and the FDP is $1$ whenever $R>0$
+and $0$ otherwise. So in that case
+$$
+\text{FDR} = \mathbb{E}[\text{FDP}] = P(R>0) = P(V\ge1) = \text{FWER}.
+$$
+Under the **complete null, controlling FDR at $q$ controls FWER at $q$** — they coincide.
+But when some nulls are false ($m_1>0$), the true discoveries $S$ inflate the denominator,
+so $\text{FDP}=V/(V+S)$ can stay small even when $V\ge1$. There, **FDR control is strictly
+weaker (more permissive) than FWER control** — which is exactly why it recovers power.
+:::
+
+## The Benjamini–Hochberg procedure {#sec-bh}
+
+We want a procedure guaranteeing $\text{FDR}\le q$ for a chosen level $q$ (e.g. $q=0.10$:
+"I'll tolerate one in ten of my discoveries being false"). Benjamini and Hochberg (1995)
+gave one of striking simplicity.
+
+::: {#def-bh}
+**Definition (Benjamini–Hochberg, BH).** Sort the p-values
+$p_{(1)}\le p_{(2)}\le\cdots\le p_{(m)}$. Find the **largest** index $k$ such that
+$$
+p_{(k)} \;\le\; \frac{k}{m}\,q .
+$$
+Reject the hypotheses corresponding to $p_{(1)},\dots,p_{(k)}$ — *all* of them, including
+any whose own p-value exceeds its individual threshold. If no such $k$ exists, reject
+nothing.
+:::
+
+Contrast the geometry with Bonferroni and Holm. Bonferroni compares each p-value to the
+flat line $\alpha/m$. BH compares the sorted p-values to the **rising line** $\frac{k}{m}q$
+— which starts at $q/m$ (essentially Bonferroni's strictness for the very smallest) and
+climbs to $q$ at the largest rank. It is a **step-up** procedure: you scan from the
+*largest* p-value downward looking for the first one that dips below its rising threshold,
+and reject it and everything below it. The rising line is what buys the power: a p-value at
+rank $k=200$ out of $m=20{,}000$ is compared, at level $q=0.1$, against
+$\frac{200}{20000}(0.1)=0.001$ — so a gene with $p=0.0008$ ranked there is rejected, even
+though Bonferroni demanded $p\le 2.5\times10^{-6}$ of it. The threshold *adapts to how many
+discoveries you are making*: the more p-values pile up near the bottom, the higher up the
+rising line the cutoff is allowed to climb.
+
+```{python}
+#| label: fig-bh
+#| fig-cap: 'The Benjamini-Hochberg geometry on $m=200$ tests ($m_0=170$ true nulls, $m_1=30$ real effects). Sorted p-values (dots) against the three thresholds: Bonferroni''s flat line $\alpha/m$ (red), and BH''s rising line $\frac{k}{m}q$ for $q=0.10$ (orange). BH finds the *largest* rank $k$ where a p-value falls under the rising line (marked) and rejects everything up to it. The rising line admits far more discoveries than the flat Bonferroni line while still controlling the expected false-discovery fraction. Real effects (green) cluster at small ranks; true nulls (blue) spread across the diagonal as they must, being uniform.'
+m = 200
+m1 = 30
+# real effects: small p-values; true nulls: uniform.
+p_alt = rng.beta(0.4, 12, size=m1)            # concentrated near 0
+p_null = rng.uniform(0, 1, size=m - m1)
+pvals = np.concatenate([p_alt, p_null])
+is_alt = np.concatenate([np.ones(m1, bool), np.zeros(m - m1, bool)])
+order = np.argsort(pvals)
+pvals, is_alt = pvals[order], is_alt[order]
+
+q = 0.10
+ranks = np.arange(1, m + 1)
+k_bh, reject_bh = bh_threshold(pvals, q)
+
+fig, ax = plt.subplots(figsize=(7.4, 4.4))
+ax.scatter(ranks[~is_alt], pvals[~is_alt], facecolors="none", edgecolors=NULLC,
+           s=18, label="true null", zorder=3, alpha=0.7)
+ax.scatter(ranks[is_alt], pvals[is_alt], color=ALTC, s=22,
+           label="real effect", zorder=3)
+ax.plot(ranks, (ranks / m) * q, color=ACCENT, lw=1.8,
+        label=fr"BH line $\frac{{k}}{{m}}q,\ q={q}$")
+ax.axhline(0.05 / m, color=REJECT, lw=1.4, label=r"Bonferroni $\alpha/m$")
+if k_bh > 0:
+    ax.axvline(k_bh + 0.5, color=GREY, ls=":", lw=1.3)
+    ax.scatter([k_bh], [pvals[k_bh - 1]], facecolors="none", edgecolors=REJECT,
+               s=160, lw=2.0, zorder=4)
+ax.set_xlim(0, 60); ax.set_ylim(0, 0.05)
+ax.set_xlabel("rank $k$ of p-value")
+ax.set_ylabel("p-value")
+ax.set_title("Benjamini-Hochberg: reject up to the largest rank under the rising line")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"BH cutoff rank k = {k_bh}; BH rejects {int(reject_bh.sum())}")
+print(f"Bonferroni rejects {int((pvals <= 0.05/m).sum())}")
+print(f"true discoveries among BH rejections = {int((reject_bh & is_alt).sum())} of {m1}")
+```
+
+## Why BH controls the FDR {#sec-bh-proof}
+
+The result that made the procedure famous is that this simple rule controls the FDR at
+exactly $q$ times the fraction of true nulls. We prove it under **independence** of the
+p-values, the setting of the original theorem; we flag at the end what changes under
+dependence.
+
+First, the imported fact the proof rests on.
+
+::: {.callout-note title="What we borrow: null p-values are uniform"}
+For a test with a **continuous** statistic, the p-value is, *under the null*, distributed
+**uniformly on $[0,1]$**: $P(p_j\le t)=t$ for every $t\in[0,1]$. The reason, built in
+[PROB-12]: the p-value is $p_j=1-F(T_j)$ (or a tail of the CDF $F$ of the statistic under
+the null), and applying a continuous random variable's own CDF to itself yields a Uniform
+— the *probability integral transform*. We use this by its statement: each true-null
+p-value is $\text{Uniform}(0,1)$, hence $P(p_j\le c)=c$.
+:::
+
+::: {#thm-bh}
+**Theorem (Benjamini–Hochberg, 1995).** If the $m$ p-values are independent and the
+$m_0$ true-null p-values are each $\text{Uniform}(0,1)$, then the BH procedure at level $q$
+satisfies
+$$
+\text{FDR} = \frac{m_0}{m}\,q \;\le\; q .
+$$
+:::
+
+::: {.proof}
+The argument is a clean counting expectation; we build it in three moves.
+
+**Move 1 — write the FDR as a sum over true nulls.** By definition,
+$\text{FDR}=\mathbb{E}\!\left[\dfrac{V}{\max(R,1)}\right]$. Write $V$ as a sum of
+indicators over the true nulls: $V=\sum_{j\in I_0}\mathbf 1\{j\text{ rejected}\}$. Then,
+linearity of expectation (which holds regardless of dependence) gives
+$$
+\text{FDR}
+= \mathbb{E}\!\left[\sum_{j\in I_0}\frac{\mathbf 1\{j\text{ rejected}\}}{\max(R,1)}\right]
+= \sum_{j\in I_0}\mathbb{E}\!\left[\frac{\mathbf 1\{j\text{ rejected}\}}{\max(R,1)}\right].
+$$
+So we need, for a single true null $j$, the expected value of "rejected, divided by the
+total number of rejections."
+
+**Move 2 — decompose by the realised number of rejections.** Let $R$ be the total
+rejections the procedure makes. The BH rule rejects exactly the hypotheses with the
+$R$ smallest p-values, where $R$ is determined by the rising-line crossing. The key
+structural fact about BH: **if the procedure rejects $R=r$ hypotheses in total, then the
+common threshold applied is exactly $p_{(r)}\le \frac{r}{m}q$**, i.e. every rejected
+p-value is $\le \frac{r}{m}q$. So conditional on the event $\{R=r\}$, true null $j$ is
+rejected precisely when $p_j\le \frac{r}{m}q$. We expand the expectation by summing over
+the possible values $r=1,\dots,m$:
+$$
+\mathbb{E}\!\left[\frac{\mathbf 1\{j\text{ rejected}\}}{\max(R,1)}\right]
+= \sum_{r=1}^{m}\frac{1}{r}\,
+  P\bigl(j\text{ rejected and } R=r\bigr)
+= \sum_{r=1}^{m}\frac{1}{r}\,
+  P\bigl(p_j\le \tfrac{r}{m}q \text{ and } R=r\bigr).
+$$
+
+**Move 3 — peeling off $p_j$ so independence can act.** The obstacle is that the event
+$\{R=r\}$ depends on *all* the p-values, including $p_j$ itself, so we cannot yet factor
+$p_j$ out. The standard device is to hold the other p-values fixed and isolate exactly how
+$\{p_j\le\frac{r}{m}q \text{ and } R=r\}$ depends on $p_j$. We do this with one structural
+fact about the step-up rule, which we prove rather than assert.
+
+*The structural fact.* Fix the true null $j$ and freeze the other $m-1$ p-values
+$\mathbf p_{-j}=\{p_i:i\ne j\}$. For each candidate count $r\in\{1,\dots,m\}$, define the
+event (on $\mathbf p_{-j}$ alone)
+$$
+C_r \;=\; \Bigl\{\,\mathbf p_{-j}:\ \text{BH applied to the } m \text{ p-values with } p_j
+\text{ set to } 0 \text{ rejects exactly } r\,\Bigr\}.
+$$
+Setting $p_j=0$ forces null $j$ into the rejected set, so the count "BH rejects $r$ with
+$p_j=0$" is a function of $\mathbf p_{-j}$ only — that is what makes $C_r$ an event about the
+other p-values, as its definition states. We claim
+$$
+\Bigl\{\,p_j\le \tfrac{r}{m}q \ \text{ and }\ R=r\,\Bigr\}
+\;=\;
+\Bigl\{\,p_j\le \tfrac{r}{m}q \ \text{ and }\ C_r\,\Bigr\}.
+\tag{$\star$}
+$$
+
+*Proof of $(\star)$.* First recall the threshold count is **monotone in the p-values being
+lowered**: BH rejects $H_{(i)}$ for all $i\le R$ where $R=\max\{i:p_{(i)}\le\frac{i}{m}q\}$
+(the largest crossing rank, from @def-bh). Lowering any single p-value can only move it to
+an equal-or-earlier rank and can only make more crossing conditions $p_{(i)}\le\frac{i}{m}q$
+hold, so the rejection count $R$ is non-decreasing as any coordinate decreases. Now take a
+point in the left-hand set: $p_j\le\frac{r}{m}q$ and $R=r$. Because $p_j\le\frac{r}{m}q$ and
+$R=r$, null $j$ is among the $r$ rejected (every rejected p-value is $\le\frac{r}{m}q$ by
+Move 2, and $j$ clears that bar and so sits at a rank $\le r$). Replacing $p_j$ by $0$ keeps
+$j$ rejected and, by monotonicity, cannot decrease the count below $r$; and it cannot raise
+it above $r$ either, because the only p-value that moved is $p_j$, which was already inside
+the rejected block of size $r$, so the crossing rank is unchanged. Hence with $p_j=0$ the
+count is still exactly $r$ — i.e. $C_r$ holds. Conversely, take a point in the right-hand
+set: $C_r$ holds and $p_j\le\frac{r}{m}q$. With $p_j=0$ the count is $r$; raising the single
+coordinate $p_j$ from $0$ up to its actual value (which is $\le\frac{r}{m}q$) keeps it inside
+the size-$r$ rejected block — its rank stays $\le r$ and the crossing condition
+$p_{(r)}\le\frac{r}{m}q$ that defined the block still holds — so the count remains $r$,
+giving $R=r$. The two sets coincide, proving $(\star)$. $\;\square$
+
+With $(\star)$ in hand, independence finishes the job. The event $C_r$ depends only on
+$\mathbf p_{-j}$, and under the theorem's independence assumption $p_j$ is independent of
+$\mathbf p_{-j}$, hence of $C_r$. Therefore
+$$
+P\bigl(p_j\le\tfrac{r}{m}q \text{ and } R=r\bigr)
+\overset{(\star)}{=}
+P\bigl(p_j\le\tfrac{r}{m}q \text{ and } C_r\bigr)
+\overset{\text{indep.}}{=}
+P\bigl(p_j\le\tfrac{r}{m}q\bigr)\,P(C_r)
+= \frac{r}{m}q\cdot P(C_r),
+$$
+where the last equality uses uniformity of the true-null $p_j$:
+$P(p_j\le c)=c$ with $c=\frac{r}{m}q$. Substituting into the Move-2 sum,
+$$
+\mathbb{E}\!\left[\frac{\mathbf 1\{j\text{ rejected}\}}{\max(R,1)}\right]
+= \sum_{r=1}^{m}\frac{1}{r}\cdot\frac{r}{m}q\cdot P(C_r)
+= \frac{q}{m}\sum_{r=1}^{m}P(C_r).
+$$
+The factor $\frac1r$ from the denominator and the factor $r$ from the threshold
+$\frac{r}{m}q$ **cancel exactly** — this cancellation is the engine of the whole proof. The
+events $C_1,\dots,C_m$ are disjoint and exhaustive: for each fixed $\mathbf p_{-j}$, running
+BH once with $p_j=0$ produces *exactly one* rejection count, so exactly one $C_r$ holds.
+Hence $\sum_{r=1}^m P(C_r)=1$, and
+$$
+\mathbb{E}\!\left[\frac{\mathbf 1\{j\text{ rejected}\}}{\max(R,1)}\right] = \frac{q}{m}.
+$$
+
+**Assemble.** Summing this identical value over the $m_0$ true nulls (Move 1):
+$$
+\text{FDR} = \sum_{j\in I_0}\frac{q}{m} = m_0\cdot\frac{q}{m} = \frac{m_0}{m}\,q \le q,
+$$
+since $m_0\le m$. $\qquad\blacksquare$
+:::
+
+Two readings of this result. First, BH does not control FDR at $q$ exactly but at
+$\frac{m_0}{m}q$ — it is *conservative* by the fraction of true nulls, exactly as
+Bonferroni was. When most hypotheses are null ($m_0\approx m$, the genomics regime), the
+control is essentially tight at $q$; when many are real, BH is conservative and adaptive
+variants (estimating $m_0$ and using $q\cdot m/\hat m_0$) recover the slack. Second, the
+$\tfrac1r\cdot\tfrac rm$ cancellation reveals *why the rising line has slope $q/m$ and not
+something else*: it is the unique slope that makes the per-rejection contribution
+independent of how many rejections occur, so the total telescopes to a clean $m_0 q/m$.
+
+::: {.callout-warning title="Pitfall"}
+**BH's clean proof assumes independent p-values.** Real families are rarely independent —
+genes co-regulate, A/B segments share users. The good news: Benjamini and Yekutieli (2001)
+proved BH still controls FDR under **positive regression dependence** (PRDS), a condition
+that covers many realistic cases (e.g. multivariate-Normal test statistics with
+nonnegative correlations). Under *arbitrary* dependence, BH can be made valid by inflating
+the level — divide $q$ by the harmonic number $H_m=\sum_{k=1}^m \frac1k\approx\ln m$ (the
+**Benjamini–Yekutieli** correction), which is more conservative but assumption-free. Do not
+blindly apply plain BH to strongly, possibly-negatively dependent tests and assume the $q$
+guarantee holds; check the dependence structure or use BY.
+:::
+
+# Worked examples {#sec-examples}
+
+We run all three corrections on two honest datasets where multiplicity is unavoidable, and
+then push to the edge where the methods strain.
+
+## Example 1 — a genomics screen: 5,000 genes, a handful real {#sec-genomics}
+
+The canonical home of multiple testing. We simulate a differential-expression study in the
+realistic regime: $m=5000$ genes, of which only $m_1=200$ are truly differentially
+expressed (a $4\%$ signal — most genes do nothing), each tested with a two-sample t-test
+yielding a p-value. We compare what Bonferroni, Holm, and BH actually *recover*, and the
+false-discovery price each pays.
+
+```{python}
+#| label: fig-genomics
+#| fig-cap: 'A genomics screen, $m=5000$ genes, $m_1=200$ truly differentially expressed. **Left:** the sorted p-values against the BH rising line ($q=0.10$, orange) and the Bonferroni flat line ($\alpha=0.05$, red); BH''s cutoff (grey dotted) admits far more genes. **Right:** for each method, the count of true discoveries (green) and false discoveries (red) it makes. Bonferroni and Holm find only the very strongest handful with essentially zero false positives; BH recovers many more real genes at the cost of a controlled minority of false ones. The realised false-discovery fraction for BH sits near the target $q=0.10$ — and, being an expectation, lands at or below $q$ on average across many such screens, as the theorem promises.'
+m = 5000
+m1 = 200
+# real effects: t-statistics shifted; nulls centered. Convert to two-sided p via normal approx.
+def two_sided_p(z):
+    from math import erf, sqrt
+    cdf = np.vectorize(lambda u: 0.5 * (1 + erf(u / sqrt(2))))
+    return 2 * (1 - cdf(np.abs(z)))
+
+z_alt  = rng.normal(3.6, 1.0, size=m1)     # real effects: shifted statistics
+z_null = rng.normal(0.0, 1.0, size=m - m1) # true nulls
+z = np.concatenate([z_alt, z_null])
+is_alt = np.concatenate([np.ones(m1, bool), np.zeros(m - m1, bool)])
+pvals = two_sided_p(z)
+order = np.argsort(pvals)
+pvals, is_alt = pvals[order], is_alt[order]
+ranks = np.arange(1, m + 1)
+
+alpha, q = 0.05, 0.10
+# Bonferroni
+rej_bonf = pvals <= alpha / m
+# Holm
+holm_t = alpha / (m - ranks + 1)
+fail = pvals > holm_t
+first_fail = int(np.argmax(fail)) if fail.any() else m
+rej_holm = np.zeros(m, bool); rej_holm[:first_fail] = True
+# BH
+k_bh, rej_bh = bh_threshold(pvals, q)
+
+def tallies(rej):
+    return int((rej & is_alt).sum()), int((rej & ~is_alt).sum())
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.9))
+axL.scatter(ranks, pvals, s=4, color=GREY, alpha=0.5)
+axL.plot(ranks, (ranks / m) * q, color=ACCENT, lw=1.8, label=fr"BH $\frac{{k}}{{m}}q$")
+axL.axhline(alpha / m, color=REJECT, lw=1.4, label=r"Bonferroni $\alpha/m$")
+if k_bh > 0:
+    axL.axvline(k_bh, color=GREY, ls=":", lw=1.3, label=f"BH cutoff k={k_bh}")
+axL.set_xlim(0, 200); axL.set_ylim(0, 0.004)
+axL.set_xlabel("rank $k$"); axL.set_ylabel("p-value")
+axL.set_title("Thresholds on the screen"); axL.legend(loc="upper left", fontsize=8)
+
+methods = ["Bonferroni", "Holm", "BH"]
+td = [tallies(r)[0] for r in (rej_bonf, rej_holm, rej_bh)]
+fd = [tallies(r)[1] for r in (rej_bonf, rej_holm, rej_bh)]
+xpos = np.arange(3)
+axR.bar(xpos, td, color=ALTC, label="true discoveries")
+axR.bar(xpos, fd, bottom=td, color=REJECT, label="false discoveries")
+axR.set_xticks(xpos); axR.set_xticklabels(methods)
+axR.set_ylabel("# rejections"); axR.set_title(f"Recovered of {m1} real effects")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+for name, r in zip(methods, (rej_bonf, rej_holm, rej_bh)):
+    t, f = tallies(r); R = t + f
+    fdp = f / max(R, 1)
+    print(f"{name:11s}: rejects {R:3d}  true {t:2d}  false {f:2d}  FDP {fdp:.3f}")
+```
+
+Read the printout. Bonferroni and Holm find only the genes with overwhelming evidence —
+they hold the chance of *any* false gene to under $5\%$, and consequently recover a small
+fraction of the 200 real effects. BH, by tolerating a $10\%$ false-discovery *fraction*,
+hands the lab a much longer shortlist that captures many more real genes, with a realised
+false-discovery proportion hovering around the $q=0.10$ it promised. (On *this* particular
+draw the proportion may land a little above $0.10$ and on another a little below — $q$ bounds
+the *expected* proportion across many such screens, @thm-bh, not the figure from any single
+run.) **Neither is "right" — they
+answer different questions.** If a false gene costs a million-dollar follow-up, you want
+Holm. If false genes are cheaply triaged at the bench and missing real ones is the true
+cost, you want BH.
+
+## Example 2 — A/B testing: one experiment, many segments {#sec-abtest}
+
+The industrial face of the problem. A product team ships a new checkout button and runs one
+A/B experiment, then asks not just "did it help overall?" but slices the result: by
+country, device, browser, new-vs-returning user, traffic source — say $m=20$ segment
+hypotheses off one experiment. Suppose the button **truly does nothing** in every segment
+(the complete null). How often does at least one segment light up as "significant" at the
+naive $0.05$, and what do the corrections do?
+
+```{python}
+#| label: fig-abtest
+#| fig-cap: 'A/B test sliced into $m=20$ segments where the change truly does nothing (complete null). We simulate the experiment 5000 times. **Left:** the distribution of the *number* of segments that cross the naive $p<0.05$ — a false alarm in at least one segment happens in a majority of experiments, with several segments lighting up not rarely. **Right:** the fraction of experiments producing at least one false ''winning segment'' under each rule. The naive per-segment test fires falsely about $64\%$ of the time ($1-0.95^{20}$); Bonferroni and Holm hold it to the promised $5\%$. This is the dashboard-slicing trap that makes teams ship changes that do nothing.'
+m = 20
+n_sims = 5000
+alpha = 0.05
+naive_any = 0; bonf_any = 0; holm_any = 0
+naive_counts = np.zeros(n_sims, int)
+for s in range(n_sims):
+    # complete null: 20 independent z-tests of a true null -> uniform p-values
+    pv = rng.uniform(0, 1, size=m)
+    pv_sorted = np.sort(pv)
+    naive = pv <= alpha
+    naive_counts[s] = int(naive.sum())
+    naive_any += int(naive.any())
+    bonf_any += int((pv <= alpha / m).any())
+    holm_t = alpha / (m - np.arange(1, m + 1) + 1)
+    fail = pv_sorted > holm_t
+    ff = int(np.argmax(fail)) if fail.any() else m
+    holm_any += int(ff > 0)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+vals, counts = np.unique(naive_counts, return_counts=True)
+axL.bar(vals, counts / n_sims, color=NULLC)
+axL.set_xlabel("# segments with naive $p<0.05$")
+axL.set_ylabel("fraction of experiments")
+axL.set_title("How many false 'winners' per experiment")
+
+rates = [naive_any / n_sims, bonf_any / n_sims, holm_any / n_sims]
+axR.bar(["naive", "Bonferroni", "Holm"], rates,
+        color=[REJECT, ALTC, ACCENT])
+axR.axhline(alpha, color=GREY, ls="--", lw=1.2, label=r"target $\alpha=0.05$")
+axR.set_ylabel("P(at least one false winner)")
+axR.set_title("Family-wise error, complete null")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"naive any-false rate = {naive_any/n_sims:.3f}  (theory 1-0.95^20 = {1-0.95**20:.3f})")
+print(f"Bonferroni any-false = {bonf_any/n_sims:.3f}   Holm any-false = {holm_any/n_sims:.3f}")
+```
+
+The simulation reproduces @eq-fwer-indep on the nose: with $20$ true-null segments the
+naive procedure raises a false winner in about
+$`{python} f"{naive_any/n_sims:.0%}"`$ of experiments, matching
+$1-0.95^{20}=`{python} f"{1-0.95**20:.3f}"`$, while Bonferroni and Holm hold it to the
+promised $5\%$. Here FWER is the *right* goal: each "winning segment" triggers a costly
+product decision, and the complete null is plausible (most UI tweaks do nothing), so you
+want to be protected against making *any* false claim. The contrast with the genomics screen
+is the whole lesson — same mathematics, opposite tolerance for error, opposite correction.
+
+::: {.callout-tip title="You might be asked"}
+*"A colleague ran an A/B test, found nothing overall, then sliced by ten segments and found
+one significant — should you ship to that segment?"* This is the canonical interview trap.
+The answer: **no, not on that evidence.** Slicing into ten segments is ten tests; under the
+complete null the chance of at least one $p<0.05$ is $1-0.95^{10}\approx 40\%$, so a lone
+significant segment is exactly what pure noise produces. Either pre-register the segment
+hypotheses and apply a correction (Bonferroni/Holm if any false ship is costly, BH if you
+are screening many segments for follow-up), or treat the finding as *hypothesis-generating*
+and confirm it in a fresh experiment. The mark of judgment is recognising that the
+*post-hoc selection* of the winning slice is what invalidates the naive p-value.
+:::
+
+## Example 3 — the edge of applicability: heavily dependent tests {#sec-edge}
+
+Now push the methods where they strain. The FDR theorem (@thm-bh) assumed **independent**
+p-values; the FWER bounds (Bonferroni, Holm) survive any dependence but become *very*
+conservative under strong positive dependence. We construct a family of $m=100$ tests whose
+statistics are strongly positively correlated (a single shared latent factor drives them
+all — think a batch effect contaminating every gene at once), with **every null true**, and
+watch what the corrections do.
+
+```{python}
+#| label: fig-dependence
+#| fig-cap: 'The edge of applicability: $m=100$ true-null tests with statistics sharing a common latent factor (correlation $\rho\approx 0.6$), simulated 3000 times. **Left:** the distribution of the number of naive false alarms is *over-dispersed* compared with the independent case (grey) — under positive dependence false alarms come in clumps (many or none), not the steady $m\alpha$ trickle independence predicts. **Right:** the realised FWER. Bonferroni/Holm still control it (the bound is dependence-free) but are now *very* conservative — the actual FWER sits far below $0.05$ because the shared factor makes simultaneous small p-values rarer than the worst case. BH''s FDR control, derived under independence, also survives here because positive dependence satisfies the PRDS condition — but the realised FDR is well under $q$, signalling lost power.'
+m = 100
+n_sims = 3000
+rho = 0.6
+alpha = 0.05
+from math import erf, sqrt
+ncdf = np.vectorize(lambda u: 0.5 * (1 + erf(u / sqrt(2))))
+
+dep_counts = np.zeros(n_sims, int)
+indep_counts = np.zeros(n_sims, int)
+fwer_bonf = 0; fwer_holm = 0
+for s in range(n_sims):
+    shared = rng.normal(size=1)
+    z_dep = np.sqrt(rho) * shared + np.sqrt(1 - rho) * rng.normal(size=m)
+    p_dep = 2 * (1 - ncdf(np.abs(z_dep)))
+    dep_counts[s] = int((p_dep <= alpha).sum())
+    fwer_bonf += int((p_dep <= alpha / m).any())
+    ps = np.sort(p_dep)
+    holm_t = alpha / (m - np.arange(1, m + 1) + 1)
+    fail = ps > holm_t
+    ff = int(np.argmax(fail)) if fail.any() else m
+    fwer_holm += int(ff > 0)
+    # independent comparison
+    p_ind = rng.uniform(0, 1, size=m)
+    indep_counts[s] = int((p_ind <= alpha).sum())
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.8))
+bins = np.arange(0, 30) - 0.5
+axL.hist(indep_counts, bins=bins, density=True, color=GREY, alpha=0.55,
+         label="independent")
+axL.hist(dep_counts, bins=bins, density=True, color=NULLC, alpha=0.65,
+         label=fr"dependent $\rho={rho}$")
+axL.set_xlabel("# naive false alarms (all nulls true)")
+axL.set_ylabel("density"); axL.set_title("Dependence clumps the false alarms")
+axL.legend(fontsize=9, framealpha=0.9); axL.set_xlim(-0.5, 25)
+
+axR.bar(["naive", "Bonferroni", "Holm"],
+        [np.mean(dep_counts >= 1), fwer_bonf / n_sims, fwer_holm / n_sims],
+        color=[REJECT, ALTC, ACCENT])
+axR.axhline(alpha, color=GREY, ls="--", lw=1.2, label=r"$\alpha=0.05$")
+axR.set_ylabel("realised FWER"); axR.set_title("Control holds, but conservative")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"mean naive false alarms: indep {indep_counts.mean():.2f} (=m*alpha={m*alpha:.1f}),"
+      f" dependent {dep_counts.mean():.2f}")
+print(f"variance: indep {indep_counts.var():.2f}, dependent {dep_counts.var():.2f}")
+print(f"Bonferroni FWER {fwer_bonf/n_sims:.3f}  Holm FWER {fwer_holm/n_sims:.3f}")
+```
+
+The means match — both independent and dependent families average $m\alpha=`{python} f"{m*alpha:.0f}"`$
+false alarms, because the *expected* number of false alarms is $m\alpha$ regardless of
+dependence (linearity of expectation does not care about correlation). But the **variances
+diverge**: under positive dependence the false alarms *clump*, so you tend to get either a
+flood or none, never the steady trickle. This is why Bonferroni's worst-case bound is so
+slack here — the worst case (false alarms spread out to maximise the chance of *at least
+one*) is the opposite of what positive dependence produces. **The honest boundary:** when
+tests are strongly dependent, FWER methods over-correct (you lose real discoveries), and the
+clean BH guarantee needs the PRDS condition or the conservative BY correction. When
+dependence is severe and unknown, the right move is often to abandon the marginal-p-value
+machinery entirely and build the joint null distribution directly by **permutation**
+([INFR-E3]) — resampling preserves the dependence structure automatically and gives exact
+family-wise control without a union-bound penalty.
+
+# Failure modes and choosing the right tool {#sec-failure}
+
+## The three corrections side by side {#sec-sidebyside}
+
+The decision is not "which is best" but "which error am I controlling." The table is the
+practitioner's summary.
+
+| | **Bonferroni** | **Holm** | **Benjamini–Hochberg** |
+|---|---|---|---|
+| Controls | FWER $\le\alpha$ | FWER $\le\alpha$ | FDR $\le \frac{m_0}{m}q$ |
+| Threshold | flat $\alpha/m$ | step-down $\alpha/(m-j+1)$ | step-up rising $\frac{k}{m}q$ |
+| Dependence | any | any | independence or PRDS (else BY) |
+| Power | lowest | low (dominates Bonferroni) | high |
+| Use when | any false positive is costly; small $m$ | same as Bonferroni, always preferred | screening many hypotheses; controlled false-discovery fraction acceptable |
+
+::: {.callout-warning title="Pitfall"}
+**Holm dominates Bonferroni — there is no reason to ever use plain Bonferroni for testing.**
+Holm controls the same FWER under the same (no) assumptions and rejects everything
+Bonferroni does and sometimes more. The only thing Bonferroni retains is a tiny conceptual
+simplicity and the fact that its single threshold can be inverted into simultaneous
+*confidence intervals* (widen each interval to the $1-\alpha/m$ level), which the step-down
+Holm cannot do cleanly. If you want corrected *intervals*, use Bonferroni; if you want
+corrected *tests*, use Holm.
+:::
+
+## Misuses that an examiner will probe {#sec-misuses}
+
+::: {.callout-warning title="Pitfall"}
+**Correcting for the wrong family.** The correction must match the family of hypotheses you
+*could have* reported, not the ones you happened to test. If you ran $50$ tests but only
+"counted" the $5$ that looked promising, correcting for $m=5$ is a fiction — the inflation
+came from all $50$. Conversely, lumping genuinely separate studies into one giant family
+over-corrects and destroys power. Defining the family honestly, *before* looking at the
+data, is the hardest and most important judgement in the whole subject; the arithmetic of
+Bonferroni/Holm/BH is the easy part.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Does multiple-comparison correction change the p-values, or the threshold?"* Two
+equivalent framings, and you should be fluent in both. Bonferroni can be stated as "compare
+each $p_j$ to $\alpha/m$" (adjust the *threshold*) or as "compare the **adjusted p-value**
+$\tilde p_j=\min(m\,p_j,\,1)$ to $\alpha$" (adjust the *p-values*). Software usually returns
+adjusted p-values so you can keep eyeballing them against a fixed $0.05$. For BH the adjusted
+p-value (the **q-value**) is $\tilde p_{(k)}=\min_{\ell\ge k}\frac{m}{\ell}p_{(\ell)}$,
+enforced to be monotone — a $q$-value of $0.08$ means "if I call this and everything more
+significant a discovery, my expected false-discovery fraction is $8\%$." The interviewer is
+checking you know the two presentations are the same procedure.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just lower $\alpha$ to $0.001$ for everything and forget corrections?"* Because a
+fixed small $\alpha$ either over- or under-corrects depending on $m$, which you do not know
+in advance, and it controls neither FWER nor FDR at a stated level. The corrections tie the
+threshold to $m$ (and, for BH, to the data-adaptive rejection count) so that a *named* error
+rate is guaranteed. "Just use a smaller $\alpha$" is the instinct the entire field formalised
+into Bonferroni — and then improved past, twice (Holm, then BH).
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-D4 *Power and Sample Size*]**, which quantified a single test's
+ability to detect a real effect; multiplicity is the dual concern — the cost of running
+*many* tests is paid in false positives, and every correction here trades power (D4's
+quantity) for that protection. The deeper root is **[INFR-D1 *The Logic of Hypothesis
+Testing*]**, whose base-rate trap (most "significant" findings false when the prior of a
+real effect is low) is exactly the FDR made flesh: BH is the procedure that controls the
+quantity D1 showed could otherwise reach $50\%$.
+
+This article **closes the Hypothesis Testing movement**. From here:
+
+- **[INFR-E3 *Permutation Tests*]** — when tests are strongly dependent (@sec-edge), the
+  union-bound corrections over-pay; permutation builds the *joint* null distribution
+  directly and gives exact family-wise control that respects the dependence, at the cost of
+  computation. Multiple-comparison control and permutation are natural partners.
+- **Regression model selection** — "test every coefficient and keep the significant ones"
+  is the multiplicity problem wearing a regression hat; the inflation of false predictors in
+  stepwise selection is FWER loss, and information criteria / regularization (the Regression
+  track's AIC/BIC and lasso) are alternative answers to the same pressure.
+- **[INFR-E4 *The Bayesian Turn*]** — the Bayesian reframes multiplicity entirely: with a
+  hierarchical prior over the effects, shrinkage handles multiple comparisons automatically,
+  and there is no explicit correction at all. The FDR's $\frac{m_0}{m}$ factor is, in
+  disguise, the prior fraction of true nulls.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Y. Benjamini and Y. Hochberg, "Controlling the False Discovery
+  Rate: A Practical and Powerful Approach to Multiple Testing," *JRSS-B* 57 (1995) — the
+  paper that reframed the field; the proof of @thm-bh is theirs. S. Holm, "A Simple
+  Sequentially Rejective Multiple Test Procedure," *Scand. J. Statist.* 6 (1979) — the
+  step-down procedure and @thm-holm. C. E. Bonferroni's inequalities (1936) underlie
+  @lem-boole.
+- **The dependence story.** Y. Benjamini and D. Yekutieli, "The Control of the False
+  Discovery Rate in Multiple Testing under Dependency," *Ann. Statist.* 29 (2001) — proves
+  BH valid under PRDS and gives the $\ln m$-inflated BY correction for arbitrary dependence
+  (the Pitfall in @sec-bh-proof).
+- **The empirical-Bayes view.** J. Storey's *q-value* and the positive-FDR, and B. Efron's
+  *Large-Scale Inference* (2010), recast FDR control as estimating the local fraction of
+  nulls — the bridge to the Bayesian view of [INFR-E4] and the adaptive procedures that
+  recover BH's $\frac{m_0}{m}$ slack.
+- **Open threads this article deliberately deferred.** *Confidence intervals under
+  multiplicity* — simultaneous bands (Bonferroni, Scheffé, Tukey's HSD) are the
+  interval-side duals of these tests, owned by the design-of-experiments literature. *Online
+  / sequential multiplicity* — controlling FDR when hypotheses arrive in a stream
+  (alpha-investing) is an active area built on the same $V/R$ accounting. *Knockoffs* —
+  Barber and Candès's modern construction that controls FDR in regression variable selection
+  with finite-sample guarantees, linking this article directly to the Regression track.

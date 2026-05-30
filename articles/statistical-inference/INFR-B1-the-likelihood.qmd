@@ -1,0 +1,1008 @@
+---
+title: "The Likelihood: Reading Probability Backwards"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+DATA   = "#2b3a67"     # data / observed points
+CURVE  = "#c1121f"     # the likelihood / log-likelihood curve
+ACCENT = "#0a7d4d"     # highlights / the peak / true value
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded densities
+```
+
+> **Where this sits in the track.** This opens the **Likelihood Spine** — the engine room
+> of the whole track. It assumes [INFR-A1 *The Estimator as a Random Variable*], which
+> installed the one idea everything here rests on: that a statistic computed from data is
+> itself a random variable with a **sampling distribution**. From the Probability
+> Foundations track it borrows, each built there from the ground up, the **probability
+> mass and density functions** of the Bernoulli/binomial, Poisson, and Normal families
+> ([PROB-10], [PROB-12], [PROB-13]) and the fact that the **joint density of an
+> independent sample is the product of the individual densities** ([PROB-08]). Nothing
+> else is assumed above the Calculus-I floor — every derivative and logarithm identity is
+> on the page. This article installs the central *object* of estimation: the
+> **likelihood**, which reads the model's probability formula *backwards* — fixing the data
+> and letting the parameter vary. It sets up [INFR-B2] (maximum likelihood *maximizes* this
+> object), [INFR-B3] (Fisher information is its *curvature*), and [INFR-E4] (the Bayesian
+> posterior is this object *times a prior*).
+
+## Abstract {.unnumbered}
+
+A probability model is a formula $p(x \mid \theta)$ that, given a parameter $\theta$,
+tells you how probable each possible dataset $x$ is. Inference needs the reverse: the data
+$x$ are fixed and known — you already collected them — and the parameter $\theta$ is the
+unknown. The **likelihood** is that same formula read backwards: $L(\theta) = p(x \mid
+\theta)$ with $x$ held fixed and $\theta$ allowed to vary. This single change of viewpoint
+— which symbol is the variable — is the foundation of nearly all of estimation. This
+article builds the likelihood from first principles, proves carefully that it is **not** a
+probability distribution over $\theta$ (it need not integrate to one, and re-labeling the
+parameter changes its height), derives why we always work with its **logarithm** (products
+become sums, and the peak does not move), writes down the log-likelihood end-to-end for the
+four canonical models — Bernoulli/binomial, Normal with known and with unknown variance,
+and Poisson — and introduces the **score function** $\partial_\theta \log L$, the slope
+whose root the next article will chase. The single claim the article defends is that *the
+likelihood is the bridge from a forward-facing probability model to a backward-facing
+statement about the unknown that generated the data*.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A probability model gives you $p(x \mid \theta)$: with the parameter $\theta$ **fixed**,
+this is a distribution over the **data** $x$ — it says how the world rolls the dice. The
+**likelihood** is the *same function* with the roles swapped: the data $x$ you actually
+observed are **fixed**, and $\theta$ is the **variable**,
+$$
+L(\theta) \;=\; p(x \mid \theta), \qquad x \text{ fixed.}
+$$
+For an independent sample $x_1,\dots,x_n$, the joint probability factors into a product,
+so the likelihood is
+$$
+L(\theta) \;=\; \prod_{i=1}^n p(x_i \mid \theta),
+\qquad\text{and we almost always use its logarithm}\qquad
+\ell(\theta) \;=\; \sum_{i=1}^n \log p(x_i \mid \theta).
+$$
+The likelihood **ranks** parameter values by how well each explains the data you saw — a
+larger $L(\theta)$ means "$\theta$ makes these data more probable." It is **not** a
+probability distribution over $\theta$: it need not integrate to one, and it carries no
+prior belief. It is a *function we will maximize*, and its slope, the **score**
+$\partial_\theta \ell(\theta)$, points the way to the top.
+:::
+
+Everything below orbits that box. The hinge is the quiet phrase *roles swapped*. A coder
+meets $p(x \mid \theta)$ as a function you *call* with a fixed $\theta$ to get
+probabilities of outcomes — `binom.pmf(k, n, p)` with `p` pinned. The likelihood is the
+exact same expression, but now `k` is pinned (it is the count you observed) and `p` is the
+free variable you sweep. Same arithmetic, opposite question. The forward question is *"given
+this coin, how surprising is 7 heads?"* The backward question — the inference question — is
+*"given that I saw 7 heads, which coins are plausible?"* The likelihood is the function that
+answers the second by re-reading the first.
+
+# Why we are doing this: the problem that forced the idea {#sec-why}
+
+Keep one question in view for the entire article: **how do we measure how well a particular
+parameter value explains the data we actually saw?** Every definition and derivation below
+answers a piece of that. If a step feels like notation for its own sake, return here.
+
+## The problem: a model points the wrong way
+
+By [INFR-A1] we have estimators — recipes that turn a sample into a number — but so far we
+have invented them by instinct. "Estimate the mean? Average the data." That works for the
+mean because the recipe is obvious. It is hopeless the moment the question is sharper:
+*estimate the rate of a Poisson process from a week of counts; estimate the bias of a coin
+from a streak of flips; estimate both the center and the spread of a Normal at once.* We
+need a **principle** — a single rule that, handed any probability model and any dataset,
+*manufactures* an estimator instead of asking us to guess one. The likelihood is the raw
+material that principle (maximum likelihood, [INFR-B2]) will be built from.
+
+The obstacle is a mismatch of direction. A probability model is written **forwards**: you
+fix the parameter $\theta$ — the true coin bias, the true Poisson rate — and the model
+tells you the probability of each dataset the world might hand you. That is the natural way
+to *specify* a model and the only way to *simulate* from it. But the inference situation is
+backwards. You are not handed $\theta$ and asked for the data; you are handed the **data**
+and asked for $\theta$. The data are the known, fixed, already-collected thing. The
+parameter is the unknown. The model and the question point in opposite directions, and
+something must turn the model around.
+
+## The turn: fix the data, free the parameter
+
+The turn is almost embarrassingly simple, and that simplicity is exactly why it took a
+genius to *name* it and insist it be taken seriously. R. A. Fisher, in his 1922 paper *On
+the Mathematical Foundations of Theoretical Statistics*, drew a permanent line between two
+readings of one formula. The probability formula $p(x \mid \theta)$ has two slots. Decide
+which slot is the variable:
+
+- Pin $\theta$, let $x$ vary $\;\Rightarrow\;$ a **probability distribution** over datasets.
+  This is what the model is *for*.
+- Pin $x$ (at the data you saw), let $\theta$ vary $\;\Rightarrow\;$ the **likelihood**, a
+  function of the parameter. This is what *inference* needs.
+
+Fisher's word for the second reading was *likelihood*, and he was emphatic — almost
+combative — that it is **not** a probability. The same symbols, the same arithmetic, but a
+different object with different rules, because a different slot is now the variable. Holding
+that distinction straight is the entire conceptual content of this article; the rest is
+working it out for the models you will actually meet.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between probability and likelihood? People use the words
+interchangeably."* In casual speech, yes; in statistics they are opposite readings of the
+same function $p(x\mid\theta)$. **Probability** fixes the parameter and varies the data:
+"given a fair coin, the probability of 7 heads in 10 flips is $0.117$." **Likelihood**
+fixes the data and varies the parameter: "given that I observed 7 heads in 10 flips, the
+likelihood of the bias $p=0.5$ is $0.117$, of $p=0.7$ is $0.267$, of $p=0.9$ is $0.057$."
+The number $0.117$ is identical in both sentences — it is the *same evaluation of the same
+formula* — but in the first it is one entry in a distribution over outcomes that sums to
+one, and in the second it is one height on a curve over $p$ that does **not** sum (or
+integrate) to one. The interviewer wants to hear that the distinction is *which argument is
+held fixed*, and that likelihood is a function of the parameter, not a probability of it.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formula, here is the picture. You flipped a coin $10$ times and saw $7$ heads.
+You do not know the coin's bias $p$. Walk a candidate $p$ from $0$ to $1$ and, at each
+stop, ask the *forward* question the model can answer: *if the bias really were this $p$,
+how probable would my exact observation — 7 heads in 10 — have been?* That probability,
+plotted against $p$, is the likelihood curve. @fig-intuition draws it.
+
+```{python}
+#| label: fig-intuition
+#| fig-cap: "The likelihood for a coin, having observed 7 heads in 10 flips. Each point asks the forward question 'if the bias were this $p$, how probable is exactly 7 heads in 10?' and plots that probability against $p$. The curve **ranks** candidate biases: $p=0.7$ (green) makes the data most probable, $p=0.5$ is plausible, $p=0.1$ is nearly ruled out. The curve is the same binomial formula read backwards — data fixed, parameter swept. It is a function of $p$, not a probability distribution over $p$: the shaded area under it is not one."
+from math import comb
+
+n, k = 10, 7
+p_grid = np.linspace(0, 1, 400)
+lik = comb(n, k) * p_grid**k * (1 - p_grid)**(n - k)
+
+fig, ax = plt.subplots()
+ax.fill_between(p_grid, lik, color=FILL, alpha=0.45)
+ax.plot(p_grid, lik, color=CURVE, label=r"$L(p) = \binom{10}{7}\,p^7(1-p)^3$")
+phat = k / n
+ax.axvline(phat, color=ACCENT, lw=1.6, ls="--",
+           label=fr"peak at $p = {phat:.1f}$")
+for pv in (0.1, 0.5, 0.9):
+    Lv = comb(n, k) * pv**k * (1 - pv)**(n - k)
+    ax.scatter([pv], [Lv], color=DATA, zorder=4, s=40)
+    ax.annotate(f"$p={pv}$", (pv, Lv), textcoords="offset points",
+                xytext=(6, 6), fontsize=9, color=DATA)
+ax.set_xlabel("candidate bias $p$")
+ax.set_ylabel("likelihood $L(p)$")
+ax.set_title("Likelihood ranks the candidate biases")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+```
+
+Three things to read off the picture, each of which the formal section makes precise:
+
+- **The curve ranks, it does not measure probability of $\theta$.** Its *height* at $p$ is
+  the probability of the **data** under that $p$, not the probability that $p$ is the truth.
+  The whole curve is a comparison device: it says $p=0.7$ explains the data better than
+  $p=0.5$, which beats $p=0.1$ by a lot.
+- **The peak is the most-explanatory parameter.** The bias that makes the observed data
+  most probable is $\hat p = 0.7$ — which happens to be $7/10$, the obvious estimate. That
+  "happens to be" is no accident; it is the content of the next article.
+- **The area under it is meaningless.** Nothing forces $\int_0^1 L(p)\,dp = 1$. The
+  likelihood is a height-ranking, not a distribution. We prove this below, because it is the
+  single most common misunderstanding of the object.
+
+# The formal development {#sec-formal}
+
+## The likelihood, defined {#sec-defn}
+
+We start with the forward object, the thing a probability model hands you, and then turn it
+around. Throughout, $\theta$ denotes the unknown parameter (possibly a vector, e.g.
+$\theta=(\mu,\sigma^2)$ for the Normal); the data are observations $x_1,\dots,x_n$.
+
+For a single observation, the model supplies a **probability mass function** $p(x\mid\theta)$
+when $x$ is discrete (it returns an actual probability, $P(X=x)$ under parameter $\theta$),
+or a **probability density function** $f(x\mid\theta)$ when $x$ is continuous (its integral
+over a region gives a probability). Both are *forward* objects: with $\theta$ fixed they
+are non-negative and sum (or integrate) to one over all $x$. We write $p(\cdot)$ for either
+and say "mass/density" when the distinction matters.
+
+::: {#def-likelihood}
+**Definition (likelihood).** Given observed data $x = (x_1,\dots,x_n)$ from a model with
+parameter $\theta$, the **likelihood function** is the joint mass/density of the data,
+*read as a function of $\theta$ with $x$ held fixed*:
+$$
+L(\theta) \;=\; L(\theta \mid x) \;=\; p(x \mid \theta).
+$$
+If the observations are **independent** (the i.i.d. case from [PROB-08]), the joint
+mass/density factors into a product, so
+$$
+L(\theta) \;=\; \prod_{i=1}^n p(x_i \mid \theta).
+$$
+:::
+
+The factorization is not new mathematics — it is the definition of independence imported
+from probability, where for independent events the joint probability is the product of the
+individual ones, and for independent continuous variables the joint density is the product
+of the marginals ([PROB-08]). We state it here because *the product structure is the reason
+logarithms enter*, which is the whole of @sec-loglik.
+
+Two notational points, settled now so they never trip you later. First, the data $x$ are
+written on the right of the bar as a reminder that they are fixed, but they are *not* a
+conditioning event in the probability sense — the likelihood is a function of $\theta$
+alone, and $x$ is a fixed parameter of that function. Many texts write $L(\theta)$ and drop
+the $x$ entirely; we keep it when emphasis helps. Second, the likelihood is defined only up
+to a positive multiplicative constant that does not involve $\theta$: if
+$L(\theta) = c \cdot g(\theta)$ with $c>0$ free of $\theta$, then $L$ and $g$ rank
+parameters identically and either may be called "the likelihood." This is why, in
+@fig-intuition, the binomial coefficient $\binom{10}{7}$ — a constant in $p$ — can be kept
+or dropped without changing where the peak sits or how the values compare. We will use this
+freedom constantly.
+
+## Why the likelihood is *not* a probability distribution over $\theta$ {#sec-not-prob}
+
+This is the claim the whole article must defend, so we prove it rather than assert it. Two
+independent reasons, each fatal on its own.
+
+**Reason 1 — it need not integrate to one.** A probability density over $\theta$ would have
+to satisfy $\int L(\theta)\,d\theta = 1$. The likelihood carries no such guarantee, because
+the integration that *is* guaranteed runs over the wrong variable. The model's normalization
+says: with $\theta$ fixed, summing/integrating over all **data** gives one,
+$$
+\sum_{x} p(x \mid \theta) = 1 \quad(\text{discrete}),
+\qquad
+\int p(x \mid \theta)\,dx = 1 \quad(\text{continuous}),
+\qquad\text{for every fixed } \theta.
+$$
+Nothing in the model constrains the integral over $\theta$ with $x$ fixed. Take the coin of
+@fig-intuition, dropping the constant $\binom{10}{7}$ (allowed, by the previous section).
+Then $L(p) = p^7(1-p)^3$, and we can integrate it exactly. We do not need to *assume* any
+"Beta integral" formula — a short integration by parts builds it from scratch. Write
+$I(a,b) = \int_0^1 p^a(1-p)^b\,dp$. Integrate by parts with $u=(1-p)^b$ (so
+$du = -b(1-p)^{b-1}\,dp$) and $dv = p^a\,dp$ (so $v = \tfrac{p^{a+1}}{a+1}$); the boundary
+term $uv\big|_0^1$ vanishes because $p^{a+1}=0$ at $p=0$ and $(1-p)^b=0$ at $p=1$ (for
+$b\ge 1$), leaving
+$$
+I(a,b) = -\int_0^1 v\,du
+= \frac{b}{a+1}\int_0^1 p^{a+1}(1-p)^{b-1}\,dp
+= \frac{b}{a+1}\,I(a+1,\,b-1).
+$$
+This **reduction** lowers the second exponent by one each time, at the cost of a factor
+$\tfrac{b}{a+1}$ (then $\tfrac{b-1}{a+2}$, and so on). Applying it $b$ times drives the
+second exponent to zero, where the integral is elementary:
+$I(a+b,0)=\int_0^1 p^{a+b}\,dp = \tfrac{1}{a+b+1}$. Multiplying the collected factors,
+$$
+I(a,b) = \frac{b}{a+1}\cdot\frac{b-1}{a+2}\cdots\frac{1}{a+b}\cdot\frac{1}{a+b+1}
+= \frac{a!\,b!}{(a+b+1)!},
+$$
+where the last equality just rewrites the descending products as factorials
+($b(b-1)\cdots1 = b!$ in the numerator, and $(a+1)(a+2)\cdots(a+b+1) = \tfrac{(a+b+1)!}{a!}$
+in the denominator). For our coin, $a=7$, $b=3$:
+$$
+\int_0^1 p^7(1-p)^3\,dp = \frac{7!\,3!}{(7+3+1)!} = \frac{5040 \cdot 6}{39\,916\,800}
+= \frac{30\,240}{39\,916\,800} \approx 0.000757 \neq 1.
+$$
+
+```{python}
+#| label: fig-not-prob
+#| fig-cap: 'The likelihood is not a distribution over $\theta$. **Left:** with the parameter $p=0.7$ fixed, the binomial mass over the *data* $k$ sums to exactly one (blue bars) — that is what the model normalizes. **Right:** with the data $k=7$ fixed, the likelihood over the *parameter* $p$ integrates to $\approx 0.00076$, nowhere near one. Same formula, two readings: only the forward reading is a probability distribution.'
+from math import comb
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+
+# Left: forward reading, p fixed, distribution over data k.
+p_fixed = 0.7
+ks = np.arange(0, 11)
+pmf = np.array([comb(10, int(k)) * p_fixed**k * (1 - p_fixed)**(10 - k) for k in ks])
+axL.bar(ks, pmf, color=DATA, alpha=0.85)
+axL.set_xlabel("data: number of heads $k$")
+axL.set_ylabel("$p(k \\mid p=0.7)$")
+axL.set_title(f"Forward: sums to {pmf.sum():.3f}")
+
+# Right: backward reading, k=7 fixed, likelihood over p (constant dropped).
+p_grid = np.linspace(0, 1, 600)
+Lp = p_grid**7 * (1 - p_grid)**3
+area = np.trapezoid(Lp, p_grid)
+axR.fill_between(p_grid, Lp, color=FILL, alpha=0.5)
+axR.plot(p_grid, Lp, color=CURVE)
+axR.set_xlabel("parameter: bias $p$")
+axR.set_ylabel("$L(p) = p^7(1-p)^3$")
+axR.set_title(f"Backward: integrates to {area:.5f}")
+plt.tight_layout()
+print(f"forward sum over data      = {pmf.sum():.6f}  (= 1, the model normalizes here)")
+print(f"backward integral over p   = {area:.6f}  (not 1: likelihood is no distribution)")
+```
+
+**Reason 2 — re-labeling the parameter changes its height.** A genuine probability density
+transforms under a change of variable with a Jacobian factor, precisely so that
+probabilities (areas) are preserved. The likelihood does **no such thing** — it is just a
+height, evaluated at whatever name you give the parameter. Concretely, suppose we
+reparameterize the coin by its log-odds $\eta = \log\frac{p}{1-p}$ instead of $p$. The
+likelihood of a particular *coin* is the same physical quantity however we label it, so we
+simply substitute:
+$$
+L^*(\eta) = L\bigl(p(\eta)\bigr), \qquad p(\eta) = \frac{e^\eta}{1+e^\eta},
+$$
+with **no Jacobian factor** $\bigl|\frac{dp}{d\eta}\bigr|$. A probability density would
+*require* that factor, $f^*(\eta) = f\bigl(p(\eta)\bigr)\bigl|\frac{dp}{d\eta}\bigr|$, to
+keep total area at one. The likelihood refuses it, because it is not protecting any area.
+This is exactly the property that makes the maximum-likelihood estimate **invariant** to
+reparameterization (proved in [INFR-B2]): the peak of $L^*(\eta)$ sits at the log-odds of
+the peak of $L(p)$, untouched by any stretching. We show both readings side by side in
+@fig-reparam.
+
+```{python}
+#| label: fig-reparam
+#| fig-cap: 'A genuine density needs a Jacobian under reparameterization; the likelihood does not. The likelihood in $p$ (left) is *substituted* into the log-odds $\eta$ (right) with no Jacobian — the peak simply moves to $\eta=\log\frac{0.7}{0.3}$ (green), and the height at the peak is unchanged. A probability density (grey dashed, right) would be reshaped by the factor $|dp/d\eta|$ to preserve area, bending it away from the bare likelihood. The likelihood protects no area, so it ignores the Jacobian.'
+p_grid = np.linspace(1e-3, 1 - 1e-3, 600)
+Lp = p_grid**7 * (1 - p_grid)**3
+
+eta_grid = np.log(p_grid / (1 - p_grid))
+# Bare likelihood substituted into eta: no Jacobian.
+L_eta = Lp.copy()
+# What a *density* would do: multiply by |dp/deta| = p(1-p).
+dens_eta = Lp * (p_grid * (1 - p_grid))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.plot(p_grid, Lp, color=CURVE)
+axL.axvline(0.7, color=ACCENT, ls="--", lw=1.5)
+axL.set_xlabel("bias $p$"); axL.set_ylabel("$L(p)$")
+axL.set_title("Likelihood in $p$")
+
+axR.plot(eta_grid, L_eta, color=CURVE, label="likelihood (no Jacobian)")
+axR.plot(eta_grid, dens_eta, color=GREY, ls="--",
+         label=r"a density (with $|dp/d\eta|$)")
+axR.axvline(np.log(0.7 / 0.3), color=ACCENT, ls="--", lw=1.5,
+            label=r"peak $\eta=\log\frac{0.7}{0.3}$")
+axR.set_xlabel(r"log-odds $\eta=\log\frac{p}{1-p}$")
+axR.set_ylabel("value")
+axR.set_xlim(-4, 4)
+axR.set_title("Re-expressed in $\\eta$")
+axR.legend(loc="upper left", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**Do not read the likelihood as "the probability that $\theta$ takes this value."** It is
+not. $L(p=0.7)=0.267$ does **not** mean there is a $26.7\%$ chance the coin's bias is $0.7$.
+It means: *if the bias were $0.7$, the data you saw would have probability $0.267$.* The
+likelihood is a statement about the **data given a parameter**, organized as a function of
+the parameter — never a probability statement about the parameter. The only framework in
+which "$P(\theta = 0.7)$" is even a meaningful phrase is the Bayesian one, and getting there
+requires multiplying the likelihood by a **prior** and re-normalizing — exactly Bayes'
+theorem, the subject of [INFR-E4]. Until you supply a prior, the likelihood alone says
+nothing about the probability *of* $\theta$.
+:::
+
+## Why we work with the log-likelihood {#sec-loglik}
+
+Two forces push us, every single time, to take the logarithm of the likelihood before doing
+anything with it. We derive both, because "always use logs" is folklore until you see why.
+
+::: {#def-loglik}
+**Definition (log-likelihood).** The **log-likelihood** is the natural logarithm of the
+likelihood,
+$$
+\ell(\theta) \;=\; \log L(\theta).
+$$
+For an independent sample, applying $\log$ to the product in @def-likelihood and using
+$\log(ab)=\log a+\log b$ turns it into a sum:
+$$
+\ell(\theta) \;=\; \log \prod_{i=1}^n p(x_i\mid\theta)
+\;=\; \sum_{i=1}^n \log p(x_i\mid\theta).
+$$
+:::
+
+**Force 1 — products become sums, which we can differentiate and which add up
+information.** A product of $n$ factors is a nightmare to differentiate: the product rule
+forces every term to drag along all the others. A sum is trivial — the derivative of a sum
+is the sum of the derivatives, term by term, with nothing entangled. Since the next article
+finds the peak by differentiating, we *want* a sum. There is a deeper payoff too: because
+$\ell(\theta) = \sum_i \log p(x_i\mid\theta)$ is an **additive** accumulation over the
+data, each independent observation contributes its own additive piece. That additivity is
+what makes "twice the data carries twice the information" literally true later ([INFR-B3]),
+and it is why the score and the Fisher information will both be *sums over observations*.
+
+**The logarithm does not move the peak.** This is the fact that makes the swap legitimate,
+and it has to be proved, not waved at. The natural logarithm is **strictly increasing**: if
+$0 < a < b$ then $\log a < \log b$. (Reason from Calc 1: its derivative is $\frac{d}{dt}\log
+t = 1/t > 0$ for all $t>0$, and a function with everywhere-positive derivative is strictly
+increasing.) A strictly increasing transform preserves *order*: it can stretch and squash
+the vertical axis but never reorders which input is largest. So if $\theta^\star$ maximizes
+$L$ — meaning $L(\theta^\star)\ge L(\theta)$ for all $\theta$ — then applying the
+order-preserving $\log$ to both sides gives $\ell(\theta^\star) = \log L(\theta^\star) \ge
+\log L(\theta) = \ell(\theta)$ for all $\theta$, so the very same $\theta^\star$ maximizes
+$\ell$. The maximizer is identical; only the height is rescaled. @fig-loglik shows the two
+curves sharing a peak.
+
+```{python}
+#| label: fig-loglik
+#| fig-cap: 'The log never moves the peak. **Left:** the likelihood $L(p)=p^7(1-p)^3$ for 7 heads in 10. **Right:** its log-likelihood $\ell(p)=7\log p + 3\log(1-p)$. The vertical scales differ wildly — $\ell$ is large and negative — but both peak at exactly $p=0.7$ (green line). Because $\log$ is strictly increasing it preserves the *location* of the maximum while turning the awkward product into a clean sum.'
+p_grid = np.linspace(1e-3, 1 - 1e-3, 600)
+Lp = p_grid**7 * (1 - p_grid)**3
+ell = 7 * np.log(p_grid) + 3 * np.log(1 - p_grid)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.plot(p_grid, Lp, color=CURVE)
+axL.axvline(0.7, color=ACCENT, ls="--", lw=1.5)
+axL.set_xlabel("$p$"); axL.set_ylabel("$L(p)$")
+axL.set_title("Likelihood")
+
+axR.plot(p_grid, ell, color=CURVE)
+axR.axvline(0.7, color=ACCENT, ls="--", lw=1.5, label="peak at $p=0.7$")
+axR.set_xlabel("$p$"); axR.set_ylabel(r"$\ell(p)=7\log p + 3\log(1-p)$")
+axR.set_ylim(-12, -5)
+axR.set_title("Log-likelihood (same peak)")
+axR.legend(loc="lower center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+**Force 2 — numerical survival.** Even setting calculus aside, the raw likelihood is
+unusable on a computer for any real sample. Each factor $p(x_i\mid\theta)$ is a probability
+or density, often well below $1$; multiplying $n$ of them drives the product toward zero
+exponentially fast, and floating-point hardware *underflows* — silently rounds the product
+to exactly $0.0$ — long before $n$ is large. Once it is $0.0$, every comparison is a tie and
+all information is destroyed. Logs convert the doomed product into a sum of moderate
+negative numbers, which add up to a large but perfectly representable negative number. We
+make the underflow concrete in @fig-underflow.
+
+```{python}
+#| label: fig-underflow
+#| fig-cap: 'Why logs are not optional in practice. For a Bernoulli sample of $p=0.5$, the raw likelihood $\prod_i p(x_i)$ (left, log-scaled axis) collapses toward the smallest representable float and then underflows to exactly zero around $n\approx 1075$ — past that point the product is indistinguishable from impossible. The log-likelihood (right) declines linearly and stays a finite, well-behaved number for any sample size. Real datasets have thousands to millions of points; only the log survives.'
+ns = np.arange(1, 1400, 1)
+# Each Bernoulli(0.5) factor contributes 0.5 to the product.
+raw = 0.5 ** ns                      # underflows to 0.0 for large n
+logL = ns * np.log(0.5)              # stays finite and linear
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.semilogy(ns, np.where(raw > 0, raw, np.nan), color=CURVE)
+underflow_n = ns[np.argmax(raw == 0.0)] if np.any(raw == 0.0) else None
+if underflow_n is not None:
+    axL.axvline(underflow_n, color=GREY, ls=":", lw=1.4)
+    axL.annotate(f"underflow\nat n$\\approx${underflow_n}",
+                 (underflow_n, 1e-200), fontsize=8, color=GREY,
+                 ha="right")
+axL.set_xlabel("sample size $n$"); axL.set_ylabel(r"raw $\prod_i p(x_i)$ (log axis)")
+axL.set_title("Raw likelihood underflows to 0")
+
+axR.plot(ns, logL, color=CURVE)
+axR.set_xlabel("sample size $n$"); axR.set_ylabel(r"$\ell = \sum_i \log p(x_i)$")
+axR.set_title("Log-likelihood stays finite")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why do we maximize the log-likelihood instead of the likelihood — doesn't taking a log
+change the answer?"* It changes the *value* but not the *location* of the maximum, and the
+location is all we want. The proof is one line: $\log$ is strictly increasing (its
+derivative $1/t$ is positive), so it preserves the ordering of values and therefore the
+argmax. We switch to logs for three reasons you should be able to list: (1) it turns the
+product $\prod_i p(x_i\mid\theta)$ into a sum $\sum_i \log p(x_i\mid\theta)$, which is what
+makes differentiation tractable; (2) that sum is additive over independent observations,
+which is the seed of "information adds" in Fisher-information theory; and (3) it averts
+floating-point underflow, since a product of many sub-one factors collapses to zero while a
+sum of logs stays finite. The follow-up — *"natural log or log base 10?"* — base does not
+matter for the argmax (a positive constant multiple), but natural log is conventional
+because $\frac{d}{dt}\log t = 1/t$ keeps the derivatives clean.
+:::
+
+## The canonical likelihoods, derived end-to-end {#sec-canonical}
+
+We now write down $\ell(\theta)$ for the four models you will meet constantly. Each is a
+direct application of @def-loglik to a mass/density imported from the Probability track —
+the only work is honest algebra, every step shown.
+
+### Bernoulli and binomial {#sec-bernoulli}
+
+A **Bernoulli** trial is a single coin flip: $X=1$ ("head") with probability $p$, $X=0$
+("tail") with probability $1-p$. The mass function can be written in one expression that
+selects the right factor by the value of $x\in\{0,1\}$ (since $p^1(1-p)^0=p$ and
+$p^0(1-p)^1=1-p$):
+$$
+p(x\mid p) = p^{x}(1-p)^{1-x}, \qquad x\in\{0,1\}.
+$$
+For $n$ independent flips $x_1,\dots,x_n$, the likelihood is the product, which we simplify
+by collecting exponents (the exponents on $p$ add up, and so do those on $1-p$):
+$$
+L(p) = \prod_{i=1}^n p^{x_i}(1-p)^{1-x_i}
+     = p^{\sum_i x_i}\,(1-p)^{\sum_i (1-x_i)}
+     = p^{\,k}\,(1-p)^{\,n-k},
+\qquad k := \sum_{i=1}^n x_i,
+$$
+where $k$ is simply the total number of heads. Taking logs with $\log(a^c)=c\log a$:
+$$
+\boxed{\;\ell(p) = k\log p + (n-k)\log(1-p).\;}
+$$ {#eq-loglik-bernoulli}
+The **binomial** model is the same content packaged differently: if we observe only the
+count $k$ out of $n$ trials (not the individual flips), its mass adds the counting factor
+$\binom{n}{k}$ for the number of head/tail orderings that give $k$ heads:
+$$
+p(k\mid p) = \binom{n}{k} p^k (1-p)^{n-k}
+\;\Rightarrow\;
+\ell(p) = \log\binom{n}{k} + k\log p + (n-k)\log(1-p).
+$$
+The extra term $\log\binom{n}{k}$ is **constant in $p$**, so by the constant-freedom of
+@sec-defn it does not affect the ranking of biases or the location of the peak — the
+binomial and Bernoulli likelihoods are equivalent for inference about $p$. This is the curve
+of @fig-intuition with $n=10$, $k=7$.
+
+### Poisson {#sec-poisson}
+
+The **Poisson** model counts events in a fixed window — calls to a help line in an hour,
+mutations along a stretch of DNA, goals in a match — when events occur independently at an
+average rate $\lambda>0$. Its mass over a count $x\in\{0,1,2,\dots\}$ is
+$$
+p(x\mid\lambda) = \frac{\lambda^x e^{-\lambda}}{x!}.
+$$
+For $n$ independent counts $x_1,\dots,x_n$, the likelihood is the product; we collect the
+$\lambda$ powers (exponents add), the exponentials (exponents add, giving $e^{-n\lambda}$),
+and the factorials:
+$$
+L(\lambda) = \prod_{i=1}^n \frac{\lambda^{x_i} e^{-\lambda}}{x_i!}
+= \frac{\lambda^{\sum_i x_i}\, e^{-n\lambda}}{\prod_i x_i!}.
+$$
+Take logs, using $\log(ab)=\log a+\log b$, $\log(a/b)=\log a-\log b$, $\log(\lambda^s)=s\log
+\lambda$, and $\log e^{-n\lambda} = -n\lambda$:
+$$
+\boxed{\;
+\ell(\lambda) = \Bigl(\textstyle\sum_{i} x_i\Bigr)\log\lambda \;-\; n\lambda
+\;-\; \underbrace{\textstyle\sum_i \log(x_i!)}_{\text{constant in }\lambda}.
+\;}
+$$ {#eq-loglik-poisson}
+The final sum involves only the data, not $\lambda$, so it is an additive constant we may
+keep or drop. What remains, $(\sum_i x_i)\log\lambda - n\lambda$, carries all the
+dependence on the rate.
+
+### Normal with known variance {#sec-normal-known}
+
+The **Normal** (Gaussian) model with mean $\mu$ and variance $\sigma^2$ has density
+$$
+f(x\mid\mu,\sigma^2) = \frac{1}{\sqrt{2\pi\sigma^2}}\,
+\exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr).
+$$
+Suppose for now $\sigma^2$ is **known** and only the mean $\mu$ is unknown. For an
+independent sample, the likelihood is the product of densities,
+$$
+L(\mu) = \prod_{i=1}^n \frac{1}{\sqrt{2\pi\sigma^2}}\,
+\exp\!\Bigl(-\frac{(x_i-\mu)^2}{2\sigma^2}\Bigr)
+= (2\pi\sigma^2)^{-n/2}\,
+\exp\!\Bigl(-\frac{1}{2\sigma^2}\sum_{i=1}^n (x_i-\mu)^2\Bigr),
+$$
+where we collected the $n$ identical front factors into one power and used
+$\prod_i e^{a_i} = e^{\sum_i a_i}$ to merge the exponentials. Taking logs (the log of the
+front factor, plus the exponent itself since $\log e^z = z$):
+$$
+\boxed{\;
+\ell(\mu) = -\frac{n}{2}\log(2\pi\sigma^2)
+\;-\; \frac{1}{2\sigma^2}\sum_{i=1}^n (x_i-\mu)^2.
+\;}
+$$ {#eq-loglik-normal-known}
+Look at the structure: the first term is constant in $\mu$, and the second is a *negative*
+multiple of the sum of squared deviations $\sum_i (x_i-\mu)^2$. So **maximizing this
+log-likelihood over $\mu$ is identical to minimizing the sum of squared deviations** — the
+likelihood viewpoint and the least-squares viewpoint coincide exactly under Gaussian noise.
+This is the same equivalence the Regression track meets from the other side in
+[REGR-01]; here we are seeing *why* it holds, at the level of the general principle, before
+any line is fit.
+
+### Normal with unknown variance — a two-parameter likelihood {#sec-normal-unknown}
+
+Now the realistic case: **both** $\mu$ and $\sigma^2$ unknown, so $\theta=(\mu,\sigma^2)$ is
+a two-dimensional parameter. The density is the same, but we no longer treat $\sigma^2$ as a
+fixed constant — it is a variable we keep. Writing $v := \sigma^2$ to reduce clutter,
+$$
+L(\mu, v) = (2\pi v)^{-n/2}\,
+\exp\!\Bigl(-\frac{1}{2v}\sum_{i=1}^n (x_i-\mu)^2\Bigr),
+$$
+and the log-likelihood, keeping every term that now depends on a parameter:
+$$
+\boxed{\;
+\ell(\mu, v) = -\frac{n}{2}\log(2\pi) \;-\; \frac{n}{2}\log v
+\;-\; \frac{1}{2v}\sum_{i=1}^n (x_i-\mu)^2.
+\;}
+$$ {#eq-loglik-normal-unknown}
+We split $\log(2\pi v) = \log(2\pi) + \log v$ so the $\log v$ term — which *does* depend on
+the variance — stands on its own; only $-\frac n2\log(2\pi)$ is a genuine constant. This is
+a **surface** over the $(\mu, v)$ plane, not a curve, and finding its peak in [INFR-B2]
+will require a partial derivative in each direction — exactly the multivariable critical
+point we previewed. @fig-normal-surface draws it for a small real-style sample.
+
+```{python}
+#| label: fig-normal-surface
+#| fig-cap: 'The two-parameter Normal log-likelihood $\ell(\mu, \sigma^2)$ for a sample of $n=12$ measurements, drawn as a contour map over the $(\mu,\sigma^2)$ plane. Unlike the one-parameter coin, the likelihood is now a *surface*: every $(\mu,\sigma^2)$ pair gets a height. The single peak (green) sits at the sample mean and the sample-based variance. The next article finds this peak by setting both partial derivatives to zero — the multivariable version of ''flat at the top''.'
+rng = np.random.default_rng(11)
+data = rng.normal(loc=20.0, scale=3.0, size=12)
+xbar = data.mean()
+
+mu_grid = np.linspace(xbar - 3, xbar + 3, 200)
+v_grid = np.linspace(3.0, 22.0, 200)
+MU, V = np.meshgrid(mu_grid, v_grid)
+n = len(data)
+SS = np.array([[np.sum((data - m) ** 2) for m in mu_grid] for _ in v_grid])
+LL = -0.5 * n * np.log(2 * np.pi) - 0.5 * n * np.log(V) - SS / (2 * V)
+
+mle_mu = xbar
+mle_v = np.mean((data - xbar) ** 2)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.4))
+cs = ax.contour(MU, V, LL, levels=18, cmap="viridis")
+ax.clabel(cs, inline=True, fontsize=7, fmt="%.0f")
+ax.scatter([mle_mu], [mle_v], color=ACCENT, s=90, zorder=5,
+           edgecolor="white", linewidth=1.5, label="peak")
+ax.set_xlabel(r"mean $\mu$")
+ax.set_ylabel(r"variance $\sigma^2$")
+ax.set_title(r"Normal log-likelihood surface $\ell(\mu,\sigma^2)$")
+ax.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+print(f"sample mean (peak in mu)        = {mle_mu:.3f}")
+print(f"mean squared dev (peak in var)  = {mle_v:.3f}")
+```
+
+## The score: the slope whose root we will chase {#sec-score}
+
+We close the formal development by introducing the object that turns the likelihood from a
+picture into a computation. The peak of $\ell$ — the most-explanatory parameter — is, by
+ordinary Calc 1, a place where the curve is **flat**: its derivative is zero. That derivative
+has a name.
+
+::: {#def-score}
+**Definition (score function).** The **score** is the derivative of the log-likelihood with
+respect to the parameter,
+$$
+U(\theta) \;=\; \frac{\partial}{\partial\theta}\,\ell(\theta)
+\;=\; \frac{\partial}{\partial\theta}\sum_{i=1}^n \log p(x_i\mid\theta)
+\;=\; \sum_{i=1}^n \frac{\partial}{\partial\theta}\log p(x_i\mid\theta).
+$$
+(The sum came outside the derivative because the derivative of a sum is the sum of the
+derivatives — the additivity bought by the log in @sec-loglik.) When $\theta$ is a vector,
+the score is the vector of partial derivatives, one per component.
+:::
+
+The score is the *slope* of the log-likelihood curve. Where the curve climbs, $U(\theta)>0$
+— pushing the candidate parameter higher would explain the data better. Where it descends,
+$U(\theta)<0$. At the peak the slope is zero: $U(\hat\theta)=0$. That equation,
+$U(\theta)=0$, is the **score equation**, and solving it is exactly how the next article
+finds the maximum-likelihood estimate. We compute the score for our running coin to make it
+concrete. From @eq-loglik-bernoulli, $\ell(p) = k\log p + (n-k)\log(1-p)$, and using
+$\frac{d}{dp}\log p = \frac1p$ and $\frac{d}{dp}\log(1-p) = \frac{-1}{1-p}$ (chain rule, the
+inner derivative of $1-p$ being $-1$):
+$$
+U(p) = \frac{d\ell}{dp} = \frac{k}{p} - \frac{n-k}{1-p}.
+$$
+Setting $U(p)=0$ and solving (multiply through by $p(1-p)$, giving $k(1-p)=(n-k)p$, i.e.
+$k - kp = np - kp$, i.e. $k = np$) yields $\hat p = k/n$ — the sample proportion, the
+"obvious" estimate, now *derived* as the root of the score rather than guessed. We are
+deliberately stopping one inch short of that conclusion, because turning the score equation
+into the maximum-likelihood estimator — and checking it is a maximum, not a minimum or a
+boundary — is the whole job of [INFR-B2]. @fig-score shows the log-likelihood and its
+score sharing the crossing point.
+
+```{python}
+#| label: fig-score
+#| fig-cap: 'The score is the slope of the log-likelihood. **Top:** $\ell(p)=k\log p+(n-k)\log(1-p)$ for 7 heads in 10, peaking at $p=0.7$. **Bottom:** the score $U(p)=\ell''(p)=k/p-(n-k)/(1-p)$, which is positive while $\ell$ climbs, negative while it falls, and crosses zero (green) exactly under the peak. Solving the *score equation* $U(p)=0$ recovers $\hat p = k/n = 0.7$ — the root we will chase in the next article.'
+n, k = 10, 7
+p_grid = np.linspace(1e-3, 1 - 1e-3, 600)
+ell = k * np.log(p_grid) + (n - k) * np.log(1 - p_grid)
+score = k / p_grid - (n - k) / (1 - p_grid)
+phat = k / n
+
+fig, (axT, axB) = plt.subplots(2, 1, figsize=(6.4, 5.4), sharex=True)
+axT.plot(p_grid, ell, color=CURVE)
+axT.axvline(phat, color=ACCENT, ls="--", lw=1.5)
+axT.set_ylabel(r"$\ell(p)$")
+axT.set_ylim(-12, -5)
+axT.set_title("Log-likelihood and its score")
+
+axB.axhline(0, color=GREY, lw=1.2)
+axB.plot(p_grid, score, color=CURVE)
+axB.axvline(phat, color=ACCENT, ls="--", lw=1.5, label=fr"$U(p)=0$ at $p={phat:.1f}$")
+axB.set_xlabel("$p$"); axB.set_ylabel(r"score $U(p)=\ell'(p)$")
+axB.set_ylim(-60, 60)
+axB.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"What is the score function, and why do we care about where it is zero?"* The score is the
+gradient of the log-likelihood, $U(\theta)=\partial_\theta\ell(\theta)$ — the slope of the
+"how well does $\theta$ explain the data" curve. We care about its root because a smooth
+function is flat at its peak, so the most-explanatory parameter (the MLE) satisfies the
+*score equation* $U(\hat\theta)=0$. Two follow-ups worth pre-empting: the score has expected
+value **zero** at the true parameter (a fact proved in [INFR-B3] that makes it a kind of
+unbiased "estimating equation"), and its *variance* is the **Fisher information** — the
+curvature of $\ell$ at the peak, which measures how sharply the data pin down $\theta$. So
+the score is the hinge connecting this article (the likelihood object) to the next two (the
+MLE as its root, and Fisher information as its spread).
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the construction on real, messy data — never a toy rigged to flatter the method.
+We carry two examples end to end and then walk to the edge where the likelihood's
+*comparison* nature, by itself, stops being enough.
+
+## Example 1 — goals per match: a Poisson likelihood {#sec-ex-poisson}
+
+Counts of goals scored by a team across a season are a textbook home for the Poisson model:
+goals are rare-ish, roughly independent events accumulating at some average rate $\lambda$
+per match. We take a season's worth of match goal-counts and build the likelihood over the
+rate $\lambda$, by hand from @eq-loglik-poisson.
+
+```{python}
+#| label: fig-ex-poisson
+#| fig-cap: 'A Poisson likelihood from a season of goal counts ($n=30$ matches). **Left:** the observed counts, with the data-determined rate $\bar x$ marked. **Right:** the log-likelihood $\ell(\lambda)=(\sum x_i)\log\lambda - n\lambda$ (constant dropped) over candidate rates, peaking exactly at $\lambda=\bar x$ (green). The curve ranks rates by how well each explains the whole season; a rate far from the sample mean — even one only a goal off — is sharply down-weighted.'
+rng = np.random.default_rng(2024)
+goals = rng.poisson(lam=1.6, size=30)
+n = len(goals)
+total = goals.sum()
+xbar = goals.mean()
+
+lam_grid = np.linspace(0.3, 4.0, 500)
+# log-likelihood with the sum-of-log-factorials constant dropped
+ell = total * np.log(lam_grid) - n * lam_grid
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+vals, counts = np.unique(goals, return_counts=True)
+axL.bar(vals, counts, color=DATA, alpha=0.85)
+axL.axvline(xbar, color=ACCENT, ls="--", lw=1.6, label=fr"$\bar x={xbar:.2f}$")
+axL.set_xlabel("goals in a match"); axL.set_ylabel("number of matches")
+axL.set_title("Observed counts"); axL.legend(framealpha=0.9)
+
+axR.plot(lam_grid, ell, color=CURVE)
+axR.axvline(xbar, color=ACCENT, ls="--", lw=1.6, label=fr"peak at $\lambda=\bar x={xbar:.2f}$")
+axR.set_xlabel(r"rate $\lambda$"); axR.set_ylabel(r"$\ell(\lambda)$ (const. dropped)")
+axR.set_title("Poisson log-likelihood"); axR.legend(loc="lower center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"n matches       = {n}")
+print(f"total goals     = {total}")
+print(f"sample mean     = {xbar:.4f}")
+```
+
+Reading the arithmetic against @eq-loglik-poisson: with $\sum_i x_i = `{python} f"{total}"`$
+goals over $n = `{python} f"{n}"`$ matches, the log-likelihood is $\ell(\lambda) =
+`{python} f"{total}"`\log\lambda - `{python} f"{n}"`\lambda$ (dropping the data-only
+constant). Its slope — the score — is $U(\lambda) = \frac{\sum_i x_i}{\lambda} - n =
+\frac{`{python} f"{total}"`}{\lambda} - `{python} f"{n}"`$, which is zero when $\lambda =
+\frac{\sum_i x_i}{n} = \bar x = `{python} f"{xbar:.3f}"`$. So the peak sits precisely at the
+sample mean, and the figure confirms it. Notice that we did all of this *without ever
+computing a probability of $\lambda$* — we only ranked rates by how probable each makes the
+observed season. The likelihood is doing exactly its job: comparison, not belief.
+
+## Example 2 — measurement error: a Normal likelihood, mean and variance together {#sec-ex-normal}
+
+A laboratory weighs the same reference mass $n$ times; each reading is the true weight plus
+independent Gaussian measurement noise. Both the center $\mu$ (the best estimate of the
+weight) and the spread $\sigma^2$ (the instrument's noise level) are unknown, so this is the
+two-parameter likelihood of @eq-loglik-normal-unknown. We profile the surface along each
+axis to see how the data pin down each parameter.
+
+```{python}
+#| label: fig-ex-normal
+#| fig-cap: 'Profiling the two-parameter Normal log-likelihood for $n=15$ repeated weighings. **Left:** holding $\sigma^2$ at its best value and sweeping $\mu$, the curve peaks at the sample mean $\bar x$ (green). **Right:** holding $\mu=\bar x$ and sweeping $\sigma^2$, the curve peaks at the mean squared deviation $\frac1n\sum(x_i-\bar x)^2$ (green). Each slice of the surface is itself a one-parameter likelihood, and its peak gives that parameter''s most-explanatory value.'
+rng = np.random.default_rng(7)
+true_w = 50.0
+reads = rng.normal(loc=true_w, scale=0.4, size=15)
+n = len(reads)
+xbar = reads.mean()
+v_mle = np.mean((reads - xbar) ** 2)
+
+def loglik(mu, v):
+    return -0.5 * n * np.log(2 * np.pi) - 0.5 * n * np.log(v) \
+        - np.sum((reads - mu) ** 2) / (2 * v)
+
+mu_grid = np.linspace(xbar - 0.4, xbar + 0.4, 400)
+ell_mu = np.array([loglik(m, v_mle) for m in mu_grid])
+
+v_grid = np.linspace(0.04, 0.5, 400)
+ell_v = np.array([loglik(xbar, v) for v in v_grid])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.plot(mu_grid, ell_mu, color=CURVE)
+axL.axvline(xbar, color=ACCENT, ls="--", lw=1.6, label=fr"$\bar x={xbar:.3f}$")
+axL.set_xlabel(r"mean $\mu$"); axL.set_ylabel(r"$\ell(\mu,\hat\sigma^2)$")
+axL.set_title(r"Slice along $\mu$"); axL.legend(loc="lower center", fontsize=9, framealpha=0.9)
+
+axR.plot(v_grid, ell_v, color=CURVE)
+axR.axvline(v_mle, color=ACCENT, ls="--", lw=1.6, label=fr"$\hat\sigma^2={v_mle:.4f}$")
+axR.set_xlabel(r"variance $\sigma^2$"); axR.set_ylabel(r"$\ell(\bar x,\sigma^2)$")
+axR.set_title(r"Slice along $\sigma^2$"); axR.legend(loc="lower center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"sample mean              xbar     = {xbar:.4f}")
+print(f"mean squared deviation   v_mle    = {v_mle:.4f}")
+print(f"(for comparison) n-1 sample var   = {np.var(reads, ddof=1):.4f}")
+```
+
+The $\mu$-slice peaks at the sample mean and the $\sigma^2$-slice at the mean squared
+deviation $\frac1n\sum_i(x_i-\bar x)^2$ — both readable straight off
+@eq-loglik-normal-unknown by the same flatten-the-slope logic. Note the printed comparison:
+the likelihood's variance peak uses divisor $n$, **not** the $n-1$ of the familiar "sample
+variance." That is not a bug — the likelihood genuinely prefers the divisor-$n$ estimate,
+and the resulting small bias is a famous and instructive feature of maximum likelihood that
+[INFR-B2] dissects in full. We flag it here so the discrepancy does not surprise you; the
+likelihood is being internally consistent, just not deferential to a convention invented for
+a different reason.
+
+## At the edge: when the likelihood alone is not enough {#sec-ex-edge}
+
+The likelihood *ranks* parameters; it does not, by itself, tell you whether the best-ranked
+parameter is any good, nor whether the model you read backwards was the right model to read
+at all. Here is the honest boundary, in two parts.
+
+**Part A — a flat likelihood: when the data barely discriminate.** With very little data, or
+data that genuinely fail to separate competing parameters, the likelihood curve can be
+nearly *flat* near its top. The peak still exists, but a wide band of parameters explains the
+data almost equally well — the ranking is real but toothless. @fig-edge-flat contrasts a
+sharp likelihood ($n=200$ flips) with a nearly flat one ($n=4$ flips): both peak at the same
+$\hat p$, but only one of them *means* much.
+
+```{python}
+#| label: fig-edge-flat
+#| fig-cap: 'A peak is not the same as a *sharp* peak. Both coins landed on the same proportion of heads ($\hat p=0.75$), so both likelihoods peak at $p=0.75$ (green). With $n=200$ flips (red) the likelihood is a tight spike — the data pin the bias down. With $n=4$ flips (grey) it is a broad mound — a huge range of biases explains ''3 of 4 heads'' nearly as well. The location of the peak is identical; its *informativeness* is not. Quantifying this sharpness is exactly Fisher information ([INFR-B3]).'
+p_grid = np.linspace(1e-3, 1 - 1e-3, 600)
+
+def norm_loglik_curve(n, k):
+    ell = k * np.log(p_grid) + (n - k) * np.log(1 - p_grid)
+    return ell - ell.max()   # shift peak to 0 so shapes are comparable
+
+ell_big = norm_loglik_curve(200, 150)
+ell_small = norm_loglik_curve(4, 3)
+
+fig, ax = plt.subplots()
+ax.plot(p_grid, ell_big, color=CURVE, label=r"$n=200$ (sharp)")
+ax.plot(p_grid, ell_small, color=GREY, label=r"$n=4$ (flat)")
+ax.axvline(0.75, color=ACCENT, ls="--", lw=1.5, label=r"shared peak $\hat p=0.75$")
+ax.set_ylim(-8, 0.5)
+ax.set_xlabel("bias $p$")
+ax.set_ylabel(r"log-likelihood (peak shifted to 0)")
+ax.set_title("Same peak, very different sharpness")
+ax.legend(loc="lower center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The likelihood was honest both times — it ranked the parameters correctly given the data. It
+simply cannot manufacture certainty the data do not contain. The *width* of the peak, not its
+location, carries that warning, and reading the width is what Fisher information ([INFR-B3])
+and likelihood-based intervals ([INFR-C3]) are built to do. Hold the lesson: **the likelihood
+gives you the ranking and the peak; it does not, on its own, give you uncertainty.**
+
+**Part B — a likelihood for the wrong model.** The likelihood reads *whatever model you hand
+it* backwards. If the model is wrong, the construction proceeds flawlessly and returns a
+confident-looking peak that is meaningless. @fig-edge-misspec fits a Normal likelihood to
+data that are actually heavy-tailed and skewed: the machinery dutifully reports a
+most-explanatory $(\mu,\sigma^2)$, but the model never described the data.
+
+```{python}
+#| label: fig-edge-misspec
+#| fig-cap: 'The likelihood cannot tell you the model is wrong. The data (histogram) are right-skewed and heavy-tailed (a log-normal), but we read a *Normal* likelihood backwards anyway. It returns a perfectly definite peak $(\hat\mu,\hat\sigma^2)$ and the fitted Normal density (red) — which visibly misses the skew and the tail. The arithmetic is impeccable; the *answer* is not, because the model was misspecified. The likelihood ranks parameters **within** the model you chose; it never validates the choice.'
+rng = np.random.default_rng(3)
+data = rng.lognormal(mean=1.0, sigma=0.6, size=300)   # skewed, heavy-tailed
+mu_hat = data.mean()
+v_hat = np.mean((data - mu_hat) ** 2)
+sd_hat = np.sqrt(v_hat)
+
+xs = np.linspace(0, data.max(), 400)
+normal_fit = np.exp(-0.5 * ((xs - mu_hat) / sd_hat) ** 2) / (sd_hat * np.sqrt(2 * np.pi))
+
+fig, ax = plt.subplots()
+ax.hist(data, bins=40, density=True, color=FILL, alpha=0.7, label="data (skewed)")
+ax.plot(xs, normal_fit, color=CURVE,
+        label=fr"fitted Normal $\mathcal{{N}}({mu_hat:.2f},\,{v_hat:.2f})$")
+ax.axvline(mu_hat, color=ACCENT, ls="--", lw=1.5, label=r"likelihood peak $\hat\mu$")
+ax.set_xlabel("value"); ax.set_ylabel("density")
+ax.set_title("A confident peak for the wrong model")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-warning title="Pitfall"}
+**A likelihood is only as good as the model you read backwards.** The construction in this
+article assumes you have already *chosen* a probability model — Bernoulli, Poisson, Normal —
+and it ranks parameter values *within that choice*. It has no opinion about whether the
+choice was right. A Normal likelihood will happily hand you a most-explanatory mean and
+variance for data that are skewed, multimodal, or heavy-tailed, and nothing in the
+likelihood machinery raises an alarm. Checking the model itself — residual diagnostics,
+goodness-of-fit tests, posterior predictive checks — is a separate discipline (the testing
+side of this track, and the diagnostics side of Regression). Maximum likelihood gives you
+the best parameter *given* a model; it never tells you the model was worth fitting.
+:::
+
+# When the likelihood is the right tool — and when it is not {#sec-applicability}
+
+::: {.callout-tip title="You might be asked"}
+*"When would you build a likelihood, and when would you reach for something else?"* The
+honest summary:
+
+- **Reach for the likelihood** whenever you have a *parametric* probability model you
+  believe describes the data-generating process — a named distribution (or a structured
+  family like a regression model) with a finite set of unknown parameters. The likelihood is
+  then the single most efficient summary of what the data say about those parameters: it
+  underlies maximum likelihood ([INFR-B2]), the precision bounds of Fisher information
+  ([INFR-B3]), likelihood-ratio tests ([INFR-D3]), and the Bayesian posterior ([INFR-E4]).
+  Nearly all of classical and modern parametric inference is the likelihood in disguise.
+- **Reach for something else** when (a) you are **unwilling to commit to a parametric
+  model** — then nonparametric and resampling methods like the **bootstrap** ([INFR-E1])
+  estimate uncertainty without a likelihood at all; (b) the model is **badly misspecified**,
+  where, as @fig-edge-misspec shows, the likelihood is confidently wrong — robust or
+  distribution-free methods are safer; (c) the likelihood is **intractable** — no closed
+  form for the density (common in complex generative models), where approximate or
+  simulation-based inference takes over; or (d) the data are **too few to discriminate**
+  (@fig-edge-flat), where any single-number estimate, likelihood-based or not, is fragile and
+  honest reporting must foreground the uncertainty.
+- **The deepest caveat:** the likelihood ranks parameters *within* a model and says nothing
+  about the model's correctness, and on its own it makes **no probability statement about the
+  parameter**. Turning it into "how sure are we about $\theta$" requires either the
+  frequentist sampling-distribution machinery (intervals and tests, the rest of this track)
+  or a Bayesian prior ([INFR-E4]). The likelihood is the raw material of inference, not the
+  finished statement.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. In code you almost never form
+the raw product. You write the **log-likelihood** as a function of the parameters and a
+sum over the data — `loglik(theta) = sum(dist.logpmf(x, theta))` or `.logpdf` for
+continuous models — using the library's `logpmf`/`logpdf` methods, which are implemented to
+be numerically stable (they compute the log directly rather than logging a tiny number, the
+underflow lesson of @fig-underflow). `scipy.stats` exposes `.logpdf`/`.logpmf` for every
+named distribution; `statsmodels` and most fitting libraries expose a `.loglike` or
+`.score` method that returns exactly the $\ell(\theta)$ and the score $U(\theta)$ of this
+article, and `.fit()` then maximizes the former by chasing the root of the latter — which is
+precisely the program of [INFR-B2]. When you call `.fit()`, you now know the object it is
+climbing and the slope it is following to the top.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-A1 *The Estimator as a Random Variable*]**, which established that a
+sample statistic is a random variable with a sampling distribution. There we *guessed* good
+estimators; here we built the object that will *manufacture* them. From the **Likelihood
+Spine** the trunk continues:
+
+- **[INFR-B2 *Maximum Likelihood*]** — turn the likelihood into a single best estimate by
+  finding its peak: solve the score equation $U(\hat\theta)=0$, confirm it is a maximum,
+  and derive the closed-form MLEs (Bernoulli $\hat p=k/n$, Poisson $\hat\lambda=\bar x$,
+  Normal $\hat\mu=\bar x$ and $\hat\sigma^2=\frac1n\sum(x_i-\bar x)^2$) we previewed here as
+  the roots of the score.
+- **[INFR-B3 *Fisher Information*]** — read the *curvature* of $\ell$ at the peak (the
+  variance of the score from @sec-score), which is exactly the "sharpness" we saw vary in
+  @fig-edge-flat, and turn it into a hard lower bound on any estimator's variance.
+- **[INFR-B4 *Why Maximum Likelihood Works*]** — the asymptotics: as data accumulate the
+  log-likelihood's peak homes in on the truth and its shape becomes Gaussian.
+- **[INFR-E4 *The Bayesian Turn*]** — the likelihood of this article, *multiplied by a
+  prior* and re-normalized, becomes the posterior. The Bayesian fork is where the forbidden
+  phrase "the probability that $\theta = 0.7$" finally becomes legitimate — and you will see
+  exactly what extra ingredient (the prior) had to be added to license it.
+
+It also feeds outward: the Gaussian-likelihood / least-squares equivalence of
+@sec-normal-known is the bridge to the Regression track's [REGR-01], where the same identity
+arrives from the geometry of fitting a line.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding source.** R. A. Fisher, "On the Mathematical Foundations of Theoretical
+  Statistics," *Philosophical Transactions of the Royal Society A* 222 (1922) — where the
+  word *likelihood* is coined and the distinction from probability is drawn and defended.
+  Fisher returned to the idea repeatedly; his 1925 *Statistical Methods for Research Workers*
+  put it to work.
+- **The likelihood principle.** A. Birnbaum, "On the Foundations of Statistical Inference,"
+  *JASA* 57 (1962): the claim that *all* the evidence in the data about $\theta$ is carried
+  by the likelihood function — a deep, contested thesis that explains why the likelihood
+  recurs everywhere, and why dropping its constant (as we did freely) is legitimate.
+- **Open threads this article deliberately deferred.** *How exactly do we find the peak, and
+  is it always unique?* — maximum likelihood, [INFR-B2], including a likelihood with no
+  maximum (the uniform $[0,\theta]$) where the score approach fails outright. *How sharp is
+  the peak, and what does that buy?* — Fisher information and the Cramér–Rao bound,
+  [INFR-B3]. *What is the sampling distribution of the peak's location?* — the asymptotic
+  normality of the MLE, [INFR-B4]. *When is "the probability of $\theta$" a legal sentence?*
+  — only after a prior, [INFR-E4].

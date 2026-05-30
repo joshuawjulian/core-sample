@@ -1,0 +1,1177 @@
+---
+title: "Why Maximum Likelihood Works: Consistency, Efficiency, and Asymptotic Normality"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240809)
+
+DATA   = "#2b3a67"     # data / samples / empirical
+CURVE  = "#c1121f"     # the theoretical limit / fitted curve
+ACCENT = "#0a7d4d"     # the MLE / the truth / highlights
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas / histograms
+```
+
+> **Where this sits in the track.** This is the keystone of the **Likelihood Spine**. It
+> assumes [INFR-B2 *Maximum Likelihood*], which defined the MLE $\hat\theta_n$ as the
+> argmax of the log-likelihood $\ell_n(\theta)=\sum_{i=1}^n\log f(x_i\mid\theta)$ and the
+> **score** $U_n(\theta)=\ell_n'(\theta)$ whose root we chase; [INFR-B3 *Fisher
+> Information*], which defined the per-observation information $I_1(\theta)$ two equivalent
+> ways — as the variance of the score, $I_1(\theta)=\operatorname{Var}_\theta[\partial_\theta
+> \log f(X\mid\theta)]$, and as the negative expected curvature, $I_1(\theta)=-\,\mathbb
+> E_\theta[\partial_\theta^2\log f(X\mid\theta)]$ — proved their equivalence, showed
+> information adds over i.i.d. data ($I_n=nI_1$), and stated the **Cramér–Rao lower bound**
+> $\operatorname{Var}(\hat\theta)\ge 1/I_n(\theta)$ for the precision of any unbiased
+> estimator; and [INFR-A2 *LLN and CLT*], whose **Law of Large Numbers** and **Central
+> Limit Theorem** are the two engines we feed the score into. From outside the track it
+> borrows **Taylor's theorem** with remainder (Calc-1) and **convergence in probability /
+> in distribution** with **Slutsky's theorem** [PROB-21]. It **sets up** [INFR-C3 *Wald,
+> Score, and Profile Intervals*], [INFR-D3 *The Asymptotic Trinity*], and the asymptotic
+> inference the entire Regression track relies on.
+
+## Abstract {.unnumbered}
+
+[INFR-B2] gave us an estimator — believe the parameter that best explains the data — but
+not a reason to trust it. This article supplies the reason. We prove three facts about the
+maximum-likelihood estimator $\hat\theta_n$ as the sample grows. **Consistency:**
+$\hat\theta_n$ converges in probability to the true parameter $\theta_0$, argued by feeding
+the Law of Large Numbers into the log-likelihood so the sample's average log-density homes
+in on a curve whose unique peak sits at the truth. **Asymptotic normality:** Taylor-expanding
+the score about $\theta_0$, dividing the linear pieces, and applying the Central Limit
+Theorem to the numerator and the Law of Large Numbers to the denominator yields
+$$
+\sqrt n\,(\hat\theta_n-\theta_0)\ \xrightarrow{\ d\ }\ \mathcal N\!\bigl(0,\;I_1(\theta_0)^{-1}\bigr),
+$$
+every step on the page. **Asymptotic efficiency:** the limiting variance $I_1(\theta_0)^{-1}$
+is exactly the Cramér–Rao floor of [INFR-B3], so no regular estimator can beat the MLE in
+the limit. We then derive the **delta method** — how the limiting distribution transforms
+under a smooth function $g$, giving $\sqrt n(g(\hat\theta_n)-g(\theta_0))\xrightarrow{d}
+\mathcal N(0, g'(\theta_0)^2 I_1(\theta_0)^{-1})$ — which turns one asymptotic result into
+standard errors for odds, rates, ratios, and anything else we estimate by transforming the
+MLE. Finally we mark the **edge of applicability** honestly: small $n$, parameters on a
+boundary, and misspecified models, where one or more of the guarantees quietly fails. The
+single claim the article defends is that **the asymptotic optimality of maximum likelihood
+is not folklore — it is a theorem with a small, checkable set of hypotheses**, and knowing
+those hypotheses is what separates quoting "$\hat\theta\pm 1.96\,\mathrm{SE}$" from knowing
+when that interval is a lie.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Under regularity conditions (a smooth log-likelihood, an interior true parameter, a
+parameter-independent support), the maximum-likelihood estimator from $n$ i.i.d. observations
+is, as $n\to\infty$:
+
+1. **Consistent** — it converges in probability to the true value:
+   $\hat\theta_n \xrightarrow{P} \theta_0$.
+2. **Asymptotically normal** — its error, magnified by $\sqrt n$, is Gaussian:
+   $$
+   \sqrt n\,(\hat\theta_n-\theta_0)\ \xrightarrow{\ d\ }\ \mathcal N\!\bigl(0,\ I_1(\theta_0)^{-1}\bigr),
+   $$
+   so for large $n$, $\hat\theta_n \approx \mathcal N\!\bigl(\theta_0,\ \tfrac1{nI_1(\theta_0)}\bigr)$,
+   and the standard error is $1/\sqrt{n I_1(\theta_0)} = 1/\sqrt{I_n(\theta_0)}$.
+3. **Asymptotically efficient** — that limiting variance is the **smallest possible**: it
+   equals the Cramér–Rao bound $I_1(\theta_0)^{-1}$, so no regular estimator beats the MLE in
+   the limit.
+
+And for any smooth transformation $g$, the **delta method** carries the result along:
+$\sqrt n\,(g(\hat\theta_n)-g(\theta_0))\xrightarrow{d}\mathcal N\!\bigl(0,\,g'(\theta_0)^2
+I_1(\theta_0)^{-1}\bigr)$. The single picture to hold: **the more sharply the log-likelihood
+curves at its peak (the larger the Fisher information), the more tightly the MLE concentrates
+on the truth.**
+:::
+
+Everything below orbits that box. The three properties answer, in order, the three questions
+a careful person asks of any estimator: *Does it get the right answer eventually?* (yes —
+consistency). *How wrong is it for finite data, and what shape is the error?* (Gaussian, with
+spread $1/\sqrt{nI_1}$ — asymptotic normality). *Could a cleverer estimator do better?* (no,
+not in the limit — efficiency). The delta method is the lever that turns one hard-won
+limiting distribution into an entire toolbox of standard errors. We will keep returning to
+the one mechanical image that drives the whole derivation: **the MLE is the root of the
+score, and the score is a sum of i.i.d. terms — so the LLN and the CLT, the two theorems of
+[INFR-A2], are exactly the tools the problem hands us.**
+
+# Why we are doing this: from "an estimate" to "a trustworthy estimate" {#sec-why}
+
+Keep one question in view for the entire article: **why should we believe the MLE, and what
+exactly are we entitled to say about it?** Every derivation below answers a piece of that.
+
+## The problem the previous articles left open
+
+[INFR-B2] gave us a *procedure* — maximize the likelihood — and a stack of closed forms: the
+proportion is the sample fraction, the rate is the sample average, the Normal mean is the
+sample mean. But a procedure is not a justification. It even handed us a warning shot: the
+MLE of the Normal variance is *biased* (it divides by $n$, not $n-1$), so maximum likelihood
+does not even promise to be right on average for finite samples. Why, then, is it the default
+estimator in nearly all of statistics — the one all of Regression silently fits?
+
+[INFR-B3] sharpened the question without answering it. It defined **Fisher information**
+$I_1(\theta)$ — how much one observation tells you about $\theta$ — and proved the
+**Cramér–Rao lower bound**: *no* unbiased estimator can have variance below $1/I_n(\theta)$.
+That bound is a floor on the achievable precision of any estimator. The obvious question it
+raises is the one this article settles: **does the MLE actually reach that floor?** If it
+does, then maximum likelihood is not merely natural — it is, in a precise sense, the best you
+can do.
+
+## Why "as $n\to\infty$" is the right lens, and its honest cost
+
+There is a reason all three guarantees are *asymptotic* — statements about the limit
+$n\to\infty$ — rather than exact finite-sample facts. For a handful of lucky models (the
+Normal mean) the MLE has a clean exact sampling distribution; for almost every other model
+(the Bernoulli proportion's $\hat p=k/n$ has a *discrete* distribution, logistic regression
+has no closed form at all) the exact distribution of $\hat\theta_n$ is intractable. The
+asymptotic theory is what makes inference *possible at all* for the general MLE: it says that
+however ugly the finite-$n$ distribution, it is *approximately* Gaussian with a known center
+and a known spread, and the approximation improves as data accumulate. This is the same
+bargain [INFR-A2] struck for the sample mean — and it inherits the same caveat, stated
+bluntly here and revisited in @sec-failure: **"asymptotic" is a promise about large $n$, and
+for small $n$, skewed likelihoods, or boundary parameters the promise can be badly broken.**
+The whole value of the theory is knowing both the promise and its fine print.
+
+::: {.callout-tip title="You might be asked"}
+*"Why do we care about asymptotic properties at all — we never have infinite data?"* Two
+honest reasons. First, the asymptotic distribution is the *only* tractable handle on the
+sampling distribution of a general MLE; the exact distribution is unavailable, so the Gaussian
+approximation is what we actually compute confidence intervals and tests from ([INFR-C3],
+[INFR-D3]). Second, "asymptotic" is shorthand for "the regime where the approximation is good
+enough," and for many well-behaved models that regime arrives quickly — a few dozen
+observations. The danger, which a sharp interviewer is probing, is treating the approximation
+as exact when $n$ is small or the model is near a boundary. The right answer names both the
+power and the precondition: the theory gives you a usable error bar *when its regularity
+conditions hold and $n$ is large enough*, and a graduate-level command means being able to
+say when that is.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Two pictures carry the entire article. Take them one at a time.
+
+## Consistency: the expected log-likelihood peaks at the truth
+
+The MLE maximizes the *observed* log-likelihood $\frac1n\ell_n(\theta)=\frac1n\sum_i\log
+f(x_i\mid\theta)$, which is an average of i.i.d. terms. By the Law of Large Numbers, that
+average converges to its expectation, $\mathbb E_{\theta_0}[\log f(X\mid\theta)]$ — a *fixed*
+function of $\theta$ that no longer depends on the random sample. If that limiting function
+has its unique maximum exactly at the true $\theta_0$, then the peak of the wiggly observed
+curve must, as $n$ grows, be dragged toward the peak of the smooth limiting curve — and so
+$\hat\theta_n\to\theta_0$. @fig-consistency-intuition shows the wiggly curves settling onto
+the limit, their peaks marching toward the truth.
+
+```{python}
+#| label: fig-consistency-intuition
+#| fig-cap: 'Why the MLE is consistent. Each thin grey curve is the *normalized* log-likelihood $\frac1n\ell_n(\lambda)$ for one Poisson sample of size $n$ (true rate $\lambda_0=3$); we draw several at $n=10$ (light) and several at $n=200$ (dark). As $n$ grows, the Law of Large Numbers pins each random curve onto the single smooth limiting curve $\mathbb E[\log f(X\mid\lambda)]$ (red), whose unique peak sits exactly at the truth $\lambda_0=3$ (green). Because the peaks of the random curves track the peak of the limit, the MLE $\hat\lambda_n$ is squeezed onto $\lambda_0$.'
+lam0 = 3.0
+lam = np.linspace(1.0, 6.0, 400)
+
+def norm_loglik_poisson(counts, lam):
+    # (1/n) * sum [ x log lam - lam - log x! ]; drop the constant -E[log x!] for shape
+    S = counts.sum(); n = len(counts)
+    return (S * np.log(lam) - n * lam) / n
+
+# Limiting curve: E[log f(X|lam)] with X~Poisson(lam0), up to the same constant
+# E[X] = lam0, so limit shape = lam0 * log(lam) - lam
+limit_curve = lam0 * np.log(lam) - lam
+
+fig, ax = plt.subplots()
+for nn, col, a in [(10, GREY, 0.45), (200, DATA, 0.55)]:
+    for _ in range(6):
+        c = rng.poisson(lam0, size=nn)
+        ax.plot(lam, norm_loglik_poisson(c, lam), color=col, lw=1.0, alpha=a)
+ax.plot(lam, limit_curve, color=CURVE, lw=2.6,
+        label=r"limit $\mathbb{E}[\log f(X\mid\lambda)]$")
+ax.axvline(lam0, color=ACCENT, lw=1.8, label=r"truth $\lambda_0=3$")
+ax.plot([], [], color=GREY, lw=1.0, label="random curves, $n=10$")
+ax.plot([], [], color=DATA, lw=1.0, label="random curves, $n=200$")
+ax.set_xlabel(r"candidate rate $\lambda$")
+ax.set_ylabel(r"$\frac{1}{n}\ell_n(\lambda)$  (up to a constant)")
+ax.set_title("Random log-likelihoods settle onto a limit peaked at the truth")
+ax.legend(fontsize=8.5, framealpha=0.9, loc="lower center")
+plt.tight_layout()
+```
+
+## Asymptotic normality: the score is a sum, so the CLT applies
+
+The MLE solves the score equation $U_n(\hat\theta_n)=0$. The score $U_n(\theta)=\sum_i
+\partial_\theta\log f(x_i\mid\theta)$ is a *sum of i.i.d. terms*, and we know two things about
+each term at the truth $\theta_0$, both proved in [INFR-B3]: its mean is **zero** (the score
+has expectation zero at the true parameter) and its variance is the Fisher information
+$I_1(\theta_0)$. A sum of i.i.d. mean-zero, finite-variance terms is exactly what the Central
+Limit Theorem was built for. So the score at the truth, suitably scaled, is asymptotically
+Gaussian — and a one-step Taylor expansion transfers that Gaussianity from the score (which
+we understand) to the estimator $\hat\theta_n$ (which we want). @fig-an-intuition previews the
+punchline: the histogram of $\sqrt n(\hat\theta_n-\theta_0)$ over many samples settles onto a
+Gaussian whose width is set by $1/\sqrt{I_1}$.
+
+```{python}
+#| label: fig-an-intuition
+#| fig-cap: 'Why the MLE is asymptotically normal. For the same Poisson model ($\lambda_0=3$), we draw $30{,}000$ samples of size $n=80$, compute the MLE $\hat\lambda_n=\bar x$ on each, and histogram the rescaled error $\sqrt n(\hat\lambda_n-\lambda_0)$ (blue). It is closely matched by the Gaussian $\mathcal N(0, I_1(\lambda_0)^{-1})$ predicted by the theorem (red), where for the Poisson $I_1(\lambda)=1/\lambda$, so the limiting variance is $\lambda_0=3$. The MLE''s error is Gaussian with a variance the Fisher information dictates — before we have proved a thing.'
+lam0 = 3.0; n = 80; reps = 30000
+samples = rng.poisson(lam0, size=(reps, n))
+lamhat = samples.mean(axis=1)
+z = np.sqrt(n) * (lamhat - lam0)
+
+# Poisson Fisher info I_1(lam) = 1/lam  ->  asymptotic variance = lam0
+asym_var = lam0
+grid = np.linspace(z.min(), z.max(), 300)
+gauss = np.exp(-grid**2 / (2*asym_var)) / np.sqrt(2*np.pi*asym_var)
+
+fig, ax = plt.subplots()
+ax.hist(z, bins=60, density=True, color=FILL, alpha=0.75,
+        label=r"empirical $\sqrt{n}(\hat\lambda_n-\lambda_0)$")
+ax.plot(grid, gauss, color=CURVE,
+        label=fr"$\mathcal{{N}}(0,\,I_1^{{-1}}={asym_var:.0f})$ (theory)")
+ax.set_xlabel(r"$\sqrt{n}\,(\hat\lambda_n - \lambda_0)$")
+ax.set_ylabel("density")
+ax.set_title("Rescaled MLE error is Gaussian, with variance $1/I_1$")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The rest of @sec-formal makes both pictures rigorous, in order: first the two score facts we
+keep invoking (recalled from [INFR-B3] and re-derived just enough to be self-contained), then
+consistency, then the Taylor-expansion-plus-CLT argument for normality, then efficiency, then
+the delta method.
+
+# The formal development {#sec-formal}
+
+## Setup, notation, and the regularity conditions {#sec-setup}
+
+We observe $X_1,\dots,X_n$ i.i.d. with density or mass function $f(x\mid\theta)$, and we write
+$\theta_0$ for the **true** parameter — the one that actually generated the data. (We treat
+the scalar case $\theta\in\mathbb R$ throughout the main derivations; the vector case replaces
+derivatives by gradients, $I_1$ by the Fisher information *matrix*, and "$<0$" by "negative
+definite," and we flag where that is the only change.) As in [INFR-B2],
+$$
+\ell_n(\theta)=\sum_{i=1}^n\log f(x_i\mid\theta),
+\qquad
+U_n(\theta)=\ell_n'(\theta)=\sum_{i=1}^n \underbrace{\frac{\partial}{\partial\theta}\log f(x_i\mid\theta)}_{=\,u(x_i;\,\theta)},
+$$ {#eq-score-sum}
+where we name the **per-observation score** $u(x;\theta)=\partial_\theta\log f(x\mid\theta)$,
+so $U_n(\theta)=\sum_i u(x_i;\theta)$ is literally a sum of i.i.d. random variables — the fact
+that lets the CLT in. The MLE $\hat\theta_n$ is the interior solution of $U_n(\hat\theta_n)=0$.
+
+The theorems below are not unconditional; they hold under a standard list of **regularity
+conditions**, and a graduate-level command means knowing the list, because every entry is a
+place the theory can fail (@sec-failure). We state them plainly and flag, for each, the step
+that uses it.
+
+::: {.callout-note title="The regularity conditions (and what each one buys)"}
+1. **Identifiability.** Distinct parameters give distinct distributions: $\theta\ne\theta_0
+   \Rightarrow f(\cdot\mid\theta)\ne f(\cdot\mid\theta_0)$. *Used in consistency* — it is what
+   makes the limiting log-likelihood's peak at $\theta_0$ **unique**.
+2. **Common support.** The set $\{x:f(x\mid\theta)>0\}$ does **not** depend on $\theta$.
+   *Used everywhere* — it is what lets us differentiate under the integral sign and is exactly
+   what the uniform $[0,\theta]$ model of [INFR-B2] violated.
+3. **Smoothness.** $\log f(x\mid\theta)$ is twice (ideally thrice) differentiable in $\theta$.
+   *Used in the Taylor expansion* of the score.
+4. **Interior truth.** $\theta_0$ lies in the *interior* of the parameter space $\Theta$, not
+   on its boundary. *Used so that $U_n(\hat\theta_n)=0$* — an interior maximizer has zero score.
+5. **Differentiation under the integral.** We may swap $\partial_\theta$ and $\int dx$, so that
+   $\mathbb E_\theta[u(X;\theta)]=0$ and $\operatorname{Var}_\theta[u(X;\theta)]=I_1(\theta)$
+   (the two score identities of [INFR-B3]). *Used to feed the CLT.*
+6. **Positive, finite information.** $0<I_1(\theta_0)<\infty$. *Used to divide by it* in the
+   normality argument and to have a finite limiting variance.
+
+These are the conditions under which the MLE is "regular." When they hold, the three
+properties follow. When one breaks, exactly one of the properties typically breaks with it —
+which is why the list is worth memorizing.
+:::
+
+## The two score identities, recalled {#sec-score-facts}
+
+The asymptotic-normality argument leans on two facts from [INFR-B3] about the
+per-observation score $u(X;\theta)=\partial_\theta\log f(X\mid\theta)$, evaluated at the true
+parameter $\theta_0$. They are the bridge between "the MLE is a root of the score" and "the
+CLT applies," so we recall them and re-derive them in two lines each, both relying on
+regularity condition 5 (differentiation under the integral). Write $\int$ for a sum in the
+discrete case throughout.
+
+::: {#lem-score-mean}
+**Lemma (the score has mean zero at the truth).** $\mathbb E_{\theta_0}[\,u(X;\theta_0)\,]=0.$
+:::
+
+::: {.proof}
+Start from the fact that a density integrates to one *for every* $\theta$:
+$\int f(x\mid\theta)\,dx = 1$. The right-hand side is constant in $\theta$, so its derivative
+is zero; differentiate the left side under the integral (condition 5):
+$$
+0 = \frac{d}{d\theta}\int f(x\mid\theta)\,dx
+  = \int \frac{\partial f(x\mid\theta)}{\partial\theta}\,dx .
+$$
+Now use the **log-derivative trick**, the single identity this whole subsection runs on. By
+the chain rule, $\partial_\theta\log f = \frac{\partial_\theta f}{f}$, hence
+$\partial_\theta f = f\cdot\partial_\theta\log f = f\cdot u(x;\theta)$. Substitute:
+$$
+0 = \int f(x\mid\theta)\,u(x;\theta)\,dx = \mathbb E_\theta[\,u(X;\theta)\,].
+$$
+This holds at every $\theta$, in particular at $\theta_0$. $\qquad\blacksquare$
+:::
+
+::: {#lem-score-var}
+**Lemma (the score's variance is the Fisher information).** With $I_1(\theta)=\operatorname{Var}_\theta
+[u(X;\theta)]$, we also have $I_1(\theta)=-\,\mathbb E_\theta[\,\partial_\theta u(X;\theta)\,]
+= -\,\mathbb E_\theta[\,\partial_\theta^2\log f(X\mid\theta)\,]$. In particular
+$\operatorname{Var}_{\theta_0}[u(X;\theta_0)]=I_1(\theta_0)$.
+:::
+
+::: {.proof}
+By @lem-score-mean the score has mean zero, so its variance equals its second moment,
+$\operatorname{Var}_\theta[u]=\mathbb E_\theta[u^2]$ — this defines $I_1(\theta)$. For the
+"negative expected curvature" form, differentiate the mean-zero identity
+$\int f(x\mid\theta)\,u(x;\theta)\,dx=0$ once more in $\theta$ (again under the integral, and
+using the product rule on $f\cdot u$):
+$$
+0 = \frac{d}{d\theta}\int f\,u\,dx
+  = \int \bigl(\partial_\theta f\bigr)u\,dx + \int f\bigl(\partial_\theta u\bigr)\,dx .
+$$
+In the first integral substitute $\partial_\theta f = f\,u$ (the log-derivative trick again),
+turning it into $\int f\,u^2\,dx=\mathbb E_\theta[u^2]$. The second integral is
+$\mathbb E_\theta[\partial_\theta u]$. So
+$$
+0 = \mathbb E_\theta[u^2] + \mathbb E_\theta[\partial_\theta u]
+\;\Longrightarrow\;
+\mathbb E_\theta[u^2] = -\,\mathbb E_\theta[\partial_\theta u],
+$$
+and since $\partial_\theta u = \partial_\theta^2\log f$ and the left side is
+$I_1(\theta)$, both forms agree. This **information equality** — variance of the score equals
+negative expected second derivative — is the load-bearing identity of [INFR-B3]; we use it in
+@sec-an to recognize the denominator of our Taylor expansion as $I_1$. $\qquad\blacksquare$
+:::
+
+We will also use, once, that **information adds over i.i.d. data**: the score $U_n=\sum_i u_i$
+is a sum of $n$ i.i.d. mean-zero terms each with variance $I_1$, so
+$\operatorname{Var}_{\theta_0}[U_n(\theta_0)]=n\,I_1(\theta_0)=I_n(\theta_0)$ (variances of
+independent terms add). This is the precise sense, derived in [INFR-B3], in which *more data
+is more information*.
+
+## Consistency: the MLE finds the truth {#sec-consistency}
+
+We make the @fig-consistency-intuition picture rigorous. The argument has two ingredients: the
+LLN pins the normalized log-likelihood onto a fixed limit, and an information-theoretic
+inequality places that limit's unique peak at $\theta_0$.
+
+### The limit of the normalized log-likelihood
+
+Define the **normalized log-likelihood** $M_n(\theta)=\frac1n\ell_n(\theta)=\frac1n\sum_{i=1}^n
+\log f(X_i\mid\theta)$. For each *fixed* $\theta$, this is an average of i.i.d. random variables
+$\log f(X_i\mid\theta)$, so by the Law of Large Numbers ([INFR-A2], @thm-wlln there) it
+converges in probability to their common expectation, taken under the truth $\theta_0$:
+$$
+M_n(\theta) \xrightarrow{\ P\ } M(\theta) := \mathbb E_{\theta_0}\bigl[\log f(X\mid\theta)\bigr].
+$$ {#eq-Mlimit}
+The limit $M(\theta)$ is a deterministic function of $\theta$ — the randomness has averaged
+out. Consistency will follow if $M(\theta)$ is **uniquely maximized at $\theta_0$**, because
+then the maximizer $\hat\theta_n$ of $M_n$ must converge to the maximizer $\theta_0$ of $M$.
+(Turning "the maximizers converge because the functions converge" into a fully rigorous
+statement needs a *uniform* law of large numbers — convergence of $M_n$ to $M$ at the same
+rate across $\theta$ — which holds under the regularity conditions; we flag this as the one
+technical import and concentrate on the part that carries the meaning, the location of the
+peak.)
+
+### The peak of the limit is at the truth
+
+::: {#thm-kl}
+**Theorem (the expected log-likelihood is maximized at the truth).** Under identifiability
+(condition 1), $M(\theta)\le M(\theta_0)$ for every $\theta$, with equality only at
+$\theta=\theta_0$.
+:::
+
+::: {.proof}
+Look at the *gap* between the truth and a competitor, and show it is never negative:
+$$
+M(\theta_0)-M(\theta)
+= \mathbb E_{\theta_0}\bigl[\log f(X\mid\theta_0)-\log f(X\mid\theta)\bigr]
+= \mathbb E_{\theta_0}\!\left[\log\frac{f(X\mid\theta_0)}{f(X\mid\theta)}\right],
+$$
+using $\log a-\log b=\log(a/b)$. This is the **Kullback–Leibler divergence** $D(f_{\theta_0}\,\|\,
+f_\theta)$ from the truth to the competitor; we now show it is $\ge 0$ with one clean inequality.
+Flip the fraction inside (which flips the sign of the log) so the expectation is over the
+*competitor's* ratio, the form Jensen's inequality wants:
+$$
+M(\theta_0)-M(\theta) = -\,\mathbb E_{\theta_0}\!\left[\log\frac{f(X\mid\theta)}{f(X\mid\theta_0)}\right].
+$$
+The function $\log$ is **strictly concave** (its second derivative $-1/t^2$ is negative). For
+a concave function, **Jensen's inequality** says $\mathbb E[\log Y]\le \log\mathbb E[Y]$ — the
+expected log is at most the log of the expectation — with equality only if $Y$ is constant.
+Apply it with $Y=\dfrac{f(X\mid\theta)}{f(X\mid\theta_0)}$:
+$$
+\mathbb E_{\theta_0}\!\left[\log\frac{f(X\mid\theta)}{f(X\mid\theta_0)}\right]
+\;\le\;
+\log\,\mathbb E_{\theta_0}\!\left[\frac{f(X\mid\theta)}{f(X\mid\theta_0)}\right].
+$$
+Now compute that inner expectation. The expectation is under $X\sim f_{\theta_0}$, so its
+density is $f(x\mid\theta_0)$, which **cancels** the denominator:
+$$
+\mathbb E_{\theta_0}\!\left[\frac{f(X\mid\theta)}{f(X\mid\theta_0)}\right]
+= \int \frac{f(x\mid\theta)}{f(x\mid\theta_0)}\,f(x\mid\theta_0)\,dx
+= \int f(x\mid\theta)\,dx = 1,
+$$
+the last step because $f(\cdot\mid\theta)$ is itself a density and integrates to one. (This is
+where **common support**, condition 2, is used: the cancellation is only valid where
+$f(x\mid\theta_0)>0$, and we need the integral of $f(\cdot\mid\theta)$ over exactly that set
+to be one.) Therefore the upper bound is $\log 1 = 0$, so
+$$
+\mathbb E_{\theta_0}\!\left[\log\frac{f(X\mid\theta)}{f(X\mid\theta_0)}\right]\le 0
+\;\Longrightarrow\;
+M(\theta_0)-M(\theta) = -(\text{something}\le 0)\ \ge 0 .
+$$
+So $M(\theta_0)\ge M(\theta)$ for all $\theta$. Equality in Jensen requires the ratio
+$f(X\mid\theta)/f(X\mid\theta_0)$ to be constant (equal to $1$, since its mean is $1$),
+i.e. $f(\cdot\mid\theta)=f(\cdot\mid\theta_0)$; **identifiability** (condition 1) says that
+forces $\theta=\theta_0$. Hence the maximum is unique, at the truth. $\qquad\blacksquare$
+:::
+
+::: {#thm-consistency}
+**Theorem (consistency of the MLE).** Under the regularity conditions, the maximum-likelihood
+estimator converges in probability to the true parameter: $\hat\theta_n\xrightarrow{P}\theta_0$.
+:::
+
+::: {.proof}
+Assemble the two pieces. By @eq-Mlimit (the LLN, uniformly in $\theta$), the random function
+$M_n$ converges to the deterministic $M$; by @thm-kl, $M$ has a unique maximum at $\theta_0$.
+The MLE $\hat\theta_n$ maximizes $M_n$ (it maximizes $\ell_n=nM_n$, and the positive factor
+$n$ does not move the argmax — the [INFR-B2] log/scale invariance). When a sequence of
+functions converges uniformly to a limit with a *well-separated* unique maximizer, the
+sequence of maximizers converges to the limit's maximizer: any $\theta$ bounded away from
+$\theta_0$ has $M(\theta)$ strictly below $M(\theta_0)$ by a fixed gap, and for large $n$ the
+uniform closeness of $M_n$ to $M$ means $M_n(\theta)$ cannot exceed $M_n(\theta_0)$ there — so
+the maximizer $\hat\theta_n$ is eventually trapped near $\theta_0$. Formally, for any
+$\varepsilon>0$, $P(|\hat\theta_n-\theta_0|>\varepsilon)\to 0$, which is convergence in
+probability. $\qquad\blacksquare$
+:::
+
+The conceptual content is worth saying in words, because it is the *why* of the whole article:
+**maximum likelihood is consistent because maximizing the average log-density is, in the
+limit, the same as minimizing the KL divergence to the truth, and the truth is the unique
+zero of that divergence.** The MLE chases the model closest (in KL) to the data-generating
+distribution; when the true model is in the family, that closest model *is* the truth.
+
+::: {.callout-tip title="You might be asked"}
+*"Consistency says the MLE converges to $\theta_0$ — but the MLE of the Normal variance is
+biased. Isn't that a contradiction?"* No, and the distinction is a classic exam trap.
+**Bias** is a finite-$n$ statement about the *mean* of the estimator: $\mathbb
+E[\widehat{\sigma^2}]=\frac{n-1}{n}\sigma^2\ne\sigma^2$. **Consistency** is a large-$n$
+statement about *convergence* of the estimator itself. They are compatible because the bias
+$-\sigma^2/n\to 0$: the estimator can be off-center for every finite $n$ yet still pile up on
+the truth as $n\to\infty$. Consistency requires only that bias *and* variance both vanish in
+the limit, which they do here. An estimator can be unbiased but inconsistent (its variance
+never shrinks), or biased but consistent (the MLE of $\sigma^2$) — the two notions are
+genuinely independent, and saying so crisply is the answer.
+:::
+
+## Asymptotic normality: the Taylor-and-CLT engine {#sec-an}
+
+Now the centerpiece. We know $\hat\theta_n\to\theta_0$ (consistency); we want the *shape* and
+*scale* of the error $\hat\theta_n-\theta_0$. The strategy is the one previewed in
+@sec-intuition: expand the score about $\theta_0$, use that the MLE zeroes the score, and read
+off the error as a ratio whose numerator the CLT handles and whose denominator the LLN handles.
+
+::: {#thm-an}
+**Theorem (asymptotic normality of the MLE).** Under the regularity conditions, with
+$0<I_1(\theta_0)<\infty$,
+$$
+\sqrt n\,(\hat\theta_n-\theta_0)\ \xrightarrow{\ d\ }\ \mathcal N\!\bigl(0,\ I_1(\theta_0)^{-1}\bigr).
+$$
+:::
+
+::: {.proof}
+**Step 1 — the MLE zeroes the score.** Because $\theta_0$ is interior (condition 4) and
+$\hat\theta_n\to\theta_0$, for large $n$ the MLE is interior too, so it satisfies the score
+equation
+$$
+U_n(\hat\theta_n)=0 .
+$$ {#eq-an-1}
+
+**Step 2 — Taylor-expand the score about the truth.** The score $U_n(\theta)$ is a smooth
+function of $\theta$ (condition 3). Expand it about $\theta_0$ to first order, with the
+remainder evaluated at some intermediate point $\tilde\theta_n$ lying between $\hat\theta_n$
+and $\theta_0$ (this is the **mean-value form of Taylor's theorem** from Calc 1: for a
+differentiable $g$, $g(b)=g(a)+g'(\tilde a)(b-a)$ for some $\tilde a$ between $a$ and $b$).
+Applied to $U_n$ at the points $\hat\theta_n$ and $\theta_0$:
+$$
+U_n(\hat\theta_n) = U_n(\theta_0) + U_n'(\tilde\theta_n)\,(\hat\theta_n-\theta_0).
+$$
+The left side is $0$ by @eq-an-1. Note $U_n'=\ell_n''$, the second derivative of the
+log-likelihood. So
+$$
+0 = U_n(\theta_0) + \ell_n''(\tilde\theta_n)\,(\hat\theta_n-\theta_0).
+$$ {#eq-an-2}
+
+**Step 3 — solve for the error.** Move the second term over and divide:
+$$
+\hat\theta_n-\theta_0 = \frac{-\,U_n(\theta_0)}{\ell_n''(\tilde\theta_n)}
+= \frac{U_n(\theta_0)}{-\,\ell_n''(\tilde\theta_n)} .
+$$
+Now comes the key algebraic move: rescale this ratio so that the numerator and the
+denominator each become an *average* of i.i.d. terms — the only form the CLT and the LLN can
+act on. Do it in two explicit, reversible steps. **First**, multiply the top and bottom of the
+fraction by $\frac1n$; since we multiply numerator and denominator by the same factor, the
+value is unchanged:
+$$
+\hat\theta_n-\theta_0
+= \frac{U_n(\theta_0)}{-\,\ell_n''(\tilde\theta_n)}
+= \frac{\frac1n\,U_n(\theta_0)}{-\frac1n\,\ell_n''(\tilde\theta_n)} .
+$$
+**Second**, multiply both sides by $\sqrt n$. The right-hand side's denominator does not
+involve $\sqrt n$, so the factor lands entirely on the numerator, where
+$\sqrt n\cdot\frac1n=\frac1{\sqrt n}$:
+$$
+\sqrt n\,(\hat\theta_n-\theta_0)
+= \frac{\sqrt n\cdot\frac1n\,U_n(\theta_0)}{-\frac1n\,\ell_n''(\tilde\theta_n)}
+= \frac{\frac{1}{\sqrt n}\,U_n(\theta_0)}{\;-\frac1n\,\ell_n''(\tilde\theta_n)\;} .
+$$ {#eq-an-3}
+That is the whole trick: the $\sqrt n$ we needed got *distributed* as $\frac1{\sqrt n}$ onto
+the score $U_n=\sum_i u(X_i;\theta_0)$ — the exact normalization the CLT wants for a sum of
+$n$ i.i.d. terms — while the second derivative picked up the $\frac1n$ that turns it into a
+sample average the LLN can collapse. We now take the numerator and denominator in turn.
+
+**Step 4 — the numerator is asymptotically Gaussian (CLT).** The numerator is
+$$
+\frac{1}{\sqrt n}\,U_n(\theta_0) = \frac{1}{\sqrt n}\sum_{i=1}^n u(X_i;\theta_0),
+$$
+a normalized sum of the i.i.d. per-observation scores $u(X_i;\theta_0)$. By @lem-score-mean
+each has **mean $0$**, and by @lem-score-var each has **variance $I_1(\theta_0)$**, finite and
+positive by condition 6. This is precisely the setting of the Central Limit Theorem
+([INFR-A2], @thm-clt): a normalized sum $\frac1{\sqrt n}\sum(\text{mean-0, var-}\sigma^2)$
+converges in distribution to $\mathcal N(0,\sigma^2)$. With $\sigma^2=I_1(\theta_0)$,
+$$
+\frac{1}{\sqrt n}\,U_n(\theta_0)\ \xrightarrow{\ d\ }\ \mathcal N\!\bigl(0,\ I_1(\theta_0)\bigr).
+$$ {#eq-an-num}
+
+**Step 5 — the denominator converges to the information (LLN).** The denominator is
+$$
+-\frac1n\,\ell_n''(\tilde\theta_n) = -\frac1n\sum_{i=1}^n \partial_\theta^2\log f(X_i\mid\tilde\theta_n).
+$$
+Consider first the same average evaluated at the truth $\theta_0$ instead of
+$\tilde\theta_n$: it is an average of i.i.d. terms $-\partial_\theta^2\log f(X_i\mid\theta_0)$,
+so by the LLN it converges in probability to their mean,
+$\mathbb E_{\theta_0}[-\partial_\theta^2\log f(X\mid\theta_0)]$ — which by the information
+equality of @lem-score-var is exactly $I_1(\theta_0)$. It remains to replace $\theta_0$ by
+$\tilde\theta_n$. Since $\tilde\theta_n$ lies between $\hat\theta_n$ and $\theta_0$ and
+$\hat\theta_n\xrightarrow{P}\theta_0$ (consistency), the intermediate point is squeezed:
+$\tilde\theta_n\xrightarrow{P}\theta_0$. Under the smoothness condition the average is
+continuous in the evaluation point uniformly enough that evaluating at $\tilde\theta_n$ rather
+than $\theta_0$ does not change the limit — so
+$$
+-\frac1n\,\ell_n''(\tilde\theta_n)\ \xrightarrow{\ P\ }\ I_1(\theta_0).
+$$ {#eq-an-den}
+
+**Step 6 — combine with Slutsky.** We have a numerator converging in distribution to a
+Gaussian (@eq-an-num) over a denominator converging in probability to the *constant*
+$I_1(\theta_0)$ (@eq-an-den). **Slutsky's theorem** ([PROB-21]) is exactly the tool for a
+ratio of this kind: if $A_n\xrightarrow{d}A$ and $B_n\xrightarrow{P}b$ for a nonzero constant
+$b$, then $A_n/B_n\xrightarrow{d}A/b$. Here $A\sim\mathcal N(0,I_1(\theta_0))$ and
+$b=I_1(\theta_0)$, so
+$$
+\sqrt n\,(\hat\theta_n-\theta_0)
+= \frac{\frac{1}{\sqrt n}U_n(\theta_0)}{-\frac1n\ell_n''(\tilde\theta_n)}
+\ \xrightarrow{\ d\ }\
+\frac{\mathcal N\!\bigl(0,\,I_1(\theta_0)\bigr)}{I_1(\theta_0)} .
+$$
+Dividing a $\mathcal N(0,\sigma^2)$ variable by the constant $c$ scales its variance by
+$1/c^2$ (variance of $cX$ is $c^2\operatorname{Var}X$, run backward), so the limit is
+$\mathcal N\!\bigl(0,\ I_1(\theta_0)/I_1(\theta_0)^2\bigr)=\mathcal N\!\bigl(0,\
+I_1(\theta_0)^{-1}\bigr)$. That is the claim. $\qquad\blacksquare$
+:::
+
+Stand back and admire what just happened, because it is the engine room of the whole track.
+**Three imported theorems did all the work, each in exactly one place:** Taylor's theorem
+(Step 2) turned the implicit equation $U_n(\hat\theta_n)=0$ into something linear in the error;
+the CLT (Step 4) made the numerator Gaussian, *because the score is a sum of i.i.d. terms*; the
+LLN (Step 5) made the denominator a constant, *the Fisher information*; and Slutsky (Step 6)
+glued the pieces. The variance came out $I_1(\theta_0)^{-1}$ for a reason you can now see
+mechanically: the numerator contributed a variance of $I_1$ (the score's variance) and the
+denominator divided by $I_1$ twice (once for being a denominator, squared by Slutsky) —
+leaving $1/I_1$.
+
+::: {.callout-important title="The standard error you will actually use"}
+@thm-an says $\sqrt n(\hat\theta_n-\theta_0)\approx\mathcal N(0,I_1^{-1})$, equivalently
+$$
+\hat\theta_n\ \approx\ \mathcal N\!\Bigl(\theta_0,\ \frac{1}{n\,I_1(\theta_0)}\Bigr)
+= \mathcal N\!\Bigl(\theta_0,\ \frac{1}{I_n(\theta_0)}\Bigr),
+$$
+using $I_n=nI_1$. The **asymptotic standard error** is $\widehat{\mathrm{SE}}=1/\sqrt{n\,
+I_1(\hat\theta_n)}$, where we plug in the estimate $\hat\theta_n$ for the unknown $\theta_0$
+(legitimate because $I_1$ is continuous and $\hat\theta_n\to\theta_0$, one more Slutsky step).
+This is the standard error behind the **Wald interval** $\hat\theta_n\pm z_{\alpha/2}\,
+\widehat{\mathrm{SE}}$ of [INFR-C3] and the Wald test of [INFR-D3]. Every "$\pm$" attached to a
+maximum-likelihood estimate in any software package is, under the hood, $1/\sqrt{I_n}$.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"In the standard error, do you use the expected information $I_1(\theta)$ or the observed
+information $-\frac1n\ell_n''(\hat\theta_n)$?"* Both are valid — they have the **same limit**
+by @eq-an-den — but they differ for finite $n$, and the choice has a name. Using the expected
+Fisher information $I_1(\hat\theta_n)$ (the theoretical formula, with $\hat\theta$ plugged in)
+gives the **expected-information** standard error; using the curvature of the actual fitted
+log-likelihood, $-\ell_n''(\hat\theta_n)$, gives the **observed-information** standard error.
+Efron and Hinkley (1978) argued the *observed* information is usually preferable: it reflects
+the curvature of the likelihood you actually saw, conditions on the data, and tends to give
+better finite-sample coverage. Most optimizers return it for free — it is the Hessian at the
+optimum they already computed (the same matrix Newton's method used in [INFR-B2]). Knowing
+that "the inverse Hessian at the MLE is the covariance matrix" is the practical form of this
+entire theorem.
+:::
+
+## Asymptotic efficiency: the MLE hits the floor {#sec-efficiency}
+
+We have the MLE's limiting variance, $I_1(\theta_0)^{-1}$ per $\sqrt n$, i.e.
+$\operatorname{Var}(\hat\theta_n)\approx 1/I_n(\theta_0)$. Compare it to the **Cramér–Rao lower
+bound** of [INFR-B3], which says that for *any* unbiased estimator $T_n$ of $\theta$,
+$$
+\operatorname{Var}_{\theta}(T_n)\ \ge\ \frac{1}{I_n(\theta)} = \frac{1}{n\,I_1(\theta)} .
+$$
+The MLE's asymptotic variance is *exactly this bound*. No regular estimator can do
+asymptotically better — the MLE squeezes out all the information the model contains.
+
+::: {#def-efficiency}
+**Definition (asymptotic efficiency).** An estimator $T_n$ with $\sqrt n(T_n-\theta_0)
+\xrightarrow{d}\mathcal N(0,v(\theta_0))$ is **asymptotically efficient** if its asymptotic
+variance attains the Cramér–Rao floor, $v(\theta_0)=I_1(\theta_0)^{-1}$. Its **asymptotic
+relative efficiency** versus another estimator $S_n$ (asymptotic variance $w$) is the ratio
+$\mathrm{ARE}(T_n,S_n)=w(\theta_0)/v(\theta_0)$.
+:::
+
+::: {#thm-efficiency}
+**Theorem (the MLE is asymptotically efficient).** Under the regularity conditions, the MLE
+attains the Cramér–Rao bound in the limit: its asymptotic variance is $I_1(\theta_0)^{-1}$,
+the smallest possible.
+:::
+
+::: {.proof}
+@thm-an already computed the asymptotic variance to be $I_1(\theta_0)^{-1}$. The Cramér–Rao
+theorem of [INFR-B3] states that the asymptotic variance of any regular (asymptotically
+unbiased) estimator is at least $I_1(\theta_0)^{-1}$. The MLE meets that lower bound with
+equality, so it is efficient by @def-efficiency. There is nothing more to prove: the
+*content* of the theorem is the coincidence of the two formulas — the MLE's limiting variance,
+derived in @thm-an as "score variance over information squared," equals the information's
+inverse, which is precisely the floor. $\qquad\blacksquare$
+:::
+
+The honest caveat, which separates a slogan from understanding: this is *asymptotic*
+efficiency. For finite $n$ the MLE can be beaten — a biased estimator can have smaller mean
+squared error (we saw the $\div n$ variance MLE do exactly this against the $\div(n-1)$
+version in [INFR-B2]), and there exist "superefficient" estimators that beat the bound at
+isolated points (Hodges' estimator, at the price of catastrophic behavior nearby). What is
+true and clean is the limit: *asymptotically, and uniformly in a sense made precise by the
+Hájek–Le Cam convolution theorem, the MLE cannot be beaten.* @fig-efficiency makes the
+finite-$n$ approach to the floor visible by racing the MLE against a competitor.
+
+```{python}
+#| label: fig-efficiency
+#| fig-cap: 'The MLE reaches the efficiency floor; a competitor does not. We estimate the rate $\lambda$ of an Exponential$(\lambda)$ distribution two ways from samples of growing size: the MLE $\hat\lambda=1/\bar x$ (blue), and a method-of-moments-style competitor based on the sample median, $\tilde\lambda=\log 2/\mathrm{median}$ (orange). For each $n$ we plot the simulated variance of each estimator (over $4000$ samples) times $n$, which should converge to the *asymptotic variance per* $\sqrt n$. The MLE''s curve settles onto the Cramér–Rao floor $I_1^{-1}=\lambda_0^2$ (red dashed); the median-based estimator settles *above* it — it is consistent but not efficient, leaving information on the table.'
+lam0 = 1.5
+ns = np.array([10, 20, 40, 80, 160, 320, 640])
+reps = 4000
+var_mle, var_med = [], []
+for nn in ns:
+    X = rng.exponential(1.0/lam0, size=(reps, nn))   # Exp with rate lam0 -> scale 1/lam0
+    mle = 1.0 / X.mean(axis=1)                         # MLE: 1/xbar
+    med = np.log(2) / np.median(X, axis=1)            # competitor from the median
+    var_mle.append(nn * mle.var())
+    var_med.append(nn * med.var())
+
+floor = lam0**2   # I_1(lam) = 1/lam^2 for Exponential -> CRLB per-sqrt-n = lam0^2
+fig, ax = plt.subplots()
+ax.plot(ns, var_mle, "o-", color=DATA, label=r"MLE $\hat\lambda=1/\bar x$")
+ax.plot(ns, var_med, "s-", color="#e07a00", label=r"median-based $\tilde\lambda$")
+ax.axhline(floor, color=CURVE, ls="--", lw=1.8,
+           label=fr"Cram\'er--Rao floor $I_1^{{-1}}=\lambda_0^2={floor:.2f}$")
+ax.set_xscale("log")
+ax.set_xlabel("sample size $n$ (log scale)")
+ax.set_ylabel(r"$n\times\mathrm{Var}$ (asymptotic variance)")
+ax.set_title("The MLE settles onto the efficiency floor; the rival does not")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"floor (lambda0^2) = {floor:.3f}")
+print(f"MLE  n*Var at n={ns[-1]}: {var_mle[-1]:.3f}")
+print(f"median-based n*Var at n={ns[-1]}: {var_med[-1]:.3f}")
+print(f"asymptotic relative efficiency (MLE/median) ~ {var_mle[-1]/var_med[-1]:.3f}")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"The sample mean and the sample median both estimate the center of a symmetric distribution.
+Which is more efficient, and does it matter what the distribution is?"* It depends entirely on
+the distribution, and that is the point. For a **Normal** population the mean is the MLE of the
+center and is efficient; the median's asymptotic variance is $\pi/2\approx1.57$ times larger,
+so $\mathrm{ARE}(\text{median},\text{mean})\approx 0.64$ — the median wastes about 36% of the
+information. But for a **heavy-tailed** population (Laplace/double-exponential, where the
+median *is* the MLE, or anything with fat tails), the ranking flips and the median is the
+efficient choice while the mean is dragged around by outliers. Efficiency is a statement about
+*the model you assumed* — the MLE is efficient *for its own model*, which is exactly why
+misspecification (@sec-failure) is so corrosive: it makes you efficient at fitting the wrong
+thing.
+:::
+
+# The delta method: distributions of transformed estimators {#sec-delta}
+
+Asymptotic normality is a statement about $\hat\theta_n$. But we usually want a *function* of
+the parameter — the odds $p/(1-p)$ rather than $p$, the standard deviation $\sqrt{\sigma^2}$
+rather than the variance, the half-life $\log 2/\lambda$ rather than the rate. By the
+invariance of the MLE ([INFR-B2], @thm-invariance), the *point* estimate of $g(\theta)$ is just
+$g(\hat\theta_n)$ — but what is its *standard error*? The **delta method** answers this with
+one Taylor expansion, and it is the workhorse that turns @thm-an into standard errors for
+everything downstream.
+
+## The idea: linearize the function at the estimate
+
+The transformation $g$ is generally nonlinear, so $g(\hat\theta_n)$ is a nonlinear function of
+an asymptotically Gaussian variable, and a nonlinear function of a Gaussian is not Gaussian.
+But $\hat\theta_n$ is *close* to $\theta_0$ (consistency), and over a tiny neighborhood any
+smooth $g$ looks like its tangent line — and a *linear* function of a Gaussian *is* Gaussian.
+So we replace $g$ by its tangent at $\theta_0$, and the slope of that tangent, $g'(\theta_0)$,
+becomes the scale factor on the variance. @fig-delta draws exactly this linearization.
+
+```{python}
+#| label: fig-delta
+#| fig-cap: 'The delta method as a tangent-line approximation. The MLE $\hat\theta_n$ (blue density on the horizontal axis) is approximately Gaussian, tightly concentrated about $\theta_0$. We push it through a nonlinear $g(\theta)=\theta^2$ (black curve). Over the narrow spread of $\hat\theta_n$, $g$ is indistinguishable from its tangent line at $\theta_0$ (red), whose slope is $g''(\theta_0)$. The induced density of $g(\hat\theta_n)$ (green, on the vertical axis) is therefore again approximately Gaussian, but with its spread *scaled by* $|g''(\theta_0)|$ — wider here because the tangent is steep. That scaling, squared, is the delta-method variance factor.'
+theta0 = 1.4
+se = 0.16
+g = lambda t: t**2
+gp = lambda t: 2*t
+
+t = np.linspace(theta0 - 4*se, theta0 + 4*se, 300)
+tang = g(theta0) + gp(theta0)*(t - theta0)
+
+fig, ax = plt.subplots(figsize=(6.4, 5.2))
+# the function and its tangent
+ax.plot(t, g(t), color="black", lw=2.0, label=r"$g(\theta)=\theta^2$")
+ax.plot(t, tang, color=CURVE, lw=1.8, ls="--", label=r"tangent at $\theta_0$, slope $g'(\theta_0)$")
+ax.scatter([theta0], [g(theta0)], color=ACCENT, s=55, zorder=5)
+
+# density of theta_hat along the bottom
+xb = np.linspace(theta0 - 4*se, theta0 + 4*se, 300)
+dens_x = np.exp(-(xb-theta0)**2/(2*se**2)); dens_x /= dens_x.max()
+base = g(theta0) - 0.9
+ax.fill_between(xb, base, base + 0.5*dens_x, color=FILL, alpha=0.8)
+ax.text(theta0, base - 0.18, r"density of $\hat\theta_n$", color=DATA, ha="center", fontsize=9)
+
+# induced density of g(theta_hat) along the left
+se_g = abs(gp(theta0))*se
+yb = np.linspace(g(theta0) - 4*se_g, g(theta0) + 4*se_g, 300)
+dens_y = np.exp(-(yb-g(theta0))**2/(2*se_g**2)); dens_y /= dens_y.max()
+left = theta0 - 4*se - 0.02
+ax.fill_betweenx(yb, left, left + 0.10*dens_y, color=ACCENT, alpha=0.55)
+ax.text(left + 0.02, g(theta0)+3.0*se_g, r"density of $g(\hat\theta_n)$",
+        color=ACCENT, fontsize=9, rotation=90, va="top")
+
+ax.axvline(theta0, color=GREY, lw=0.8, ls=":")
+ax.axhline(g(theta0), color=GREY, lw=0.8, ls=":")
+ax.set_xlabel(r"$\theta$"); ax.set_ylabel(r"$g(\theta)$")
+ax.set_title("A smooth $g$ acts like its tangent over the MLE's spread")
+ax.legend(fontsize=9, framealpha=0.9, loc="upper left")
+plt.tight_layout()
+```
+
+## The theorem, derived
+
+::: {#thm-delta}
+**Theorem (the delta method).** Suppose $\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}\mathcal
+N(0,v)$ for some asymptotic variance $v$, and let $g$ be differentiable at $\theta_0$ with
+$g'(\theta_0)\ne 0$. Then
+$$
+\sqrt n\,\bigl(g(\hat\theta_n)-g(\theta_0)\bigr)\ \xrightarrow{\ d\ }\ \mathcal N\!\bigl(0,\ g'(\theta_0)^2\,v\bigr).
+$$
+In particular, for the MLE ($v=I_1(\theta_0)^{-1}$), the asymptotic variance of $g(\hat\theta_n)$
+is $g'(\theta_0)^2\,I_1(\theta_0)^{-1}$.
+:::
+
+::: {.proof}
+Apply the mean-value form of Taylor's theorem to $g$ between $\hat\theta_n$ and $\theta_0$
+(the same Calc-1 tool as in @thm-an): for some $\bar\theta_n$ between them,
+$$
+g(\hat\theta_n) = g(\theta_0) + g'(\bar\theta_n)\,(\hat\theta_n-\theta_0).
+$$
+Subtract $g(\theta_0)$ and multiply by $\sqrt n$:
+$$
+\sqrt n\,\bigl(g(\hat\theta_n)-g(\theta_0)\bigr) = g'(\bar\theta_n)\cdot\sqrt n\,(\hat\theta_n-\theta_0).
+$$
+Examine the two factors. Since $\hat\theta_n\xrightarrow{P}\theta_0$ (consistency) and
+$\bar\theta_n$ is squeezed between $\hat\theta_n$ and $\theta_0$, we have
+$\bar\theta_n\xrightarrow{P}\theta_0$; and $g'$ is continuous at $\theta_0$ (differentiable
+there), so by the continuous-mapping idea $g'(\bar\theta_n)\xrightarrow{P}g'(\theta_0)$, a
+*constant*. The other factor $\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}\mathcal N(0,v)$ by
+hypothesis. So we have (constant-converging) $\times$ (distribution-converging), and **Slutsky's
+theorem** again gives the product's limit as $g'(\theta_0)\times\mathcal N(0,v)$. Multiplying a
+$\mathcal N(0,v)$ variable by the constant $g'(\theta_0)$ scales its variance by
+$g'(\theta_0)^2$ (the $c^2$ rule), so
+$$
+\sqrt n\,\bigl(g(\hat\theta_n)-g(\theta_0)\bigr)\ \xrightarrow{\ d\ }\
+\mathcal N\!\bigl(0,\ g'(\theta_0)^2\,v\bigr). \qquad\blacksquare
+$$
+:::
+
+The mechanism is the same tangent-line picture as @fig-delta: $g$ acts linearly over the
+narrow spread of $\hat\theta_n$, and a linear map scales a Gaussian's standard deviation by the
+absolute slope (variance by the slope squared). Two immediate, constantly-used corollaries:
+
+- **Standard error of a transformed estimate.** $\widehat{\mathrm{SE}}\bigl(g(\hat\theta_n)\bigr)
+  = |g'(\hat\theta_n)|\cdot\widehat{\mathrm{SE}}(\hat\theta_n)$. To get the standard error of
+  the odds, the half-life, or the standard deviation, multiply the parameter's standard error
+  by the absolute derivative of the transformation, evaluated at the estimate. No new
+  asymptotic argument.
+- **Vector case.** If $\theta$ is a vector with asymptotic covariance matrix $\Sigma=I_1^{-1}$
+  and $g$ is scalar-valued, the variance becomes $\nabla g(\theta_0)^\top\,\Sigma\,\nabla
+  g(\theta_0)$ — the gradient replaces the derivative, and the quadratic form replaces the
+  square. This is how Regression attaches a standard error to *any* smooth combination of
+  fitted coefficients (a predicted value, a ratio of effects).
+
+::: {.callout-warning title="Pitfall"}
+**The delta method dies where the derivative vanishes.** @thm-delta requires
+$g'(\theta_0)\ne 0$. If the tangent is *flat* at $\theta_0$ — say $g(\theta)=\theta^2$ and the
+true value is $\theta_0=0$ — the first-order term disappears, the linear approximation says
+"zero variance," and the method gives a degenerate, wrong answer. The correct limiting
+distribution there is **not** Gaussian: a *second-order* delta method shows $n\,g(\hat\theta_n)$
+converges to a (scaled) **chi-square**, because near a flat point $g$ looks quadratic and the
+square of a Gaussian is chi-square. This is not a rare curiosity — it is exactly what happens
+when you test a parameter *at* a boundary or estimate a variance component that is truly zero,
+and it is why naive Wald intervals can misbehave near such points (a theme of [INFR-C3]).
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just simulate / bootstrap the standard error of $g(\hat\theta)$ instead of using the
+delta method?"* You often should, and an interviewer wants you to know the trade-off. The
+delta method is **analytic, instant, and transparent** — one derivative — but it is a
+*first-order* approximation: it can be poor when $g$ is sharply curved over the estimate's
+spread, when $n$ is small, or near $g'=0$. The **bootstrap** ([INFR-E1]) makes no linearity
+assumption and captures skewness in $g(\hat\theta_n)$'s distribution that the symmetric
+Gaussian delta-method interval misses, at the cost of computation. The rule of thumb: delta
+method for a quick, well-behaved transform and for *understanding* which derivative drives the
+uncertainty; bootstrap when the transform is wild, the sample is small, or you do not trust the
+linearization. They should agree when the delta method's assumptions hold — a useful check.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run all three properties and the delta method on real, messy problems — never a toy
+rigged to flatter the theory. Each is carried end to end, and the last sits squarely on the
+edge where the guarantees fail.
+
+## Example 1 — a clinical proportion: estimate, standard error, and a transformed quantity {#sec-ex-prop}
+
+A vaccine trial records, in one arm, how many of $n$ exposed subjects developed disease. The
+data are Bernoulli($p$), $p$ the infection probability; the MLE is the sample fraction
+$\hat p=k/n$ ([INFR-B2]). We attach an asymptotic standard error from @thm-an and then use the
+delta method to get a standard error for a *derived* quantity epidemiologists actually report:
+the **odds** $p/(1-p)$.
+
+For the Bernoulli, the Fisher information ([INFR-B3]) is $I_1(p)=\frac{1}{p(1-p)}$, so by
+@thm-an the MLE has asymptotic variance $\frac{p(1-p)}{n}$ — giving the familiar
+$\widehat{\mathrm{SE}}(\hat p)=\sqrt{\hat p(1-\hat p)/n}$. For the odds $g(p)=p/(1-p)$, the
+derivative is $g'(p)=\frac{1}{(1-p)^2}$ (quotient rule), so by @thm-delta the odds' standard
+error is $|g'(\hat p)|\cdot\widehat{\mathrm{SE}}(\hat p)=\frac{1}{(1-\hat p)^2}\sqrt{\hat
+p(1-\hat p)/n}$.
+
+```{python}
+#| label: fig-prop
+#| fig-cap: 'Bernoulli MLE with asymptotic and transformed standard errors ($n=400$, $k=58$). **Left:** the sampling distribution of $\hat p$ from $20{,}000$ simulated trials at the estimated $p$ (blue) against the asymptotic Gaussian $\mathcal N(\hat p, \hat p(1-\hat p)/n)$ from @thm-an (red) — a near-perfect match at this $n$. **Right:** the same for the *odds* $g(\hat p)=\hat p/(1-\hat p)$ (blue) against the delta-method Gaussian with SD $|g''(\hat p)|\,\mathrm{SE}(\hat p)$ (red). The delta method''s symmetric Gaussian is already slightly off in the right tail — a hint of the skewness a transform introduces, foreshadowing @sec-failure.'
+n, k = 400, 58
+phat = k / n
+se_p = np.sqrt(phat*(1-phat)/n)
+odds = phat/(1-phat)
+gprime = 1.0/(1-phat)**2
+se_odds = gprime * se_p
+
+# simulate sampling distributions at the estimated p
+reps = 20000
+sims = rng.binomial(n, phat, size=reps) / n
+sims_odds = sims/(1-sims)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+gx = np.linspace(sims.min(), sims.max(), 300)
+axL.hist(sims, bins=40, density=True, color=FILL, alpha=0.75, label=r"sim. $\hat p$")
+axL.plot(gx, np.exp(-(gx-phat)**2/(2*se_p**2))/np.sqrt(2*np.pi*se_p**2),
+         color=CURVE, label=r"$\mathcal{N}(\hat p,\,\hat p(1-\hat p)/n)$")
+axL.axvline(phat, color=ACCENT, lw=1.4)
+axL.set_xlabel(r"$\hat p$"); axL.set_ylabel("density")
+axL.set_title(fr"$\hat p={phat:.3f}\pm{se_p:.3f}$"); axL.legend(fontsize=8.5, framealpha=0.9)
+
+ox = np.linspace(sims_odds.min(), sims_odds.max(), 300)
+axR.hist(sims_odds, bins=40, density=True, color=FILL, alpha=0.75, label=r"sim. odds")
+axR.plot(ox, np.exp(-(ox-odds)**2/(2*se_odds**2))/np.sqrt(2*np.pi*se_odds**2),
+         color=CURVE, label="delta-method $\\mathcal{N}$")
+axR.axvline(odds, color=ACCENT, lw=1.4)
+axR.set_xlabel(r"odds $\hat p/(1-\hat p)$"); axR.set_ylabel("density")
+axR.set_title(fr"odds $={odds:.3f}\pm{se_odds:.3f}$"); axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"p_hat = {phat:.4f},  SE(p_hat) = {se_p:.4f}")
+print(f"odds  = {odds:.4f},  delta-method SE(odds) = {se_odds:.4f}")
+print(f"95% Wald CI for p:    [{phat-1.96*se_p:.4f}, {phat+1.96*se_p:.4f}]")
+```
+
+Read the output. The estimate is $\hat p=`{python} f"{phat:.3f}"`$ with asymptotic standard
+error $`{python} f"{se_p:.4f}"`$, giving a Wald interval
+$[`{python} f"{phat-1.96*se_p:.3f}"`,\ `{python} f"{phat+1.96*se_p:.3f}"`]$. The odds estimate
+is $`{python} f"{odds:.3f}"`$ with a delta-method standard error of
+$`{python} f"{se_odds:.4f}"`$, obtained by *nothing more than* multiplying $\mathrm{SE}(\hat
+p)$ by $|g'(\hat p)|=1/(1-\hat p)^2$. The left panel confirms @thm-an is excellent here; the
+right panel shows the delta-method approximation for the odds is good but already mildly
+strained in the tail, because squaring-type transforms inject skew the Gaussian cannot
+represent — the honest limit of a first-order method.
+
+## Example 2 — an exponential lifetime: information, efficiency, and the half-life {#sec-ex-exp}
+
+Reliability engineers model time-to-failure of a component as Exponential with rate $\lambda$
+(failures per hour). The MLE is $\hat\lambda=1/\bar x$ (the reciprocal mean lifetime, by
+invariance from $\hat{\mathbb E[X]}=\bar x$). The Fisher information is $I_1(\lambda)=1/\lambda^2$
+([INFR-B3]), so by @thm-an the asymptotic variance of $\hat\lambda$ is $\lambda^2/n$, and its
+standard error is $\hat\lambda/\sqrt n$. We also report the **median lifetime** (the "half-life"
+where half the units have failed), $m=\log 2/\lambda$, a transformed quantity — its
+delta-method standard error follows from $g(\lambda)=\log 2/\lambda$, $g'(\lambda)=-\log
+2/\lambda^2$.
+
+```{python}
+#| label: fig-exp
+#| fig-cap: 'Exponential lifetime: MLE, its asymptotic normality, and a transformed quantity ($n=120$ components, true rate $\lambda_0=0.04$/hr). **Left:** one observed lifetime sample (blue histogram) with the fitted Exponential density at $\hat\lambda$ (red). **Right:** over $15{,}000$ simulated experiments, the sampling distribution of $\sqrt n(\hat\lambda-\lambda_0)$ (blue) matched by the predicted $\mathcal N(0,\lambda_0^2)$ (red). The estimated median lifetime $\log 2/\hat\lambda$ and its delta-method standard error are printed below — a complete inference for a quantity we never directly parameterized.'
+lam0 = 0.04
+n = 120
+# one illustrative sample
+sample = rng.exponential(1/lam0, size=n)
+lamhat = 1.0/sample.mean()
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+xs = np.linspace(0, sample.max(), 200)
+axL.hist(sample, bins=25, density=True, color=FILL, alpha=0.75, label="lifetimes")
+axL.plot(xs, lamhat*np.exp(-lamhat*xs), color=CURVE,
+         label=fr"fit $\hat\lambda={lamhat:.4f}$")
+axL.set_xlabel("lifetime (hours)"); axL.set_ylabel("density")
+axL.set_title("Data and fitted Exponential"); axL.legend(fontsize=9, framealpha=0.9)
+
+# sampling distribution of sqrt(n)(lamhat - lam0)
+reps = 15000
+S = rng.exponential(1/lam0, size=(reps, n))
+lh = 1.0/S.mean(axis=1)
+z = np.sqrt(n)*(lh - lam0)
+gx = np.linspace(z.min(), z.max(), 300)
+av = lam0**2
+axR.hist(z, bins=50, density=True, color=FILL, alpha=0.75, label=r"sim. $\sqrt{n}(\hat\lambda-\lambda_0)$")
+axR.plot(gx, np.exp(-gx**2/(2*av))/np.sqrt(2*np.pi*av), color=CURVE,
+         label=fr"$\mathcal{{N}}(0,\lambda_0^2={av:.4f})$")
+axR.set_xlabel(r"$\sqrt{n}\,(\hat\lambda-\lambda_0)$"); axR.set_ylabel("density")
+axR.set_title("Asymptotic normality of the rate MLE"); axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+# delta method for the median lifetime m = log2 / lambda
+se_lam = lamhat/np.sqrt(n)
+median_hat = np.log(2)/lamhat
+gprime = -np.log(2)/lamhat**2
+se_median = abs(gprime)*se_lam
+print(f"lambda_hat = {lamhat:.5f} /hr,  SE = {se_lam:.5f}")
+print(f"median lifetime  = log2/lambda_hat = {median_hat:.2f} hr")
+print(f"delta-method SE(median) = |g'|*SE(lambda) = {se_median:.2f} hr")
+print(f"95% CI for median lifetime: [{median_hat-1.96*se_median:.1f}, {median_hat+1.96*se_median:.1f}] hr")
+```
+
+The estimated failure rate is $\hat\lambda=`{python} f"{lamhat:.4f}"`$ per hour, and the right
+panel confirms the rescaled error is Gaussian with the predicted variance $\lambda_0^2$. The
+median lifetime comes out to $`{python} f"{median_hat:.0f}"`$ hours with a delta-method
+standard error of $`{python} f"{se_median:.0f}"`$ hours, a complete confidence statement for a
+quantity — the half-life — that we never put in the model as a parameter. This is the practical
+power of the whole article in one example: estimate in the convenient parameterization, then
+*propagate* both the point estimate (invariance) and its uncertainty (delta method) to whatever
+the engineer actually wants to report.
+
+## Example 3 — the edge of applicability: small $n$ and a near-boundary proportion {#sec-ex-edge}
+
+Now the honest boundary. The asymptotic guarantees are about $n\to\infty$; here we deliberately
+violate that — a *small* sample and a parameter *near the edge* of its space — and watch the
+Wald interval, built on @thm-an, fail. Suppose we run $n=20$ trials and observe a rare event
+$k=1$ time, so $\hat p=0.05$. The asymptotic theory still produces a standard error and a
+symmetric interval, but both are lies: the true sampling distribution of $\hat p$ is discrete,
+skewed, and bunched against the floor $p=0$, nothing like the smooth Gaussian @thm-an promises
+*in the limit*.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: 'Where the asymptotics fail: small $n$, near-boundary $p$. With $n=20$ and true $p=0.05$, the exact sampling distribution of $\hat p=k/n$ is the discrete, sharply right-skewed Binomial (blue stems) — it cannot look Gaussian. The asymptotic Gaussian of @thm-an (red), centered at $\hat p$ with SD $\sqrt{\hat p(1-\hat p)/n}$, badly misrepresents it, and the symmetric Wald 95% interval (orange band) spills *below zero* into impossible negative probabilities. The whole apparatus assumes large $n$ and an interior parameter; both are violated here.'
+n, p_true = 20, 0.05
+kvals = np.arange(0, 9)
+from math import comb
+pmf = np.array([comb(n, kk)*p_true**kk*(1-p_true)**(n-kk) for kk in kvals])
+phat_vals = kvals/n
+
+# Use the observed phat = 1/20 = 0.05 for the asymptotic Gaussian / Wald interval
+phat = 1/n
+se = np.sqrt(phat*(1-phat)/n)
+gx = np.linspace(-0.10, 0.45, 400)
+gauss = np.exp(-(gx-phat)**2/(2*se**2))/np.sqrt(2*np.pi*se**2)
+
+fig, ax = plt.subplots(figsize=(6.8, 4.2))
+ax.stem(phat_vals, pmf/ (1/n), linefmt=DATA, markerfmt="o", basefmt=" ",
+        label=r"exact dist. of $\hat p$ (Binomial)")
+ax.plot(gx, gauss, color=CURVE, label=r"asymptotic $\mathcal{N}$ (Thm)")
+lo, hi = phat-1.96*se, phat+1.96*se
+ax.axvspan(lo, hi, color="#e07a00", alpha=0.25, label=f"Wald 95% CI [{lo:.3f}, {hi:.3f}]")
+ax.axvline(0, color="black", lw=1.0, ls=":")
+ax.set_xlabel(r"$\hat p$"); ax.set_ylabel("density / scaled prob.")
+ax.set_title("Small $n$, near-boundary $p$: the Gaussian and Wald CI break")
+ax.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"phat = {phat:.3f},  Wald 95% CI = [{lo:.4f}, {hi:.4f}]")
+print(f"the lower limit is {'NEGATIVE — impossible for a probability' if lo<0 else 'fine'}")
+```
+
+The Wald interval runs from $`{python} f"{phat-1.96*np.sqrt(phat*(1-phat)/n):.3f}"`$ to
+$`{python} f"{phat+1.96*np.sqrt(phat*(1-phat)/n):.3f}"`$ — and its lower end is **negative**, a
+nonsensical probability. Three lessons, each one the negation of a regularity condition:
+
+- **Small $n$ breaks the approximation, not the theorem.** @thm-an is a *limit*; at $n=20$ the
+  limit has not arrived, and the discrete, skewed exact distribution is the reality. The fix is
+  not to abandon likelihood but to use an interval that does not assume Gaussianity — the
+  **score (Wilson)** or **profile-likelihood** intervals of [INFR-C3], which respect the
+  boundary and never escape $[0,1]$.
+- **Near-boundary parameters are doubly dangerous.** As $p\to 0$ the true parameter approaches
+  the edge of $\Theta$ (regularity condition 4 strains), the information $I_1(p)=1/[p(1-p)]$
+  blows up, and the Gaussian approximation degrades fastest exactly where the symmetric
+  interval most wants to cross the boundary.
+- **A standard error is not a guarantee.** The software will print $\hat p\pm\mathrm{SE}$
+  without complaint. The number is only as good as the conditions behind @thm-an, and here they
+  do not hold. Knowing that is the entire difference between using the formula and trusting it.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+The three guarantees are theorems with hypotheses. A graduate-level command means knowing
+exactly which hypothesis each failure mode kills. Here is the consolidated honest map; each row
+corresponds to a regularity condition from @sec-setup.
+
+## Small samples: the limit has not arrived {#sec-small-n}
+
+Asymptotic normality and efficiency are statements about $n\to\infty$. For small $n$ the
+Gaussian approximation can be poor: the MLE may be visibly biased (the Normal variance,
+[INFR-B2]), its distribution skewed (Example 3), and Wald intervals can undercover or escape
+the parameter space. *Nothing is wrong with the theory* — the regime is simply outside its
+promise. The remedies are the **likelihood-ratio / profile** intervals of [INFR-C3] (which use
+the actual likelihood shape, not a Gaussian approximation to it) and the **bootstrap**
+([INFR-E1]) (which estimates the finite-$n$ distribution directly). When $n$ is small,
+*compute, do not assume*, the sampling distribution.
+
+## Boundary parameters: the score is not zero {#sec-boundary}
+
+The entire normality argument began with $U_n(\hat\theta_n)=0$ — an interior maximizer has zero
+score. If the true parameter sits on the boundary of $\Theta$ (a variance component that is
+truly zero, a mixing proportion at $0$ or $1$, the uniform $[0,\theta]$'s endpoint of
+[INFR-B2]), the maximizer is a *corner*, the score there is nonzero, and the Taylor expansion is
+invalid. The limiting distribution is then **not** Gaussian — it is typically a *mixture* (e.g.
+a 50/50 mix of a point mass at zero and a half-normal, Chernoff's result), and standard Wald
+inference is simply wrong. Recognizing "my parameter might be at a boundary" is the trigger to
+abandon the off-the-shelf $\hat\theta\pm 1.96\,\mathrm{SE}$.
+
+## Parameter-dependent support: regularity condition 2 {#sec-support}
+
+When the data's support depends on the parameter — uniform $[0,\theta]$, shifted exponentials,
+any truncation at an unknown point — we cannot differentiate under the integral, the score
+identities of @sec-score-facts fail, and the whole machine seizes. Strikingly, the MLE there is
+often **super-efficient**: for the uniform, $\hat\theta=\max_i X_i$ converges at rate $n$
+(not $\sqrt n$!) and its limiting distribution is *exponential*, not Gaussian. Faster
+convergence, but a completely different theory — a reminder that "the MLE is $\sqrt n$-normal"
+is a *conditional* statement, conditional on the regularity conditions holding.
+
+## Misspecification: efficient at fitting the wrong model {#sec-misspec}
+
+The quietest failure, because nothing crashes (see [INFR-B2]'s extended treatment). If the
+model family does not contain the truth, the MLE still converges — but to the parameter
+$\theta^\star$ minimizing the KL divergence to the truth (the "least-wrong" model in the
+family), *not* to a meaningful population quantity. Worse for this article: the variance is no
+longer $I_1^{-1}$. The information equality of @lem-score-var (variance of score = negative
+expected curvature) **relies on the model being correct**; under misspecification the two differ,
+and the correct asymptotic variance is the **sandwich** $A^{-1}BA^{-1}$, where $A$ is the
+expected curvature and $B$ is the score variance (White, 1982). Using the naive $I_1^{-1}$
+standard error under misspecification gives confidence intervals with wrong coverage — silently.
+This is why **robust ("sandwich") standard errors** exist and are the default in much of
+econometrics.
+
+::: {.callout-warning title="Pitfall"}
+**The naive standard error $1/\sqrt{I_n}$ assumes the model is correct.** The clean variance
+$I_1(\theta_0)^{-1}$ of @thm-an is a consequence of the information equality, which holds *only*
+when $f(\cdot\mid\theta_0)$ is the true data-generating density. If you doubt the model, the
+honest standard error is the sandwich estimator (which does not assume the equality), or a
+bootstrap. Quoting the model-based standard error for a misspecified model is one of the most
+common — and most invisible — errors in applied work.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When are the MLE's asymptotic guarantees safe to lean on, and when would you reach for
+something else?"* The summary to recite:
+
+- **Lean on them** when the model is a credible description of the data (passes a
+  goodness-of-fit check), the parameter is comfortably interior, the support does not depend on
+  the parameter, and $n$ is large enough that the Gaussian approximation has kicked in. Then
+  $\hat\theta\pm z\,/\sqrt{I_n}$ is asymptotically optimal and you cannot do better.
+- **Be cautious** with small $n$ (use profile-likelihood or bootstrap intervals), skewed
+  likelihoods (Wald intervals undercover; prefer likelihood-ratio intervals, [INFR-C3]), and
+  transformations through near-flat points (the second-order delta method, @sec-delta).
+- **Reach for something else** when the parameter is on a boundary (mixture / Chernoff theory),
+  the support depends on the parameter (different, often faster, non-Gaussian limit), or the
+  model may be misspecified (sandwich standard errors, or the bootstrap, [INFR-E1]). And when
+  you want uncertainty *without* trusting any parametric form at all, the bootstrap is the
+  general-purpose alternative this article's asymptotics presuppose you do not need.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-B2 *Maximum Likelihood*]** with an estimator, and **[INFR-B3 *Fisher
+Information*]** with a floor on precision. This article closed the Likelihood Spine's central
+question — *why is the MLE good?* — by proving it is consistent, asymptotically normal with
+variance $I_1^{-1}$, and asymptotically efficient (it reaches the floor), and by deriving the
+delta method that propagates all of this through any smooth transformation. The track now forks
+to *use* these results:
+
+- **[INFR-C3 *Wald, Score, and Profile Intervals*]** — turns @thm-an directly into the **Wald
+  interval** $\hat\theta\pm z_{\alpha/2}/\sqrt{I_n(\hat\theta)}$, and explains why the
+  profile/score alternatives beat it exactly in the regimes where @sec-failure says Wald breaks.
+- **[INFR-D3 *The Asymptotic Trinity*]** — the **Wald, score, and likelihood-ratio tests** are
+  three views of the same asymptotic-normal log-likelihood; Wilks' theorem ($2\log\Lambda
+  \xrightarrow{d}\chi^2$) is this article's normality applied to a difference of log-likelihoods.
+- **The Regression track** consumes this wholesale: every coefficient standard error, $z$- and
+  $t$-statistic, and confidence interval in a fitted GLM is @thm-an evaluated at the fitted
+  $\hat\beta$, with the inverse Fisher information (the inverse Hessian at the optimum) as the
+  covariance matrix.
+- **[INFR-E1 *The Bootstrap*]** — the assumption-light alternative for exactly the cases where
+  @sec-failure says the asymptotics cannot be trusted.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding rigor.** Fisher's 1922 and 1925 papers conjectured the efficiency of the MLE;
+  the rigorous asymptotic theory under regularity conditions was assembled by **Harald Cramér**,
+  *Mathematical Methods of Statistics* (1946) — the source of the "Cramér conditions" and the
+  clean consistency-plus-normality treatment this article follows. **Lucien Le Cam**'s later
+  work (the LAN — local asymptotic normality — framework, and the Hájek–Le Cam convolution
+  theorem) is the modern, deepest statement of *in what exact sense* the MLE cannot be beaten.
+- **The efficiency caveat made precise.** The **Hodges superefficiency** example and the
+  **Hájek convolution / local asymptotic minimax** theorems explain why "efficient" must be
+  qualified (no estimator beats the MLE *uniformly*, even if one can at isolated points). Any
+  graduate text — **van der Vaart**, *Asymptotic Statistics* (1998), Chs. 5 and 8 — develops
+  this carefully and is the standard modern reference for everything in this article.
+- **The misspecification theory.** Halbert White, "Maximum Likelihood Estimation of
+  Misspecified Models," *Econometrica* 50 (1982) — the quasi-MLE limit and the sandwich variance
+  of @sec-misspec.
+- **Observed vs. expected information.** Efron and Hinkley, "Assessing the Accuracy of the
+  Maximum Likelihood Estimator: Observed versus Expected Fisher Information," *Biometrika* 65
+  (1978) — the argument behind the "use the observed Hessian" advice of @sec-an.
+- **Open threads this article deferred.** *How do these limits become honest confidence
+  intervals and tests?* — [INFR-C3] and [INFR-D3]. *What if the regularity conditions fail?* —
+  the bootstrap ([INFR-E1]) and boundary/mixture theory. *What if we treat $\theta$ as random?*
+  — the Bayesian turn ([INFR-E4]), where the **Bernstein–von Mises theorem** shows the posterior
+  is *also* asymptotically $\mathcal N(\hat\theta_n, I_n^{-1})$, so Bayesian and frequentist
+  large-sample inference coincide — a striking echo of this article's central result.

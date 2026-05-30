@@ -1,0 +1,1097 @@
+---
+title: "Fisher Information: How Much a Sample Can Tell You"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+DATA   = "#2b3a67"     # data / observed points
+CURVE  = "#c1121f"     # the log-likelihood / score curve
+ACCENT = "#0a7d4d"     # highlights / the true value / the bound
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded densities / bands
+```
+
+> **Where this sits in the track.** This is the third article of the **Likelihood Spine**.
+> It assumes [INFR-B1 *The Likelihood*], which built the log-likelihood $\ell(\theta)$ and
+> its slope, the **score** $U(\theta)=\partial_\theta\ell(\theta)$, and [INFR-B2 *Maximum
+> Likelihood*], which found the estimator $\hat\theta$ by solving the score equation
+> $U(\hat\theta)=0$. From [INFR-A1 *The Estimator as a Random Variable*] it carries the one
+> idea everything here rests on: an estimator is a random variable with a **variance**, and
+> a smaller variance means a more precise estimate. From the Probability Foundations track
+> it borrows expectation, variance, and the rule for **differentiating under the integral
+> sign** (stated and motivated below, [PROB-09]), plus the Cauchy–Schwarz inequality
+> ([PROB-07]). Nothing else above the Calculus-I floor is assumed. This article installs the
+> object that measures **how much a sample can tell you about a parameter** — the **Fisher
+> information** — and uses it to prove a hard floor, the **Cramér–Rao bound**, on the
+> precision of *any* unbiased estimator. It sets up [INFR-B4] (the MLE's asymptotic variance
+> *is* the reciprocal of this information), [INFR-C3] (Wald intervals are built from it), and
+> [INFR-D3] (the score test reads it off the curvature).
+
+## Abstract {.unnumbered}
+
+The likelihood ranks parameter values; its peak gives an estimate. But a peak can be a
+needle-sharp spike or a broad, useless mound, and the difference is everything: a sharp
+peak means the data have *pinned the parameter down*, a flat one means they have barely
+spoken. **Fisher information** $I(\theta)$ is the number that measures that sharpness. We
+define it two equivalent ways — as the **variance of the score** and as the **negative
+expected curvature** of the log-likelihood — and prove the two definitions agree, using
+only the rule for differentiating under the integral and the fact that a density integrates
+to one. We prove the score has **mean zero** at the truth (so its variance, the
+information, is just its mean square), prove that information **adds over independent
+observations** ($I_n(\theta) = n\,I_1(\theta)$ — the precise sense in which more data is
+more information), and derive the **Cramér–Rao lower bound**: no unbiased estimator can
+have variance below $1/I_n(\theta)$. An estimator that hits the floor is called
+**efficient**. We compute $I(\theta)$ end-to-end for the Bernoulli, Poisson, and Normal
+models, and walk to the edge where the bound goes silent — biased estimators, boundary
+parameters, and finite samples. The single claim the article defends is that *Fisher
+information converts the curvature of the log-likelihood into a universal speed limit on
+precision, and tells you, before you even pick an estimator, the best any estimator could
+possibly do.*
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **Fisher information** $I(\theta)$ is how sharply the data pin down the parameter — the
+**curvature of the log-likelihood at its peak**, averaged over the data the model would
+produce. Two equivalent formulas, proved equal below:
+$$
+I(\theta) \;=\; \underbrace{\operatorname{Var}_\theta\!\bigl[\,U(\theta)\,\bigr]}_{\text{spread of the score}}
+\;=\; \underbrace{-\,\mathbb{E}_\theta\!\Bigl[\tfrac{\partial^2}{\partial\theta^2}\ell(\theta)\Bigr]}_{\text{average downward curvature}},
+\qquad U(\theta)=\frac{\partial}{\partial\theta}\ell(\theta).
+$$
+It has three properties that make it the master quantity of estimation. **(1)** The score
+has mean zero, so the information is the score's mean square. **(2)** It **adds** over
+independent observations: $n$ i.i.d. points carry $I_n(\theta) = n\,I_1(\theta)$ — twice
+the data, twice the information, *exactly*. **(3)** It is a **floor on precision**: the
+**Cramér–Rao bound** says every unbiased estimator $\hat\theta$ obeys
+$$
+\operatorname{Var}(\hat\theta) \;\ge\; \frac{1}{I_n(\theta)} \;=\; \frac{1}{n\,I_1(\theta)}.
+$$
+An estimator that attains this bound is **efficient** — no unbiased competitor can beat it.
+A sharp log-likelihood (large $I$) admits a precise estimate; a flat one (small $I$) forbids
+it.
+:::
+
+Everything below orbits that box. The phrase to hold is *curvature is information*. A
+function that bends sharply downward at its maximum is one where moving away from the peak
+costs you a lot of fit — so the data strongly prefer the peak, and an estimator can place it
+confidently. A function that is nearly flat on top barely distinguishes the peak from its
+neighbors — the data are nearly indifferent, and any estimate is fragile. Fisher information
+is that bend, made into a number, and the Cramér–Rao bound is the statement that the bend
+*is* the precision: you cannot estimate more sharply than the log-likelihood curves.
+
+# Why we are doing this: the problem that forced the idea {#sec-why}
+
+Keep one question in view for the whole article: **how much can a sample tell you about a
+parameter, and what is the best precision any estimator could hope for?** Every definition
+and derivation below answers a piece of that. If a step feels like notation for its own
+sake, return here.
+
+## The problem: a peak is not enough
+
+By [INFR-B2] we can find the maximum-likelihood estimate $\hat\theta$ — the parameter value
+that best explains the data. But [INFR-A1] taught us that $\hat\theta$ is a *random
+variable*: collect a different sample and you get a different estimate. A point estimate
+without a sense of its spread is half an answer. The natural next question — *how much does
+$\hat\theta$ wobble from sample to sample?* — is the variance of the estimator, and we need
+to know it before we can attach an honest interval to our estimate ([INFR-C3]) or test a
+claim about $\theta$ ([INFR-D3]).
+
+[INFR-B1] already showed us, in a picture, where the answer must hide. @fig-edge-flat there
+contrasted two coins that produced the *same* $\hat p = 0.75$: with $n=200$ flips the
+log-likelihood was a tight spike, with $n=4$ a broad mound. Same peak, wildly different
+trustworthiness. The location of the peak — the estimate — was identical; what differed was
+the **width** of the peak, equivalently how sharply the log-likelihood **curves** away from
+the top. The information we are after is not in *where* the peak is but in *how sharp* it
+is. We need to turn that sharpness into a number.
+
+## The deeper problem: is there a best possible estimator?
+
+There is a second, more ambitious question lurking. For any parameter we can usually invent
+*many* estimators — the sample mean, a trimmed mean, the median, a weird weighted thing. We
+can compare any two by their variances. But is there a *limit*? Is there a precision so good
+that **no** unbiased estimator, however clever, can beat it? If such a floor exists, it would
+let us judge an estimator against perfection rather than against the competition we happened
+to think of — and it would tell us when to stop searching, because we have hit the wall.
+
+That floor exists, and it is the reciprocal of the Fisher information. This is one of the
+most beautiful facts in statistics: the *same* quantity that measures the curvature of the
+log-likelihood — a property of the **model**, computable before any estimator is chosen —
+turns out to be the exact speed limit on **every** estimator. The model itself tells you the
+best you could ever do. Deriving why is the spine of this article.
+
+## A word on who built it
+
+The object is named for **R. A. Fisher**, who in the 1920s — the same papers that named the
+likelihood ([INFR-B1]) — introduced "information" as the amount of knowledge a sample yields
+about a parameter and recognized the curvature of the log-likelihood as its measure. The
+lower bound was found independently by **Harald Cramér** (1946) and **C. R. Rao** (1945),
+and a closely related form by **Maurice Fréchet** and **Georges Darmois**; the statistics
+world settled on "Cramér–Rao." The *why* threaded through everything below is theirs: turn
+the geometry of the likelihood — how it bends — into the arithmetic of precision.
+
+::: {.callout-tip title="You might be asked"}
+*"Intuitively, what does Fisher information measure?"* It measures how much the data, on
+average, will sharpen your knowledge of the parameter — equivalently, how sharply the
+log-likelihood is curved at its peak. The one-sentence test answer: *high Fisher information
+means the data strongly distinguish nearby parameter values (a sharp likelihood, a precise
+estimate); low Fisher information means they barely do (a flat likelihood, a fragile
+estimate).* If pressed for the connection to estimation, add: its reciprocal is a lower
+bound on the variance of any unbiased estimator (Cramér–Rao), and it is the asymptotic
+variance of the maximum-likelihood estimator scaled by $n$ ([INFR-B4]). The interviewer is
+checking that you tie *information* to *curvature* to *precision*, not that you recite a
+formula.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any formula, picture two log-likelihood curves over the same parameter, peaking at the
+same place. One is a steep, narrow valley flipped upside-down — a sharp dome. The other is a
+gentle, wide hill. @fig-intuition draws both for the coin of [INFR-B1].
+
+```{python}
+#| label: fig-intuition
+#| fig-cap: 'Curvature is information. Two log-likelihoods for the bias of a coin, both peaking at $\hat p = 0.6$, shifted to share a peak height of zero. The sharp curve (red, from $n=100$ flips) bends steeply away from the top: moving the bias even a little costs a lot of fit, so the data strongly prefer values near $0.6$ — the estimate is precise. The flat curve (grey, from $n=10$) barely bends: a wide band of biases explains the data almost equally, so the estimate is loose. Fisher information is the downward curvature at the peak, and the figure shows it controlling the *width* of the region the data find plausible.'
+p_grid = np.linspace(0.2, 0.95, 600)
+
+def shifted_loglik(n, phat):
+    k = phat * n
+    ell = k * np.log(p_grid) + (n - k) * np.log(1 - p_grid)
+    return ell - ell.max()
+
+ell_sharp = shifted_loglik(100, 0.6)
+ell_flat = shifted_loglik(10, 0.6)
+
+fig, ax = plt.subplots()
+ax.plot(p_grid, ell_sharp, color=CURVE, label=r"sharp: $n=100$ (large $I$)")
+ax.plot(p_grid, ell_flat, color=GREY, label=r"flat: $n=10$ (small $I$)")
+ax.axvline(0.6, color=ACCENT, ls="--", lw=1.5, label=r"shared peak $\hat p=0.6$")
+ax.axhline(0, color=GREY, lw=0.8, alpha=0.6)
+ax.set_ylim(-6, 0.4)
+ax.set_xlabel("bias $p$")
+ax.set_ylabel(r"log-likelihood (peak shifted to 0)")
+ax.set_title("A sharp peak carries more information")
+ax.legend(loc="lower center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+How do we turn "sharpness" into a number? In Calc 1, the sharpness of a curve at a peak is
+its **second derivative**. At a maximum the first derivative (the slope, the score) is zero
+and the second derivative is *negative* — the curve is concave down. The more negative the
+second derivative, the more sharply the curve bends away from the top. So a first guess at
+"information" is "$-\ell''$ at the peak," and that guess is almost exactly right. Two
+refinements turn it into Fisher information, and the formal section earns each:
+
+- **We average over data, not fix one sample.** The curvature $\ell''$ depends on the
+  particular sample we drew. Fisher information is the curvature the model would produce *on
+  average* — an **expectation** over the data-generating distribution. This makes it a
+  property of the model and the true parameter, not of one dataset, which is exactly what we
+  need to compare estimators *before* seeing data.
+- **It equals the spread of the score.** Astonishingly, that same average curvature also
+  equals the **variance of the slope** (the score) — a fact with no Calc-1 analogue, which
+  we prove in full. It is the bridge from "how the curve bends" to "how the estimate wobbles."
+
+# The formal development {#sec-formal}
+
+Throughout, the data are $x_1,\dots,x_n$ from a model with mass/density $p(x\mid\theta)$ and
+a *single* real parameter $\theta$ (the multi-parameter version is a matrix; we flag it at
+the end). We write $\ell(\theta) = \sum_i \log p(x_i\mid\theta)$ for the log-likelihood and
+$U(\theta) = \ell'(\theta)$ for the score, both from [INFR-B1]. The subscript on
+$\mathbb{E}_\theta$ and $\operatorname{Var}_\theta$ is a reminder that the expectation is
+taken over data drawn from the model **at parameter $\theta$** — the average is over possible
+datasets, with $\theta$ playing the role of the truth.
+
+## The one imported tool: differentiating under the integral {#sec-dui}
+
+Every proof below leans on a single move from above the Calc-1 floor, so we state it plainly,
+motivate it, and then use it in the open. A density integrates to one for *every* parameter
+value:
+$$
+\int p(x\mid\theta)\,dx = 1 \qquad \text{for all } \theta
+$$
+(sum instead of integral for discrete models; everything below works identically with
+$\sum_x$ in place of $\int dx$). The right-hand side, $1$, does not depend on $\theta$, so
+its derivative with respect to $\theta$ is $0$. We want to also differentiate the *left*-hand
+side, and the question is whether we may move the derivative **inside** the integral:
+$$
+\frac{d}{d\theta}\int p(x\mid\theta)\,dx
+\;\stackrel{?}{=}\;
+\int \frac{\partial}{\partial\theta}\,p(x\mid\theta)\,dx.
+$$
+Swapping the order of "differentiate" and "integrate" is not free in general — it can fail
+when the region where $p>0$ itself moves with $\theta$, or when the integrand misbehaves at
+the limits. But for the standard families we use (Bernoulli, Poisson, Normal, and the broad
+class called **regular** models), it is valid, and the technical hypotheses that license it
+are exactly the **regularity conditions** of maximum-likelihood theory.
+
+::: {.callout-note title="What we are importing, and where it is built"}
+The theorem that licenses $\frac{d}{d\theta}\int f(x,\theta)\,dx = \int
+\partial_\theta f(x,\theta)\,dx$ — sometimes called the **Leibniz rule for parameter
+differentiation** — is built in the Probability Foundations track ([PROB-09]); it requires
+that $f$ and $\partial_\theta f$ be suitably bounded and that the **support** $\{x :
+p(x\mid\theta) > 0\}$ not depend on $\theta$. We import only its statement. The fixed-support
+clause is not fine print: it is *precisely* what fails for the uniform $[0,\theta]$ model,
+whose support $[0,\theta]$ moves with the parameter — and that is exactly why Fisher
+information and the Cramér–Rao bound break for it, as we show honestly in @sec-edge. When the
+support is fixed, the swap is legal and the whole theory runs.
+:::
+
+With the swap in hand, differentiate the normalization $\int p\,dx = 1$ both sides:
+$$
+0 = \frac{d}{d\theta}\!\int p(x\mid\theta)\,dx
+= \int \frac{\partial p(x\mid\theta)}{\partial\theta}\,dx.
+$$ {#eq-dui-once}
+This little identity — *the integral of the parameter-derivative of the density is zero* —
+is the seed from which both the mean-zero score and the two-formula equivalence grow. We
+will also need it differentiated a second time; we do that when we get there.
+
+## The score has mean zero {#sec-score-mean}
+
+The score $U(\theta) = \ell'(\theta) = \sum_i \frac{\partial}{\partial\theta}\log
+p(x_i\mid\theta)$ is, for fixed data, a number, but as a function of the *random* data it is
+itself a random variable. Its expectation, taken at the true parameter, is exactly zero —
+the foundation of everything.
+
+::: {#lem-score-mean}
+**Lemma (the score is mean-zero).** Under the regularity conditions of @sec-dui, the score
+of a single observation has expectation zero at the true parameter:
+$$
+\mathbb{E}_\theta\!\left[\frac{\partial}{\partial\theta}\log p(X\mid\theta)\right] = 0.
+$$
+Consequently the total score $U(\theta)=\sum_{i=1}^n \frac{\partial}{\partial\theta}\log
+p(X_i\mid\theta)$ also has mean zero, $\mathbb{E}_\theta[U(\theta)] = 0$.
+:::
+
+::: {.proof}
+Start from the single-observation score and rewrite the log-derivative. The chain rule for
+the logarithm gives $\frac{\partial}{\partial\theta}\log p = \frac{1}{p}\cdot
+\frac{\partial p}{\partial\theta}$ (the derivative of $\log u$ is $u'/u$), so
+$$
+\frac{\partial}{\partial\theta}\log p(x\mid\theta)
+= \frac{1}{p(x\mid\theta)}\,\frac{\partial p(x\mid\theta)}{\partial\theta}.
+$$
+This identity — score $=$ (derivative of density) over (density) — is worth committing to
+memory; it is the hinge of nearly every proof in this article. Now take its expectation over
+$X$ at parameter $\theta$. By definition of expectation, $\mathbb{E}_\theta[g(X)] = \int
+g(x)\,p(x\mid\theta)\,dx$, so
+$$
+\mathbb{E}_\theta\!\left[\frac{\partial}{\partial\theta}\log p(X\mid\theta)\right]
+= \int \frac{1}{p(x\mid\theta)}\,\frac{\partial p(x\mid\theta)}{\partial\theta}
+\;\cdot\; p(x\mid\theta)\,dx.
+$$
+The factor $\frac{1}{p}$ from the score and the factor $p$ from the expectation **cancel**
+exactly (this is why we needed the score in the $p'/p$ form — the $p$ from the averaging
+kills the denominator):
+$$
+= \int \frac{\partial p(x\mid\theta)}{\partial\theta}\,dx = 0,
+$$
+where the final equality is precisely @eq-dui-once, the differentiated normalization. So the
+single-observation score has mean zero. For the total score over an independent sample, the
+expectation of a sum is the sum of the expectations, and each term is zero, so
+$\mathbb{E}_\theta[U(\theta)] = \sum_{i=1}^n 0 = 0$. $\qquad\blacksquare$
+:::
+
+Read what this says. At the true parameter, the slope of the log-likelihood is *on average*
+zero — the data have no systematic preference to push the parameter up or down from the
+truth. The estimate $\hat\theta$ (the root of the score) is therefore aimed at $\theta$, not
+biased away from it. But "on average zero" does not mean "always zero": for any particular
+sample the score is some nonzero number, and how much it *scatters* around zero is exactly
+what determines how much $\hat\theta$ scatters around $\theta$. That scatter is the
+variance of the score — which we are about to name the Fisher information.
+
+## Fisher information, definition one: the variance of the score {#sec-defn-var}
+
+::: {#def-fisher-var}
+**Definition (Fisher information, score-variance form).** The **Fisher information** in a
+single observation is the variance of the single-observation score at the true parameter:
+$$
+I_1(\theta) \;=\; \operatorname{Var}_\theta\!\left[\frac{\partial}{\partial\theta}\log p(X\mid\theta)\right]
+\;=\; \mathbb{E}_\theta\!\left[\left(\frac{\partial}{\partial\theta}\log p(X\mid\theta)\right)^{\!2}\right].
+$$
+The second equality holds because the score has mean zero (@lem-score-mean): for any
+mean-zero random variable $W$, $\operatorname{Var}(W) = \mathbb{E}[W^2] - (\mathbb{E}[W])^2 =
+\mathbb{E}[W^2] - 0 = \mathbb{E}[W^2]$.
+:::
+
+This is the definition that explains *why information bounds precision*: the score is the
+data's "pull" on the parameter, and the more that pull varies from sample to sample, the
+more the data discriminate between parameter values — and, as the Cramér–Rao proof will show,
+the more sharply an estimator can locate $\theta$. But this form, an expected square of a
+first derivative, is often awkward to compute. The second definition, in terms of curvature,
+is usually easier, and the fact that the two agree is one of the most useful identities in
+statistics.
+
+## Fisher information, definition two: the expected curvature {#sec-defn-curv}
+
+::: {#thm-information-equivalence}
+**Theorem (the two forms of Fisher information agree).** Under the regularity conditions of
+@sec-dui, the variance of the score equals the negative expected second derivative of the
+log-density:
+$$
+I_1(\theta)
+= \mathbb{E}_\theta\!\left[\left(\frac{\partial}{\partial\theta}\log p(X\mid\theta)\right)^{\!2}\right]
+= -\,\mathbb{E}_\theta\!\left[\frac{\partial^2}{\partial\theta^2}\log p(X\mid\theta)\right].
+$$
+:::
+
+::: {.proof}
+We differentiate the identity @eq-dui-once **a second time** and read the equivalence off
+the result. The cleanest route differentiates the mean-zero-score statement itself. We
+proved
+$$
+\int \frac{\partial}{\partial\theta}\log p(x\mid\theta)\;\cdot\; p(x\mid\theta)\,dx = 0
+$$
+(this is @lem-score-mean written as an integral, before the cancellation). The left side is
+a function of $\theta$ that is identically zero, so its derivative with respect to $\theta$
+is also zero. Differentiate under the integral sign (@sec-dui) and apply the **product rule**
+to the integrand, which is a product of two $\theta$-dependent factors,
+$\underbrace{\frac{\partial}{\partial\theta}\log p}_{A}\cdot\underbrace{p}_{B}$:
+$$
+0 = \frac{d}{d\theta}\int A\,B\,dx
+= \int \left(\frac{\partial A}{\partial\theta}\,B + A\,\frac{\partial B}{\partial\theta}\right)dx.
+$$
+Take the two pieces in turn. The first factor's derivative is
+$$
+\frac{\partial A}{\partial\theta}
+= \frac{\partial}{\partial\theta}\!\left(\frac{\partial}{\partial\theta}\log p\right)
+= \frac{\partial^2}{\partial\theta^2}\log p,
+$$
+the second derivative of the log-density. The second piece needs $\frac{\partial B}{\partial
+\theta} = \frac{\partial p}{\partial\theta}$, and here we re-use the score identity from
+@lem-score-mean in reverse: $\frac{\partial p}{\partial\theta} = p\cdot
+\frac{\partial}{\partial\theta}\log p$ (just $\frac{\partial}{\partial\theta}\log p =
+\frac1p\frac{\partial p}{\partial\theta}$ multiplied through by $p$). So
+$$
+A\,\frac{\partial B}{\partial\theta}
+= \frac{\partial}{\partial\theta}\log p \;\cdot\; p\,\frac{\partial}{\partial\theta}\log p
+= p\left(\frac{\partial}{\partial\theta}\log p\right)^{\!2}.
+$$
+Substitute both pieces back:
+$$
+0 = \int \left[\frac{\partial^2}{\partial\theta^2}\log p\right] p\,dx
+\;+\; \int \left(\frac{\partial}{\partial\theta}\log p\right)^{\!2} p\,dx.
+$$
+Each integral is now an expectation against $p(x\mid\theta)\,dx$ — that is the definition
+$\mathbb{E}_\theta[g] = \int g\,p\,dx$ again. The first is
+$\mathbb{E}_\theta\!\left[\frac{\partial^2}{\partial\theta^2}\log p\right]$ and the second is
+$\mathbb{E}_\theta\!\left[\left(\frac{\partial}{\partial\theta}\log p\right)^2\right]$, so
+$$
+0 = \mathbb{E}_\theta\!\left[\frac{\partial^2}{\partial\theta^2}\log p(X\mid\theta)\right]
+\;+\; \mathbb{E}_\theta\!\left[\left(\frac{\partial}{\partial\theta}\log p(X\mid\theta)\right)^{\!2}\right].
+$$
+Move the first term to the other side. The right-hand expectation is exactly $I_1(\theta)$
+by @def-fisher-var, so
+$$
+I_1(\theta) = \mathbb{E}_\theta\!\left[\left(\frac{\partial}{\partial\theta}\log p\right)^{\!2}\right]
+= -\,\mathbb{E}_\theta\!\left[\frac{\partial^2}{\partial\theta^2}\log p(X\mid\theta)\right],
+$$
+which is the claimed equality. $\qquad\blacksquare$
+:::
+
+The minus sign is doing real work, and it is not a sign convention to memorize: the log-
+likelihood is concave near its peak, so its second derivative is *negative*; negating it
+makes the information *positive*, as a variance must be. The two readings now sit side by
+side. The variance-of-score form (@def-fisher-var) tells you *why* information is precision —
+it is the spread of the data's pull. The curvature form (@thm-information-equivalence) tells
+you *how to compute it* — differentiate the log-likelihood twice and take an expectation,
+which is almost always the easier arithmetic. We will use the curvature form for every
+worked example.
+
+::: {.callout-tip title="You might be asked"}
+*"Fisher information has two definitions — variance of the score, and negative expected
+second derivative. Are they always equal, and which do you use?"* They are equal **under the
+regularity conditions** (fixed support, legal differentiation under the integral); the proof
+is the one above — differentiate the normalization twice. In practice you compute with the
+**curvature form** $-\mathbb{E}[\ell'']$ because second derivatives of a log-density are
+usually cleaner than the expected square of a first derivative. You should also be ready for
+the catch: the equality *fails* exactly when the regularity conditions fail — most
+famously the uniform $[0,\theta]$, whose support moves with the parameter — and there the
+whole Fisher-information / Cramér–Rao apparatus does not apply. Naming that failure case
+unprompted is what separates a memorized answer from an understood one.
+:::
+
+## Information adds: $I_n(\theta) = n\,I_1(\theta)$ {#sec-additivity}
+
+We have so far worked with a single observation. The information in the *whole sample* is
+what bounds the estimate, and for independent data it is simply $n$ copies of the
+single-observation information.
+
+::: {#thm-additivity}
+**Theorem (information adds over independent observations).** For an independent sample
+$X_1,\dots,X_n$ from the same model, the Fisher information in the full sample is
+$$
+I_n(\theta) = n\,I_1(\theta).
+$$
+:::
+
+::: {.proof}
+Use the variance-of-score form. The total score is the sum of the single-observation scores,
+$U(\theta) = \sum_{i=1}^n U_i(\theta)$ where $U_i(\theta) = \frac{\partial}{\partial\theta}
+\log p(X_i\mid\theta)$, because the log-likelihood is a sum (the additivity bought by the
+logarithm in [INFR-B1]) and the derivative of a sum is the sum of the derivatives. The
+Fisher information in the sample is the variance of this total score:
+$$
+I_n(\theta) = \operatorname{Var}_\theta[U(\theta)] = \operatorname{Var}_\theta\!\left[\sum_{i=1}^n U_i(\theta)\right].
+$$
+Now invoke the rule for the variance of a sum of **independent** random variables: variance
+distributes across an independent sum with no covariance terms,
+$\operatorname{Var}(\sum_i W_i) = \sum_i \operatorname{Var}(W_i)$ (the cross terms
+$\operatorname{Cov}(W_i, W_j)$ for $i\neq j$ all vanish under independence — built in
+[INFR-A1] and [PROB-06]). The $X_i$ are independent, so the $U_i$ are independent, hence
+$$
+I_n(\theta) = \sum_{i=1}^n \operatorname{Var}_\theta[U_i(\theta)].
+$$
+Finally, the observations are identically distributed, so each
+$\operatorname{Var}_\theta[U_i(\theta)]$ is the *same* number — the single-observation
+information $I_1(\theta)$ of @def-fisher-var. Summing $n$ identical copies,
+$$
+I_n(\theta) = \sum_{i=1}^n I_1(\theta) = n\,I_1(\theta). \qquad\blacksquare
+$$
+:::
+
+This is the rigorous version of the slogan *more data is more information* — and it is sharper
+than the slogan, because it says information grows **exactly linearly**: a hundred
+observations carry exactly one hundred times the information of one, not more, not less.
+Through the Cramér–Rao bound (next), this linear growth becomes the familiar
+$\operatorname{Var}(\hat\theta) \ge \frac{1}{n I_1(\theta)}$ — variance shrinking like
+$1/n$, standard error like $1/\sqrt{n}$, the universal rate we first met in the central limit
+theorem ([INFR-A2]). The two ideas are the same fact seen from two sides: averaging $n$
+observations sharpens the estimate at rate $\sqrt{n}$ because each independent observation
+adds one fixed unit of information.
+
+::: {.callout-tip title="You might be asked"}
+*"Why does the standard error of an estimate shrink like $1/\sqrt{n}$ and not, say, $1/n$?"*
+Because information adds linearly. Each independent observation contributes a fixed amount
+$I_1(\theta)$ of Fisher information, so $n$ of them give $n\,I_1(\theta)$; the best possible
+variance is the reciprocal, $\frac{1}{n I_1(\theta)}$, which falls like $1/n$; and the
+standard error is the square root of the variance, which falls like $1/\sqrt{n}$. To halve
+your standard error you must **quadruple** your sample — the practical cost of the
+square-root law, and the reason large precision gains get expensive fast.
+:::
+
+## The Cramér–Rao lower bound {#sec-crb}
+
+We now prove the centerpiece: Fisher information is a floor on the precision of every
+unbiased estimator. We state it for an estimator of $\theta$ itself; the general version for
+estimating a function $g(\theta)$ falls out of the same proof and we record it after.
+
+::: {#thm-crb}
+**Theorem (Cramér–Rao lower bound).** Let $\hat\theta = \hat\theta(X_1,\dots,X_n)$ be any
+**unbiased** estimator of $\theta$, meaning $\mathbb{E}_\theta[\hat\theta] = \theta$ for all
+$\theta$, in a regular model (@sec-dui). Then
+$$
+\operatorname{Var}_\theta(\hat\theta) \;\ge\; \frac{1}{I_n(\theta)} \;=\; \frac{1}{n\,I_1(\theta)}.
+$$
+:::
+
+::: {.proof}
+The whole proof is one application of the **Cauchy–Schwarz inequality** to two random
+variables: the estimator $\hat\theta$ and the total score $U(\theta)$. We first compute their
+covariance, then square the Cauchy–Schwarz inequality, then read off the bound.
+
+**Step 1 — the covariance of the estimator and the score is exactly 1.** Recall the score
+$U(\theta) = \frac{\partial}{\partial\theta}\ell(\theta) = \frac1{p}\frac{\partial p}{\partial
+\theta}$ summed over the sample, where now $p(x\mid\theta) = \prod_i p(x_i\mid\theta)$ is the
+*joint* density of the whole sample (the score of the sample is the log-derivative of the
+joint density — same identity, applied to the product). The unbiasedness assumption says,
+written as an integral over the sample space with $\mathbf{x} = (x_1,\dots,x_n)$,
+$$
+\mathbb{E}_\theta[\hat\theta] = \int \hat\theta(\mathbf{x})\,p(\mathbf{x}\mid\theta)\,d\mathbf{x} = \theta
+\qquad \text{for all }\theta.
+$$
+Differentiate both sides with respect to $\theta$. The right side gives $\frac{d}{d\theta}
+\theta = 1$. The left side we differentiate under the integral (@sec-dui), and since
+$\hat\theta(\mathbf{x})$ does not depend on $\theta$ (it is a fixed function of the data) the
+derivative lands only on $p$:
+$$
+1 = \int \hat\theta(\mathbf{x})\,\frac{\partial p(\mathbf{x}\mid\theta)}{\partial\theta}\,d\mathbf{x}.
+$$
+Now use the score identity $\frac{\partial p}{\partial\theta} = p\cdot
+\frac{\partial}{\partial\theta}\log p = p\,U(\theta)$ to convert the bare density-derivative
+into the score times the density:
+$$
+1 = \int \hat\theta(\mathbf{x})\,U(\theta)\,p(\mathbf{x}\mid\theta)\,d\mathbf{x}
+= \mathbb{E}_\theta\!\bigl[\hat\theta\,U(\theta)\bigr].
+$$
+Since the score has mean zero (@lem-score-mean, $\mathbb{E}_\theta[U]=0$), the right side is
+exactly the **covariance** of $\hat\theta$ and $U$:
+$$
+\operatorname{Cov}_\theta(\hat\theta, U)
+= \mathbb{E}_\theta[\hat\theta\,U] - \mathbb{E}_\theta[\hat\theta]\,\mathbb{E}_\theta[U]
+= \mathbb{E}_\theta[\hat\theta\,U] - \theta\cdot 0
+= \mathbb{E}_\theta[\hat\theta\,U] = 1.
+$$
+So the estimator and the score covary perfectly to the value $1$ — a clean, dimensionless
+hook the inequality will pull on.
+
+**Step 2 — Cauchy–Schwarz.** For any two random variables $A$ and $B$, the Cauchy–Schwarz
+inequality for covariances states
+$$
+\bigl[\operatorname{Cov}(A,B)\bigr]^2 \;\le\; \operatorname{Var}(A)\,\operatorname{Var}(B).
+$$
+(This is the probabilistic form of the familiar vector inequality $\langle a,b\rangle^2 \le
+\|a\|^2\|b\|^2$, with "inner product" $= $ covariance; it is built in [PROB-07], and its
+content is just that a correlation coefficient lies in $[-1,1]$.) Apply it with $A=\hat\theta$
+and $B=U(\theta)$:
+$$
+\bigl[\operatorname{Cov}_\theta(\hat\theta, U)\bigr]^2 \;\le\; \operatorname{Var}_\theta(\hat\theta)\,\operatorname{Var}_\theta(U).
+$$
+
+**Step 3 — substitute the two quantities we know.** The left side is $1^2 = 1$ by Step 1.
+The variance of the score on the right is, by definition, the Fisher information of the whole
+sample: $\operatorname{Var}_\theta(U) = I_n(\theta)$ (this is @def-fisher-var applied to the
+sample score; equivalently @thm-additivity says it equals $n I_1(\theta)$). So
+$$
+1 \;\le\; \operatorname{Var}_\theta(\hat\theta)\,I_n(\theta).
+$$
+Divide both sides by $I_n(\theta)$, which is positive (a variance, and nonzero for any model
+that carries information), to isolate the estimator's variance:
+$$
+\operatorname{Var}_\theta(\hat\theta) \;\ge\; \frac{1}{I_n(\theta)} = \frac{1}{n\,I_1(\theta)}. \qquad\blacksquare
+$$
+:::
+
+That is the speed limit. Notice what went into it: the model's regularity (to differentiate
+under the integral), the estimator's unbiasedness (to make the covariance equal exactly $1$),
+and one inequality. No assumption about *which* estimator — the bound holds for the sample
+mean, the median, and every clever scheme anyone will ever invent. The Fisher information,
+computed from the model alone, caps them all.
+
+::: {#def-efficiency}
+**Definition (efficiency).** An unbiased estimator that attains the Cramér–Rao bound,
+$\operatorname{Var}_\theta(\hat\theta) = 1/I_n(\theta)$, is called **efficient**. More
+generally, the **efficiency** of an unbiased estimator is the ratio
+$$
+\text{eff}(\hat\theta) = \frac{1/I_n(\theta)}{\operatorname{Var}_\theta(\hat\theta)} \in (0,1],
+$$
+the fraction of the available information it manages to use; efficiency $1$ means it wastes
+nothing.
+:::
+
+When does an estimator hit the floor? The single inequality in the proof was Cauchy–Schwarz
+(Step 2), so the bound is attained exactly when *that* step is an equality, and Cauchy–Schwarz
+is an equality precisely when its two random variables are **linearly dependent** — the
+probabilistic version of "$\langle a,b\rangle^2 = \|a\|^2\|b\|^2$ iff $b$ is a scalar multiple
+of $a$," the condition that the correlation between them is $\pm 1$ (this dependence-at-equality
+clause is part of the Cauchy–Schwarz statement we imported from [PROB-07]). Here the two
+variables are $\hat\theta$ and the score $U(\theta)$, so equality requires that, for each
+$\theta$, the score be an affine function of the estimator,
+$$
+U(\theta) = a(\theta)\,\hat\theta + b(\theta),
+$$
+for some coefficients $a(\theta), b(\theta)$ that may depend on $\theta$ but not on the data.
+We can pin down both coefficients from facts already proved, with no new machinery. Take the
+expectation at $\theta$: the left side is $\mathbb{E}_\theta[U] = 0$ (@lem-score-mean) and the
+right side is $a(\theta)\,\mathbb{E}_\theta[\hat\theta] + b(\theta) = a(\theta)\,\theta +
+b(\theta)$ (unbiasedness), so $b(\theta) = -a(\theta)\,\theta$ and the relation becomes
+$U(\theta) = a(\theta)(\hat\theta - \theta)$. To find $a(\theta)$, multiply this by $\hat\theta$
+and take expectations: the left side is $\mathbb{E}_\theta[\hat\theta\,U] = 1$ (Step 1 of the
+proof), and the right side is $a(\theta)\,\mathbb{E}_\theta[\hat\theta(\hat\theta-\theta)] =
+a(\theta)\,\operatorname{Cov}_\theta(\hat\theta,\hat\theta) = a(\theta)\operatorname{Var}_\theta(\hat\theta)$
+(using $\mathbb{E}_\theta[\hat\theta]=\theta$ so that $\mathbb{E}_\theta[\hat\theta(\hat\theta-\theta)]$
+is exactly the variance). Hence $a(\theta) = 1/\operatorname{Var}_\theta(\hat\theta)$, and at the
+floor $\operatorname{Var}_\theta(\hat\theta) = 1/I_n(\theta)$, so $a(\theta) = I_n(\theta)$. The
+attainment condition is therefore
+$$
+U(\theta) = I_n(\theta)\,(\hat\theta - \theta):
+$$
+the score must be a fixed multiple of the estimation error — equivalently, the estimator must be
+recoverable *linearly from the score*. This linear-in-the-score structure is exactly the
+defining feature of the **exponential families** (which include the Bernoulli, Poisson, and
+Normal we are about to compute), and it is why the sample mean is efficient for those. For
+models outside that class the score is a *nonlinear* function of any unbiased estimator, so
+Cauchy–Schwarz is strict and no unbiased estimator reaches the floor at finite $n$ — but the
+maximum-likelihood estimator reaches it *asymptotically*, as $n\to\infty$, which is the deep
+payoff worked out in [INFR-B4].
+
+::: {.callout-note title="The bound for a function of the parameter"}
+The same proof, with one extra derivative, handles an unbiased estimator $T$ of a smooth
+function $g(\theta)$ (e.g. estimating the variance $\sigma^2$, or the odds $p/(1-p)$).
+Differentiating $\mathbb{E}_\theta[T] = g(\theta)$ gives $\operatorname{Cov}_\theta(T, U) =
+g'(\theta)$ in Step 1 instead of $1$, and Cauchy–Schwarz then yields
+$$
+\operatorname{Var}_\theta(T) \;\ge\; \frac{[\,g'(\theta)\,]^2}{I_n(\theta)}.
+$$
+The squared derivative $[g'(\theta)]^2$ is the **delta-method** factor — the local
+sensitivity of $g$ to $\theta$ — which reappears as the engine of [INFR-B4]'s treatment of
+functions of the MLE. We record it here because it is the form a regression coefficient's or
+a transformed parameter's bound actually takes in practice.
+:::
+
+# Worked examples {#sec-examples}
+
+We now compute Fisher information end-to-end for the three workhorse models, by hand from the
+curvature form $I_1(\theta) = -\mathbb{E}_\theta[\ell_1''(\theta)]$ where $\ell_1$ is the
+single-observation log-likelihood. In each case we then check the Cramér–Rao bound against
+the estimator we already know from [INFR-B2], and confirm the arithmetic against simulation.
+
+## Example 1 — Bernoulli: the information in a coin flip {#sec-ex-bernoulli}
+
+A single Bernoulli observation $X\in\{0,1\}$ with $P(X=1)=p$ has log-density (from
+[INFR-B1])
+$$
+\ell_1(p) = x\log p + (1-x)\log(1-p).
+$$
+Differentiate once for the score, using $\frac{d}{dp}\log p = \frac1p$ and
+$\frac{d}{dp}\log(1-p) = \frac{-1}{1-p}$:
+$$
+\frac{\partial \ell_1}{\partial p} = \frac{x}{p} - \frac{1-x}{1-p}.
+$$
+Differentiate a second time. The derivative of $\frac{x}{p} = x p^{-1}$ is $-x p^{-2} =
+-\frac{x}{p^2}$; the derivative of $-\frac{1-x}{1-p} = -(1-x)(1-p)^{-1}$ is
+$-(1-x)(1-p)^{-2}\cdot(-1)\cdot(-1) = -\frac{1-x}{(1-p)^2}$ (one minus from the existing sign,
+one from the chain rule on $1-p$, which combine to a single minus):
+$$
+\frac{\partial^2 \ell_1}{\partial p^2} = -\frac{x}{p^2} - \frac{1-x}{(1-p)^2}.
+$$
+Now take the negative expectation. The only random thing is $x$, and $\mathbb{E}_p[X] = p$,
+so $\mathbb{E}_p[1-X] = 1-p$:
+$$
+I_1(p) = -\,\mathbb{E}_p\!\left[\frac{\partial^2 \ell_1}{\partial p^2}\right]
+= \mathbb{E}_p\!\left[\frac{X}{p^2} + \frac{1-X}{(1-p)^2}\right]
+= \frac{p}{p^2} + \frac{1-p}{(1-p)^2}
+= \frac{1}{p} + \frac{1}{1-p}.
+$$
+Put the two fractions over a common denominator $p(1-p)$:
+$$
+\boxed{\;I_1(p) = \frac{1}{p} + \frac{1}{1-p} = \frac{(1-p) + p}{p(1-p)} = \frac{1}{p(1-p)}.\;}
+$$ {#eq-info-bernoulli}
+Read this curve. Information is **largest near $p=0$ and $p=1$** — when the coin is nearly
+deterministic, a single flip is very telling — and **smallest at $p=\tfrac12$**, where the
+coin is maximally random and one flip says the least. By @thm-additivity, $n$ flips carry
+$I_n(p) = \frac{n}{p(1-p)}$, so the Cramér–Rao bound on any unbiased estimator of $p$ is
+$\operatorname{Var}(\hat p) \ge \frac{p(1-p)}{n}$. The MLE $\hat p = \bar X = k/n$ from
+[INFR-B2] has variance $\operatorname{Var}(\bar X) = \frac{\operatorname{Var}(X)}{n} =
+\frac{p(1-p)}{n}$ — it **hits the bound exactly**, so the sample proportion is efficient.
+@fig-info-bernoulli draws the information curve and confirms the bound by simulation.
+
+```{python}
+#| label: fig-info-bernoulli
+#| fig-cap: 'Fisher information for the Bernoulli, and the Cramér–Rao bound in action. **Left:** the per-observation information $I_1(p)=1/[p(1-p)]$ (red) blows up as the coin nears certainty ($p\to0$ or $1$) and bottoms out at the maximally-random $p=\tfrac12$ — one flip of a fair coin is the least informative flip there is. **Right:** for $p=0.3$, $n=40$, the empirical variance of the sample proportion $\hat p=\bar X$ across 20000 simulated samples (blue) sits right on the Cramér–Rao floor $p(1-p)/n$ (green dashed): the MLE is efficient — it extracts all the information the bound allows.'
+p_grid = np.linspace(0.02, 0.98, 500)
+I1 = 1.0 / (p_grid * (1 - p_grid))
+
+p_true, n_obs = 0.3, 40
+rng = np.random.default_rng(0)
+phats = rng.binomial(n_obs, p_true, size=20000) / n_obs
+emp_var = phats.var()
+crb = p_true * (1 - p_true) / n_obs
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.plot(p_grid, I1, color=CURVE)
+axL.axvline(0.5, color=GREY, ls=":", lw=1.4)
+axL.annotate("least informative\nat $p=0.5$", (0.5, 1.0/0.25),
+             textcoords="offset points", xytext=(8, 10), fontsize=8, color=GREY)
+axL.set_xlabel("bias $p$"); axL.set_ylabel(r"$I_1(p)=1/[p(1-p)]$")
+axL.set_ylim(0, 30)
+axL.set_title("Information per flip")
+
+axR.hist(phats, bins=40, density=True, color=FILL, alpha=0.7)
+axR.axvline(p_true, color=ACCENT, ls="--", lw=1.6, label=fr"true $p={p_true}$")
+axR.set_xlabel(r"sample proportion $\hat p$"); axR.set_ylabel("density")
+axR.set_title("Sampling distribution of $\\hat p$")
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"empirical Var(p_hat) = {emp_var:.6f}")
+print(f"Cramer-Rao bound     = {crb:.6f}   (p(1-p)/n)")
+print(f"ratio (efficiency)   = {crb/emp_var:.4f}   (~1 means MLE attains the bound)")
+```
+
+## Example 2 — Poisson: the information in a count {#sec-ex-poisson}
+
+A single Poisson count $X\in\{0,1,2,\dots\}$ with rate $\lambda$ has log-density (dropping
+the $-\log x!$ constant, which has zero derivative in $\lambda$)
+$$
+\ell_1(\lambda) = x\log\lambda - \lambda - \log x!.
+$$
+Score (first derivative; $\frac{d}{d\lambda}\log\lambda = \frac1\lambda$, the derivative of
+$-\lambda$ is $-1$, the constant drops):
+$$
+\frac{\partial \ell_1}{\partial\lambda} = \frac{x}{\lambda} - 1.
+$$
+Second derivative ($\frac{x}{\lambda} = x\lambda^{-1}$ differentiates to $-x\lambda^{-2}$;
+the $-1$ is constant):
+$$
+\frac{\partial^2 \ell_1}{\partial\lambda^2} = -\frac{x}{\lambda^2}.
+$$
+Negative expectation, using the Poisson mean $\mathbb{E}_\lambda[X] = \lambda$:
+$$
+\boxed{\;I_1(\lambda) = -\,\mathbb{E}_\lambda\!\left[-\frac{X}{\lambda^2}\right]
+= \frac{\mathbb{E}_\lambda[X]}{\lambda^2} = \frac{\lambda}{\lambda^2} = \frac{1}{\lambda}.\;}
+$$ {#eq-info-poisson}
+Information per observation is $1/\lambda$: a **rare** process (small $\lambda$) is *more*
+informative per count about its rate, because the counts are tightly concentrated, while a
+high-rate process scatters its counts widely and each one says less. By additivity $I_n =
+n/\lambda$, so the bound is $\operatorname{Var}(\hat\lambda) \ge \lambda/n$. The MLE
+$\hat\lambda = \bar X$ has variance $\frac{\operatorname{Var}(X)}{n} = \frac{\lambda}{n}$
+(the Poisson variance equals its mean $\lambda$) — again **exactly the bound**, so $\bar X$
+is efficient for the Poisson rate.
+
+```{python}
+#| label: fig-info-poisson
+#| fig-cap: 'The Cramér–Rao bound for the Poisson rate, verified by simulation. For each true rate $\lambda$ we draw 20000 samples of $n=25$ counts, estimate the rate by the MLE $\hat\lambda=\bar X$, and plot the empirical variance (blue dots) against the Cramér–Rao floor $\lambda/n$ (green line). The dots lie on the line across the whole range: the sample mean attains the bound for every rate. The variance *grows* with $\lambda$ because higher-rate processes carry less information per count ($I_1=1/\lambda$).'
+n_obs = 25
+lams = np.linspace(0.5, 8.0, 16)
+rng = np.random.default_rng(1)
+emp = []
+for lam in lams:
+    lamhats = rng.poisson(lam, size=(20000, n_obs)).mean(axis=1)
+    emp.append(lamhats.var())
+emp = np.array(emp)
+bound = lams / n_obs
+
+fig, ax = plt.subplots()
+ax.plot(lams, bound, color=ACCENT, label=r"Cramér–Rao bound $\lambda/n$")
+ax.scatter(lams, emp, color=DATA, s=35, zorder=3, label=r"empirical $\mathrm{Var}(\hat\lambda)$")
+ax.set_xlabel(r"true rate $\lambda$"); ax.set_ylabel(r"variance of $\hat\lambda$")
+ax.set_title("MLE attains the bound for every rate")
+ax.legend(loc="upper left", framealpha=0.9)
+plt.tight_layout()
+print(f"max relative gap between empirical and bound: {np.max(np.abs(emp-bound)/bound):.3f}")
+```
+
+## Example 3 — Normal: information about the mean, and about the variance {#sec-ex-normal}
+
+The Normal carries two parameters, and computing the information about each separately is
+both the most useful case in practice and the cleanest illustration that information depends
+on which parameter you are after.
+
+**Information about the mean $\mu$ (variance $\sigma^2$ known).** The single-observation
+log-density is
+$$
+\ell_1(\mu) = -\tfrac12\log(2\pi\sigma^2) - \frac{(x-\mu)^2}{2\sigma^2}.
+$$
+Score (only the second term depends on $\mu$; chain rule on $(x-\mu)^2$ gives $2(x-\mu)\cdot
+(-1)$, so the $\frac1{2\sigma^2}$ and the $2$ combine):
+$$
+\frac{\partial\ell_1}{\partial\mu} = \frac{x-\mu}{\sigma^2}.
+$$
+Second derivative (the derivative of $\frac{x-\mu}{\sigma^2}$ with respect to $\mu$ is
+$-\frac{1}{\sigma^2}$, a constant):
+$$
+\frac{\partial^2\ell_1}{\partial\mu^2} = -\frac{1}{\sigma^2}.
+$$
+This second derivative is already a constant — it does not depend on the random $x$ at all —
+so the expectation is trivial:
+$$
+\boxed{\;I_1(\mu) = -\,\mathbb{E}_\mu\!\left[-\frac{1}{\sigma^2}\right] = \frac{1}{\sigma^2}.\;}
+$$ {#eq-info-normal-mu}
+Information about the mean is $1/\sigma^2$ per observation: the **noisier** the measurements
+(larger $\sigma^2$), the **less** each tells you about the center — exactly the intuition you
+would demand. By additivity $I_n(\mu) = n/\sigma^2$, so the bound is
+$\operatorname{Var}(\hat\mu) \ge \sigma^2/n$. The MLE $\hat\mu = \bar X$ has variance exactly
+$\sigma^2/n$ — efficient again, and this is the precise sense in which the sample mean is the
+best possible unbiased estimator of a Normal mean.
+
+**Information about the variance $\sigma^2$ (mean $\mu$ known).** Write $v=\sigma^2$ to
+reduce clutter. The log-density as a function of $v$ is
+$$
+\ell_1(v) = -\tfrac12\log(2\pi) - \tfrac12\log v - \frac{(x-\mu)^2}{2v}.
+$$
+Score (the derivative of $-\tfrac12\log v$ is $-\frac{1}{2v}$; the derivative of
+$-\frac{(x-\mu)^2}{2v} = -\frac{(x-\mu)^2}{2}v^{-1}$ is $+\frac{(x-\mu)^2}{2}v^{-2} =
+\frac{(x-\mu)^2}{2v^2}$):
+$$
+\frac{\partial\ell_1}{\partial v} = -\frac{1}{2v} + \frac{(x-\mu)^2}{2v^2}.
+$$
+Second derivative (the derivative of $-\frac1{2v} = -\tfrac12 v^{-1}$ is $\tfrac12 v^{-2} =
+\frac{1}{2v^2}$; the derivative of $\frac{(x-\mu)^2}{2}v^{-2}$ is $-2\cdot\frac{(x-\mu)^2}{2}
+v^{-3} = -\frac{(x-\mu)^2}{v^3}$):
+$$
+\frac{\partial^2\ell_1}{\partial v^2} = \frac{1}{2v^2} - \frac{(x-\mu)^2}{v^3}.
+$$
+Negative expectation. The only random piece is $(x-\mu)^2$, and since $\mu$ is the true mean,
+$\mathbb{E}_v[(X-\mu)^2] = \operatorname{Var}(X) = v$ by definition of the variance:
+$$
+I_1(v) = -\,\mathbb{E}_v\!\left[\frac{1}{2v^2} - \frac{(X-\mu)^2}{v^3}\right]
+= -\frac{1}{2v^2} + \frac{\mathbb{E}_v[(X-\mu)^2]}{v^3}
+= -\frac{1}{2v^2} + \frac{v}{v^3}.
+$$
+The last term is $\frac{v}{v^3} = \frac{1}{v^2}$, so
+$$
+\boxed{\;I_1(\sigma^2) = -\frac{1}{2v^2} + \frac{1}{v^2} = \frac{1}{2v^2} = \frac{1}{2\sigma^4}.\;}
+$$ {#eq-info-normal-var}
+The information about the variance is $\frac{1}{2\sigma^4}$ per observation, so the
+Cramér–Rao bound is $\operatorname{Var}(\widehat{\sigma^2}) \ge \frac{2\sigma^4}{n}$.
+@fig-info-normal checks both bounds against simulation, and exposes an honest subtlety in the
+variance case.
+
+```{python}
+#| label: fig-info-normal
+#| fig-cap: 'Both Normal information bounds, verified by simulation ($\mu=0$, $\sigma^2=4$, $n=30$, 30000 samples). **Left:** the sample mean $\bar X$ — its empirical variance (blue) sits exactly on the floor $\sigma^2/n$ (green), efficient. **Right:** for the variance, the *unbiased* estimator $\frac{1}{n-1}\sum(X_i-\bar X)^2$ (blue) sits just above the Cramér–Rao floor $2\sigma^4/n$ (green) — close but not equal, because no unbiased estimator of $\sigma^2$ attains the bound at finite $n$. The MLE divisor-$n$ version is biased, so the bound does not even apply to it; this is the honest boundary of ''efficiency.'''
+mu_true, v_true, n_obs = 0.0, 4.0, 30
+rng = np.random.default_rng(2)
+samples = rng.normal(mu_true, np.sqrt(v_true), size=(30000, n_obs))
+
+xbar = samples.mean(axis=1)
+var_unbiased = samples.var(axis=1, ddof=1)   # divisor n-1, unbiased
+
+emp_var_mean = xbar.var()
+crb_mean = v_true / n_obs
+
+emp_var_var = var_unbiased.var()
+crb_var = 2 * v_true**2 / n_obs
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.hist(xbar, bins=45, density=True, color=FILL, alpha=0.7)
+axL.axvline(mu_true, color=ACCENT, ls="--", lw=1.5)
+axL.set_xlabel(r"$\bar X$"); axL.set_ylabel("density")
+axL.set_title("Mean: hits the bound")
+
+axR.hist(var_unbiased, bins=45, density=True, color=FILL, alpha=0.7)
+axR.axvline(v_true, color=ACCENT, ls="--", lw=1.5, label=r"true $\sigma^2=4$")
+axR.set_xlabel(r"unbiased $\widehat{\sigma^2}$"); axR.set_ylabel("density")
+axR.set_title("Variance: just above the bound")
+axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"MEAN:     empirical Var = {emp_var_mean:.5f}   bound sigma^2/n   = {crb_mean:.5f}   eff = {crb_mean/emp_var_mean:.3f}")
+print(f"VARIANCE: empirical Var = {emp_var_var:.5f}   bound 2 sigma^4/n = {crb_var:.5f}   eff = {crb_var/emp_var_var:.3f}")
+```
+
+The mean estimator is efficient to within simulation noise; the unbiased variance estimator
+is *close* to its bound but does not reach it (efficiency a bit below $1$). That gap is not a
+mistake — it is the honest content of @def-efficiency: outside the special structure that
+made the mean efficient, no unbiased estimator attains the floor at finite $n$, though the
+MLE closes the gap as $n\to\infty$ ([INFR-B4]). We will say more about this in @sec-edge.
+
+::: {.callout-tip title="You might be asked"}
+*"For a Normal sample, is the sample mean the best estimator of $\mu$? Prove it."* Yes, among
+unbiased estimators, and the proof is two lines of this article: the Fisher information about
+$\mu$ is $I_n(\mu) = n/\sigma^2$ (@eq-info-normal-mu times $n$), so the Cramér–Rao bound is
+$\operatorname{Var}(\hat\mu) \ge \sigma^2/n$; the sample mean $\bar X$ has variance exactly
+$\sigma^2/n$, so it attains the bound and is efficient. A sharp follow-up is *"what about the
+median?"* — the median is also unbiased for a symmetric Normal but has variance $\approx
+\frac{\pi}{2}\cdot\frac{\sigma^2}{n} \approx 1.57\,\sigma^2/n$, an efficiency of about
+$64\%$. It wastes more than a third of the information, which is the precise, quantitative
+sense in which the mean beats the median for Normal data — and why you would still prefer the
+median when the data are *not* Normal, where it is far more robust (a trade the bound, which
+assumes the model, cannot see).
+:::
+
+# Failure modes and the edge of applicability {#sec-edge}
+
+The Cramér–Rao bound is one of the cleanest results in statistics, which makes it dangerous:
+it is easy to quote where it does not hold. Here are the four boundaries, stated honestly.
+
+## The bound only constrains *unbiased* estimators {#sec-edge-bias}
+
+The theorem assumed $\mathbb{E}_\theta[\hat\theta] = \theta$. Drop that, and the bound says
+*nothing* — a biased estimator can have variance **below** $1/I_n(\theta)$, sometimes far
+below. This is not a loophole; it is a genuine and useful phenomenon. The MLE of the Normal
+variance, $\hat\sigma^2 = \frac1n\sum(X_i-\bar X)^2$, is biased low, and its *mean squared
+error* can beat the unbiased $\frac{1}{n-1}$ version. The entire enterprise of **regularized
+/ shrinkage** estimators (ridge regression, the James–Stein estimator) deliberately accepts
+bias to buy a large variance reduction, landing below the unbiased floor in total error.
+@fig-edge-bias shows a shrinkage estimator of a Normal mean doing exactly this.
+
+```{python}
+#| label: fig-edge-bias
+#| fig-cap: 'Bias can beat the bound. Estimating a Normal mean $\mu=1$ from $n=8$ noisy observations ($\sigma=3$). The unbiased sample mean $\bar X$ (blue) has variance on the Cramér–Rao floor $\sigma^2/n$. A shrinkage estimator $\hat\mu_c = c\,\bar X$ with $c=0.7$ (orange) is *biased* toward zero, so the bound does not apply to it — and indeed its mean squared error (variance plus squared bias) dips **below** the unbiased floor here. The Cramér–Rao bound caps unbiased estimators only; trading a little bias for a lot of variance is a real and widely-used escape.'
+mu_true, sigma, n_obs = 1.0, 3.0, 8
+rng = np.random.default_rng(4)
+xbar = rng.normal(mu_true, sigma, size=(60000, n_obs)).mean(axis=1)
+
+cs = np.linspace(0.0, 1.3, 60)
+mse = []
+for c in cs:
+    est = c * xbar
+    mse.append(np.mean((est - mu_true) ** 2))
+mse = np.array(mse)
+crb = sigma**2 / n_obs
+
+fig, ax = plt.subplots()
+ax.plot(cs, mse, color="#d97706", label=r"MSE of $\hat\mu_c = c\,\bar X$")
+ax.axhline(crb, color=ACCENT, ls="--", lw=1.6, label=r"unbiased floor $\sigma^2/n$")
+ax.axvline(1.0, color=GREY, ls=":", lw=1.4)
+ax.annotate("$c=1$:\nsample mean", (1.0, crb*1.05), fontsize=8, color=GREY)
+best_c = cs[np.argmin(mse)]
+ax.scatter([best_c], [mse.min()], color=CURVE, s=50, zorder=4,
+           label=f"best shrinkage $c={best_c:.2f}$")
+ax.set_xlabel(r"shrinkage factor $c$"); ax.set_ylabel("mean squared error")
+ax.set_title("A biased estimator dips below the unbiased bound")
+ax.legend(loc="upper center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"unbiased floor sigma^2/n   = {crb:.4f}")
+print(f"min MSE over c             = {mse.min():.4f}  at c = {best_c:.3f}")
+```
+
+## Moving support: the bound does not apply at all {#sec-edge-support}
+
+The regularity conditions of @sec-dui demanded a **fixed support**. The textbook violator is
+the uniform model $X\sim\text{Uniform}[0,\theta]$, whose density $\frac1\theta$ lives on
+$[0,\theta]$ — a region that *moves* with $\theta$. There you cannot differentiate under the
+integral, the two information formulas disagree, and the Cramér–Rao bound is simply false:
+the MLE $\hat\theta = \max_i X_i$ has variance shrinking like $1/n^2$, *faster* than any
+$1/n$ bound would permit. This is the same model that breaks the score-equation approach to
+the MLE in [INFR-B2], and for the same reason — the maximum is on the boundary, where
+calculus has no purchase. The lesson: **before quoting Cramér–Rao, check that the support
+does not depend on the parameter.**
+
+```{python}
+#| label: fig-edge-support
+#| fig-cap: 'Where the bound is simply false. For $X\sim\text{Uniform}[0,\theta]$ with $\theta=1$, the support $[0,\theta]$ moves with the parameter, so the regularity conditions fail. The MLE $\hat\theta=\max_i X_i$ (blue) has variance that collapses like $1/n^2$ (red dashed) — dramatically faster than the $1/n$ rate (grey dashed) that any Cramér–Rao bound would impose. The Fisher-information machinery does not merely become loose here; it does not apply, and the estimator outruns the ''limit.'''
+theta = 1.0
+ns = np.array([5, 10, 20, 40, 80, 160, 320])
+rng = np.random.default_rng(6)
+emp = []
+for n_obs in ns:
+    mx = rng.uniform(0, theta, size=(40000, n_obs)).max(axis=1)
+    emp.append(mx.var())
+emp = np.array(emp)
+
+# variance of the max of n Uniform[0,1] is n / [(n+1)^2 (n+2)] ~ 1/n^2
+exact = ns / ((ns + 1.0)**2 * (ns + 2.0))
+
+fig, ax = plt.subplots()
+ax.loglog(ns, emp, "o", color=DATA, label=r"empirical $\mathrm{Var}(\hat\theta)$")
+ax.loglog(ns, exact, color=CURVE, ls="--", label=r"exact $\sim 1/n^2$ rate")
+ax.loglog(ns, 1.0 / ns * exact[0] * ns[0], color=GREY, ls=":",
+          label=r"a $1/n$ rate (for contrast)")
+ax.set_xlabel("sample size $n$"); ax.set_ylabel(r"variance of $\hat\theta$")
+ax.set_title("Uniform $[0,\\theta]$: the MLE beats any $1/n$ bound")
+ax.legend(loc="lower left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## The bound is a *lower* bound, often not attained at finite $n$ {#sec-edge-attain}
+
+Even in a perfectly regular model, the bound says only that you cannot do *better* than
+$1/I_n$ — it does not promise an estimator that does *as well*. We saw this with the Normal
+variance: the unbiased estimator hovers above its floor at finite $n$. For most models
+outside the exponential family, the floor is reached only **asymptotically**, by the MLE, as
+$n\to\infty$. So "efficient" is, in general, an *asymptotic* property; reading the
+finite-sample bound as a guarantee of achievable precision overstates it. The exact
+finite-sample variance of an estimator can sit well above the bound, and the gap is not
+necessarily anyone's fault.
+
+## A multi-parameter caveat {#sec-edge-matrix}
+
+With more than one parameter — the realistic case, e.g. $(\mu,\sigma^2)$ together — the
+Fisher information becomes a **matrix** $\mathbf{I}(\theta)$ whose $(j,k)$ entry is
+$\mathbb{E}[\partial_j\ell\,\partial_k\ell] = -\mathbb{E}[\partial_j\partial_k\ell]$, and the
+Cramér–Rao bound becomes a statement about matrices: $\operatorname{Cov}(\hat\theta)
+\succeq \mathbf{I}_n^{-1}$ (the difference is positive semidefinite). The bound on a single
+component is then $\operatorname{Var}(\hat\theta_j) \ge [\mathbf{I}_n^{-1}]_{jj}$ — the
+$j$-th *diagonal of the inverse*, **not** the reciprocal of the $j$-th diagonal. The
+distinction matters whenever the parameters are correlated: estimating $\mu$ when $\sigma^2$
+is also unknown is no harder than when it is known *only because* the off-diagonal Fisher
+information between $\mu$ and $\sigma^2$ happens to be zero for the Normal — a lucky
+orthogonality, not a general rule. The matrix machinery, the inverse, and the quadratic forms
+it needs are developed where the multi-parameter MLE lives, [INFR-B4]; we flag it here so the
+single-parameter formulas above are not over-generalized.
+
+::: {.callout-warning title="Pitfall"}
+**Three ways the Cramér–Rao bound is misquoted.** (1) *Applying it to a biased estimator* —
+the bound constrains only unbiased estimators; biased estimators routinely have smaller
+variance, which is the whole point of shrinkage (@sec-edge-bias). (2) *Quoting it for a
+moving-support model* — for the uniform $[0,\theta]$ and its relatives the bound is false,
+not just loose (@sec-edge-support). (3) *In the multi-parameter case, using $1/I_{jj}$
+instead of $[\mathbf{I}^{-1}]_{jj}$* — the inverse of the matrix, then the diagonal, in that
+order; reversing them silently ignores the cost of the nuisance parameters
+(@sec-edge-matrix). Each error makes precision look better than it is.
+:::
+
+# When Fisher information is the right tool — and when it is not {#sec-applicability}
+
+::: {.callout-tip title="You might be asked"}
+*"When would you actually reach for Fisher information?"* The honest summary:
+
+- **Reach for it** whenever you have a **regular parametric model** and want to (a) know the
+  *best achievable precision* before committing to an estimator, (b) build a standard error
+  or **Wald confidence interval** for an MLE — $\hat\theta \pm z\,/\sqrt{I_n(\hat\theta)}$,
+  the workhorse of [INFR-C3]; (c) construct a **score test** ([INFR-D3]); or (d) reason about
+  the asymptotic variance of the MLE, which *is* $1/I_n$ ([INFR-B4]). It is the single most
+  reused quantity in classical inference, and every coefficient standard error a regression
+  package prints is a Fisher-information calculation underneath.
+- **Reach for something else** when (a) the model is **misspecified** — the information
+  computed under the wrong model is wrong, and a *robust* "sandwich" variance is safer; (b)
+  the model is **irregular** (moving support, boundary parameter), where the bound does not
+  apply and exact or order-statistic arguments are needed; (c) the sample is **small** and
+  the asymptotic interpretation of efficiency is shaky — the **bootstrap** ([INFR-E1])
+  estimates variance directly without trusting the curvature; or (d) you genuinely want a
+  **biased** estimator for lower total error, where the bound is irrelevant by construction.
+- **The deepest caveat:** Fisher information is a property of the **model you assumed**. It
+  tells you the best precision *if that model is true*. It cannot warn you that the model is
+  wrong — that is the job of goodness-of-fit and diagnostics. A confidently small
+  Cramér–Rao bound under a misspecified model is precision toward the wrong target.
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You rarely compute
+$\mathbb{E}[\ell'']$ by hand for a real model. Instead, fitting libraries return the
+**observed information** — the *actual* negative second derivative of the log-likelihood at
+the MLE, $-\ell''(\hat\theta)$, not its expectation — because at the estimate it is a drop-in
+proxy for $I_n(\theta)$ and needs no expectation. `statsmodels` exposes it as the inverse of
+the parameter covariance: `result.cov_params()` is $[-\ell''(\hat\theta)]^{-1}$, and the
+printed coefficient standard errors are its square-root diagonal. A generic optimizer
+(`scipy.optimize.minimize`) returns the inverse Hessian in `result.hess_inv`, which is the
+same observed-information inverse. The distinction between the **expected** information
+$\mathbb{E}[-\ell'']$ (this article's $I(\theta)$) and the **observed** information
+$-\ell''(\hat\theta)$ (what software uses) is real but small for large $n$ — they converge by
+the law of large numbers ([INFR-A2]) — and which to prefer is a genuine, debated practical
+question that [INFR-B4] takes up. When a package prints a standard error, it has computed an
+information and inverted it; you now know which information and why.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-B2 *Maximum Likelihood*]**, which found the estimate $\hat\theta$ as
+the root of the score. There we located the *peak* of the log-likelihood; here we measured
+its *sharpness*, and turned that sharpness into a hard limit on precision. From the
+**Likelihood Spine** the trunk continues:
+
+- **[INFR-B4 *Why Maximum Likelihood Works*]** — the payoff. The MLE's asymptotic
+  distribution is $\sqrt{n}(\hat\theta - \theta) \to \mathcal{N}\!\bigl(0,\,I_1(\theta)^{-1}\bigr)$:
+  its variance is *exactly* the reciprocal Fisher information of this article, so the MLE is
+  **asymptotically efficient** — it attains the Cramér–Rao bound in the limit. The
+  delta-method form $[g'(\theta)]^2/I_n$ we recorded here becomes the variance of a function
+  of the MLE.
+- **[INFR-C3 *Intervals From the Likelihood*]** — the **Wald interval** $\hat\theta \pm
+  z\,\sqrt{I_n(\hat\theta)^{-1}}$ turns the information directly into a confidence interval,
+  and we will see exactly where it fails (the binomial near $p=0$ or $1$, where
+  @eq-info-bernoulli blows up).
+- **[INFR-D3 *The Asymptotic Trinity*]** — the **score test** reads the information off the
+  curvature at the null value, the dual of the Wald interval; Fisher information is the
+  scaling that makes the test statistic chi-square.
+
+It feeds outward too: every standard error the Regression track prints for a coefficient is a
+Fisher-information calculation, which is why this track owns the general theory and Regression
+links back to it.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding sources.** R. A. Fisher, "Theory of Statistical Estimation," *Proc. Camb.
+  Phil. Soc.* 22 (1925), where "information" is defined and tied to the curvature of the
+  log-likelihood. The bound: C. R. Rao, "Information and the accuracy attainable in the
+  estimation of statistical parameters," *Bull. Calcutta Math. Soc.* 37 (1945), and H.
+  Cramér, *Mathematical Methods of Statistics* (1946).
+- **The information-geometric view.** Fisher information is a Riemannian *metric* on the space
+  of parameters — it measures distance between nearby distributions by how distinguishable
+  their data are. This is the entry point to **information geometry** (Amari), where the
+  curvature of this article becomes literal geometric curvature.
+- **Open threads this article deliberately deferred.** *What is the MLE's exact sampling
+  distribution, and does it attain the bound?* — asymptotic normality and efficiency,
+  [INFR-B4]. *How do we turn $I$ into an interval and a test?* — Wald and score procedures,
+  [INFR-C3] and [INFR-D3]. *What is the multi-parameter information matrix, in full?* — the
+  Hessian-expectation and its inverse, [INFR-B4]. *What replaces the bound when the model is
+  wrong?* — the robust sandwich variance, a thread the testing arc and Regression pick up.

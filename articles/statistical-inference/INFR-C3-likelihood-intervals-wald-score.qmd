@@ -1,0 +1,1131 @@
+---
+title: "Intervals From the Likelihood: Wald, Score, and Profile Intervals"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240915)
+
+DATA   = "#2b3a67"     # data / point estimates
+CURVE  = "#c1121f"     # the log-likelihood / theoretical curve
+ACCENT = "#0a7d4d"     # the MLE / the truth / score interval
+WALD   = "#0a7d4d"     # Wald flavour
+PROF   = "#7b2cbf"     # profile flavour
+SCORE  = "#d6791f"     # score flavour
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas
+```
+
+> **Where this sits in the track.** This is the third article of the **Interval
+> Estimation** movement (C). It assumes [INFR-C1 *Confidence Intervals*], which built the
+> **coverage** definition (the interval is random, the parameter is fixed) and the
+> **pivotal-quantity** machine that manufactures intervals; [INFR-B3 *Fisher
+> Information*], which defined the per-observation information $I_1(\theta)$ as the
+> variance of the score and as the negative expected curvature, and the total information
+> $I_n(\theta)=nI_1(\theta)$; and [INFR-B4 *MLE Asymptotics*], whose headline result
+> $\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}\mathcal N(0,I_1(\theta_0)^{-1})$ is the
+> engine of the Wald interval and whose **score** $U_n(\theta)=\ell_n'(\theta)$ is the
+> object the Rao interval inverts. From [INFR-B2 *Maximum Likelihood*] it carries the MLE
+> $\hat\theta_n=\arg\max_\theta \ell_n(\theta)$ and its **invariance** under
+> reparameterization. Nothing new is imported from outside the track. It **sets up**
+> [INFR-D3 *The Asymptotic Trinity*] — the three intervals here are the confidence-set
+> duals of the three tests there — and it is **consumed directly by the Regression track**,
+> which produces every coefficient confidence interval by applying one of these three
+> recipes.
+
+## Abstract {.unnumbered}
+
+[INFR-C1] built one confidence interval — for a Normal mean — and it leaned on a lucky
+accident: a clean pivot $(\bar X-\mu)/(\sigma/\sqrt n)$ exists in closed form. Most
+parameters we estimate by maximum likelihood have no such pivot. This article supplies the
+general machinery: three ways to turn the likelihood into a confidence interval for *any*
+MLE-estimated parameter. The **Wald** interval $\hat\theta \pm
+z_{\alpha/2}/\sqrt{I_n(\hat\theta)}$ falls straight out of [INFR-B4]'s asymptotic
+normality and is the one your software prints by default — fast, symmetric, and sometimes
+a lie. The **score (Rao)** interval inverts the score statistic, never plugs the estimate
+into the variance, and respects the parameter space. The **profile-likelihood** interval
+takes the actual *shape* of the log-likelihood seriously, cutting it at a height fixed by
+the chi-square distribution, and is invariant to how you parameterize. We derive all three
+from one geometric picture — three different ways to read the same log-likelihood curve —
+prove their asymptotic equivalence, and then show, honestly, where Wald fails badly: the
+binomial proportion near $0$ or $1$, where Wald can return impossible endpoints and
+catastrophically undercover, and where the score-based **Wilson** interval and
+**Agresti–Coull** rescue it. The single claim the article defends is that **Wald, score,
+and profile are not three competing formulas but three readings of one curve — equal in
+the limit, different exactly where the likelihood is skewed — and knowing which to reach
+for is knowing how curved your likelihood is.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A confidence interval is a set of parameter values the data find plausible. The
+log-likelihood $\ell_n(\theta)$ measures plausibility, so we can read an interval directly
+off it — three ways, each a different way of saying "where does the likelihood fall off too
+far to believe?"
+
+1. **Wald** — approximate the log-likelihood by a parabola at its peak $\hat\theta$ and
+   keep the values within a fixed distance:
+   $$
+   \hat\theta \;\pm\; z_{\alpha/2}\,\sqrt{I_n(\hat\theta)^{-1}}\;,\qquad
+   I_n(\hat\theta)=n\,I_1(\hat\theta).
+   $$
+2. **Score (Rao)** — keep the $\theta_0$ at which the slope of the log-likelihood, the
+   score $U_n(\theta_0)$, is not too steep relative to the information *at that
+   $\theta_0$*; the variance is never frozen at $\hat\theta$.
+3. **Profile likelihood** — keep the $\theta_0$ whose maximized log-likelihood is within
+   $\tfrac12\chi^2_{1,1-\alpha}$ of the peak:
+   $$
+   \bigl\{\theta_0 : 2[\ell_n(\hat\theta)-\ell_n(\theta_0)] \le \chi^2_{1,1-\alpha}\bigr\}.
+   $$
+
+All three agree as $n\to\infty$. They **disagree exactly when the log-likelihood is not a
+symmetric parabola** — skewed likelihoods, boundary parameters, small $n$ — and there Wald
+is the one that breaks. The single picture: **Wald trusts a parabola fit at the top; score
+and profile use the curve itself.**
+:::
+
+Everything below orbits that box. The Wald interval is what you get by trusting that the
+log-likelihood is a downward parabola; when that is true (large $n$, interior parameter,
+symmetric likelihood) all three coincide and Wald's simplicity wins. The article is the
+story of *when the parabola lies* and what to do instead.
+
+# Why we are doing this: the pivot runs out {#sec-why}
+
+Keep one question in view for the whole article: **[INFR-C1] gave us an interval for a
+Normal mean by finding a clean pivot — what do we do for every parameter that has no clean
+pivot?** Every construction below is an answer.
+
+## The problem the pivot left open
+
+[INFR-C1] built its interval on a stroke of luck. For a Normal mean with known variance,
+the quantity $Z=(\bar X-\mu)/(\sigma/\sqrt n)$ is *exactly* standard Normal: the unknown
+$\mu$ subtracts off cleanly and what is left depends on no unknown. That is the textbook
+definition of a pivot, and rearranging $-z_{\alpha/2}\le Z\le z_{\alpha/2}$ gave the
+interval in three lines of algebra.
+
+Now ask for a confidence interval for the **rate** $\lambda$ of a Poisson process, or the
+**bias** $p$ of a coin, or the **shape** of a Gamma, or — the case the whole Regression
+track needs — a single **coefficient** $\beta_j$ in a logistic regression. None of these
+hands you a clean pivot. There is no algebraic combination of the data and the parameter
+whose distribution is known and free of the parameter. The exact small-sample distribution
+of the MLE is, in general, intractable. The pivot machine of [INFR-C1] simply has no fuel.
+
+What we *do* have, from the Likelihood Spine, is two general facts that hold for *any*
+smooth model:
+
+- **[INFR-B4]'s asymptotic normality:** $\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}
+  \mathcal N(0,I_1(\theta_0)^{-1})$. This is an *approximate* pivot — approximately
+  standard Normal after standardizing — valid for large $n$ regardless of the model.
+- **[INFR-B3]'s information** $I_n(\theta)$, which is the curvature of the log-likelihood
+  at its peak and, by [INFR-B4], the reciprocal of the MLE's asymptotic variance.
+
+These two facts are enough to build intervals for *anything* we can write a likelihood for.
+The price is that the intervals are *asymptotic* — their coverage is exact only in the
+limit — and the entire drama of this article is how three different ways of cashing in
+those facts behave at finite $n$, where the limit has not yet arrived.
+
+::: {.callout-tip title="You might be asked"}
+*"Why not just bootstrap everything and skip the likelihood intervals?"* You can, and
+[INFR-E2] builds exactly that. But three reasons keep likelihood intervals central. They
+are **analytic** — no resampling loop, instant once you have the MLE and information, which
+matters when you are fitting thousands of coefficients. They are **what the standard
+software reports** (every `summary()` table of standard errors is a Wald interval in
+disguise), so you must understand them to read any regression output critically. And the
+**profile** interval often *beats* the bootstrap at small $n$ because it uses the exact
+likelihood shape rather than an empirical approximation to the sampling distribution. The
+honest answer: likelihood intervals when you have a trustworthy model and want speed and
+interpretability; bootstrap when the model is shaky or the statistic is exotic.
+:::
+
+## A one-paragraph history
+
+The three intervals descend from three statisticians and three eras. **Abraham Wald**
+(1943) formalized the test — and hence the interval — built on the asymptotic normality of
+the MLE: standardize the estimate by its estimated standard error and compare to a Normal.
+**C. R. Rao** (1948) proposed the *score* test, built on the slope of the log-likelihood
+at the hypothesized value, which needs the variance only *under the null* and so never
+freezes it at the estimate. The **profile likelihood** and the likelihood-ratio interval
+trace to **Wilks** (1938), whose theorem — that twice the log-likelihood drop is
+asymptotically chi-square — is the cut height we use below. The three are the interval-side
+shadows of the three tests of [INFR-D3]; here we build them as *confidence sets* and meet
+their testing forms there.
+
+# Intuition before symbols: three readings of one curve {#sec-intuition}
+
+Before any algebra, here is the single picture that makes all three intervals one idea. Draw
+the log-likelihood $\ell_n(\theta)$ as a function of the parameter. By [INFR-B2] it peaks at
+the MLE $\hat\theta$; by [INFR-B3] its downward curvature at the peak is the information
+$I_n(\hat\theta)$ — sharp peak, precise estimate; flat peak, loose estimate. A confidence
+interval is a band of $\theta$ values near the peak that the data find plausible. The three
+methods are three ways to decide "near."
+
+- **Profile** reads the curve **vertically**: keep every $\theta_0$ whose log-likelihood
+  height is within a fixed drop $d$ of the peak. Slice the curve horizontally at height
+  $\ell_n(\hat\theta)-d$; the interval is where the curve pokes above the slice. This uses
+  the *true shape* of the curve, so if the curve is lopsided the interval is lopsided too.
+- **Wald** reads only the **top of the curve**: fit a parabola matching the peak location
+  and the peak curvature, then use *that parabola* in place of the real curve. A parabola
+  is symmetric, so the Wald interval is always symmetric about $\hat\theta$ — even when the
+  real curve is not.
+- **Score** reads the **slope away from the peak**: keep every $\theta_0$ at which the
+  log-likelihood's slope (the score) is gentle relative to the curvature *there*. It uses
+  local first-and-second-order information at each candidate $\theta_0$, not just at the
+  peak.
+
+@fig-three-readings draws all three on one skewed log-likelihood. When the curve is a
+symmetric parabola the three slices coincide; when it is skewed they peel apart, and the
+figure is the entire article in one image.
+
+```{python}
+#| label: fig-three-readings
+#| fig-cap: 'Three readings of one log-likelihood. The black curve is a deliberately *skewed* log-likelihood (a Poisson rate from a small sample), peaking at the MLE $\hat\theta$ (green). **Profile** (purple) slices horizontally at a drop of $\tfrac12\chi^2_{1,0.95}\approx 1.92$ below the peak and reports where the true curve crosses — an *asymmetric* interval that follows the curve''s lean. **Wald** (green band) replaces the curve with the matching parabola at the peak (dashed) and reports a *symmetric* interval; because the real curve falls faster on the left than the parabola, Wald''s left endpoint is too generous. The mismatch between the dashed parabola and the solid curve is exactly the error Wald commits.'
+from scipy import stats
+
+# A small-sample Poisson log-likelihood: lambda from a few counts. Skewed.
+counts = np.array([1, 0, 2, 1, 0])         # n = 5 counts, total 4
+n_c = len(counts); s = counts.sum()
+lam_hat = s / n_c                          # MLE = mean
+
+def loglik(lam):
+    # Poisson log-likelihood up to constants: s*log(lam) - n*lam
+    return s * np.log(lam) - n_c * lam
+
+lam_grid = np.linspace(0.05, 3.2, 400)
+ll = loglik(lam_grid)
+ll_peak = loglik(lam_hat)
+
+# Wald: information for Poisson is I_n = n/lam; var(hat) = lam_hat / n.
+se_wald = np.sqrt(lam_hat / n_c)
+parab = ll_peak - 0.5 * (lam_grid - lam_hat) ** 2 / se_wald**2
+
+# Profile cut height
+cut = 0.5 * stats.chi2.ppf(0.95, df=1)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.3))
+ax.plot(lam_grid, ll, color="black", lw=2.2, label=r"true $\ell_n(\lambda)$")
+ax.plot(lam_grid, parab, color=WALD, ls="--", lw=1.6,
+        label="Wald parabola at peak")
+ax.axhline(ll_peak - cut, color=PROF, lw=1.3, ls=":")
+ax.axvline(lam_hat, color=ACCENT, lw=1.4)
+
+# profile interval: where true curve crosses the cut
+above = ll >= ll_peak - cut
+prof_lo = lam_grid[above][0]; prof_hi = lam_grid[above][-1]
+# wald interval
+wald_lo = lam_hat - 1.96 * se_wald; wald_hi = lam_hat + 1.96 * se_wald
+
+ax.plot([prof_lo, prof_hi], [ll_peak - cut, ll_peak - cut], color=PROF, lw=3.0,
+        solid_capstyle="round", label="profile interval")
+ax.plot([wald_lo, wald_hi], [ll_peak - cut - 0.45]*2, color=WALD, lw=3.0,
+        solid_capstyle="round", label="Wald interval")
+ax.scatter([lam_hat], [ll_peak], color=ACCENT, zorder=5, s=40)
+ax.set_ylim(ll_peak - 4.5, ll_peak + 0.4)
+ax.set_xlabel(r"rate $\lambda$"); ax.set_ylabel(r"log-likelihood $\ell_n(\lambda)$")
+ax.set_title("Wald reads the top; profile reads the whole curve")
+ax.legend(loc="lower center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"In one sentence, what is the difference between Wald and likelihood-ratio (profile)
+intervals?"* — *"Wald approximates the log-likelihood by the parabola tangent at its peak
+and is therefore always symmetric, while the profile interval uses the actual curve and so
+follows its skew; they agree when the likelihood is near-quadratic and diverge when it is
+not."* The follow-up — *"and the score interval?"* — *"the score interval inverts the
+slope-at-the-null test, using the variance under each candidate value rather than at the
+estimate, which is why it is the one that fixes the binomial-near-the-boundary
+disaster."*
+:::
+
+# The formal development {#sec-formal}
+
+We set the stage once. Let $X_1,\dots,X_n$ be i.i.d. from a model $f(x\mid\theta)$ with a
+single unknown scalar parameter $\theta$ (the multi-parameter case, where the *profile*
+interval truly earns its name, is @sec-multiparam). Write the log-likelihood, score, and
+information exactly as in the Likelihood Spine:
+
+$$
+\ell_n(\theta)=\sum_{i=1}^n \log f(X_i\mid\theta),\qquad
+U_n(\theta)=\ell_n'(\theta),\qquad
+I_n(\theta)=n\,I_1(\theta),
+$$ {#eq-stage}
+
+where $U_n$ is the **score** (the slope of the log-likelihood, [INFR-B2]) and $I_n$ is the
+**Fisher information** (the expected downward curvature, [INFR-B3]). The MLE $\hat\theta$
+solves $U_n(\hat\theta)=0$ — it sits where the slope is zero, the peak.
+
+We need three facts from the spine, restated so the derivations below are self-contained.
+Each is *imported* (derived in the cited article), not reproved here.
+
+::: {#thm-imports}
+**Imported facts (from [INFR-B3], [INFR-B4]).** Under the regularity conditions of
+[INFR-B4] (smooth log-likelihood, interior true value $\theta_0$, parameter-independent
+support):
+
+1. **(Asymptotic normality of the MLE.)**
+   $\sqrt n(\hat\theta_n-\theta_0)\xrightarrow{d}\mathcal N(0,I_1(\theta_0)^{-1})$,
+   equivalently $(\hat\theta_n-\theta_0)\sqrt{I_n(\theta_0)}\xrightarrow{d}\mathcal N(0,1)$.
+2. **(Asymptotic normality of the score.)** The score at the truth is a sum of $n$ i.i.d.
+   mean-zero terms with variance $I_1(\theta_0)$ each, so by the CLT
+   $U_n(\theta_0)/\sqrt{I_n(\theta_0)}\xrightarrow{d}\mathcal N(0,1)$.
+3. **(Wilks.)** $2[\ell_n(\hat\theta_n)-\ell_n(\theta_0)]\xrightarrow{d}\chi^2_1$ at the
+   true $\theta_0$.
+:::
+
+Fact 1 is the Core result of [INFR-B4]. Fact 2 is the CLT applied to the score, the very
+sum [INFR-B4] Taylor-expanded to *prove* Fact 1 — we will re-derive its consequence below
+because it is the engine of the score interval. Fact 3 is Wilks' theorem; [INFR-B4]'s
+Taylor expansion produces it in two lines, which we reproduce in @sec-profile so the
+chi-square cut height is not magic.
+
+## The Wald interval: trust the parabola {#sec-wald}
+
+The Wald interval is the most direct cash-in of Fact 1. From
+$(\hat\theta-\theta_0)\sqrt{I_n(\theta_0)}\xrightarrow{d}\mathcal N(0,1)$ we have an
+*approximate pivot* — call it $W_0=(\hat\theta-\theta_0)\sqrt{I_n(\theta_0)}$. It is a
+function of the data ($\hat\theta$) and the parameter ($\theta_0$), and its limiting
+distribution, standard Normal, contains no unknown. That is the [INFR-C1] pivot recipe,
+applied to an *approximate* pivot.
+
+There is one obstruction: the information $I_n(\theta_0)$ in the pivot depends on the
+unknown $\theta_0$. The Wald move is to **plug in the estimate**, replacing $I_n(\theta_0)$
+with $I_n(\hat\theta)$. This is legitimate asymptotically: $\hat\theta\xrightarrow{P}
+\theta_0$ (consistency, [INFR-B4]) and $I_n$ is continuous, so $I_n(\hat\theta)/I_n(\theta_0)
+\xrightarrow{P}1$, and **Slutsky's theorem** ([PROB-21], imported in [INFR-B4]) says
+replacing a quantity by something converging to it in probability does not change the
+limiting distribution. Hence the *estimated* pivot is still asymptotically standard Normal:
+
+$$
+W \;=\; (\hat\theta-\theta_0)\sqrt{I_n(\hat\theta)} \;\xrightarrow{\ d\ }\;\mathcal N(0,1).
+$$ {#eq-wald-pivot}
+
+Now run the [INFR-C1] machine. Trap the pivot in its central $1-\alpha$ mass:
+$$
+P\bigl(-z_{\alpha/2}\le W \le z_{\alpha/2}\bigr)\to 1-\alpha,
+$$
+substitute @eq-wald-pivot, and rearrange to isolate $\theta_0$. The algebra is identical to
+[INFR-C1]'s, with $\sqrt{I_n(\hat\theta)}$ in the role of $1/\mathrm{SE}$:
+$$
+-z_{\alpha/2}\le (\hat\theta-\theta_0)\sqrt{I_n(\hat\theta)}\le z_{\alpha/2}.
+$$
+Divide all three parts by $\sqrt{I_n(\hat\theta)}$, a positive number, so the inequalities
+are preserved:
+$$
+-\frac{z_{\alpha/2}}{\sqrt{I_n(\hat\theta)}}\le \hat\theta-\theta_0\le
+\frac{z_{\alpha/2}}{\sqrt{I_n(\hat\theta)}}.
+$$
+Subtract $\hat\theta$ and multiply by $-1$ (flipping the signs, the step everyone forgets,
+exactly as in [INFR-C1]):
+$$
+\hat\theta-\frac{z_{\alpha/2}}{\sqrt{I_n(\hat\theta)}}\le \theta_0\le
+\hat\theta+\frac{z_{\alpha/2}}{\sqrt{I_n(\hat\theta)}}.
+$$
+Reading off the endpoints,
+
+$$
+\boxed{\;
+\Bigl[\;\hat\theta - z_{\alpha/2}\,\sqrt{I_n(\hat\theta)^{-1}},\;\;
+       \hat\theta + z_{\alpha/2}\,\sqrt{I_n(\hat\theta)^{-1}}\;\Bigr]
+\;}
+$$ {#eq-wald-ci}
+
+the **Wald interval**. The quantity $\sqrt{I_n(\hat\theta)^{-1}}=1/\sqrt{nI_1(\hat\theta)}$
+is the **estimated standard error** of the MLE — precisely the $\mathrm{SE}$ that [INFR-B4]
+derived as the MLE's asymptotic standard deviation. So @eq-wald-ci is just the familiar
+$\hat\theta\pm z_{\alpha/2}\,\mathrm{SE}$, and we have now derived where that universal
+formula comes from.
+
+::: {#thm-wald}
+**Theorem (Wald interval).** Under the regularity conditions of [INFR-B4], the interval
+@eq-wald-ci has asymptotic coverage $P_{\theta_0}(\theta_0\in\text{interval})\to 1-\alpha$
+as $n\to\infty$.
+:::
+
+::: {.proof}
+By Fact 1 of @thm-imports and Slutsky's theorem, $W=(\hat\theta-\theta_0)\sqrt{I_n(\hat
+\theta)}\xrightarrow{d}\mathcal N(0,1)$, derived as @eq-wald-pivot. Hence
+$P(-z_{\alpha/2}\le W\le z_{\alpha/2})\to 1-\alpha$ by the definition of $z_{\alpha/2}$ and
+the continuity of the Normal CDF. The chain of reversible algebraic operations above shows
+the event $\{-z_{\alpha/2}\le W\le z_{\alpha/2}\}$ equals the event
+$\{\theta_0\in[\hat\theta\pm z_{\alpha/2}\sqrt{I_n(\hat\theta)^{-1}}]\}$ pointwise in the
+sample space; equal events have equal probability, so the latter also has probability
+$\to 1-\alpha$. $\qquad\blacksquare$
+:::
+
+**Why "parabola."** The Core called Wald "trust the parabola," and the link is exact.
+Taylor-expand the log-likelihood about its peak $\hat\theta$, where the first derivative
+$U_n(\hat\theta)=0$ vanishes:
+$$
+\ell_n(\theta)\approx \ell_n(\hat\theta) + \underbrace{U_n(\hat\theta)}_{=0}(\theta-\hat
+\theta) + \tfrac12 \ell_n''(\hat\theta)(\theta-\hat\theta)^2
+= \ell_n(\hat\theta) - \tfrac12 J_n(\hat\theta)(\theta-\hat\theta)^2,
+$$ {#eq-quad-approx}
+where $J_n(\hat\theta)=-\ell_n''(\hat\theta)$ is the **observed information** — the *actual*
+downward curvature at the peak, as opposed to its expectation $I_n$. The quadratic
+@eq-quad-approx is a downward parabola, symmetric about $\hat\theta$, with curvature
+$J_n(\hat\theta)$. The Wald interval is exactly the set of $\theta$ where this parabola
+stays within $\tfrac12\chi^2_{1,1-\alpha}=\tfrac12 z_{\alpha/2}^2$ of the peak (since
+$\chi^2_{1,1-\alpha}=z_{\alpha/2}^2$, proved in @sec-profile). So Wald *is* the profile
+interval, computed on the parabola instead of the real curve — which is why the two agree
+exactly when the log-likelihood is quadratic and diverge when it is skewed.
+
+::: {.callout-warning title="Pitfall"}
+**Observed vs. expected information.** Two different denominators both legitimately go in
+the Wald formula. The **expected** information $I_n(\hat\theta)=nI_1(\hat\theta)$ uses the
+theoretical curvature averaged over the model; the **observed** information
+$J_n(\hat\theta)=-\ell_n''(\hat\theta)$ uses the curvature of the *actual* log-likelihood
+you fit. They have the same limit (the LLN sends $-\tfrac1n\ell_n''\to I_1$), so both give
+asymptotically valid intervals, but they can differ noticeably at finite $n$. Software
+mostly reports the observed-information version (it is a free by-product of the Hessian the
+optimizer already computed). Efron and Hinkley argued the observed information gives better
+conditional coverage. Know that "the standard error" is ambiguous until you say *which*
+information, and that the difference is a finite-sample, not asymptotic, effect.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the Wald interval always symmetric, and when is that a problem?"* Because it is
+$\hat\theta\pm$ a constant — the parabola in @eq-quad-approx is symmetric about its vertex.
+That is a problem whenever the parameter has a hard boundary or the true sampling
+distribution of $\hat\theta$ is skewed: a symmetric interval for a variance can dip below
+$0$, for a probability can exceed $1$, for a rate can go negative — all impossible values.
+The Wald interval has no knowledge of the parameter space; it will happily report
+nonsense, as we will see for the binomial in @sec-binomial. The fix is an interval built
+from a quantity that respects the geometry — the score or profile interval, or a
+variance-stabilizing reparameterization (@sec-reparam).
+:::
+
+## The score (Rao) interval: never freeze the variance {#sec-score}
+
+The Wald interval's one questionable step was **plugging $\hat\theta$ into the
+information**. The score interval avoids it. Start from Fact 2 of @thm-imports, the
+asymptotic normality of the score *at the candidate value*:
+$$
+S(\theta_0)\;=\;\frac{U_n(\theta_0)}{\sqrt{I_n(\theta_0)}}\;\xrightarrow{\ d\ }\;\mathcal N(0,1).
+$$ {#eq-score-pivot}
+
+Read this as an approximate pivot. Why does it hold? The score is a sum of $n$ i.i.d. terms
+$\partial_\theta \log f(X_i\mid\theta_0)$. [INFR-B3] proved each has **mean zero** (the
+expected score vanishes) and **variance $I_1(\theta_0)$** (Fisher information *is* the
+variance of the score). So $U_n(\theta_0)=\sum_i(\text{mean-0, var-}I_1)$ has mean $0$ and
+variance $nI_1(\theta_0)=I_n(\theta_0)$, and the Central Limit Theorem of [INFR-A2]
+standardizes it to $\mathcal N(0,1)$. We have re-derived @eq-score-pivot from scratch — no
+import beyond the CLT and the two score facts of [INFR-B3].
+
+Now the crucial contrast with Wald. The information in @eq-score-pivot is evaluated at
+$\theta_0$, **the candidate value being tested, not the estimate**. We do *not* plug in
+$\hat\theta$. Run the pivot machine: trap $S(\theta_0)$,
+$$
+P\bigl(-z_{\alpha/2}\le S(\theta_0)\le z_{\alpha/2}\bigr)\to 1-\alpha,
+$$
+and the confidence set is *every* $\theta_0$ satisfying the inequality:
+
+$$
+\boxed{\;
+\Bigl\{\theta_0 \;:\; \frac{U_n(\theta_0)^2}{I_n(\theta_0)} \le z_{\alpha/2}^2\Bigr\}
+\;=\;
+\Bigl\{\theta_0 \;:\; \bigl|U_n(\theta_0)\bigr| \le z_{\alpha/2}\sqrt{I_n(\theta_0)}\Bigr\}.
+\;}
+$$ {#eq-score-ci}
+
+(We squared the two-sided inequality $|S|\le z_{\alpha/2}$ into $S^2\le z_{\alpha/2}^2$; the
+squared form $U_n^2/I_n$ is the **score statistic** and reappears as the score *test* in
+[INFR-D3].) This is **not** of the form "estimate $\pm$ margin." It is the set of
+parameter values at which the log-likelihood's slope, scaled by the local information, is
+not too steep — and you generally find its endpoints by solving the boundary equation
+$U_n(\theta_0)^2 = z_{\alpha/2}^2\,I_n(\theta_0)$ numerically.
+
+Why is this better near a boundary? Because $I_n(\theta_0)$ is recomputed at each candidate
+$\theta_0$, the variance the interval uses *adapts* as $\theta_0$ moves toward the edge of
+the parameter space, instead of being frozen at the single value $I_n(\hat\theta)$. For the
+binomial this is exactly the difference between the broken Wald interval and the
+well-behaved Wilson interval, which we derive in closed form in @sec-binomial — the Wilson
+interval *is* the score interval for a proportion.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the practical advantage of the score interval over Wald?"* Two things. First,
+**it respects the parameter space** because the variance is evaluated at each candidate
+rather than at the estimate, so it cannot run off the end the way Wald does. Second, **it
+needs only the null fit** — you never have to compute $\hat\theta$ at all if you only want
+to test a value, which matters when the full MLE is expensive or undefined (e.g. a
+proportion estimated as exactly $0$, where $\hat p(1-\hat p)=0$ makes the Wald SE collapse
+to zero but the score interval is still finite and sensible). The cost is that the
+endpoints usually require solving an equation rather than reading off $\pm$.
+:::
+
+## The profile-likelihood interval: use the whole curve {#sec-profile}
+
+The third interval takes the log-likelihood's *shape* at face value. By Fact 3 of
+@thm-imports, **Wilks' theorem**,
+$$
+\Lambda(\theta_0)\;=\;2\bigl[\ell_n(\hat\theta)-\ell_n(\theta_0)\bigr]\;\xrightarrow{\ d\ }\;\chi^2_1
+\qquad\text{at the true }\theta_0,
+$$ {#eq-wilks}
+the confidence set is every $\theta_0$ at which this drop is not too large:
+
+$$
+\boxed{\;
+\Bigl\{\theta_0 \;:\; 2\bigl[\ell_n(\hat\theta)-\ell_n(\theta_0)\bigr] \le \chi^2_{1,1-\alpha}\Bigr\}
+\;=\;
+\Bigl\{\theta_0 \;:\; \ell_n(\theta_0)\ge \ell_n(\hat\theta)-\tfrac12\chi^2_{1,1-\alpha}\Bigr\},
+\;}
+$$ {#eq-profile-ci}
+
+where $\chi^2_{1,1-\alpha}$ is the $(1-\alpha)$ quantile of the chi-square with one degree
+of freedom. This is the horizontal slice of @fig-three-readings: keep the $\theta_0$ whose
+log-likelihood is within $\tfrac12\chi^2_{1,1-\alpha}$ of the peak.
+
+**The cut height, derived.** Where does $\tfrac12\chi^2_{1,1-\alpha}$ come from, and why is
+it the *same* as Wald's $\tfrac12 z_{\alpha/2}^2$? Two facts, both proved here.
+
+*First, $\chi^2_{1,1-\alpha}=z_{\alpha/2}^2$.* A chi-square with one degree of freedom is by
+definition the distribution of $Z^2$ for $Z\sim\mathcal N(0,1)$ (a standard fact from the
+Probability track). So
+$$
+P(\chi^2_1\le c)=P(Z^2\le c)=P(-\sqrt c\le Z\le \sqrt c)=1-\alpha
+\;\Longleftrightarrow\; \sqrt c = z_{\alpha/2},
+$$
+because $z_{\alpha/2}$ is exactly the point with $\alpha/2$ in each Normal tail. Hence
+$c=\chi^2_{1,1-\alpha}=z_{\alpha/2}^2$. For $\alpha=0.05$: $z_{0.025}^2=1.96^2=3.84=\chi^2
+_{1,0.95}$, and the half-cut is $1.92$ — the $1.92$ in @fig-three-readings.
+
+*Second, why $2[\ell_n(\hat\theta)-\ell_n(\theta_0)]\xrightarrow{d}\chi^2_1$.* Take the
+quadratic approximation @eq-quad-approx and evaluate the drop at $\theta_0$:
+$$
+2[\ell_n(\hat\theta)-\ell_n(\theta_0)]\approx 2\cdot\tfrac12 J_n(\hat\theta)(\hat\theta-
+\theta_0)^2 = J_n(\hat\theta)(\hat\theta-\theta_0)^2.
+$$
+By the LLN, $J_n(\hat\theta)\approx I_n(\theta_0)$ for large $n$, so the drop is
+$\approx I_n(\theta_0)(\hat\theta-\theta_0)^2 = \bigl[(\hat\theta-\theta_0)\sqrt{I_n(\theta
+_0)}\bigr]^2$. The bracket is Fact 1's quantity, asymptotically $\mathcal N(0,1)$, and the
+*square* of a standard Normal is $\chi^2_1$ — exactly @eq-wilks. So Wilks' theorem is the
+asymptotic-normality result, squared. This is also the precise sense in which **all three
+intervals coincide asymptotically**: on the quadratic approximation, the profile drop, the
+squared Wald pivot, and the squared score pivot are the *same number*.
+
+::: {#thm-three-equiv}
+**Theorem (asymptotic equivalence).** Under the regularity conditions of [INFR-B4], the
+Wald @eq-wald-ci, score @eq-score-ci, and profile @eq-profile-ci intervals all have
+asymptotic coverage $1-\alpha$, and their endpoints differ by $o_P(n^{-1/2})$ — they
+converge to the same interval as $n\to\infty$.
+:::
+
+::: {.proof}
+On the quadratic approximation @eq-quad-approx, with the LLN replacing $J_n(\hat\theta)$,
+$I_n(\hat\theta)$, and $I_n(\theta_0)$ by a common limit $nI_1(\theta_0)(1+o_P(1))$, each
+defining inequality reduces to $I_n(\theta_0)(\hat\theta-\theta_0)^2\le z_{\alpha/2}^2$. The
+Wald interval uses $I_n(\hat\theta)$, the score interval uses $I_n(\theta_0)$, and the
+profile interval uses the exact curve, but all three differ from this common quadratic only
+through terms that vanish faster than the $n^{-1/2}$ width of the interval. Hence the
+endpoints agree to leading order. Coverage $\to 1-\alpha$ for each follows from Facts 1–3 of
+@thm-imports respectively. $\qquad\blacksquare$
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the profile interval invariant to reparameterization but the Wald interval is
+not?"* Because the profile interval is defined by the *value* of the log-likelihood, and
+the log-likelihood is the same function however you label the parameter — reparameterizing
+$\theta\mapsto g(\theta)$ just relabels the horizontal axis, so the set of points within a
+fixed height of the peak maps over exactly. The Wald interval, by contrast, is built from
+the *curvature at a single point* and a symmetric $\pm$; push it through a nonlinear $g$
+and the delta method ([INFR-B4]) only matches the profile interval to first order, so
+$g(\text{Wald interval for }\theta)\ne\text{Wald interval for }g(\theta)$ in general. The
+classic demonstration: the Wald interval for a variance $\sigma^2$ is *not* the square of
+the Wald interval for the standard deviation $\sigma$, but the profile intervals are exact
+transforms of each other. This invariance is the deepest reason to prefer the profile
+interval when the parameterization is arbitrary.
+:::
+
+## The geometry, all together {#sec-geometry}
+
+@fig-three-on-quad puts the three constructions on one figure twice — once on a
+near-quadratic (large-$n$) log-likelihood where they coincide, once on a skewed (small-$n$)
+one where they peel apart — so the equivalence theorem and its failure are visible side by
+side.
+
+```{python}
+#| label: fig-three-on-quad
+#| fig-cap: "The equivalence theorem and its breakdown. **Left ($n=200$):** a nearly quadratic Poisson log-likelihood; the Wald (green), score (orange), and profile (purple) intervals are visually indistinguishable — @thm-three-equiv in action. **Right ($n=4$):** the same model with a tiny sample makes the log-likelihood visibly skewed; now Wald is symmetric about the MLE and spills too far left, the profile interval leans right following the curve, and the score interval sits between them. The three methods are one method on a parabola and three methods on a skewed curve."
+from scipy import stats, optimize
+
+def poisson_intervals(s, n_c, alpha=0.05):
+    lam_hat = s / n_c
+    z = stats.norm.ppf(1 - alpha / 2)
+    # Wald: var = lam_hat / n
+    se = np.sqrt(lam_hat / n_c)
+    wald = (lam_hat - z * se, lam_hat + z * se)
+    # Score: U_n(lam)=s/lam - n; I_n(lam)=n/lam; statistic = U^2/I_n = (s/lam-n)^2 * lam/n
+    def score_stat(lam):
+        U = s / lam - n_c
+        return U**2 * lam / n_c - z**2
+    lo_s = optimize.brentq(score_stat, 1e-6, lam_hat)
+    hi_s = optimize.brentq(score_stat, lam_hat, lam_hat + 10 * np.sqrt(lam_hat/n_c) + 5)
+    score = (lo_s, hi_s)
+    # Profile: 2(ll_hat - ll(lam)) = chi2; ll = s log lam - n lam
+    cut = 0.5 * stats.chi2.ppf(1 - alpha, 1)
+    ll = lambda lam: s * np.log(lam) - n_c * lam
+    ll_hat = ll(lam_hat)
+    g = lambda lam: (ll_hat - ll(lam)) - cut
+    lo_p = optimize.brentq(g, 1e-6, lam_hat)
+    hi_p = optimize.brentq(g, lam_hat, lam_hat + 10 * np.sqrt(lam_hat/n_c) + 5)
+    prof = (lo_p, hi_p)
+    return lam_hat, wald, score, prof
+
+fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.0))
+for ax, (s, n_c, title) in zip(
+        axes, [(280, 200, "Large $n$: all three agree"),
+               (4, 4, "Small $n$: they peel apart")]):
+    lam_hat, wald, score, prof = poisson_intervals(s, n_c)
+    ll = lambda lam: s * np.log(lam) - n_c * lam
+    lo = max(1e-3, lam_hat - 5*np.sqrt(lam_hat/n_c))
+    hi = lam_hat + 6*np.sqrt(lam_hat/n_c)
+    grid = np.linspace(lo, hi, 400)
+    ax.plot(grid, ll(grid) - ll(lam_hat), color="black", lw=2.0)
+    cut = 0.5 * stats.chi2.ppf(0.95, 1)
+    ax.axhline(-cut, color=GREY, ls=":", lw=1.0)
+    ax.axvline(lam_hat, color=ACCENT, lw=1.2)
+    base = ll(lam_hat)
+    for (iv, c, lab, dy) in [(wald, WALD, "Wald", -cut-0.30),
+                             (score, SCORE, "score", -cut-0.62),
+                             (prof, PROF, "profile", -cut-0.94)]:
+        ax.plot(iv, [dy, dy], color=c, lw=3.0, solid_capstyle="round", label=lab)
+    ax.set_title(title, fontsize=10.5)
+    ax.set_xlabel(r"rate $\lambda$"); ax.set_ylabel(r"$\ell_n(\lambda)-\ell_n(\hat\lambda)$")
+    ax.set_ylim(-cut-1.25, 0.25)
+    ax.legend(loc="lower center", fontsize=8, framealpha=0.9, ncol=3)
+plt.tight_layout()
+```
+
+# The binomial disaster: where Wald fails and score wins {#sec-binomial}
+
+This is the honest edge-of-applicability example the whole article was pointing toward, and
+the one [INFR-C1] explicitly deferred to here. The binomial proportion is the most
+important one-parameter problem in applied statistics — every conversion rate, defect rate,
+poll share, and click-through is a proportion — and it is exactly where the default Wald
+interval breaks most spectacularly.
+
+## Deriving all three in closed form {#sec-binomial-derive}
+
+Let $X\sim\text{Binomial}(n,p)$, with $\hat p = X/n$ the MLE. From [INFR-B3] the
+per-observation information is $I_1(p)=1/[p(1-p)]$, so $I_n(p)=n/[p(1-p)]$. We can write all
+three intervals explicitly.
+
+**Wald.** Plug $\hat p$ into the information: $I_n(\hat p)=n/[\hat p(1-\hat p)]$, so the
+standard error is $\sqrt{\hat p(1-\hat p)/n}$ and @eq-wald-ci becomes
+$$
+\hat p \;\pm\; z_{\alpha/2}\sqrt{\frac{\hat p(1-\hat p)}{n}}.
+$$ {#eq-wald-binom}
+Watch the two failure mechanisms already visible in the formula. If $\hat p=0$ or $\hat
+p=1$ (the sample is all failures or all successes — common when $p$ is near a boundary or
+$n$ is small), the standard error is *exactly zero* and the interval collapses to a single
+point $[0,0]$ or $[1,1]$, claiming perfect certainty from no information. And for $\hat p$
+small but positive, the symmetric $\pm$ pushes the lower endpoint below $0$, an impossible
+probability.
+
+**Score (Wilson).** Now use the information at the candidate $p$, not at $\hat p$. We need
+the standardized score $S(p)=U_n(p)/\sqrt{I_n(p)}$ in usable form. Start from the binomial
+log-likelihood $\ell_n(p)=X\log p+(n-X)\log(1-p)$ and differentiate term by term, using
+$\tfrac{d}{dp}\log p=\tfrac1p$ and $\tfrac{d}{dp}\log(1-p)=-\tfrac1{1-p}$ (chain rule):
+$$
+U_n(p)=\ell_n'(p)=\frac{X}{p}-\frac{n-X}{1-p}.
+$$
+Put the two fractions over the common denominator $p(1-p)$ and expand the numerator:
+$$
+U_n(p)=\frac{X(1-p)-(n-X)p}{p(1-p)}
+=\frac{X-Xp-np+Xp}{p(1-p)}
+=\frac{X-np}{p(1-p)}
+=\frac{n(\hat p-p)}{p(1-p)},
+$$
+where the last step substitutes $X=n\hat p$ (since $\hat p=X/n$). The information is
+$I_n(p)=n/[p(1-p)]$ from [INFR-B3], so dividing by $\sqrt{I_n(p)}$ gives
+$$
+S(p)=\frac{U_n(p)}{\sqrt{I_n(p)}}
+=\frac{n(\hat p-p)/[p(1-p)]}{\sqrt{n/[p(1-p)]}}
+=(\hat p-p)\sqrt{\frac{n}{p(1-p)}}
+=\frac{\hat p-p}{\sqrt{p(1-p)/n}},
+$$
+where the third equality cancels one factor of $n/[p(1-p)]$ against its square root.
+Setting $S(p)^2\le z_{\alpha/2}^2$ from @eq-score-ci gives the boundary equation
+$$
+\frac{(\hat p - p)^2}{p(1-p)/n} = z_{\alpha/2}^2.
+$$ {#eq-score-binom-eq}
+This is a *quadratic in $p$* — the variance $p(1-p)$ now carries $p$, so we genuinely solve
+for $p$ rather than reading off $\pm$. Multiply out: $(\hat p-p)^2 n = z^2 p(1-p)$ with
+$z=z_{\alpha/2}$. Expanding and collecting terms in $p$ (every step shown):
+$$
+n(\hat p^2 - 2\hat p\,p + p^2) = z^2 p - z^2 p^2
+\;\Longrightarrow\;
+(n+z^2)p^2 - (2n\hat p + z^2)p + n\hat p^2 = 0.
+$$
+The quadratic formula $p=\frac{-b\pm\sqrt{b^2-4ac}}{2a}$ with $a=n+z^2$, $b=-(2n\hat
+p+z^2)$, $c=n\hat p^2$ yields, after dividing through by $n$ and simplifying, the famous
+**Wilson interval**
+$$
+\boxed{\;
+\frac{\hat p + \dfrac{z^2}{2n}}{1+\dfrac{z^2}{n}}
+\;\pm\;
+\frac{z}{1+\dfrac{z^2}{n}}\sqrt{\frac{\hat p(1-\hat p)}{n}+\frac{z^2}{4n^2}}.
+\;}
+$$ {#eq-wilson}
+Read its structure against Wald. The *center* is not $\hat p$ but $\hat p$ pulled toward
+$\tfrac12$ by the term $z^2/(2n)$ — a built-in shrinkage that is largest exactly when $n$
+is small or $\hat p$ is extreme. The endpoints can never escape $[0,1]$ (the quadratic was
+solved inside the parameter space), and when $\hat p=0$ the interval is still a genuine
+nonzero range, not a collapsed point. This is the score interval's "adapt the variance to
+the candidate" property paying off in closed form.
+
+**Profile (likelihood-ratio).** Cut the binomial log-likelihood $\ell_n(p)=X\log p +
+(n-X)\log(1-p)$ at $\tfrac12\chi^2_{1,1-\alpha}$ below its peak and solve numerically; there
+is no closed form, but it is one line of root-finding. It is the gold standard against which
+we judge the other two.
+
+**Agresti–Coull.** A beautifully simple approximation to Wilson: add $z^2/2\approx 2$
+successes and $z^2/2\approx 2$ failures (for $\alpha=0.05$, "add two successes and two
+failures"), forming $\tilde p = (X+z^2/2)/(n+z^2)$, then use the *Wald* formula at $\tilde
+p$: $\tilde p \pm z\sqrt{\tilde p(1-\tilde p)/(n+z^2)}$. It is the Wilson center with a
+Wald-style symmetric margin — almost as good as Wilson, and easy to remember.
+
+## The coverage catastrophe, simulated {#sec-binomial-sim}
+
+The theory says Wald undercovers near the boundary; the simulation shows *how badly*, and
+how completely Wilson and profile fix it. We compute the **exact** coverage of each interval
+(no Monte-Carlo noise: for a binomial we can enumerate all $n+1$ possible outcomes and sum
+their probabilities) as a function of the true $p$, at a small $n=30$.
+
+```{python}
+#| label: fig-binom-coverage
+#| fig-cap: "Exact coverage of four 95% intervals for a binomial proportion, $n=30$, computed by enumerating all 31 outcomes (no simulation noise). The Wald interval (red) undercovers savagely as $p$ approaches the boundaries — collapsing toward 26% at the extreme, with violent oscillation from the discreteness — and is the worst performer almost everywhere. The Wilson/score (orange) and profile (purple) intervals hold close to the nominal 95% (dashed) across the whole range, including near 0 and 1. Agresti–Coull (green) tracks Wilson and is slightly conservative. The lesson [INFR-C1] promised: the default Wald interval is the one you should *not* use for a proportion."
+from scipy import stats, optimize
+
+z = stats.norm.ppf(0.975)
+n = 30
+ks = np.arange(n + 1)
+
+def wald_ci(k):
+    ph = k / n
+    se = np.sqrt(ph * (1 - ph) / n)
+    return ph - z * se, ph + z * se
+
+def wilson_ci(k):
+    ph = k / n
+    denom = 1 + z**2 / n
+    center = (ph + z**2 / (2 * n)) / denom
+    margin = (z / denom) * np.sqrt(ph * (1 - ph) / n + z**2 / (4 * n**2))
+    return center - margin, center + margin
+
+def agresti_ci(k):
+    nt = n + z**2
+    pt = (k + z**2 / 2) / nt
+    se = np.sqrt(pt * (1 - pt) / nt)
+    return pt - z * se, pt + z * se
+
+def profile_ci(k):
+    if k == 0:
+        return 0.0, 1 - (0.05 / 1) ** (1 / n)  # handled below generically anyway
+    ph = k / n
+    cut = 0.5 * stats.chi2.ppf(0.95, 1)
+    ll = lambda p: k * np.log(p) + (n - k) * np.log(1 - p)
+    ll_hat = ll(ph) if 0 < ph < 1 else 0.0
+    def g(p):
+        return (ll_hat - ll(min(max(p, 1e-12), 1 - 1e-12))) - cut
+    lo = optimize.brentq(g, 1e-9, ph) if ph > 1e-6 else 0.0
+    hi = optimize.brentq(g, ph, 1 - 1e-9) if ph < 1 - 1e-6 else 1.0
+    return lo, hi
+
+# Precompute interval endpoints for every outcome k.
+intervals = {name: [f(k) for k in ks]
+             for name, f in [("Wald", wald_ci), ("Wilson", wilson_ci),
+                             ("Agresti", agresti_ci), ("Profile", profile_ci)]}
+
+def exact_coverage(name, p):
+    pmf = stats.binom.pmf(ks, n, p)
+    cov = 0.0
+    for k in ks:
+        lo, hi = intervals[name][k]
+        if lo <= p <= hi:
+            cov += pmf[k]
+    return cov
+
+pgrid = np.linspace(0.01, 0.99, 200)
+fig, ax = plt.subplots(figsize=(6.8, 4.3))
+styles = {"Wald": (CURVE, "-"), "Wilson": (SCORE, "-"),
+          "Profile": (PROF, "-"), "Agresti": (ACCENT, "--")}
+for name, (c, ls) in styles.items():
+    cov = [exact_coverage(name, p) for p in pgrid]
+    ax.plot(pgrid, cov, color=c, ls=ls, lw=1.7, label=name)
+ax.axhline(0.95, color=GREY, ls=":", lw=1.3)
+ax.set_ylim(0.20, 1.0)
+ax.set_xlabel("true proportion $p$"); ax.set_ylabel("exact coverage")
+ax.set_title(f"Coverage of 95% binomial intervals ($n={n}$)")
+ax.legend(loc="lower center", fontsize=9, framealpha=0.9, ncol=4)
+plt.tight_layout()
+
+# A concrete headline case
+k0 = 1
+print(f"Observed {k0} success in {n} trials (phat = {k0/n:.3f}):")
+for name in ["Wald", "Wilson", "Agresti", "Profile"]:
+    lo, hi = intervals[name][k0]
+    flag = "  <-- lower endpoint below 0!" if lo < 0 else ""
+    print(f"  {name:8s} 95% CI = [{max(lo,0):.4f}, {hi:.4f}]{flag}")
+```
+
+The printed headline case makes the failure tangible: with $1$ success in $30$ trials
+($\hat p\approx 0.033$), the Wald interval's lower endpoint is **negative** — an impossible
+probability — and even the Agresti–Coull interval, being a Wald-style symmetric margin
+around a shrunken center, dips a hair below zero here (clip it at $0$). The Wilson and
+profile intervals, built by solving inside the parameter space, stay strictly within
+$[0,1]$ and are the trustworthy choices at the boundary. The coverage figure shows this is
+not a fluke of one outcome: across the whole range of true $p$, Wald's actual coverage
+swings catastrophically below its advertised $95\%$ — down to $26\%$ at the extreme — worst
+near the boundaries, while the score and profile intervals stay honest near $95\%$.
+
+::: {.callout-warning title="Pitfall"}
+**Never report a Wald interval for a proportion near $0$ or $1$ — and be suspicious of it
+anywhere.** Brown, Cai, and DasGupta (2001) titled their landmark paper's verdict bluntly:
+the Wald interval is "persistently chaotic" and should not be used; they recommend Wilson
+(score) or Agresti–Coull as defaults. The same caution applies to *any* Wald interval whose
+parameter has a boundary the symmetric $\pm$ can cross — variances, rates, odds. Whenever
+the parameter lives in a bounded or half-line space, reach for the score or profile
+interval, or reparameterize to an unbounded scale (next section). The Wald interval is the
+default your software prints; defaults are not always right.
+:::
+
+## Why reparameterizing helps Wald {#sec-reparam}
+
+There is a cheaper fix than abandoning Wald: change coordinates so the log-likelihood
+*becomes* more parabolic, build a symmetric Wald interval there, and transform back. The
+profile interval is invariant to this; Wald is not, and that non-invariance is exactly what
+we exploit. For a proportion, the standard move is the **log-odds (logit)**
+$\eta=\log\frac{p}{1-p}$, which maps $(0,1)$ to the whole real line $(-\infty,\infty)$, so a
+symmetric interval in $\eta$ can never produce an impossible $p$. @fig-logit shows the
+log-likelihood straightening out under the logit, and the transformed-back Wald interval
+landing much closer to Wilson.
+
+```{python}
+#| label: fig-logit
+#| fig-cap: 'Reparameterization rescues Wald. **Left:** the binomial log-likelihood in $p$ (for 3 successes in 20) is skewed, so the symmetric Wald interval (green) misjudges the curve. **Right:** in the log-odds $\eta=\log[p/(1-p)]$ the same log-likelihood is far more symmetric/parabolic, so a Wald interval built *here* (green) matches the curve well; transformed back to the $p$ scale it nearly coincides with the Wilson/score interval (orange). The trick: Wald works wherever the likelihood is parabolic, and a good reparameterization makes it so.'
+from scipy import stats
+
+k, n_l = 3, 20
+ph = k / n_l
+z = stats.norm.ppf(0.975)
+
+ll_p = lambda p: k*np.log(p) + (n_l-k)*np.log(1-p)
+# logit
+eta_hat = np.log(ph/(1-ph))
+# I_n(eta): for logit, var(eta_hat) = 1/(n p(1-p)); SE on eta scale:
+se_eta = np.sqrt(1.0/(n_l*ph*(1-ph)))
+eta_lo, eta_hi = eta_hat - z*se_eta, eta_hat + z*se_eta
+expit = lambda e: 1/(1+np.exp(-e))
+wald_logit = (expit(eta_lo), expit(eta_hi))
+# plain wald on p
+se_p = np.sqrt(ph*(1-ph)/n_l)
+wald_p = (ph - z*se_p, ph + z*se_p)
+# wilson
+denom = 1 + z**2/n_l
+center = (ph + z**2/(2*n_l))/denom
+margin = (z/denom)*np.sqrt(ph*(1-ph)/n_l + z**2/(4*n_l**2))
+wilson = (center-margin, center+margin)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 4.0))
+pg = np.linspace(0.02, 0.55, 300)
+axL.plot(pg, ll_p(pg) - ll_p(ph), color="black", lw=2.0)
+axL.axvline(ph, color=ACCENT, lw=1.2)
+cut = 0.5*stats.chi2.ppf(0.95,1)
+axL.axhline(-cut, color=GREY, ls=":", lw=1.0)
+axL.plot(wald_p, [-cut-0.3]*2, color=WALD, lw=3, solid_capstyle="round", label="Wald (on $p$)")
+axL.plot(wilson, [-cut-0.55]*2, color=SCORE, lw=3, solid_capstyle="round", label="Wilson")
+axL.set_xlabel("$p$"); axL.set_ylabel(r"$\ell_n(p)-\ell_n(\hat p)$")
+axL.set_ylim(-cut-1.0, 0.2); axL.set_title("Skewed in $p$", fontsize=10.5)
+axL.legend(loc="lower center", fontsize=8.5, framealpha=0.9)
+
+eg = np.linspace(eta_hat-3, eta_hat+3, 300)
+ll_eta = lambda e: ll_p(expit(e))
+axR.plot(eg, ll_eta(eg) - ll_eta(eta_hat), color="black", lw=2.0)
+axR.axvline(eta_hat, color=ACCENT, lw=1.2)
+axR.axhline(-cut, color=GREY, ls=":", lw=1.0)
+axR.plot([eta_lo, eta_hi], [-cut-0.3]*2, color=WALD, lw=3, solid_capstyle="round",
+         label="Wald (on logit)")
+axR.set_xlabel(r"log-odds $\eta=\log[p/(1-p)]$")
+axR.set_ylabel(r"$\ell_n(\eta)-\ell_n(\hat\eta)$")
+axR.set_ylim(-cut-1.0, 0.2); axR.set_title("Nearly parabolic in logit", fontsize=10.5)
+axR.legend(loc="lower center", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"Wald on p     : [{max(wald_p[0],0):.4f}, {wald_p[1]:.4f}]")
+print(f"Wald on logit : [{wald_logit[0]:.4f}, {wald_logit[1]:.4f}]  (back-transformed)")
+print(f"Wilson (score): [{wilson[0]:.4f}, {wilson[1]:.4f}]")
+```
+
+The transformed-back logit-Wald interval lands far closer to Wilson than the naive Wald did
+— and crucially its endpoints are guaranteed to stay in $[0,1]$ because $\eta$ ranges over
+the whole line. This is *why* logistic regression reports intervals on the log-odds scale
+and exponentiates: the Wald approximation is simply better there. It also explains the
+deep connection to [INFR-B4]'s delta method: a variance-stabilizing transform is one chosen
+so the delta-method standard error is constant, which is precisely the transform that makes
+the log-likelihood most parabolic.
+
+# A second worked example: the Poisson rate, end to end {#sec-poisson-example}
+
+A genuinely common applied problem, carried through all three intervals by hand and code.
+A hospital records $X=7$ adverse events over a monitoring period during which the expected
+person-time corresponds to $n=10$ "units" of exposure, and we model the count as
+$\text{Poisson}(\theta)$ per unit with total $\text{Poisson}(n\theta)$ — we want a $95\%$
+interval for the per-unit rate $\theta$. This is small-count data near no boundary trouble,
+so it is an honest case where the three intervals *differ modestly* rather than
+catastrophically, letting us see the ordering Wald-inside, profile-outside that
+@fig-three-readings predicted.
+
+```{python}
+#| label: ex-poisson
+#| echo: true
+from scipy import stats, optimize
+
+X, n = 7, 10
+theta_hat = X / n                       # MLE of per-unit rate
+z = stats.norm.ppf(0.975)
+
+# Wald: I_n(theta) = n / theta  =>  SE = sqrt(theta_hat / n)
+se = np.sqrt(theta_hat / n)
+wald = (theta_hat - z*se, theta_hat + z*se)
+
+# Score: (Xhat - theta)^2 / (theta/n) = z^2,  with Xhat = X/n; quadratic in theta
+# n*(theta_hat - theta)^2 = z^2 * theta  ->  n theta^2 - (2 n theta_hat + z^2) theta + n theta_hat^2 = 0
+a = n; b = -(2*n*theta_hat + z**2); c = n*theta_hat**2
+disc = np.sqrt(b**2 - 4*a*c)
+score = ((-b - disc)/(2*a), (-b + disc)/(2*a))
+
+# Profile: 2[ell(hat) - ell(theta)] = chi2_{1,.95},  ell = X log(n theta) - n theta
+ll = lambda th: X*np.log(n*th) - n*th
+cut = 0.5*stats.chi2.ppf(0.95, 1)
+g = lambda th: (ll(theta_hat) - ll(th)) - cut
+prof = (optimize.brentq(g, 1e-6, theta_hat), optimize.brentq(g, theta_hat, 5))
+
+print(f"MLE per-unit rate theta_hat = X/n = {X}/{n} = {theta_hat:.3f}")
+print(f"Wald      95% CI = [{wald[0]:.4f}, {wald[1]:.4f}]  width {wald[1]-wald[0]:.4f}")
+print(f"Score     95% CI = [{score[0]:.4f}, {score[1]:.4f}]  width {score[1]-score[0]:.4f}")
+print(f"Profile   95% CI = [{prof[0]:.4f}, {prof[1]:.4f}]  width {prof[1]-prof[0]:.4f}")
+```
+
+Walk the arithmetic against the formulas:
+
+- The MLE is $\hat\theta = X/n = 7/10 = `{python} f"{7/10:.2f}"`$ events per unit, since for
+  a Poisson the MLE of the rate is the count over the exposure ([INFR-B2]).
+- The Wald standard error is $\sqrt{\hat\theta/n}=\sqrt{0.7/10}=`{python} f"{np.sqrt(0.07):.4f}"`$,
+  because $I_n(\theta)=n/\theta$ gives variance $\theta/n$, so Wald is $0.70 \pm 1.96\times
+  `{python} f"{np.sqrt(0.07):.4f}"`$.
+- The score interval solves the *quadratic* $n(\hat\theta-\theta)^2=z^2\theta$ — the same
+  "adapt the variance to the candidate" move as the binomial — and comes out slightly
+  shifted toward larger $\theta$.
+- The profile interval cuts the actual Poisson log-likelihood and comes out the most
+  asymmetric of the three, leaning right exactly as @fig-three-readings showed a skewed
+  likelihood should.
+
+All three are valid $95\%$ intervals; they differ here because $X=7$ is a small count and
+the Poisson log-likelihood is mildly skewed. As the exposure grows the three would converge,
+per @thm-three-equiv. The honest practitioner reports the profile interval for small counts
+and notes the others agree to two decimals once counts are in the dozens.
+
+# The multi-parameter case: what "profile" really means {#sec-multiparam}
+
+So far $\theta$ was a single scalar. The real reason the third interval is called the
+**profile** interval appears only when there are **nuisance parameters** — extra unknowns
+we must estimate but do not care about. This is the universal situation in regression: we
+want an interval for one coefficient $\beta_j$ while $p-1$ other coefficients and a variance
+are also unknown.
+
+Let the parameter split as $\theta=(\psi,\lambda)$ where $\psi$ is the scalar of interest
+and $\lambda$ collects the nuisance parameters. The **profile log-likelihood** for $\psi$
+is the log-likelihood with the nuisance parameters *maximized out* at each fixed $\psi$:
+$$
+\ell_p(\psi)\;=\;\max_{\lambda}\ \ell_n(\psi,\lambda)
+\;=\;\ell_n\bigl(\psi,\hat\lambda(\psi)\bigr),
+$$ {#eq-profile-def}
+where $\hat\lambda(\psi)$ is the MLE of the nuisance parameters *given* $\psi$ held fixed.
+The name is geometric: imagine the full log-likelihood surface over the $(\psi,\lambda)$
+plane; for each vertical slice at a fixed $\psi$ you record the *highest* point of the
+surface in that slice, tracing the **profile** (the skyline) of the mountain range as seen
+from the $\lambda$ axis. @fig-profile-surface draws exactly this.
+
+```{python}
+#| label: fig-profile-surface
+#| fig-cap: 'What ''profiling'' means with a nuisance parameter. The filled contours are the joint log-likelihood over $(\psi,\lambda)$ for a Normal model: $\psi=\mu$ is the mean of interest, $\lambda=\sigma$ the nuisance standard deviation. For each fixed $\mu$ (vertical line) we slide up and down in $\sigma$ to the highest point of the surface — the green ridge $\hat\sigma(\mu)$. The profile log-likelihood $\ell_p(\mu)$ is the height along that ridge. The profile confidence interval for $\mu$ is where this ridge height stays within $\tfrac12\chi^2_{1,0.95}$ of the global peak (green dot) — collapsing the 2-D problem to the 1-D curve of @sec-profile.'
+from scipy import stats
+
+# Normal data; profile mu over nuisance sigma.
+data = rng.normal(5.0, 2.0, size=25)
+xbar = data.mean(); n_d = len(data)
+
+def joint_ll(mu, sigma):
+    return -n_d*np.log(sigma) - np.sum((data - mu)**2)/(2*sigma**2)
+
+mus = np.linspace(xbar-2.0, xbar+2.0, 160)
+sigs = np.linspace(1.0, 3.5, 160)
+MU, SG = np.meshgrid(mus, sigs)
+Z = np.array([[joint_ll(m, s) for m in mus] for s in sigs])
+
+# ridge: for each mu, sigma_hat(mu) = sqrt(mean((x-mu)^2))
+sig_ridge = np.array([np.sqrt(np.mean((data-m)**2)) for m in mus])
+
+fig, ax = plt.subplots(figsize=(6.6, 4.4))
+cf = ax.contourf(MU, SG, Z, levels=25, cmap="viridis", alpha=0.9)
+ax.plot(mus, sig_ridge, color=ACCENT, lw=2.2, label=r"ridge $\hat\sigma(\mu)$")
+mu_hat = xbar; sig_hat = np.sqrt(np.mean((data-xbar)**2))
+ax.scatter([mu_hat], [sig_hat], color=CURVE, s=55, zorder=5, label="global MLE")
+ax.set_xlabel(r"$\mu$ (interest)"); ax.set_ylabel(r"$\sigma$ (nuisance)")
+ax.set_title("Profiling: maximize out the nuisance at each $\\mu$")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The payoff is that Wilks' theorem still holds for the profile log-likelihood: under
+regularity, $2[\ell_p(\hat\psi)-\ell_p(\psi_0)]\xrightarrow{d}\chi^2_1$ where $\hat\psi$ is
+the global MLE of $\psi$. So the profile interval @eq-profile-ci works verbatim — cut the
+*profile* curve $\ell_p(\psi)$ at $\tfrac12\chi^2_{1,1-\alpha}$ below its peak. This is why
+the likelihood-ratio / profile interval is the principled way to get a confidence interval
+for one regression coefficient while honestly accounting for all the others, and it is the
+construction the Regression track invokes for coefficient intervals.
+
+The Wald analogue in the multi-parameter case replaces the scalar information with the
+**inverse of the Fisher information matrix**: the standard error of $\hat\psi$ is the square
+root of the $(\psi,\psi)$ entry of $I_n(\hat\theta)^{-1}$. That single diagonal-of-the-
+inverse fact — which uses quadratic forms / the Hessian from the Geometry-of-Data track — is
+the entire content of "the standard error of a coefficient" in any regression output. We
+flag it here as the multi-parameter Wald and develop the matrix machinery where it is
+needed; the scalar story above is the heart, and the matrix version is its bookkeeping.
+
+::: {.callout-tip title="You might be asked"}
+*"In a regression table, what kind of interval is the reported confidence interval for a
+coefficient?"* By default it is a **Wald** interval: the coefficient estimate plus or minus
+$z$ (or $t$) times the standard error read off the diagonal of the inverse
+information/Hessian. That is why it is symmetric. For a small sample, a near-separable
+logistic fit, or a coefficient near a boundary, that Wald interval can be untrustworthy,
+and the better choice is the **profile-likelihood** interval (`confint()` in R uses profiling
+by default for GLMs; `statsmodels` can compute it). Knowing that the table default is Wald —
+and when to override it with profiling — is exactly the practitioner judgment this article
+is for.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+A consolidated, honest map of when each interval is the right tool and when it is not.
+
+- **Wald** is right when the log-likelihood is nearly quadratic: large $n$, an interior
+  parameter, a roughly symmetric likelihood. Then it is the cheapest correct option —
+  closed form, one Hessian, symmetric and interpretable. It **fails** when the parameter is
+  near a boundary (proportions near $0/1$, variances near $0$), when $n$ is small, or when
+  a nonlinear transform has skewed the likelihood; symptoms are impossible endpoints and
+  undercoverage (@sec-binomial). The first-line fix is often a reparameterization
+  (@sec-reparam) before abandoning Wald entirely.
+
+- **Score (Rao)** is the right default when the parameter has a boundary, because it
+  evaluates the variance at each candidate and so respects the parameter space; for the
+  proportion it *is* the recommended Wilson interval. It needs only the null fit, so it
+  works even when the MLE is degenerate (e.g. $\hat p=0$). It **costs** a root-find (no
+  general closed form except for nice models like the binomial and Poisson).
+
+- **Profile** is the most accurate at small $n$ and the only one **invariant to
+  reparameterization**, and it is the principled interval in the presence of nuisance
+  parameters (@sec-multiparam) — the regression workhorse. It **costs** the most
+  computation: a maximization at each candidate $\psi$, then a root-find on the resulting
+  curve. It still **fails** when the asymptotic chi-square approximation itself is poor —
+  boundary parameters where Wilks' theorem degenerates (the limiting distribution becomes a
+  chi-square *mixture*, [INFR-B4]'s boundary caveat), or genuinely tiny samples.
+
+- **When to abandon all three for the bootstrap.** When the model is misspecified (so the
+  likelihood is wrong and all three inherit the bias), when no tractable likelihood exists,
+  or when even the profile chi-square approximation is suspect at the sample size you have,
+  the assumption-light alternative is the **bootstrap** interval of [INFR-E2]. The
+  likelihood intervals trust the model; the bootstrap trusts the data.
+
+::: {.callout-warning title="Pitfall"}
+**The asymptotics are the catch, for all three.** Wald, score, and profile intervals are
+all *asymptotic* — their coverage is exact only as $n\to\infty$. At finite $n$ they
+undercover or overcover by amounts that depend on the model's skewness. The ranking is
+reliable (profile usually best, score next, Wald worst when the likelihood is skewed) but
+none is guaranteed exact for small $n$. When exact coverage matters and the model is
+binomial or Poisson, exact methods exist (Clopper–Pearson for the binomial, which inverts
+the exact binomial test and is *guaranteed* to cover at least $1-\alpha$ — at the cost of
+being conservative). The honest hierarchy: exact when available and you need a guarantee,
+profile/score for the best asymptotic behavior, Wald for speed when the likelihood is known
+to be well-behaved.
+:::
+
+# The duality you will meet again {#sec-duality}
+
+[INFR-C1] planted that a confidence interval and a hypothesis test are two views of one
+machine, and here that duality becomes literal three times over. Each interval is the set
+of null values a corresponding *test* would not reject at level $\alpha$:
+
+- The **Wald interval** is the set of $\theta_0$ the **Wald test** $((\hat\theta-\theta_0)
+  \sqrt{I_n(\hat\theta)})^2\le z_{\alpha/2}^2$ fails to reject.
+- The **score interval** is the set of $\theta_0$ the **score (Rao) test**
+  $U_n(\theta_0)^2/I_n(\theta_0)\le z_{\alpha/2}^2$ fails to reject — read @eq-score-ci
+  again, it is exactly that.
+- The **profile interval** is the set of $\theta_0$ the **likelihood-ratio test**
+  $2[\ell_n(\hat\theta)-\ell_n(\theta_0)]\le\chi^2_{1,1-\alpha}$ fails to reject — that is
+  @eq-profile-ci verbatim.
+
+These three tests — Wald, score, likelihood-ratio — are **the asymptotic trinity** of
+[INFR-D3], and we have just built their confidence-set duals. Everything proved here about
+*when the three intervals disagree* transfers directly to *when the three tests disagree*,
+which is the heart of the next testing article. Invert a test, get an interval; that is the
+single most useful structural fact in this entire track.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-C1]**, which built the coverage concept and the pivot machine on
+the one lucky case where a clean pivot exists, and explicitly deferred the proportion
+disaster to here. This article supplied the general machinery — three ways to turn any
+likelihood into an interval — using the asymptotic normality of **[INFR-B4]**, the Fisher
+information of **[INFR-B3]**, and the MLE of **[INFR-B2]**. From here:
+
+- **[INFR-D1 *The Logic of Hypothesis Testing*]** — formalizes the test/interval duality of
+  @sec-duality into a theorem.
+- **[INFR-D3 *The Asymptotic Trinity*]** — the testing side of this article: the Wald,
+  score, and likelihood-ratio *tests*, Wilks' theorem in full, and the Neyman–Pearson lemma
+  that justifies why likelihood-ratio is optimal. The three intervals here are its three
+  confidence-set duals.
+- **[INFR-E2 *Bootstrap Confidence Intervals*]** — the assumption-light alternative for
+  when the likelihood is wrong, intractable, or the asymptotics have not arrived.
+- **The Regression track** consumes this article directly: every coefficient confidence
+  interval in a fitted GLM is a Wald interval off the inverse-information diagonal
+  (@sec-multiparam) or, better, a profile-likelihood interval. The logit reparameterization
+  of @sec-reparam is *why* logistic-regression intervals are reported on the log-odds scale.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The proportion verdict, in full.** L. D. Brown, T. T. Cai, A. DasGupta, "Interval
+  Estimation for a Binomial Proportion," *Statistical Science* 16 (2001): the definitive
+  case that the Wald interval is "persistently chaotic" and that the Wilson (score) and
+  Agresti–Coull intervals are the right defaults — the source of @sec-binomial.
+- **The original score test.** C. R. Rao, "Large sample tests of statistical hypotheses
+  concerning several parameters with applications to problems of estimation," *Proc. Camb.
+  Phil. Soc.* 44 (1948): where the score statistic — and so the score interval — was born.
+- **Observed vs. expected information.** B. Efron, D. V. Hinkley, "Assessing the accuracy
+  of the maximum likelihood estimator: Observed versus expected Fisher information,"
+  *Biometrika* 65 (1978): why the observed information of @sec-wald often gives better
+  conditional coverage.
+- **Open threads deliberately deferred.** *The three corresponding tests and Wilks' theorem
+  in full* — [INFR-D3]. *Exact (non-asymptotic) intervals* — Clopper–Pearson for the
+  binomial, mentioned in @sec-failure, lives in the discrete-distributions corner of the
+  Probability track. *Intervals with no usable likelihood at all* — the bootstrap,
+  [INFR-E1]–[INFR-E2].

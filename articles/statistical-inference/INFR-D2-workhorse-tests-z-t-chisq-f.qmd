@@ -1,0 +1,1123 @@
+---
+title: "The Workhorse Tests: z, t, Chi-Square, and F"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240714)
+
+DATA   = "#2b3a67"     # the test statistic / data
+NULL   = "#c1121f"     # the null distribution / rejection region
+ACCENT = "#0a7d4d"     # highlights / observed value
+GREY   = "#6c757d"
+
+def normal_pdf(t, mu=0.0, sigma=1.0):
+    """The standard Gaussian density — the null curve for the z-test."""
+    return np.exp(-0.5 * ((t - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+```
+
+> **Where this sits in the track.** This is the second article in the **Hypothesis
+> Testing** movement and the place where the abstract logic of testing becomes the four
+> tests you will actually run. It assumes [INFR-D1 *The Logic of Hypothesis Testing*],
+> which built the decision-theoretic frame — null vs. alternative, the significance level
+> $\alpha$, Type I / Type II error, **power**, the **p-value** as a tail probability under
+> the null (and the long list of what it is *not*), and the **duality** between a test and
+> a confidence interval. It assumes [INFR-C2 *the t-Distribution and Small-Sample
+> Intervals*], which built from scratch the two distributions this article turns into
+> decisions: the **chi-square distribution of the sample variance**
+> ($(n-1)s^2/\sigma^2\sim\chi^2_{n-1}$, with $\bar X_n$ and $s^2$ independent) and the
+> **Student $t$** as a Normal over a scaled independent chi-square root. It leans on
+> [INFR-A2 *LLN and the CLT*] for every null distribution that is only *approximately*
+> Normal, and on [INFR-A1] for the sampling-distribution and standard-error vocabulary.
+>
+> This article **sets up** [INFR-D3 *The Asymptotic Trinity*] — the likelihood-ratio,
+> Wald, and score tests, of which the chi-square tests here are the simplest special cases
+> — and [INFR-D5 *Multiple Comparisons*], which asks what happens when you run many of
+> these tests at once. It is consumed directly by **Regression**, whose **F-test for
+> nested models** is the F-test derived here applied to a fitted linear model.
+>
+> It imports nothing above the Calculus-I floor that the prerequisites have not already
+> built: the chi-square and $t$ densities, the additivity of independent chi-squares, and
+> the CLT all arrive by their statements from [INFR-C2] and [INFR-A2], flagged at the point
+> of use. The **F-distribution** — a ratio of two independent scaled chi-squares — is
+> assembled here in full.
+
+## Abstract {.unnumbered}
+
+For the everyday one- and two-sample questions — *is this mean what we claim? do these two
+groups differ? do these counts match a model? is this variance larger than that one?* —
+statistics offers four reusable test statistics, each with a known distribution **under the
+null hypothesis**: the **z**, the **t**, the **chi-square**, and the **F**. This article
+shows they are not four unrelated recipes but four faces of one idea. Every one is a
+*standardized discrepancy*: how far the data sit from what the null predicts, measured in
+units of the noise the null itself implies. The **z** and **t** standardize a mean (the $t$
+paying for an estimated $\sigma$, exactly the [INFR-C2] pivot now read as a decision); the
+**chi-square** standardizes a *vector* of squared discrepancies (counts versus expected
+counts, or a sample variance versus a claimed one); and the **F** is a *ratio of two
+independent chi-squares*, which we derive from the ground up, used to compare two variances
+and — its most important application — two nested models. We carry each through a real
+worked example with the rejection region drawn, we make the test/interval duality concrete,
+and we close at the edge: which test survives which assumption violation (non-normality,
+unequal variance, dependence, sparse counts) and which collapses, so the reader leaves able
+to *choose the right workhorse and know when none of them is honest.* The single claim the
+article defends: **the choice of test is the choice of how to measure "surprise," and once
+you can read each statistic as a standardized discrepancy you can derive the right one
+rather than memorize a flowchart.**
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+A hypothesis test reduces to one number: a **test statistic** that measures how far the
+data fall from what the null hypothesis predicts, scaled by the noise the null itself
+implies — a *standardized discrepancy*. The four workhorses differ only in what is being
+standardized and how the noise is estimated:
+
+- **z** $=\dfrac{\hat\theta-\theta_0}{\sigma_0/\sqrt n}$ — a mean against a claim, with the
+  noise scale **known**. Null distribution: $\mathcal N(0,1)$.
+- **t** $=\dfrac{\hat\theta-\theta_0}{s/\sqrt n}$ — the same, with the noise scale
+  **estimated** from the sample. Null distribution: $t_{\nu}$, the $z$'s heavier-tailed
+  sibling that pays for not knowing $\sigma$.
+- **$\chi^2$** $=\sum\dfrac{(O-E)^2}{E}$ (counts) or $\dfrac{(n-1)s^2}{\sigma_0^2}$
+  (variance) — a *sum* of squared standardized discrepancies. Null distribution:
+  $\chi^2_{\nu}$.
+- **F** $=\dfrac{\chi^2_{d_1}/d_1}{\chi^2_{d_2}/d_2}$ — a **ratio** of two independent
+  scaled chi-squares, comparing two variances or two nested models. Null distribution:
+  $F_{d_1,d_2}$.
+
+In every case you compute the statistic, locate it on its **null distribution**, and read
+off the **p-value** — the probability the null would produce a discrepancy at least this
+extreme. Small p-value, the data are surprising under the null, reject it. The whole art is
+choosing the statistic whose null distribution you can actually write down.
+:::
+
+Everything below orbits that box. By the end the four statistics should feel like one
+template — *(observed $-$ expected)/(scale)*, squared and summed when there are many
+coordinates, ratioed when two independent variance estimates are being compared — rather
+than four entries in a table you memorized the night before an exam.
+
+# Why we are doing this: from "is it surprising?" to a number {#sec-why}
+
+Hold one question in view for the entire article: **how do we convert a vague feeling that
+the data disagree with a claim into a single number whose behavior-under-the-claim we know
+exactly?** Every statistic below is an answer to a specific version of that question, and
+every choice in its construction traces back to *which* discrepancy we are measuring and
+*what noise* the null says should surround it.
+
+## What [INFR-D1] gave us {#sec-d1-recap}
+
+[INFR-D1] built the machine but left the gears unspecified. It said: fix a **null
+hypothesis** $H_0$ (a precise claim about the population, e.g. $\mu=\mu_0$), pick a **test
+statistic** $T$ whose distribution *under $H_0$* is known, observe its value $t_{\text{obs}}$,
+and report the **p-value**
+
+$$
+p \;=\; P_{H_0}\bigl(T \text{ at least as extreme as } t_{\text{obs}}\bigr),
+$$ {#eq-pvalue}
+
+the probability that the null — *if true* — would generate a discrepancy at least as large
+as the one we saw. A small $p$ means the data are improbable under $H_0$, which we read as
+evidence against $H_0$. [INFR-D1] also nailed down what $p$ is **not**: not the probability
+$H_0$ is true, not the probability the result replicates, not an effect size. And it proved
+the **duality**: rejecting $H_0:\theta=\theta_0$ at level $\alpha$ is exactly equivalent to
+$\theta_0$ falling *outside* the $1-\alpha$ confidence interval for $\theta$.
+
+What [INFR-D1] did *not* do is tell you which $T$ to use for a given question, or what its
+null distribution actually is. That is the entire job of this article. The phrase "whose
+distribution under $H_0$ is known" is doing enormous work, and the four workhorses are
+precisely the four cases where we *can* write that distribution down in closed form.
+
+## The unifying idea: a standardized discrepancy {#sec-unify}
+
+Here is the thread that ties all four together, stated once so every derivation below is an
+instance of it rather than a fresh invention. A test statistic is built in three moves:
+
+1. **Discrepancy.** Form *observed minus expected-under-the-null*: $\hat\theta-\theta_0$, or
+   for counts $O_i - E_i$, or for a variance $s^2 - \sigma_0^2$. This is zero on average
+   when $H_0$ holds and grows as the data pull away from the claim.
+2. **Standardize.** Divide by the *scale of the noise the null predicts* — the standard
+   error of that discrepancy. This makes the statistic **scale-free**: it no longer matters
+   whether we measured in grams or kilograms, only how many "noise units" away we landed.
+3. **Aggregate, if there are many coordinates.** A single discrepancy, standardized, is a
+   $z$ (Normal) or a $t$ (Normal with estimated scale). *Many* squared standardized
+   discrepancies summed is a **chi-square**. A *ratio* of two such aggregated noise
+   estimates is an **F**.
+
+That is the whole taxonomy. The reason there are exactly these four and not forty is that
+these are the combinations whose distribution under the null is exactly (or, via the CLT,
+approximately) one of three named curves — Normal, chi-square, $t$ — plus their ratio, F.
+@fig-family-map draws the genealogy.
+
+```{python}
+#| label: fig-family-map
+#| fig-cap: 'The genealogy of the workhorse tests, all descended from the standard Normal. A single standardized discrepancy with **known** scale is $z\sim N(0,1)$; with **estimated** scale it is $t$ (a Normal over a scaled chi-square root, [INFR-C2]). The sum of $k$ squared independent standard Normals is $\chi^2_k$ — the statistic for counts and for a variance. The ratio of two independent scaled chi-squares is $F$ — the statistic for comparing two variances or two nested models. Each arrow is a construction this article carries out; nothing here is asserted.'
+fig, ax = plt.subplots(figsize=(7.4, 4.4))
+ax.axis("off")
+
+def box(x, y, text, color=DATA, w=2.6, h=0.9):
+    ax.add_patch(plt.Rectangle((x - w/2, y - h/2), w, h, fill=True,
+                               facecolor="white", edgecolor=color, lw=2.0, zorder=2))
+    ax.text(x, y, text, ha="center", va="center", fontsize=10, zorder=3)
+
+box(0, 4, "$Z \\sim N(0,1)$\n(known scale)", color=DATA)
+box(-3.2, 2, "$t_k = \\dfrac{Z}{\\sqrt{Q_k/k}}$\n(estimated scale)", color=ACCENT)
+box(0, 2, "$\\chi^2_k = Z_1^2+\\cdots+Z_k^2$\n(sum of squares)", color=NULL)
+box(3.4, 2, "$F_{d_1,d_2}=\\dfrac{\\chi^2_{d_1}/d_1}{\\chi^2_{d_2}/d_2}$\n(ratio)", color=GREY)
+
+ax.annotate("", xy=(-3.0, 2.5), xytext=(-0.6, 3.6),
+            arrowprops=dict(arrowstyle="->", color=ACCENT, lw=1.6))
+ax.annotate("", xy=(0, 2.5), xytext=(0, 3.55),
+            arrowprops=dict(arrowstyle="->", color=NULL, lw=1.6))
+ax.annotate("", xy=(2.6, 2.5), xytext=(0.9, 2.5),
+            arrowprops=dict(arrowstyle="->", color=GREY, lw=1.6))
+ax.text(-2.2, 3.2, "divide by\n$\\sqrt{\\chi^2/k}$", fontsize=8, color=ACCENT, ha="center")
+ax.text(0.25, 3.05, "square\n& sum", fontsize=8, color=NULL, ha="left")
+ax.text(1.75, 2.75, "ratio of two", fontsize=8, color=GREY, ha="center")
+ax.set_xlim(-5, 5.2); ax.set_ylim(1.2, 4.7)
+ax.set_title("Four workhorses, one ancestor")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why do we standardize by the null's noise rather than the observed noise?"* Because the
+p-value @eq-pvalue is computed **assuming the null is true** — it asks how surprising the
+data are *in the null's world*. The denominator must therefore be the spread the null
+predicts, so that under $H_0$ the statistic has a known, parameter-free distribution (a
+**pivot**, in the [INFR-C1] sense). If we standardized by something the alternative
+implies, the statistic's null distribution would depend on unknowns and we could not
+compute a p-value at all. This is the same pivotal logic as confidence intervals, run in the
+other direction: there we trapped $\theta$; here we fix $\theta=\theta_0$ and ask whether
+the data are consistent with it.
+:::
+
+# The z-test: a mean against a claim, scale known {#sec-z}
+
+Start with the simplest workhorse, because it sets the template the other three decorate.
+
+## Setup and statistic {#sec-z-setup}
+
+We have $X_1,\dots,X_n$ i.i.d. with unknown mean $\mu$ and **known** standard deviation
+$\sigma$. (Known $\sigma$ is the classroom fiction [INFR-C2] warned about; we keep it
+briefly because it is the cleanest case, and it is genuinely realized in a few settings —
+see the worked example.) We wish to test
+
+$$
+H_0:\ \mu=\mu_0 \qquad\text{versus}\qquad H_1:\ \mu\neq\mu_0
+$$
+
+(a **two-sided** alternative). Follow the three moves of @sec-unify. The discrepancy is
+$\bar X_n-\mu_0$. Its standard error under $H_0$ is $\sigma/\sqrt n$, because [INFR-A1]
+established $\operatorname{Var}(\bar X_n)=\sigma^2/n$ and $H_0$ fixes the center at
+$\mu_0$. Standardizing,
+
+$$
+Z \;=\; \frac{\bar X_n-\mu_0}{\sigma/\sqrt n}.
+$$ {#eq-z-stat}
+
+Under $H_0$, what is the distribution of $Z$? If the $X_i$ are themselves Normal, then
+$\bar X_n\sim\mathcal N(\mu_0,\sigma^2/n)$ *exactly*, so $Z\sim\mathcal N(0,1)$ exactly. If
+the $X_i$ are not Normal, the **CLT** [INFR-A2] says $\bar X_n$ is approximately
+$\mathcal N(\mu_0,\sigma^2/n)$ for large $n$, so $Z\stackrel{\cdot}{\sim}\mathcal N(0,1)$
+approximately. Either way the **null distribution is the standard Normal** — a curve we know
+to the last decimal.
+
+## From statistic to decision {#sec-z-decision}
+
+Now read the p-value off that curve. Because the alternative is two-sided, "at least as
+extreme as $z_{\text{obs}}$" means $|Z|\ge|z_{\text{obs}}|$ — a discrepancy of that size in
+*either* direction. So
+
+$$
+p \;=\; P_{H_0}\bigl(|Z|\ge |z_{\text{obs}}|\bigr)
+\;=\; 2\bigl(1-\Phi(|z_{\text{obs}}|)\bigr),
+$$ {#eq-z-pvalue}
+
+where $\Phi$ is the standard-Normal CDF and the factor $2$ collects both tails (by
+symmetry each tail beyond $|z_{\text{obs}}|$ has probability $1-\Phi(|z_{\text{obs}}|)$).
+Equivalently — the **rejection-region** view — fix a level $\alpha$ and reject $H_0$ when
+$|z_{\text{obs}}|\ge z_{\alpha/2}$, the value cutting off probability $\alpha/2$ in each
+tail. The two views agree exactly: $p\le\alpha \iff |z_{\text{obs}}|\ge z_{\alpha/2}$.
+@fig-z-test draws both.
+
+```{python}
+#| label: fig-z-test
+#| fig-cap: 'The two-sided z-test as a picture. The null distribution of $Z$ is $N(0,1)$. The red shaded tails beyond $\pm z_{0.025}=\pm 1.96$ are the level-$\alpha=0.05$ rejection region (total area 0.05). The observed statistic $z_{\text{obs}}$ (green line) lands inside or outside that region; the p-value is the total area in both tails beyond $\pm|z_{\text{obs}}|$ (green hatched), here smaller than the 0.05 rejection area (the printed value is $p=0.0164$), so we reject. Rejection region and p-value are two readings of the same Normal curve.'
+z = np.linspace(-4, 4, 600)
+zobs = 2.4
+zc = stats.norm.ppf(0.975)
+
+fig, ax = plt.subplots()
+ax.plot(z, normal_pdf(z), color=DATA, lw=2)
+# rejection region
+zr = z[np.abs(z) >= zc]
+ax.fill_between(zr, normal_pdf(zr), color=NULL, alpha=0.30,
+                label=fr"rejection region $|Z|\geq{zc:.2f}$ (area 0.05)")
+# p-value tails
+zp = z[np.abs(z) >= zobs]
+ax.fill_between(zp, normal_pdf(zp), color=ACCENT, alpha=0.45, hatch="///",
+                label=fr"p-value tails $|Z|\geq{zobs:.1f}$")
+ax.axvline(zobs, color=ACCENT, lw=2)
+ax.axvline(-zobs, color=ACCENT, lw=2, ls=":")
+ax.text(zobs + 0.05, 0.34, r"$z_{\mathrm{obs}}$", color=ACCENT)
+ax.set_xlabel("$Z$"); ax.set_ylabel("density under $H_0$")
+ax.set_title("Two-sided z-test: rejection region and p-value")
+ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+pval = 2 * (1 - stats.norm.cdf(zobs))
+print(f"z_obs = {zobs},  two-sided p = 2(1-Phi(z_obs)) = {pval:.4f}")
+print(f"critical z_(0.025) = {zc:.4f};  reject since {zobs} > {zc:.4f}")
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"One-sided or two-sided — how do I choose, and what changes?"* Choose the alternative
+**before** seeing the data, from the scientific question. A two-sided $H_1:\mu\ne\mu_0$
+splits $\alpha$ across both tails ($z_{\alpha/2}=1.96$ at $\alpha=0.05$). A one-sided
+$H_1:\mu>\mu_0$ puts all of $\alpha$ in the upper tail ($z_\alpha=1.645$), giving more power
+to detect an increase — at the cost of *zero* power to detect a decrease, which it will
+never flag no matter how large. The honest danger: picking the side *after* seeing which
+way the data went doubles your true Type I rate while reporting the one-sided p-value. If
+you cannot pre-commit to a direction, use two-sided. Most reported tests are two-sided for
+exactly this reason.
+:::
+
+# The t-test: the same test with the scale estimated {#sec-t}
+
+The z-test is honest only when $\sigma$ is known, which it almost never is. Replace it with
+the sample standard deviation $s$ and the statistic becomes the **t-statistic** — and this
+is not a new idea, it is the [INFR-C2] pivot read as a decision.
+
+## One-sample t {#sec-t-one}
+
+With $\sigma$ unknown, estimate it by $s^2=\frac{1}{n-1}\sum(X_i-\bar X_n)^2$ and form
+
+$$
+T \;=\; \frac{\bar X_n-\mu_0}{s/\sqrt n}.
+$$ {#eq-t-stat}
+
+[INFR-C2] proved the load-bearing fact: when the $X_i$ are Normal, $T$ does **not** follow
+$\mathcal N(0,1)$ — it follows **Student's $t$ with $n-1$ degrees of freedom**, because the
+denominator $s$ is itself random. We do not re-derive it; we *use* it. The construction was
+$T = Z/\sqrt{Q/(n-1)}$ with $Z=(\bar X_n-\mu_0)/(\sigma/\sqrt n)\sim\mathcal N(0,1)$ and
+$Q=(n-1)s^2/\sigma^2\sim\chi^2_{n-1}$ independent — and the unknown $\sigma$ cancels, making
+$T$ a pivot with null distribution $t_{n-1}$. The decision is identical to the z-test with
+the $t$ quantile replacing the Normal one:
+
+$$
+p = 2\,P\bigl(t_{n-1}\ge|t_{\text{obs}}|\bigr),
+\qquad\text{reject when }|t_{\text{obs}}|\ge t_{n-1,\,\alpha/2}.
+$$ {#eq-t-pvalue}
+
+The duality with the [INFR-C2] interval is now exact and worth saying out loud: rejecting
+$H_0:\mu=\mu_0$ at level $\alpha$ happens **precisely when** $\mu_0$ falls outside
+$\bar X_n\pm t_{n-1,\alpha/2}\,s/\sqrt n$. The paired interval of [INFR-C2] that "excluded
+zero" was, silently, a paired $t$-test. @fig-t-vs-z shows why using the $t$ curve matters:
+its heavier tails push the critical value out, so the rejection region is *wider* (harder to
+reject) — the correction that stops the small-sample overconfidence [INFR-C2] measured.
+
+```{python}
+#| label: fig-t-vs-z
+#| fig-cap: 'Why the t-test rejects more cautiously than the z-test at small $n$. Both null curves are centered and symmetric, but $t_4$ (blue, $n=5$) has heavier tails than $N(0,1)$ (red dashed). The two-sided 5% critical value moves out from $z=1.96$ to $t_{4,0.025}=2.78$ (vertical lines): the same data must land further out to reject. The gap is the price of estimating $\sigma$, and it shrinks to nothing as $n$ grows (by $n=30$ the curves nearly coincide).'
+x = np.linspace(-5, 5, 600)
+k = 4
+fig, ax = plt.subplots()
+ax.plot(x, stats.t.pdf(x, df=k), color=DATA, lw=2, label=fr"$t_{{{k}}}$ (null for $n={k+1}$)")
+ax.plot(x, normal_pdf(x), color=NULL, ls="--", lw=1.8, label="$N(0,1)$")
+tc = stats.t.ppf(0.975, df=k)
+zc = stats.norm.ppf(0.975)
+ax.axvline(tc, color=DATA, lw=1.5); ax.axvline(-tc, color=DATA, lw=1.5)
+ax.axvline(zc, color=NULL, ls="--", lw=1.3); ax.axvline(-zc, color=NULL, ls="--", lw=1.3)
+ax.text(tc + 0.05, 0.30, fr"$t_{{4,.025}}={tc:.2f}$", color=DATA, fontsize=9)
+ax.text(zc + 0.05, 0.20, fr"$z_{{.025}}={zc:.2f}$", color=NULL, fontsize=9)
+ax.set_xlim(-5, 5); ax.set_xlabel("statistic"); ax.set_ylabel("density under $H_0$")
+ax.set_title("Estimating $\\sigma$ widens the rejection region")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+## Two-sample t {#sec-t-two}
+
+The most common real test is "do two groups differ in mean?" Given independent samples
+$X_1,\dots,X_{n_1}\sim\mathcal N(\mu_1,\sigma_1^2)$ and
+$Y_1,\dots,Y_{n_2}\sim\mathcal N(\mu_2,\sigma_2^2)$, test $H_0:\mu_1=\mu_2$, i.e.
+$\mu_1-\mu_2=0$. [INFR-C2] already built both pivots; turning them into tests is immediate.
+
+The discrepancy is $\bar X-\bar Y$ (which is $0$ on average under $H_0$). The two variants
+differ only in how the denominator estimates its noise:
+
+- **Pooled** (assumes $\sigma_1=\sigma_2$): with
+  $s_p^2=\frac{(n_1-1)s_1^2+(n_2-1)s_2^2}{n_1+n_2-2}$,
+
+  $$
+  T = \frac{\bar X-\bar Y}{s_p\sqrt{\tfrac{1}{n_1}+\tfrac{1}{n_2}}}
+  \;\sim\; t_{\,n_1+n_2-2}\quad\text{under }H_0.
+  $$ {#eq-pooled-t-test}
+
+  [INFR-C2] derived the degrees of freedom by chi-square additivity:
+  $(n_1-1)s_1^2/\sigma^2$ and $(n_2-1)s_2^2/\sigma^2$ are independent
+  $\chi^2_{n_1-1}$ and $\chi^2_{n_2-1}$, and *degrees of freedom add when independent
+  chi-squares add*, giving $\chi^2_{n_1+n_2-2}$.
+
+- **Welch** (does not assume equal variances): with denominator
+  $\sqrt{s_1^2/n_1+s_2^2/n_2}$ and the **Welch–Satterthwaite** degrees of freedom $\nu$ from
+  [INFR-C2], $T\approx t_\nu$ — *approximately*, since a weighted sum of unequal-scale
+  chi-squares is not exactly a chi-square.
+
+The decision rule is @eq-t-pvalue with the appropriate degrees of freedom. We will run the
+two-sample $t$ on real data in @sec-ex-ttest. The practitioner default, argued at length in
+[INFR-C2], is **Welch**: it is robust to unequal variances and reduces to the pooled answer
+when they happen to match.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the relationship between the two-sample t-test and a regression with one binary
+predictor?"* They are the **same test**. Regress the pooled outcome on a $0/1$ group
+indicator; the fitted slope is exactly $\bar Y-\bar X$, and the $t$-statistic for that slope
+being zero is *identical* to the pooled two-sample $t$-statistic @eq-pooled-t-test, on the
+same $n_1+n_2-2$ degrees of freedom. This is the first hint of a theme that runs through the
+rest of Inference and all of Regression: **the workhorse tests are special cases of testing
+coefficients in a linear model**, and the F-test of @sec-f is the general engine. Knowing
+this connection is what separates "I memorized four tests" from "I understand testing."
+:::
+
+# Chi-square tests: standardizing a whole vector of discrepancies {#sec-chisq}
+
+The $z$ and $t$ standardize *one* discrepancy. The chi-square statistic standardizes
+*many at once* and sums them — its natural home is **counts** (does a frequency table match
+a model?) and, separately, a **single variance** against a claimed value.
+
+## Goodness-of-fit: do counts match expected proportions? {#sec-gof}
+
+We observe counts $O_1,\dots,O_k$ in $k$ categories from $n=\sum_i O_i$ trials, and a null
+hypothesis specifying the category probabilities $p_1,\dots,p_k$ (with $\sum p_i=1$). Under
+$H_0$ the **expected count** in cell $i$ is $E_i=np_i$. Pearson's goodness-of-fit statistic
+is
+
+$$
+X^2 \;=\; \sum_{i=1}^{k}\frac{(O_i-E_i)^2}{E_i}.
+$$ {#eq-pearson}
+
+Read it as the three moves of @sec-unify: the discrepancy is $O_i-E_i$, and dividing by
+$E_i$ standardizes it — *why $E_i$ and not, say, $\sqrt{E_i}$?* Because the count in a cell
+is (approximately) **Poisson/Binomial**, whose variance equals its mean: a $\text{Binomial}
+(n,p_i)$ count has variance $np_i(1-p_i)\approx np_i=E_i$ when $p_i$ is small, and even in
+general the leading scale is $E_i$. So $(O_i-E_i)/\sqrt{E_i}$ is a discrepancy in units of
+its own standard deviation — a standardized residual — and squaring and summing gives
+@eq-pearson. We can make this precise.
+
+### Why the null distribution is chi-square {#sec-gof-chisq}
+
+We show $X^2\stackrel{\cdot}{\sim}\chi^2_{k-1}$ under $H_0$, deriving the degrees of freedom
+rather than asserting them. Consider the simplest case $k=2$ first (e.g. a coin): then
+$O_1=Y$, $O_2=n-Y$ with $Y\sim\text{Binomial}(n,p_1)$, $E_1=np_1$, $E_2=np_2=n(1-p_1)$.
+Expand @eq-pearson:
+
+$$
+X^2 = \frac{(Y-np_1)^2}{np_1} + \frac{\bigl((n-Y)-n p_2\bigr)^2}{np_2}.
+$$
+
+Note $(n-Y)-np_2 = n(1-p_2)-Y = np_1 - Y = -(Y-np_1)$, so the **same** squared quantity
+$(Y-np_1)^2$ sits in both terms. Factor it out and combine the fractions over the common
+content, using $p_1+p_2=1$:
+
+$$
+X^2 = (Y-np_1)^2\Bigl(\frac{1}{np_1}+\frac{1}{np_2}\Bigr)
+= (Y-np_1)^2\cdot\frac{p_1+p_2}{np_1p_2}
+= \frac{(Y-np_1)^2}{np_1p_2}
+= \frac{(Y-np_1)^2}{np_1(1-p_1)}.
+$$
+
+But $np_1(1-p_1)$ is exactly $\operatorname{Var}(Y)$, and $np_1=\mathbb E[Y]$, so
+
+$$
+X^2 = \left(\frac{Y-\mathbb E[Y]}{\sqrt{\operatorname{Var}(Y)}}\right)^2 = Z^2,
+$$
+
+the square of a standardized Binomial count. By the **CLT** [INFR-A2], $Z\to\mathcal N(0,1)$,
+so $X^2=Z^2\to\chi^2_1$ — a single squared standard Normal is $\chi^2_1$ by the [INFR-C2]
+definition. For $k=2$ categories, $X^2\sim\chi^2_1$, i.e. $\chi^2_{k-1}$ with $k=2$.
+
+The general $k$ follows the same pattern but needs a vector CLT, which we flag as imported
+from [INFR-A2]'s multivariate cousin: the vector of standardized counts
+$(O_i-E_i)/\sqrt{E_i}$ converges to a multivariate Normal, but the $k$ coordinates are
+**not** free — they satisfy the one linear constraint $\sum_i(O_i-E_i)=\sum_i O_i-\sum_i E_i
+= n-n = 0$ (the counts must total $n$). One linear constraint removes one degree of freedom,
+exactly as the $\sum(X_i-\bar X_n)=0$ constraint removed one in [INFR-C2]'s variance
+derivation. So $X^2$ is a sum of squares living in a $(k-1)$-dimensional space, giving
+
+$$
+X^2 \;\xrightarrow{\;d\;}\; \chi^2_{\,k-1}\quad\text{under }H_0.
+$$ {#eq-gof-null}
+
+::: {.callout-tip title="You might be asked"}
+*"If you also estimated some parameters to get the expected counts, what happens to the
+degrees of freedom?"* You lose one more degree of freedom **per independent parameter
+estimated** from the same data. The rule is $df = k - 1 - m$, where $m$ is the number of
+free parameters fit to obtain the $E_i$. The intuition is the same constraint-counting: each
+estimated parameter is another equation the fitted cell probabilities must satisfy, pinning
+down one more direction. Forgetting this — using $k-1$ when you fit, say, a Poisson rate to
+the data — makes the test **anti-conservative** (too eager to reject), because you compare
+to a chi-square with too many degrees of freedom and an inflated critical value. This is a
+classic interview trap.
+:::
+
+## Test of independence: do two categorical variables relate? {#sec-independence}
+
+The same statistic tests whether two categorical variables are **independent** in a
+contingency table. Cross-classify $n$ subjects by row variable ($r$ levels) and column
+variable ($c$ levels), giving observed counts $O_{ij}$. Under $H_0:$ *row and column are
+independent*, the cell probability factors: $p_{ij}=p_{i\cdot}\,p_{\cdot j}$ (the product of
+the marginals). We estimate the marginals from the data — row total $R_i=\sum_j O_{ij}$,
+column total $C_j=\sum_i O_{ij}$ — giving expected counts
+
+$$
+E_{ij} = n\,\hat p_{i\cdot}\,\hat p_{\cdot j}
+= n\cdot\frac{R_i}{n}\cdot\frac{C_j}{n} = \frac{R_i\,C_j}{n},
+$$ {#eq-expected-indep}
+
+the familiar **row total times column total over grand total**. The statistic is the same
+sum of standardized squared discrepancies, now over the $rc$ cells:
+
+$$
+X^2 = \sum_{i=1}^{r}\sum_{j=1}^{c}\frac{(O_{ij}-E_{ij})^2}{E_{ij}}.
+$$ {#eq-chisq-indep}
+
+The degrees of freedom are again constraint-counting, and they come out as
+
+$$
+df = (r-1)(c-1).
+$$ {#eq-df-indep}
+
+Here is the derivation, not the assertion. The table has $rc$ cells. The grand total is
+fixed ($\sum O_{ij}=n$): one constraint. To get the $E_{ij}$ we estimated the row marginals
+and column marginals, but these are not all free — the $r$ row probabilities sum to $1$ (so
+$r-1$ free) and the $c$ column probabilities sum to $1$ (so $c-1$ free). Starting from
+$rc-1$ degrees of freedom after fixing the total, we subtract $(r-1)$ for the estimated row
+marginals and $(c-1)$ for the estimated column marginals:
+
+$$
+df = (rc-1) - (r-1) - (c-1) = rc - r - c + 1 = (r-1)(c-1).
+$$
+
+The last step is just factoring: $rc-r-c+1=(r-1)(c-1)$. We will run this on a real table in
+@sec-ex-chisq.
+
+## A variance against a claim {#sec-var-test}
+
+The chi-square also tests a *single variance*: $H_0:\sigma^2=\sigma_0^2$. [INFR-C2] handed
+us the pivot directly — under Normal data, $(n-1)s^2/\sigma^2\sim\chi^2_{n-1}$ — so under
+$H_0$ the statistic is
+
+$$
+X^2 = \frac{(n-1)s^2}{\sigma_0^2} \;\sim\; \chi^2_{n-1}.
+$$ {#eq-var-test}
+
+This is a *one-coordinate* chi-square (the variance estimate), in contrast to the
+many-coordinate count statistics above; the common thread is that the null distribution is a
+chi-square because the underlying quantity is a sum of squared Normals. Unlike the $z$/$t$
+tests, this one is **two-tailed on an asymmetric distribution**: a sample variance can be
+surprisingly *small* or surprisingly *large*, and the chi-square is right-skewed, so the two
+critical values $\chi^2_{n-1,\,1-\alpha/2}$ and $\chi^2_{n-1,\,\alpha/2}$ are not mirror
+images. We flag this test as the **most fragile** workhorse — it is exquisitely sensitive to
+non-Normality, the subject of @sec-failure.
+
+# The F-test: comparing two sources of variation {#sec-f}
+
+The fourth workhorse compares **two variances** — or, far more importantly, two **nested
+models** — by taking the *ratio* of two independent chi-squares. We build the F-distribution
+from scratch, because it has not appeared in the track yet.
+
+## The F-distribution, derived {#sec-f-dist}
+
+::: {#def-f}
+**Definition (F-distribution).** If $U\sim\chi^2_{d_1}$ and $V\sim\chi^2_{d_2}$ are
+**independent**, then
+$$
+F \;=\; \frac{U/d_1}{V/d_2}
+$$
+follows the **F-distribution with $d_1$ numerator and $d_2$ denominator degrees of
+freedom**, written $F\sim F_{d_1,d_2}$.
+:::
+
+The "$/d$" on each chi-square turns it into a *mean square* — a chi-square divided by its
+degrees of freedom has expectation $1$ (since $\mathbb E[\chi^2_d]=d$, shown in [INFR-C2]).
+So $F$ is a ratio of two quantities each centered near $1$ under the null: **$F$ near $1$
+means the two variance estimates agree; $F$ far from $1$ means they disagree.** That is the
+entire intuition.
+
+We derive the density, every step, the same way [INFR-C2] derived the $t$ density — joint
+density via change of variables, then integrate out the nuisance variable. Let
+$u\ge0,v\ge0$ and recall the $\chi^2_d$ density from [INFR-C2],
+$f_{\chi^2_d}(w)=\frac{1}{2^{d/2}\Gamma(d/2)}w^{d/2-1}e^{-w/2}$. Because $U,V$ are
+independent, their joint density factors:
+
+$$
+f_{U,V}(u,v) = \frac{u^{d_1/2-1}e^{-u/2}}{2^{d_1/2}\Gamma(d_1/2)}
+\cdot \frac{v^{d_2/2-1}e^{-v/2}}{2^{d_2/2}\Gamma(d_2/2)}.
+$$
+
+Change variables to $F=\frac{U/d_1}{V/d_2}$ and keep $V=V$ as the nuisance variable. Solve
+for the old variables: from $F=\frac{U d_2}{V d_1}$ we get $u=\frac{d_1}{d_2}F\,v$ and
+$v=v$. The Jacobian of $(u,v)$ with respect to $(F,v)$ is
+
+$$
+J = \begin{pmatrix}
+\dfrac{\partial u}{\partial F} & \dfrac{\partial u}{\partial v} \\[8pt]
+\dfrac{\partial v}{\partial F} & \dfrac{\partial v}{\partial v}
+\end{pmatrix}
+= \begin{pmatrix} \dfrac{d_1}{d_2}v & \dfrac{d_1}{d_2}F \\[8pt] 0 & 1 \end{pmatrix},
+\qquad |\det J| = \frac{d_1}{d_2}v,
+$$
+
+(the determinant is the product of the diagonal because the lower-left entry is $0$). So
+$f_{F,V}(f,v)=f_{U,V}\bigl(\tfrac{d_1}{d_2}fv,\,v\bigr)\cdot\frac{d_1}{d_2}v$. Substitute
+$u=\frac{d_1}{d_2}fv$ (so $u^{d_1/2-1}=(\frac{d_1}{d_2}f)^{d_1/2-1}v^{d_1/2-1}$ and the
+exponential gains $e^{-\frac{d_1}{2 d_2}fv}$):
+
+$$
+f_{F,V}(f,v) = \frac{(\frac{d_1}{d_2}f)^{d_1/2-1}}{2^{d_1/2}\Gamma(d_1/2)\,2^{d_2/2}\Gamma(d_2/2)}
+\cdot v^{d_1/2-1}\,v^{d_2/2-1}\,v
+\cdot \exp\!\Bigl(-\tfrac{v}{2}\bigl(1+\tfrac{d_1}{d_2}f\bigr)\Bigr)\cdot\frac{d_1}{d_2}.
+$$
+
+Collect the powers of $v$: $v^{d_1/2-1}v^{d_2/2-1}v = v^{(d_1+d_2)/2-1}$. Pull every factor
+free of $v$ to the front and integrate over $v\in(0,\infty)$:
+
+$$
+f_F(f) = \frac{(\frac{d_1}{d_2})^{d_1/2}\,f^{d_1/2-1}}{2^{(d_1+d_2)/2}\Gamma(d_1/2)\Gamma(d_2/2)}
+\int_0^\infty v^{(d_1+d_2)/2-1}\,
+\exp\!\Bigl(-\tfrac{v}{2}\bigl(1+\tfrac{d_1}{d_2}f\bigr)\Bigr)dv,
+$$ {#eq-f-integral}
+
+where the leading $\frac{d_1}{d_2}$ merged with $(\frac{d_1}{d_2}f)^{d_1/2-1}$ to give
+$(\frac{d_1}{d_2})^{d_1/2}f^{d_1/2-1}$. The integral is the **Gamma integral**
+$\int_0^\infty v^{a-1}e^{-bv}dv=\Gamma(a)/b^a$ (imported by name from [INFR-C2]/[PROB-15]),
+with $a=\frac{d_1+d_2}{2}$ and $b=\frac12(1+\frac{d_1}{d_2}f)$:
+
+$$
+\int_0^\infty v^{(d_1+d_2)/2-1}e^{-bv}dv
+= \frac{\Gamma\!\bigl(\tfrac{d_1+d_2}{2}\bigr)}{b^{(d_1+d_2)/2}}
+= \Gamma\!\Bigl(\tfrac{d_1+d_2}{2}\Bigr)\Bigl[\tfrac12\bigl(1+\tfrac{d_1}{d_2}f\bigr)\Bigr]^{-(d_1+d_2)/2}.
+$$
+
+The factor $[\tfrac12]^{-(d_1+d_2)/2}=2^{(d_1+d_2)/2}$ cancels the $2^{(d_1+d_2)/2}$ in the
+denominator of @eq-f-integral. Assembling, and writing $B(\tfrac{d_1}{2},\tfrac{d_2}{2})
+=\frac{\Gamma(d_1/2)\Gamma(d_2/2)}{\Gamma((d_1+d_2)/2)}$ for the Beta function:
+
+::: {#thm-f-density}
+**Theorem (F density).** The $F_{d_1,d_2}$ distribution has density, for $f>0$,
+$$
+f_{F_{d_1,d_2}}(f)
+= \frac{\Gamma\!\bigl(\tfrac{d_1+d_2}{2}\bigr)}{\Gamma\!\bigl(\tfrac{d_1}{2}\bigr)\Gamma\!\bigl(\tfrac{d_2}{2}\bigr)}
+\Bigl(\frac{d_1}{d_2}\Bigr)^{d_1/2}
+\frac{f^{\,d_1/2-1}}{\bigl(1+\tfrac{d_1}{d_2}f\bigr)^{(d_1+d_2)/2}}.
+$$
+:::
+
+This is a positive, right-skewed density on $(0,\infty)$, with a peak below $1$ for small
+degrees of freedom and concentrating onto $1$ as both $d_1,d_2\to\infty$ (the two mean
+squares each converge to the true variance, so their ratio $\to1$). @fig-f-family draws it.
+
+```{python}
+#| label: fig-f-family
+#| fig-cap: 'The $F_{d_1,d_2}$ family (@thm-f-density): the distribution of a ratio of two independent mean squares, each centered near 1. Under the null the ratio sits near 1; the right tail is the rejection region. As both degrees of freedom grow the density concentrates onto 1 (more data pins down each variance, so their ratio must agree). The asymmetry is essential: a variance ratio cannot go negative, so $F$ lives on $(0,\infty)$ and is right-skewed.'
+f = np.linspace(0.001, 5, 600)
+fig, ax = plt.subplots()
+for (d1, d2), c in zip([(2, 8), (5, 10), (10, 30), (30, 100)],
+                       [NULL, ACCENT, GREY, DATA]):
+    ax.plot(f, stats.f.pdf(f, d1, d2), color=c, label=fr"$F_{{{d1},{d2}}}$")
+ax.axvline(1.0, color=GREY, ls=":", lw=1.4)
+ax.text(1.02, 0.9, "$F=1$", color=GREY, fontsize=9)
+ax.set_xlim(0, 5); ax.set_ylim(0, 1.05); ax.set_xlabel("$F$"); ax.set_ylabel("density")
+ax.set_title(r"The $F_{d_1,d_2}$ family concentrates on 1")
+ax.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+```
+
+## Comparing two variances {#sec-f-var}
+
+The direct use: test $H_0:\sigma_1^2=\sigma_2^2$ for two independent Normal samples. From
+[INFR-C2], $(n_1-1)s_1^2/\sigma_1^2\sim\chi^2_{n_1-1}$ and
+$(n_2-1)s_2^2/\sigma_2^2\sim\chi^2_{n_2-1}$ independently. Form the ratio of mean squares;
+under $H_0$ the $\sigma^2$'s are equal and cancel:
+
+$$
+F = \frac{s_1^2/\sigma_1^2}{s_2^2/\sigma_2^2}
+\;\stackrel{H_0}{=}\; \frac{s_1^2}{s_2^2}
+\;=\; \frac{\bigl[(n_1-1)s_1^2/\sigma_1^2\bigr]/(n_1-1)}{\bigl[(n_2-1)s_2^2/\sigma_2^2\bigr]/(n_2-1)}
+\;\sim\; F_{\,n_1-1,\,n_2-1}.
+$$ {#eq-f-var-test}
+
+Each bracketed quantity is a chi-square over its degrees of freedom — exactly @def-f. We
+reject when $F$ is far from $1$ in either tail of $F_{n_1-1,n_2-1}$.
+
+## The F-test for nested models {#sec-f-nested}
+
+This is the F-test that matters, and the reason the track routes it through Inference: it is
+the engine **Regression** uses to ask *does adding these predictors significantly improve the
+fit?* We state the general principle here; Regression applies it to specific linear models.
+
+Two models are **nested** when the smaller (the *reduced* model, with $p_0$ parameters) is a
+special case of the larger (the *full* model, with $p_1>p_0$) — obtained by forcing some
+parameters to zero. Fit both by least squares and record the **residual sum of squares**
+$\mathrm{RSS}_0\ge\mathrm{RSS}_1$ (the full model fits at least as well, so its residual sum
+of squares is no larger). The F-statistic for $H_0:$ *the extra parameters are all zero* is
+
+$$
+F = \frac{(\mathrm{RSS}_0-\mathrm{RSS}_1)/(p_1-p_0)}{\mathrm{RSS}_1/(n-p_1)}.
+$$ {#eq-f-nested}
+
+Read it as @def-f. Under $H_0$ and Normal errors, $\mathrm{RSS}_1/\sigma^2\sim\chi^2_{n-p_1}$
+and the *improvement* $(\mathrm{RSS}_0-\mathrm{RSS}_1)/\sigma^2\sim\chi^2_{p_1-p_0}$
+independently — the same orthogonality argument as [INFR-C2]'s mean/variance split, now
+between the subspace the extra predictors span and the residual subspace. The $\sigma^2$
+cancels in the ratio. The numerator is the *improvement per added parameter*; the
+denominator is the *leftover noise per residual degree of freedom*. If the extra parameters
+are truly zero, the improvement is just noise and $F\approx1$; if they capture real signal,
+the improvement outpaces the noise and $F\gg1$. We flag the chi-square decompositions
+themselves as the property of Normal-error least squares that Regression establishes in
+full; here we have shown *why the ratio is an F* given them.
+
+::: {.callout-tip title="You might be asked"}
+*"Why a ratio? Why not just test whether $\\mathrm{RSS}_0-\\mathrm{RSS}_1$ is large?"*
+Because "large" has no meaning without a scale, and the only honest scale is the noise level
+$\sigma^2$ — which is **unknown**. The denominator $\mathrm{RSS}_1/(n-p_1)$ is precisely the
+estimate of $\sigma^2$ from the full model's residuals. Taking the ratio makes $\sigma^2$
+cancel, leaving a statistic whose null distribution ($F$) depends only on the known degrees
+of freedom — a **pivot**, again. It is the exact analogue of why the $t$ divides by $s$
+rather than by the unknown $\sigma$: when the noise scale is unknown, you build a ratio that
+self-calibrates. This is also why, for testing a *single* added parameter, the F-statistic
+equals the **square of the t-statistic** for that coefficient: $F_{1,d}=t_d^2$, which you
+can verify from the definitions ($t_d=Z/\sqrt{\chi^2_d/d}$, so $t_d^2=Z^2/(\chi^2_d/d)
+=\chi^2_1/(\chi^2_d/d)=F_{1,d}$).
+:::
+
+# Worked examples {#sec-examples}
+
+We now run three of the four on real, messy data, with the rejection region drawn each time.
+
+## Example 1 — a two-sample t-test on reaction times {#sec-ex-ttest}
+
+Two groups of participants perform a task; one group had a full night's sleep, the other was
+sleep-restricted. We ask whether mean reaction time (ms) differs. The variances look
+different, so — per the [INFR-C2] default — we use **Welch**, and we draw the result on the
+$t_\nu$ null curve.
+
+```{python}
+#| label: fig-ex-ttest
+#| fig-cap: 'Welch two-sample t-test, rested vs. sleep-restricted reaction times. **Left:** the two groups (jittered) with group means; the restricted group is slower and more variable. **Right:** the observed $t$ on its $t_\nu$ null curve, with the two-sided 5% rejection region shaded red and the observed statistic in green. The statistic lands deep in the right tail, so we reject $H_0:\mu_1=\mu_2$: the groups genuinely differ. The p-value is the green tail area (doubled).'
+rested = np.array([242, 251, 238, 249, 255, 233, 247, 244, 240, 252, 236, 248.])
+restr  = np.array([268, 295, 251, 312, 277, 259, 304, 283, 271, 330.])
+n1, n2 = len(rested), len(restr)
+m1, m2 = rested.mean(), restr.mean()
+v1, v2 = rested.var(ddof=1), restr.var(ddof=1)
+se = np.sqrt(v1/n1 + v2/n2)
+tobs = (m1 - m2) / se
+nu = (v1/n1 + v2/n2)**2 / ((v1/n1)**2/(n1-1) + (v2/n2)**2/(n2-1))
+pval = 2 * stats.t.cdf(-abs(tobs), df=nu)
+tc = stats.t.ppf(0.975, df=nu)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.scatter(rng.normal(0, 0.03, n1), rested, color=DATA, s=35, zorder=3, label=f"rested (s={np.sqrt(v1):.0f})")
+axL.scatter(rng.normal(1, 0.03, n2), restr, color=NULL, s=35, zorder=3, label=f"restricted (s={np.sqrt(v2):.0f})")
+axL.hlines([m1, m2], [-0.2, 0.8], [0.2, 1.2], color=[DATA, NULL], lw=2)
+axL.set_xlim(-0.5, 1.5); axL.set_xticks([0, 1]); axL.set_xticklabels(["rested", "restricted"])
+axL.set_ylabel("reaction time (ms)"); axL.set_title("Two groups, unequal spread")
+axL.legend(framealpha=0.9, fontsize=8)
+
+x = np.linspace(-6, 6, 600)
+axR.plot(x, stats.t.pdf(x, df=nu), color=DATA, lw=2)
+xr = x[np.abs(x) >= tc]
+axR.fill_between(xr, stats.t.pdf(xr, df=nu), color=NULL, alpha=0.30, label="5% rejection region")
+xp = x[np.abs(x) >= abs(tobs)]
+axR.fill_between(xp, stats.t.pdf(xp, df=nu), color=ACCENT, alpha=0.5, hatch="///")
+axR.axvline(tobs, color=ACCENT, lw=2)
+axR.text(tobs - 0.2, 0.30, fr"$t_{{\mathrm{{obs}}}}={tobs:.2f}$", color=ACCENT, ha="right", fontsize=9)
+axR.set_xlabel("$t$"); axR.set_ylabel("density under $H_0$")
+axR.set_title(fr"$t_{{\nu={nu:.1f}}}$ null; two-sided p={pval:.1e}")
+axR.legend(loc="upper left", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+print(f"means: rested={m1:.1f}, restricted={m2:.1f};  diff={m1-m2:.1f} ms")
+print(f"Welch t = {tobs:.3f},  nu = {nu:.2f},  two-sided p = {pval:.2e}")
+print(f"reject at 0.05? {'yes' if abs(tobs) > tc else 'no'} (|t|={abs(tobs):.2f} vs t_crit={tc:.2f})")
+```
+
+The restricted group averages about $`{python} f"{m2-m1:.0f}"`$ ms slower. The Welch
+statistic is $t=`{python} f"{tobs:.2f}"`$ on $\nu=`{python} f"{nu:.1f}"`$ degrees of
+freedom, with two-sided $p=`{python} f"{pval:.1e}"`$ — far below $0.05$, so the difference is
+distinguishable from noise. By the duality, a $95\%$ Welch confidence interval for the
+difference would exclude zero, which is the same conclusion read as an interval.
+
+## Example 2 — a chi-square test of independence {#sec-ex-chisq}
+
+Does treatment outcome depend on which of three clinics administered it? We have a
+$3\times2$ table (clinic $\times$ {improved, not improved}) and test independence with
+@eq-chisq-indep on $(r-1)(c-1)=2$ degrees of freedom.
+
+```{python}
+#| label: fig-ex-chisq
+#| fig-cap: 'Chi-square test of independence, clinic vs. outcome ($3\times2$ table). **Left:** observed counts (bars) against the expected counts under independence (black ticks), $E_{ij}=R_iC_j/n$. Clinic C improves more often than independence predicts; clinic A less. **Right:** the observed $X^2$ on its $\chi^2_2$ null curve with the 5% right-tail rejection region. The statistic exceeds the critical value, so outcome is **not** independent of clinic.'
+# rows = clinics A,B,C ; cols = improved, not improved
+O = np.array([[34, 46],
+              [42, 38],
+              [58, 22]], dtype=float)
+R = O.sum(axis=1, keepdims=True)
+C = O.sum(axis=0, keepdims=True)
+N = O.sum()
+E = R @ C / N
+X2 = np.sum((O - E)**2 / E)
+r, c = O.shape
+df = (r - 1) * (c - 1)
+pval = stats.chi2.sf(X2, df)
+crit = stats.chi2.ppf(0.95, df)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+clinics = ["A", "B", "C"]
+xpos = np.arange(r)
+axL.bar(xpos - 0.2, O[:, 0], width=0.38, color=ACCENT, label="improved (obs)")
+axL.bar(xpos + 0.2, O[:, 1], width=0.38, color=GREY, label="not improved (obs)")
+for i in range(r):
+    axL.hlines(E[i, 0], i - 0.39, i - 0.01, color="black", lw=2)
+    axL.hlines(E[i, 1], i + 0.01, i + 0.39, color="black", lw=2)
+axL.plot([], [], color="black", lw=2, label="expected under indep.")
+axL.set_xticks(xpos); axL.set_xticklabels([f"clinic {x}" for x in clinics])
+axL.set_ylabel("count"); axL.set_title("Observed vs. expected counts")
+axL.legend(framealpha=0.9, fontsize=8)
+
+q = np.linspace(0.01, max(18, X2 + 2), 500)
+axR.plot(q, stats.chi2.pdf(q, df), color=DATA, lw=2)
+qr = q[q >= crit]
+axR.fill_between(qr, stats.chi2.pdf(qr, df), color=NULL, alpha=0.30,
+                 label=fr"5% region $\chi^2\geq{crit:.2f}$")
+axR.axvline(X2, color=ACCENT, lw=2)
+axR.text(X2 + 0.2, 0.12, fr"$X^2={X2:.1f}$", color=ACCENT, fontsize=9)
+axR.set_xlabel(r"$X^2$"); axR.set_ylabel("density under $H_0$")
+axR.set_title(fr"$\chi^2_{{{df}}}$ null; p={pval:.4f}")
+axR.legend(loc="upper right", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+print("Expected counts E_ij = R_i C_j / n:")
+print(np.round(E, 2))
+print(f"X^2 = sum (O-E)^2/E = {X2:.3f} on df=(r-1)(c-1)={df}")
+print(f"p = {pval:.4f};  reject at 0.05? {'yes' if X2 > crit else 'no'} (crit={crit:.2f})")
+```
+
+The expected counts assume each clinic improves at the *overall* rate; the observed counts
+deviate, with clinic C improving more and A less than independence predicts. The statistic
+$X^2=`{python} f"{X2:.1f}"`$ on $2$ degrees of freedom gives $p=`{python} f"{pval:.4f}"`$ —
+below $0.05$, so we reject independence: outcome and clinic are associated. (What the test
+does *not* tell you is *why* — confounding by case mix, clinic quality, or referral patterns
+are all consistent with this table. A significant chi-square is the beginning of an
+investigation, not its end.)
+
+## Example 3 — an F-test for a nested model {#sec-ex-f}
+
+Does adding a quadratic term to a linear fit significantly improve it? The reduced model is
+$y=\beta_0+\beta_1x+\varepsilon$ ($p_0=2$); the full model adds $\beta_2x^2$ ($p_1=3$). We
+fit both, form @eq-f-nested, and test $H_0:\beta_2=0$ on $F_{1,\,n-3}$. We do this on data
+that genuinely curve, so the test *should* reject — an honest example where the workhorse
+does its job.
+
+```{python}
+#| label: fig-ex-f
+#| fig-cap: 'F-test for a nested model: is the quadratic term needed? **Left:** data with a real downward curvature, the linear fit (red) systematically missing it, and the quadratic fit (green) tracking it. **Right:** the observed $F$ on its $F_{1,n-3}$ null curve with the 5% right-tail rejection region. $F$ lands far out, so we reject $H_0:\beta_2=0$ — the quadratic term captures real signal, not noise.'
+nobs = 40
+xv = np.linspace(0, 10, nobs)
+yv = 3 + 2.2*xv - 0.28*xv**2 + rng.normal(0, 1.6, nobs)
+
+def fit_poly(x, y, deg):
+    Xmat = np.vander(x, deg + 1, increasing=True)
+    coef, *_ = np.linalg.lstsq(Xmat, y, rcond=None)
+    resid = y - Xmat @ coef
+    return coef, np.sum(resid**2)
+
+c0, rss0 = fit_poly(xv, yv, 1)   # linear, p0=2
+c1, rss1 = fit_poly(xv, yv, 2)   # quadratic, p1=3
+p0, p1 = 2, 3
+Fobs = ((rss0 - rss1) / (p1 - p0)) / (rss1 / (nobs - p1))
+dfn, dfd = p1 - p0, nobs - p1
+pval = stats.f.sf(Fobs, dfn, dfd)
+crit = stats.f.ppf(0.95, dfn, dfd)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+xs = np.linspace(0, 10, 200)
+axL.scatter(xv, yv, color=DATA, s=28, zorder=3, label="data")
+axL.plot(xs, c0[0] + c0[1]*xs, color=NULL, lw=2, label="linear (reduced)")
+axL.plot(xs, c1[0] + c1[1]*xs + c1[2]*xs**2, color=ACCENT, lw=2, label="quadratic (full)")
+axL.set_xlabel("$x$"); axL.set_ylabel("$y$"); axL.set_title("Reduced vs. full model")
+axL.legend(framealpha=0.9, fontsize=8)
+
+ff = np.linspace(0.001, max(8, Fobs + 2), 500)
+axR.plot(ff, stats.f.pdf(ff, dfn, dfd), color=DATA, lw=2)
+fr_ = ff[ff >= crit]
+axR.fill_between(fr_, stats.f.pdf(fr_, dfn, dfd), color=NULL, alpha=0.30,
+                 label=fr"5% region $F\geq{crit:.2f}$")
+axR.axvline(Fobs, color=ACCENT, lw=2)
+axR.text(min(Fobs, 7.0) + 0.1, 0.4, fr"$F={Fobs:.1f}$", color=ACCENT, fontsize=9)
+axR.set_xlim(0, max(8, crit + 2)); axR.set_xlabel("$F$"); axR.set_ylabel("density under $H_0$")
+axR.set_title(fr"$F_{{{dfn},{dfd}}}$ null; p={pval:.2e}")
+axR.legend(loc="upper right", fontsize=8, framealpha=0.9)
+plt.tight_layout()
+print(f"RSS reduced (linear)   = {rss0:.2f}")
+print(f"RSS full   (quadratic) = {rss1:.2f}")
+print(f"F = [(RSS0-RSS1)/{dfn}] / [RSS1/{dfd}] = {Fobs:.3f} on F({dfn},{dfd})")
+print(f"p = {pval:.2e};  also note t^2 check: sqrt(F) = {np.sqrt(Fobs):.3f} = |t| for beta2")
+```
+
+The residual sum of squares drops from $`{python} f"{rss0:.1f}"`$ to
+$`{python} f"{rss1:.1f}"`$ when the quadratic term is added; the F-statistic
+$`{python} f"{Fobs:.1f}"`$ on $F_{1,`{python} f"{dfd}"`}$ gives $p=`{python} f"{pval:.1e}"`$.
+The improvement vastly outpaces the residual noise, so $\beta_2\ne0$: the curvature is real.
+Note the printed check $\sqrt F=|t|$ — for this single-parameter comparison the F-test and
+the $t$-test of $\beta_2=0$ are the identical test, exactly as the @sec-f-nested callout
+promised.
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Each workhorse has a null distribution that is *exact* or *approximate* only under specific
+assumptions. The practitioner's skill is knowing which test survives which violation. This
+is the honest boundary.
+
+## When the chi-square count test breaks: sparse cells {#sec-sparse}
+
+The chi-square null distribution @eq-gof-null is an **asymptotic** result: it comes from the
+CLT approximating each count by a Normal. That approximation needs the expected counts $E_i$
+to be reasonably large. When some $E_i$ are tiny, the count is still lumpy and discrete — it
+cannot pretend to be a smooth Normal — and the *true* distribution of $X^2$ no longer
+matches the $\chi^2_{k-1}$ curve we compare it against. The honest way to see the failure is
+to look at the **whole null distribution**, not just the headline Type I rate at $\alpha=
+0.05$. @fig-sparse simulates that null distribution directly and exposes a subtlety the
+$E_i\ge5$ folklore hides: the chi-square test stays *roughly* calibrated at the coarse $0.05$
+cutoff even with tiny cells (the central body of the simulated null lines up with $\chi^2_5$),
+but its **tail** is wrong — the simulated null puts the wrong probability past the $1\%$
+cutoff — and the tail is exactly where the small p-values that drive discoveries live. The
+two panels (sparse vs. ample) and the printed Type I rates at the $5\%$ and $1\%$ cutoffs make
+both faces of this measurable, not asserted.
+
+```{python}
+#| label: fig-sparse
+#| fig-cap: 'The edge of applicability for the chi-square count test, shown honestly. Both panels simulate $X^2$ under the **null** for a skewed 6-cell model with one rare category. **Left ($n=20$, tiny expected counts):** the simulated null distribution of $X^2$ (blue histogram) is discrete and lumpy and does **not** match the $\chi^2_5$ density (red) — especially in the right tail, so a small ($p<0.01$) p-value read off the $\chi^2$ curve is not trustworthy. **Right ($n=300$, ample counts):** the histogram now tracks $\chi^2_5$ closely. The printed numbers show the subtlety: the Type I rate at the 5% cutoff stays near 0.05 even when sparse, but the rate at the **1% cutoff** is noticeably inflated when counts are tiny — the body is fine, the tail is not.'
+probs = np.array([0.5, 0.2, 0.12, 0.08, 0.06, 0.04])
+k = len(probs)
+df = k - 1
+B = 60000
+
+def null_X2(n):
+    E = n * probs
+    counts = rng.multinomial(n, probs, size=B)
+    return np.sum((counts - E)**2 / E, axis=1)
+
+X2_small = null_X2(20)
+X2_big   = null_X2(300)
+qq = np.linspace(0.01, 20, 400)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8), sharey=True)
+axL.hist(X2_small, bins=120, range=(0, 20), density=True, color=DATA, alpha=0.55,
+         label="null $X^2$ ($n=20$)")
+axL.plot(qq, stats.chi2.pdf(qq, df), color=NULL, lw=2, label=fr"$\chi^2_{{{df}}}$ density")
+axL.set_xlim(0, 20); axL.set_xlabel(r"$X^2$"); axL.set_ylabel("density")
+axL.set_title("Sparse: tail mismatch"); axL.legend(framealpha=0.9, fontsize=8)
+
+axR.hist(X2_big, bins=120, range=(0, 20), density=True, color=DATA, alpha=0.55,
+         label="null $X^2$ ($n=300$)")
+axR.plot(qq, stats.chi2.pdf(qq, df), color=NULL, lw=2, label=fr"$\chi^2_{{{df}}}$ density")
+axR.set_xlim(0, 20); axR.set_xlabel(r"$X^2$")
+axR.set_title("Ample: matches"); axR.legend(framealpha=0.9, fontsize=8)
+plt.tight_layout()
+
+for n, X2v in [(20, X2_small), (300, X2_big)]:
+    minE = n * probs.min()
+    t05 = np.mean(X2v > stats.chi2.ppf(0.95, df))
+    t01 = np.mean(X2v > stats.chi2.ppf(0.99, df))
+    print(f"n={n:>3} (min E={minE:4.1f}): Type I @5% = {t05:.3f} (target .05),  "
+          f"@1% = {t01:.3f} (target .01)")
+```
+
+The lesson is sharper than the usual folklore. The "$E_i\ge5$ everywhere" rule is real, but
+the danger is not a wildly inflated 5% Type I rate — it is that the **tail probabilities are
+wrong**, so the *small* p-values you would actually act on ($p<0.01$) are unreliable when
+counts are sparse, even though the test looks calibrated at the coarse 5% level.
+
+**When you reach for something else:** with sparse counts use **Fisher's exact test** (which
+computes the exact hypergeometric p-value rather than a Normal approximation), or merge
+sparse categories, or use a Monte-Carlo / permutation p-value ([INFR-E3]) — all of which
+replace the mismatched $\chi^2$ curve with the true (or simulated) null distribution.
+
+## When the variance and F tests break: non-normality {#sec-nonnormal-f}
+
+The chi-square test for a variance (@sec-var-test) and the F-test for comparing variances
+(@sec-f-var) are the **least robust** workhorses, because they rest entirely on the data
+being Normal — not just on $\bar X$ being approximately Normal (which the CLT delivers for
+the $z$/$t$ tests), but on the *whole distribution* being Normal, since their statistics are
+sums of *squared* deviations whose distribution is set by the fourth moment (the kurtosis).
+The CLT does **not** rescue them. @fig-f-robustness shows the damage.
+
+```{python}
+#| label: fig-f-robustness
+#| fig-cap: "Robustness, compared honestly. Simulating under the null (equal variances / equal means), we record the actual Type I rate of three nominal-5% tests as the data move from Normal to heavy-tailed ($t_3$) to skewed (exponential). The **Welch t-test** for means (green) stays near 0.05 throughout — it inherits the CLT's protection. The **F-test for variances** (red) is wrecked: under heavy tails it rejects far more than 5% of the time even though the variances are equal, because its statistic depends on the tail shape the Normal assumption fixed. Robustness is a property of the *statistic*, not of testing in general."
+def welch_t1(dist, n=15, B=8000):
+    cnt = 0
+    for _ in range(B):
+        a = dist(n); b = dist(n)
+        v1, v2 = a.var(ddof=1), b.var(ddof=1)
+        se = np.sqrt(v1/n + v2/n)
+        t = (a.mean() - b.mean()) / se
+        nu = (v1/n + v2/n)**2 / ((v1/n)**2/(n-1) + (v2/n)**2/(n-1))
+        cnt += abs(t) > stats.t.ppf(0.975, nu)
+    return cnt / B
+
+def f_var1(dist, n=15, B=8000):
+    crit_hi = stats.f.ppf(0.975, n-1, n-1)
+    crit_lo = stats.f.ppf(0.025, n-1, n-1)
+    cnt = 0
+    for _ in range(B):
+        a = dist(n); b = dist(n)
+        F = a.var(ddof=1) / b.var(ddof=1)
+        cnt += (F > crit_hi) or (F < crit_lo)
+    return cnt / B
+
+dists = {
+    "Normal":      lambda n: rng.standard_normal(n),
+    "heavy ($t_3$)": lambda n: rng.standard_t(3, n),
+    "skewed (exp)":  lambda n: rng.exponential(1.0, n) - 1.0,
+}
+welch_rates = [welch_t1(d) for d in dists.values()]
+fvar_rates  = [f_var1(d) for d in dists.values()]
+
+fig, ax = plt.subplots()
+xp = np.arange(len(dists))
+ax.bar(xp - 0.2, welch_rates, width=0.38, color=ACCENT, label="Welch t (means)")
+ax.bar(xp + 0.2, fvar_rates, width=0.38, color=NULL, label="F-test (variances)")
+ax.axhline(0.05, color=GREY, ls="--", lw=1.5, label="nominal 0.05")
+ax.set_xticks(xp); ax.set_xticklabels(list(dists.keys()))
+ax.set_ylabel("actual Type I rate (nominal 5%)")
+ax.set_title("The F-for-variances test is not robust; the t-for-means is")
+ax.legend(framealpha=0.9, fontsize=9)
+plt.tight_layout()
+for name, w, f in zip(dists.keys(), welch_rates, fvar_rates):
+    print(f"{name:>14}: Welch-t Type I = {w:.3f}   F-variance Type I = {f:.3f}")
+```
+
+**When you reach for something else:** to compare spreads robustly, use **Levene's** or the
+**Brown–Forsythe** test (which apply an ANOVA F to absolute deviations from the median,
+draining away the dependence on Normality), or a **bootstrap** ([INFR-E1]) of the variance
+ratio. Crucially, this is also why you should **not** run an F-test for equal variances as a
+preliminary screen before choosing pooled vs. Welch $t$ (the trap [INFR-C2] flagged): the
+screen is itself unreliable on non-Normal data, and the two-stage procedure distorts the
+final test's level. Just use Welch.
+
+## When the t-test strains: skew and dependence {#sec-t-strain}
+
+The $z$ and $t$ tests for means are the *most* robust workhorses, because they standardize
+$\bar X$, which the CLT pushes toward Normal. But two things still break them. **Heavy skew
+at small $n$** undercovers exactly as [INFR-C2]'s coverage-breakdown figure showed — the test
+inherits the same flaw, since a test is an interval read backward. And **dependence** is
+fatal to *all* of them: every null distribution here assumed i.i.d. (or independent
+between-group) data. If observations are correlated — repeated measures on the same subject,
+time series, clustered sampling — the true standard error is larger (or smaller) than the
+i.i.d. formula, the statistic is mis-standardized, and the p-value is meaningless. No amount
+of choosing the "right" curve fixes a wrong denominator.
+
+::: {.callout-warning title="Pitfall"}
+**Dependence breaks every test in this article, silently.** The $z$, $t$, $\chi^2$, and F
+all derive their null distributions assuming independent observations. Positively correlated
+data (the common case: repeated measures, spatial or temporal clustering) make the effective
+sample size *smaller* than $n$, so the real standard error is *larger* than $\sigma/\sqrt n$
+— the statistic is inflated, and the test rejects far more than $\alpha$ of the time under
+the null. The danger is that the software prints a clean p-value regardless; nothing warns
+you. The fixes live outside this article: paired/within-subject designs (reduce to
+independent differences, as the [INFR-C2] paired example did), mixed-effects models,
+cluster-robust standard errors, or block/permutation methods that respect the dependence
+structure ([INFR-E3]). **Always ask how the data were collected before trusting any of these
+four tests.**
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Given a one- or two-sample question, how do you pick the test — and when is none of these
+right?"* The decision you should be able to recite:
+
+- **Mean(s), scale unknown, data plausibly Normal or $n$ moderate:** $t$-test (one- or
+  two-sample; Welch by default for two). This is the everyday answer and the most robust.
+- **Mean(s), scale genuinely known** (rare — calibrated instruments, simulation with fixed
+  noise): $z$-test. Otherwise the $t$.
+- **Counts against a model / association in a table:** chi-square goodness-of-fit or
+  independence — but check $E_i\gtrsim5$; if sparse, Fisher's exact or a permutation test.
+- **A variance, or comparing two variances:** chi-square / F — but *only* if you trust
+  Normality, which you usually should not; prefer Levene or a bootstrap.
+- **Comparing nested models:** the F-test (the Regression workhorse), which reduces to a
+  $t$-test for a single added parameter.
+- **None of these when:** the data are dependent (use a model that encodes the dependence),
+  badly non-Normal at small $n$ (use the **bootstrap** [INFR-E1] or a **permutation test**
+  [INFR-E3]), or the quantity of interest is not a mean/variance/count (the median, a
+  quantile, a correlation — again bootstrap). The deepest point: these four are the cases
+  where the null distribution is a *named curve you can look up*. When it is not, you
+  *simulate* the null distribution — which is exactly what the bootstrap and permutation tests
+  do, and why they close this movement.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-D1 *The Logic of Hypothesis Testing*]**, which built the
+decision frame — null, alternative, $\alpha$, power, the p-value, and the test/interval
+duality — and from **[INFR-C2 *the t-Distribution*]**, which built the chi-square and $t$
+distributions this article turned into decisions. Here we instantiated the logic as the four
+workhorses, unified them as *standardized discrepancies*, and derived the F-distribution as a
+ratio of independent chi-squares. From here:
+
+- **[INFR-D3 *The Asymptotic Trinity*]** generalizes all of this. The chi-square tests here
+  are the simplest cases of the **likelihood-ratio**, **Wald**, and **score** tests, whose
+  null distribution is $\chi^2$ by **Wilks' theorem** — the asymptotic engine that tests
+  *any* hypothesis about an MLE-fit model, not just means and counts.
+- **[INFR-D4 *Power and Sample Size*]** asks the design question: given that we will run one
+  of these tests, how large a sample do we need for it to actually detect an effect? The
+  power of the $z$/$t$ test is derived there from the non-null distribution of the statistic.
+- **[INFR-D5 *Multiple Comparisons*]** asks what happens when you run *many* of these tests
+  at once — the false-discovery problem that the genomics and A/B-testing worlds cannot avoid.
+- **[INFR-E3 *Permutation Tests*]** is the assumption-light alternative this article kept
+  pointing to: when the data are non-Normal, sparse, or you want a test for a statistic with
+  no named null distribution, you *build* the null distribution by relabeling rather than
+  looking it up.
+
+This article is consumed directly by **Regression**: the **F-test for nested models**
+(@sec-f-nested) is exactly how Regression tests whether a group of predictors belongs in a
+model, the $t$-test of @sec-t is how it tests a single coefficient, and the $F=t^2$ identity
+ties the two together. The chi-square tests reappear there as the deviance tests for
+generalized linear models.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The original goodness-of-fit paper.** K. Pearson, "On the criterion that a given system
+  of deviations from the probable…," *Philosophical Magazine* 50 (1900) — the introduction of
+  $X^2=\sum(O-E)^2/E$. Pearson initially miscounted the degrees of freedom for the
+  independence case; R. A. Fisher corrected it to $(r-1)(c-1)$ in the 1920s, the
+  constraint-counting derivation of @sec-independence.
+- **The F-distribution.** Named by G. W. Snedecor for Fisher, who introduced the variance
+  ratio for the analysis of variance in *Statistical Methods for Research Workers* (1925) —
+  the F-test for nested models is ANOVA's beating heart, and Regression's.
+- **Exact alternatives.** R. A. Fisher, *The Design of Experiments* (1935), Ch. 2, on the
+  exact test (the "lady tasting tea") — the exact and permutation logic that replaces the
+  chi-square approximation when counts are sparse, developed fully in [INFR-E3].
+- **Open threads deliberately deferred.** *What if the hypothesis is about something other
+  than a mean, variance, or count?* — the general MLE-based trinity, [INFR-D3]. *How do I
+  test many groups' means at once rather than two?* — the one-way ANOVA F-test, the
+  multi-group generalization of @sec-f-nested, which Regression builds as a model with a
+  categorical predictor. *What is the most powerful test I could possibly use?* — the
+  **Neyman–Pearson lemma**, [INFR-D3], which explains *why* likelihood-ratio statistics (and
+  hence these as their special cases) are optimal.

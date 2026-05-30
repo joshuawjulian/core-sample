@@ -1,0 +1,1001 @@
+---
+title: "The Logic of Hypothesis Testing: Null, Alternative, and the Two Ways to Be Wrong"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240901)
+
+NULLC  = "#2b3a67"     # the null world
+ALTC   = "#0a7d4d"     # the alternative world
+REJECT = "#c1121f"     # rejection region / Type I
+TYPE2  = "#d6791f"     # Type II / beta
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas
+
+def normal_pdf(t, mu=0.0, sigma=1.0):
+    """The Gaussian density — used to draw null and alternative sampling distributions."""
+    return np.exp(-0.5 * ((t - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+
+def normal_cdf(t):
+    """Standard-normal CDF via the error function — for tail areas / p-values."""
+    from math import erf, sqrt
+    vec = np.vectorize(lambda u: 0.5 * (1.0 + erf(u / sqrt(2.0))))
+    return vec(t)
+```
+
+> **Where this sits in the track.** This opens the **Hypothesis Testing** movement (D) of
+> the Statistical Inference track. It assumes three earlier articles. From [INFR-A1 *The
+> Estimator as a Random Variable*] it takes that any statistic computed from data is itself
+> a **random variable** with a **sampling distribution**. From [INFR-A2 *LLN and the CLT*]
+> it takes the **Central Limit Theorem**, which hands us the Gaussian shape of that
+> distribution and lets us compute tail probabilities. From [INFR-C1 *Confidence
+> Intervals*] it takes the **coverage** idea — that probability statements attach to
+> *procedures*, not to fixed unknowns — and the promised **test/interval duality**, which
+> we now prove. The only thing imported from outside the track is **conditional
+> probability** and the value of the standard-normal quantiles $z_\alpha$, both built in the
+> Probability Foundations track ([PROB-09], [PROB-11]); we use them by name. This article
+> installs the *logic* shared by every test in the rest of movement D: the null and
+> alternative hypotheses, the two ways a test can be wrong, the significance level and
+> power, and — at interview-grade depth — exactly what a **p-value** is and the long list of
+> what it is not. It **sets up** [INFR-D2 *The Workhorse Tests*] (z, t, $\chi^2$, F — each
+> a concrete instance of this logic), [INFR-D3 *The Asymptotic Trinity*], [INFR-D4 *Power
+> and Sample Size*], and [INFR-D5 *Multiple Comparisons*].
+
+## Abstract {.unnumbered}
+
+A hypothesis test is a **decision rule under uncertainty**: we hold a default claim about
+the world (the **null hypothesis** $H_0$), ask whether the data are too surprising to be
+explained by it, and if so we reject it in favor of an **alternative** $H_1$. Because the
+data are random, any such rule can be wrong in exactly **two** ways — rejecting a true
+null (**Type I error**, rate $\alpha$) or failing to reject a false null (**Type II
+error**, rate $\beta$) — and the entire structure of testing is the management of the
+trade-off between them. This article builds that structure from first principles. We
+define $H_0$, $H_1$, the rejection region, $\alpha$, $\beta$, and the **power** $1-\beta$,
+each as a precise probability under a specified sampling distribution. We then construct
+the **p-value** as a tail probability *computed under the null* and spend real effort on
+what it is **not**: not the probability the null is true, not the probability of replication,
+not an effect size. We prove the **test/interval duality** promised in [INFR-C1] — a level-$\alpha$
+test rejects exactly the null values outside the $(1-\alpha)$ confidence interval — and
+preview the **base-rate** and **multiple-comparisons** traps that the rest of the movement
+repairs. The single claim the article defends is that **a p-value measures surprise under
+the null and nothing else**: every misuse is an attempt to make it answer a question it was
+never built to answer.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Fix a default claim about the world, the **null hypothesis** $H_0$ (e.g. "this coin is
+fair," "this drug does nothing"). Choose in advance a tolerable rate of false alarms, the
+**significance level** $\alpha$ (e.g. $0.05$). A **test** is a rule that rejects $H_0$ when
+a **test statistic** $T$ — a number computed from the data — falls into a **rejection
+region** $R$ chosen so that
+
+$$
+P\bigl(T \in R \mid H_0 \text{ true}\bigr) = \alpha .
+$$
+
+Because the data are random, the rule has exactly **two ways to be wrong**:
+
+| | $H_0$ true | $H_0$ false |
+|---|---|---|
+| **reject $H_0$** | Type I error (prob. $\alpha$) | correct (power $1-\beta$) |
+| **fail to reject** | correct | Type II error (prob. $\beta$) |
+
+The **p-value** is the probability, *computed as if $H_0$ were true*, of a test statistic
+at least as extreme as the one observed. A small p-value means the data are surprising
+under $H_0$ — and that is **all** it means. It is **not** $P(H_0\text{ true})$, not an
+effect size, and not a replication probability. Holding that distinction is the whole game.
+:::
+
+Everything below orbits that box. Two ideas inside it are the ones every exam and interview
+probes, so keep them in view. First: **the level $\alpha$ is a property of the procedure**,
+chosen and guaranteed *before* seeing data, exactly as coverage was in [INFR-C1] — the test
+is calibrated to fire falsely only $\alpha$ of the time across the many samples we might
+have drawn. Second: **the p-value is conditioned on $H_0$**; the vertical bar in
+$P(\,\cdot\mid H_0)$ is doing enormous work, and nearly every misinterpretation in
+@sec-pnot is an illegal attempt to flip that bar around.
+
+# Why we are doing this: the problem that forced the test {#sec-why}
+
+Hold one question in view for the whole article: **how do we decide whether an observed
+effect is real, or just the kind of wobble a random sample produces anyway?**
+
+[INFR-A1] made the problem unavoidable. Every statistic we compute — a sample mean, a
+difference of proportions, a regression slope — is a *draw from a sampling distribution*.
+So when we observe that a treated group did better than a control group by $3$ points, we
+face a genuine ambiguity: maybe the treatment works, or maybe the treatment does nothing
+and we simply drew a sample in which, by luck, the treated group came out $3$ points ahead.
+Both stories are consistent with the *same* observed data. Reporting "the treated group did
+better" without resolving this is not yet a conclusion; it is a description of one sample.
+
+The naive instinct is to declare an effect real whenever the groups differ. But [INFR-A1]
+showed that two groups drawn from the *identical* population almost never have identical
+means — the difference is essentially never exactly zero. So "they differ" is no evidence
+of anything; the question is whether they differ *by more than chance alone would produce*.
+That is a probabilistic question, and answering it requires a *model of what chance alone
+would produce* — which is precisely the sampling distribution of [INFR-A1] and the Gaussian
+shape of [INFR-A2]. The hypothesis test is the disciplined machine that turns "is this
+effect real?" into "is this effect too large to be a fluke under the no-effect model?" — a
+question we *can* answer with a calibrated error rate.
+
+::: {.callout-tip title="You might be asked"}
+*"Why frame it as rejecting a null rather than directly proving the effect?"* Because we can
+compute probabilities under a *specific, fully-pinned-down* model, and "no effect" is
+usually the only fully-specified model on offer. "The drug works" is vague — works how much?
+— so it has no single sampling distribution to compute against. "The drug does nothing" is
+precise: it fixes the parameter (e.g. mean difference $= 0$), which fixes the sampling
+distribution, which lets us compute exactly how surprising our data are. We can therefore
+*measure surprise under the null* even when we cannot directly measure support for the
+alternative. The asymmetry is not philosophical timidity; it is the practical fact that you
+can only compute tail probabilities against a distribution you have fully specified.
+:::
+
+## A two-paragraph history
+
+The modern apparatus has two parents who disagreed. **Ronald Fisher**, in the 1920s,
+introduced *significance testing*: compute a statistic, find its tail probability under a
+null model — the **p-value** — and treat a small one as evidence against the null. Fisher's
+p-value was a continuous *measure of evidence*, not a hard decision; his famous $0.05$ was a
+convenient convention, never a law.
+
+**Jerzy Neyman and Egon Pearson**, around 1933, recast testing as a *decision* between two
+hypotheses with controlled long-run error rates. Their contribution is the structure in the
+Core box: an explicit alternative $H_1$, the two error types, the level $\alpha$ fixed in
+advance, and **power** as the quantity to maximize. The framework everyone actually uses is
+an uneasy hybrid — Fisher's p-value reported inside Neyman–Pearson's accept/reject scaffold
+— and much of the confusion about p-values traces to fusing two philosophies that their
+authors meant to keep apart. The optimality theory that justifies *which* test statistic to
+use (the Neyman–Pearson lemma) is the subject of [INFR-D3]; here we build the shared logic
+both schools assume.
+
+# Intuition before symbols: two overlapping worlds {#sec-intuition}
+
+Before any algebra, here is the picture that makes the whole apparatus click. A test
+imagines **two possible worlds**, each with its own sampling distribution for the test
+statistic:
+
+- the **null world** ($H_0$), where the effect is absent and the statistic scatters around
+  its no-effect value;
+- the **alternative world** ($H_1$), where the effect is present and the statistic scatters
+  around a shifted value.
+
+We observe one number, the statistic $T$, and must decide which world we are in. We draw a
+line — the **critical value** $c$ — and reject $H_0$ when $T$ lands past it. Because the two
+worlds' distributions **overlap**, no line can separate them perfectly. The mass of the
+null world that falls past the line is $\alpha$, the false-alarm rate; the mass of the
+alternative world that falls *short* of the line is $\beta$, the missed-detection rate.
+@fig-two-worlds draws exactly this, and one look at it explains why $\alpha$ and $\beta$
+trade off: slide the line right and you shrink $\alpha$ but grow $\beta$; slide it left and
+the reverse. You cannot shrink both at once without changing the experiment itself.
+
+```{python}
+#| label: fig-two-worlds
+#| fig-cap: 'The entire logic of testing in one picture. The blue curve is the sampling distribution of the test statistic under the null $H_0$ (no effect); the green curve is its distribution under a specific alternative $H_1$ (a real effect of size $\delta$). We reject $H_0$ when the statistic exceeds the critical value $c$ (dashed line). The red area is $\alpha$ — null-world mass wrongly rejected (Type I error). The orange area is $\beta$ — alternative-world mass that falls short and is wrongly retained (Type II error). The green area to the right of $c$ is the power $1-\beta$. Because the worlds overlap, shrinking one shaded area grows the other: that trade-off is the central fact of testing.'
+delta = 2.3              # true shift under the alternative (in SE units)
+c = 1.645                # one-sided critical value at alpha = 0.05
+t = np.linspace(-4, 7, 800)
+null_pdf = normal_pdf(t, 0.0, 1.0)
+alt_pdf  = normal_pdf(t, delta, 1.0)
+
+fig, ax = plt.subplots(figsize=(7.2, 4.2))
+ax.plot(t, null_pdf, color=NULLC, label=r"null world $H_0$")
+ax.plot(t, alt_pdf,  color=ALTC,  label=r"alternative world $H_1$")
+
+# Type I area: null mass beyond c.
+rmask = t >= c
+ax.fill_between(t[rmask], null_pdf[rmask], color=REJECT, alpha=0.55,
+                label=r"$\alpha$ = Type I (false alarm)")
+# Type II area: alternative mass below c.
+lmask = t <= c
+ax.fill_between(t[lmask], alt_pdf[lmask], color=TYPE2, alpha=0.45,
+                label=r"$\beta$ = Type II (missed effect)")
+ax.axvline(c, color=GREY, ls="--", lw=1.4)
+ax.text(c + 0.05, 0.40, r"critical value $c$", fontsize=9)
+ax.annotate(r"power $1-\beta$", xy=(delta + 0.8, 0.08),
+            xytext=(4.4, 0.27), fontsize=9, color=ALTC,
+            arrowprops=dict(arrowstyle="->", color=ALTC, lw=1.2))
+ax.set_xlabel(r"test statistic $T$ (in standard-error units)")
+ax.set_ylabel("density")
+ax.set_title("Two overlapping worlds; one line to choose between them")
+ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why can't we just make $\alpha$ tiny and be done with false alarms?"* Because @fig-two-worlds
+shows the cost: sliding the line right to shrink the red area enlarges the orange one. A test
+with $\alpha = 0$ never rejects anything — it can never raise a false alarm, but it also can
+never detect a real effect, so its power is zero and its $\beta$ is $1$. The art of test
+*design* (the subject of [INFR-D4]) is choosing $\alpha$ and the sample size $n$ together so
+that *both* error rates are acceptably small. More data is the only lever that shrinks both at
+once: it narrows each curve, pulling them apart relative to their own spread.
+:::
+
+# The formal development {#sec-formal}
+
+## Hypotheses, precisely {#sec-hypotheses}
+
+::: {#def-hypotheses}
+**Definition (null and alternative).** A **statistical hypothesis** is a claim that the
+unknown parameter $\theta$ lies in a specified subset of its possible values. A test pits
+two complementary hypotheses against each other:
+
+- the **null hypothesis** $H_0:\ \theta \in \Theta_0$, the default/no-effect claim we will
+  retain unless the data contradict it;
+- the **alternative hypothesis** $H_1:\ \theta \in \Theta_1$, the claim we conclude if we
+  reject $H_0$, with $\Theta_0$ and $\Theta_1$ disjoint.
+
+A hypothesis is **simple** if it pins $\theta$ to a single value (e.g. $H_0:\theta=\theta_0$)
+and **composite** if it spans a range (e.g. $H_1:\theta>\theta_0$).
+:::
+
+Two design choices live entirely in this definition, and both matter.
+
+**Which claim is the null?** By convention the null is the claim of *no effect, no
+difference, no change* — the boring world. This is not arbitrary: the null must be a
+*single, fully-specified* sampling distribution (or a boundary of one) so that we can
+compute probabilities under it, and "no effect" usually is. Putting the interesting claim in
+$H_0$ would force us to compute probabilities under a vague model, which we cannot do. There
+is also an asymmetry of consequence baked in (below): we control the Type I rate tightly, so
+we put the error we most want to avoid — usually "claiming an effect that isn't there" — into
+the Type I slot, which means "no effect" goes into $H_0$.
+
+**One-sided or two-sided?** If only one direction of departure is meaningful (a new drug
+could only help, or we only care if a defect rate *rises*), the alternative is **one-sided**,
+$H_1:\theta>\theta_0$ or $H_1:\theta<\theta_0$. If departures in either direction matter, it
+is **two-sided**, $H_1:\theta\neq\theta_0$. The choice must be made *before* seeing the data;
+choosing a one-sided test after peeking at the direction of the effect is a classic way to
+double your true Type I rate while reporting the nominal one.
+
+::: {.callout-warning title="Pitfall"}
+**"Fail to reject $H_0$" is not "accept $H_0$" or "prove $H_0$ true."** A test that does not
+reject "the drug does nothing" has not shown the drug does nothing — it has shown the data
+are *consistent* with nothing, which a tiny, underpowered study achieves trivially because
+its alternative-world curve in @fig-two-worlds sits almost on top of the null's. Absence of
+evidence is not evidence of absence. The honest report of a non-rejection is "we did not
+detect an effect," paired with the study's *power* to detect an effect of practical size
+([INFR-D4]). Treating non-significance as proof of the null is one of the most common and
+most consequential errors in applied work.
+:::
+
+## The test as a decision rule: rejection regions and the two errors {#sec-errors}
+
+A test is fully specified by a **test statistic** $T = T(X_1,\dots,X_n)$ — a number
+summarizing the data, built so that it tends to be large (or extreme) when $H_1$ holds — and
+a **rejection region** $R$, the set of values of $T$ for which we reject $H_0$. The rule is:
+
+$$
+T \in R \;\Rightarrow\; \text{reject } H_0; \qquad T \notin R \;\Rightarrow\; \text{fail to reject } H_0 .
+$$
+
+Since $T$ is a function of the random sample it is, by [INFR-A1], a random variable, so
+"$T\in R$" is a random event with a probability — and that probability depends on which
+world is true. This is the source of the two errors. Laying them out against the truth:
+
+::: {#def-errors}
+**Definition (Type I and Type II errors).**
+
+- A **Type I error** is rejecting $H_0$ when $H_0$ is true. Its probability is the
+  **significance level**
+  $$
+  \alpha \;=\; P\bigl(T\in R \,\big|\, H_0 \text{ true}\bigr).
+  $$
+- A **Type II error** is failing to reject $H_0$ when $H_1$ is true. Its probability is
+  $$
+  \beta \;=\; P\bigl(T\notin R \,\big|\, H_1 \text{ true}\bigr).
+  $$
+- The **power** of the test is the probability of correctly rejecting a false null,
+  $$
+  \text{power} \;=\; 1-\beta \;=\; P\bigl(T\in R \,\big|\, H_1 \text{ true}\bigr).
+  $$
+:::
+
+Read the conditioning bars carefully, because they are the entire content. $\alpha$ is
+computed *in the null world* ($H_0$ true); $\beta$ and the power are computed *in the
+alternative world* ($H_1$ true). They live in different probability calculations and you
+cannot read one off the other without specifying the alternative. The reason power needs a
+*specific* alternative is visible in @fig-two-worlds: $\beta$ is the area of the green curve
+below $c$, and you cannot draw the green curve until you say *how far* it is shifted — i.e.
+how big the effect is.
+
+::: {.callout-tip title="You might be asked"}
+*"Why is the level called the size of the test, and why do we fix it in advance?"* The
+**size** of a test is $\sup_{\theta\in\Theta_0} P(T\in R\mid\theta)$ — the worst-case Type I
+rate over all parameter values consistent with the null. For a simple null it is just
+$\alpha$. We fix it *before* seeing data for the same reason coverage was fixed before data
+in [INFR-C1]: $\alpha$ is a guarantee about the *procedure's* long-run false-alarm rate, and
+that guarantee is only meaningful if the rejection region was drawn without peeking at the
+outcome. Choosing $R$ after seeing where $T$ landed — enlarging it just enough to capture
+your observation — destroys the guarantee; the true Type I rate is then whatever your peeking
+made it, not the $\alpha$ you report.
+:::
+
+## Building a concrete test, every step {#sec-build}
+
+Abstraction is cheap; let us build a real test end-to-end so every symbol has a number
+behind it. Take the canonical one-sample setup, the same machine as [INFR-C1] turned into a
+decision. We have $X_1,\dots,X_n$ i.i.d. with unknown mean $\mu$ and **known** variance
+$\sigma^2$ (the honest simplification that isolates the logic; [INFR-D2] removes it and gets
+the t-test). We test
+
+$$
+H_0:\ \mu = \mu_0 \qquad\text{versus}\qquad H_1:\ \mu > \mu_0 ,
+$$
+
+a one-sided test of whether the true mean exceeds a baseline $\mu_0$.
+
+**Step 1 — choose a test statistic.** The natural summary is the sample mean $\bar X$, which
+should sit near $\mu_0$ under $H_0$ and drift above it under $H_1$. Standardize it exactly as
+in [INFR-C1], using the value $\mu_0$ that the null asserts:
+
+$$
+Z \;=\; \frac{\bar X - \mu_0}{\sigma/\sqrt n}.
+$$ {#eq-zstat}
+
+**Step 2 — find the null distribution.** This is the crux of every test: *what does the
+statistic do when $H_0$ is true?* If $H_0$ holds then the true mean really is $\mu_0$, so by
+[INFR-A1] $\mathbb E[\bar X]=\mu_0$ and $\operatorname{Var}(\bar X)=\sigma^2/n$, and the
+numerator $\bar X-\mu_0$ has mean zero. If the $X_i$ are Normal then $\bar X$ is exactly
+Normal and $Z$ is exactly standard Normal; if not, the **CLT** of [INFR-A2] gives
+$Z\xrightarrow{d}\mathcal N(0,1)$. Either way,
+
+$$
+Z \,\big|\, H_0 \ \sim\ \mathcal N(0,1)\qquad\text{(exactly or asymptotically).}
+$$ {#eq-nulldist}
+
+This known, parameter-free null distribution is what makes the test computable — the same
+"distribution free of unknowns" requirement that made $Z$ a pivot in [INFR-C1].
+
+**Step 3 — set the rejection region from $\alpha$.** Under $H_1$ ($\mu>\mu_0$) the statistic
+$Z$ drifts *positive*, so we reject for large $Z$: $R = \{Z \ge c\}$ for some critical value
+$c$. We pick $c$ so the Type I rate is exactly $\alpha$. Using @eq-nulldist and the
+definition of the upper-tail quantile $z_\alpha$ (the value with $P(\mathcal N(0,1)>z_\alpha)=\alpha$):
+
+$$
+\alpha \;=\; P\bigl(Z\ge c \mid H_0\bigr) \;=\; P\bigl(\mathcal N(0,1)\ge c\bigr)
+\quad\Longrightarrow\quad c = z_\alpha .
+$$
+
+For $\alpha=0.05$, $z_{0.05}=1.645$. So the rule is **reject $H_0$ when $Z\ge 1.645$** — and
+by construction it falsely rejects a true null exactly $5\%$ of the time. We have built a
+calibrated test purely from the null distribution and the chosen level. @fig-rejection-region
+draws the region.
+
+```{python}
+#| label: fig-rejection-region
+#| fig-cap: 'Constructing the rejection region for the one-sided z-test at $\alpha=0.05$. Under $H_0$ the statistic $Z$ is standard Normal (blue). We place all $\alpha=0.05$ of the false-alarm budget in the upper tail, because the alternative $H_1:\mu>\mu_0$ pushes $Z$ positive. The critical value is the upper-$0.05$ quantile $z_{0.05}=1.645$; the red tail beyond it is the rejection region. Any observed $Z$ landing there is judged ''too surprising for the null.'' Compare a two-sided test, which would split the $0.05$ into two tails of $0.025$ each, with cutoffs $\pm 1.96$.'
+alpha = 0.05
+z_one = 1.6448536269514722   # z_{0.05}
+z_two = 1.959963984540054    # z_{0.025}
+t = np.linspace(-4, 4, 800)
+pdf = normal_pdf(t)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8), sharey=True)
+
+# One-sided
+axL.plot(t, pdf, color=NULLC)
+m = t >= z_one
+axL.fill_between(t[m], pdf[m], color=REJECT, alpha=0.55,
+                 label=r"reject region, area $\alpha=0.05$")
+axL.axvline(z_one, color=GREY, ls="--", lw=1.3)
+axL.text(z_one + 0.06, 0.30, r"$z_{0.05}=1.645$", fontsize=9)
+axL.set_title("One-sided  $H_1:\\mu>\\mu_0$")
+axL.set_xlabel("$Z$ under $H_0$"); axL.set_ylabel("density")
+axL.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+
+# Two-sided
+axR.plot(t, pdf, color=NULLC)
+mR = t >= z_two; mL = t <= -z_two
+axR.fill_between(t[mR], pdf[mR], color=REJECT, alpha=0.55)
+axR.fill_between(t[mL], pdf[mL], color=REJECT, alpha=0.55,
+                 label=r"two tails, $0.025$ each")
+for s in (-z_two, z_two):
+    axR.axvline(s, color=GREY, ls="--", lw=1.3)
+axR.text(z_two + 0.06, 0.30, r"$1.96$", fontsize=9)
+axR.set_title("Two-sided  $H_1:\\mu\\neq\\mu_0$")
+axR.set_xlabel("$Z$ under $H_0$")
+axR.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+```
+
+## The p-value, built from the rejection region {#sec-pvalue}
+
+The rejection region of @sec-build forces a binary verdict at a pre-chosen $\alpha$: reject
+or not. But it throws away information — a $Z$ of $1.66$ and a $Z$ of $5.0$ both merely
+"exceed $1.645$," yet the second is far more surprising under the null. The **p-value**
+recovers that information by reporting *how far into the tail* the observed statistic landed.
+
+::: {#def-pvalue}
+**Definition (p-value).** Let $t_{\text{obs}}$ be the observed value of the test statistic.
+The **p-value** is the probability, *computed under $H_0$*, of obtaining a test statistic at
+least as extreme as $t_{\text{obs}}$ in the direction of the alternative:
+$$
+p \;=\; P\bigl(T \text{ at least as extreme as } t_{\text{obs}} \,\big|\, H_0 \text{ true}\bigr).
+$$
+For the upper-tailed test of @sec-build, "at least as extreme" means "at least as large," so
+$p = P(Z \ge z_{\text{obs}}\mid H_0) = P(\mathcal N(0,1)\ge z_{\text{obs}})$. For a two-sided
+test it is $p = P(|Z|\ge |z_{\text{obs}}|\mid H_0) = 2\,P(\mathcal N(0,1)\ge |z_{\text{obs}}|)$.
+:::
+
+The p-value and the rejection region are two views of one object, and the link is exact and
+worth stating because it dissolves a lot of confusion:
+
+$$
+\boxed{\ \text{reject } H_0 \text{ at level } \alpha \iff p \le \alpha.\ }
+$$ {#eq-p-equiv}
+
+::: {.proof}
+For the upper-tailed test, rejecting means $z_{\text{obs}}\ge c=z_\alpha$. The tail
+probability $P(\mathcal N(0,1)\ge z)$ is a strictly *decreasing* function of $z$ (more of the
+tail is cut off as the cutoff moves right). So $z_{\text{obs}}\ge z_\alpha$ holds exactly
+when $P(\mathcal N(0,1)\ge z_{\text{obs}}) \le P(\mathcal N(0,1)\ge z_\alpha)$, i.e. exactly
+when $p \le \alpha$ (using $P(\mathcal N(0,1)\ge z_\alpha)=\alpha$ by definition of
+$z_\alpha$). The two-sided case is identical with $|z_{\text{obs}}|$ in place of
+$z_{\text{obs}}$. $\qquad\blacksquare$
+:::
+
+So the p-value is the **smallest $\alpha$ at which you would reject** — equivalently, the
+level of "surprise" measured on the universal $[0,1]$ scale. Reporting $p$ lets every reader
+apply their *own* $\alpha$ without recomputing the test. @fig-pvalue shows the p-value as the
+shaded tail area beyond the observed statistic.
+
+```{python}
+#| label: fig-pvalue
+#| fig-cap: 'The p-value as a tail area under the null. For an observed one-sided statistic $z_{\mathrm{obs}}=2.1$ (purple line), the p-value is the blue-shaded area to its right under the standard-Normal null density: $p=P(\mathcal{N}(0,1)\geq 2.1)\approx 0.018$. A statistic deeper in the tail (further right) cuts off less area, hence a smaller p-value and more surprise under $H_0$. The p-value is computed *entirely within the null world*; the alternative never enters the calculation. This is why a p-value can never, by itself, be the probability that the null is true.'
+z_obs = 2.1
+t = np.linspace(-4, 4, 800)
+pdf = normal_pdf(t)
+p_one = float(1 - normal_cdf(np.array([z_obs]))[0])
+
+fig, ax = plt.subplots()
+ax.plot(t, pdf, color=NULLC, label=r"null distribution $\mathcal{N}(0,1)$")
+m = t >= z_obs
+ax.fill_between(t[m], pdf[m], color=FILL, alpha=0.8,
+                label=fr"$p = P(Z\geq {z_obs}) = {p_one:.3f}$")
+ax.axvline(z_obs, color="#6a2c91", lw=1.8)
+ax.text(z_obs + 0.07, 0.32, fr"$z_{{\mathrm{{obs}}}}={z_obs}$", fontsize=9, color="#6a2c91")
+ax.set_xlabel("$Z$ under $H_0$"); ax.set_ylabel("density")
+ax.set_title("The p-value is the tail beyond the observation")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"one-sided p-value for z_obs={z_obs}: {p_one:.4f}")
+print(f"two-sided p-value for z_obs={z_obs}: {2*p_one:.4f}")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Why is a one-sided p-value half the two-sided one (for a symmetric null)?"* Because
+"extreme" means different things. The two-sided test counts *both* tails as evidence against
+$H_0:\mu=\mu_0$ — a statistic of $-2.1$ is just as incompatible with "no difference" as
+$+2.1$ — so it sums two tail areas. The one-sided test, having committed in advance to
+$H_1:\mu>\mu_0$, counts only the upper tail. For the symmetric standard Normal those tails
+are equal, so $p_{\text{two}}=2p_{\text{one}}$. The catch the interviewer is fishing for:
+this halving is *only legitimate if the direction was chosen before seeing the data*. Picking
+the side after observing $\bar X>\mu_0$ secretly runs a two-sided test while reporting a
+one-sided p-value, doubling your real Type I rate.
+:::
+
+## Why a valid p-value is uniform under the null {#sec-uniform}
+
+One fact about p-values is so important — and so often un-derived — that we prove it here:
+**when $H_0$ is true and the test statistic is continuous, the p-value is uniformly
+distributed on $[0,1]$.** This is the precise sense in which "$p\le 0.05$ happens $5\%$ of
+the time under the null," and it is the engine behind the entire multiple-comparisons theory
+of [INFR-D5].
+
+::: {#thm-uniform}
+**Theorem (null distribution of the p-value).** Let $T$ be a test statistic with a
+continuous, strictly increasing CDF $F$ under $H_0$, and define the upper-tailed p-value
+$p = 1 - F(T)$. Then under $H_0$, $p \sim \text{Uniform}(0,1)$.
+:::
+
+::: {.proof}
+Under $H_0$, $T\sim F$. We find the CDF of $p$. For any $u\in(0,1)$,
+$$
+P(p \le u) = P\bigl(1 - F(T) \le u\bigr) = P\bigl(F(T) \ge 1-u\bigr).
+$$
+Because $F$ is strictly increasing it has an inverse $F^{-1}$, and $F(T)\ge 1-u$ holds
+exactly when $T \ge F^{-1}(1-u)$. So
+$$
+P(p\le u) = P\bigl(T \ge F^{-1}(1-u)\bigr) = 1 - F\bigl(F^{-1}(1-u)\bigr) = 1-(1-u) = u,
+$$
+using $P(T\ge a)=1-F(a)$ and $F(F^{-1}(y))=y$. A random variable whose CDF is
+$P(p\le u)=u$ on $(0,1)$ is exactly $\text{Uniform}(0,1)$. $\qquad\blacksquare$
+:::
+
+This is more than a curiosity. It says the p-value is *calibrated*: under the null, every
+threshold $\alpha$ is exceeded with probability exactly $\alpha$, which is why
+$P(\text{reject}\mid H_0)=\alpha$ holds (recovering @def-errors). We can watch the theorem
+breathe by simulating thousands of null experiments and histogramming their p-values.
+
+```{python}
+#| label: fig-uniform
+#| fig-cap: 'Theorem @thm-uniform in action. We run 50,000 experiments in which $H_0$ is true ($n=30$ draws from $\mathcal{N}(0,1)$, testing $\mu=0$ two-sided with known variance), and histogram the resulting p-values. The distribution is flat — Uniform(0,1) — exactly as proved. The leftmost bin (red) holds the fraction with $p\leq 0.05$, which is $\approx 0.05$: a correctly calibrated level-0.05 test falsely rejects a true null 5% of the time, no more. The flatness is *why* the significance level means what it claims. Under an alternative this histogram would instead pile up near zero — that pile-up is power.'
+def null_pvalues(reps=50000, n=30):
+    z = np.empty(reps)
+    for i in range(reps):
+        s = rng.normal(0.0, 1.0, size=n)
+        z[i] = s.mean() / (1.0 / np.sqrt(n))   # known sigma = 1
+    return 2 * (1 - normal_cdf(np.abs(z)))     # two-sided p-values
+
+pvals = null_pvalues()
+frac_below = np.mean(pvals <= 0.05)
+
+fig, ax = plt.subplots()
+counts, bins, patches = ax.hist(pvals, bins=20, range=(0, 1),
+                                color=FILL, edgecolor="white")
+# Tint the first bin (p <= 0.05) red.
+patches[0].set_facecolor(REJECT); patches[0].set_alpha(0.7)
+ax.axhline(len(pvals) / 20, color=NULLC, ls="--", lw=1.4,
+           label="uniform expectation")
+ax.set_xlabel("p-value under $H_0$"); ax.set_ylabel("count")
+ax.set_title(f"Null p-values are Uniform(0,1):  P(p$\\leq$0.05) = {frac_below:.3f}")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"fraction of null p-values <= 0.05: {frac_below:.4f}  (should be ~0.05)")
+print(f"fraction <= 0.10: {np.mean(pvals <= 0.10):.4f}  (should be ~0.10)")
+```
+
+# What a p-value is *not*: the interview core {#sec-pnot}
+
+This is the heart of the article and the part an examiner will press hardest. Every misread
+below is the same crime in a new costume: taking $P(\text{data}\mid H_0)$ and pretending it
+is $P(H_0\mid\text{data})$, or something else entirely. We name each trap, state the correct
+reading, and say exactly why.
+
+**Trap 1 — "The p-value is the probability that $H_0$ is true."** This is the cardinal error.
+The p-value is computed *conditional on $H_0$ being true* — it is $P(\text{extreme data}\mid
+H_0)$ — so it cannot also be a probability *about* $H_0$. Those are opposite conditionings.
+Getting from one to the other requires **Bayes' theorem** and a prior probability that $H_0$
+is true:
+$$
+P(H_0\mid \text{data}) = \frac{P(\text{data}\mid H_0)\,P(H_0)}{P(\text{data})},
+$$
+and without $P(H_0)$ the flip is simply unavailable. In the frequentist framework $H_0$ is
+not even a random event — it is fixed and either true or false — so $P(H_0\text{ true})$ has
+no meaning at all, exactly as $\theta$ carried no probability in [INFR-C1]. We make the size
+of this error concrete with the base-rate calculation in @sec-baserate.
+
+**Trap 2 — "$1-p$ is the probability the alternative is true," or "$p$ is the probability the
+result is due to chance."** Same illegal flip, restated. The p-value never references the
+alternative — look back at @fig-pvalue: the green curve is nowhere in the computation, which
+lives entirely under the blue null curve. "Probability the result is due to chance" is a
+statement about $P(H_0\mid\text{data})$, which (Trap 1) the p-value is not. The p-value
+assumes chance (the null) and asks how unusual the data are *given* that assumption.
+
+**Trap 3 — "A small p-value means a large or important effect."** No — the p-value conflates
+*effect size* and *sample size*. A microscopic, practically meaningless effect produces a
+tiny p-value once $n$ is large enough, because the standard error $\sigma/\sqrt n$ shrinks
+and even a trivial $\bar X-\mu_0$ becomes many standard errors out. Significance answers "is
+the effect distinguishable from zero?"; it does **not** answer "is the effect big enough to
+matter?" The second question needs the *effect size* and a confidence interval, which is why
+[INFR-D4] insists on reporting both. We demonstrate this $n$-dependence directly in
+@sec-effectsize.
+
+**Trap 4 — "The p-value is the probability the result will replicate," or "$p=0.05$ means a
+$95\%$ chance the next study agrees."** No. Replication probability depends on the *true*
+effect size and the *next* study's power — quantities the p-value does not contain. A result
+at exactly $p=0.05$ has, under plausible conditions, only a coin-flip chance of replicating;
+$1-p$ is not a replication rate.
+
+**Trap 5 — "$p>0.05$ proves there is no effect."** This is the @sec-errors pitfall in
+p-value clothing. A large p-value means the data are *consistent* with $H_0$, not that $H_0$
+is true; it is fully compatible with a real effect the study was too small to detect (low
+power, large $\beta$). "Not significant" and "no effect" are different claims.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me the one-sentence correct definition of a p-value."* — *"It is the probability,
+computed assuming the null hypothesis is true, of observing data at least as extreme as what
+we actually saw."* If pressed for the discipline: *"It measures surprise under the null and
+nothing else — not the probability the null is true, not the effect size, not the chance of
+replication."* Being able to state the correct definition **and** rattle off the four things
+it is not is precisely the depth that separates someone who memorized 'p < 0.05' from someone
+who understands testing.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the logic on real, messy questions — and, as the constitution demands, push one
+to the edge where the apparatus, used naively, misleads.
+
+## Example 1 — a clinical trial, by hand {#sec-trial}
+
+A device maker claims a new sensor reads a reference solution with true mean $\mu_0 = 7.0$
+(the correct pH). A regulator suspects it reads *high* and takes $n=16$ independent readings.
+The instrument's measurement noise is documented at $\sigma = 0.20$ pH units (the genuine
+known-variance regime). We test $H_0:\mu=7.0$ against the one-sided $H_1:\mu>7.0$ at
+$\alpha=0.05$, carrying every number in the open.
+
+```{python}
+#| label: ex-trial
+#| echo: true
+mu0, sigma, n = 7.0, 0.20, 16
+alpha = 0.05
+z_crit = 1.6448536269514722   # z_{0.05}, one-sided
+readings = np.array([7.05, 7.18, 6.97, 7.22, 7.11, 7.03, 7.14, 7.09,
+                     7.25, 6.99, 7.16, 7.08, 7.21, 7.06, 7.12, 7.19])
+xbar = readings.mean()
+se = sigma / np.sqrt(n)
+z_obs = (xbar - mu0) / se
+p_one = float(1 - normal_cdf(np.array([z_obs]))[0])
+print(f"sample mean   xbar  = {xbar:.4f}")
+print(f"std error     SE    = sigma/sqrt(n) = {sigma}/sqrt({n}) = {se:.4f}")
+print(f"test statistic z    = (xbar - mu0)/SE = ({xbar:.4f} - {mu0})/{se:.4f} = {z_obs:.3f}")
+print(f"critical value      = z_0.05 = {z_crit:.3f}")
+print(f"decision            = {'REJECT H0' if z_obs >= z_crit else 'fail to reject'}")
+print(f"one-sided p-value   = P(Z >= {z_obs:.3f}) = {p_one:.5f}")
+```
+
+Walk the arithmetic against @eq-zstat and @def-pvalue:
+
+- The estimate is $\bar X = `{python} f"{xbar:.3f}"`$ pH — the sensor does read above $7.0$
+  on average in this sample.
+- The standard error is $\mathrm{SE}=\sigma/\sqrt n = 0.20/\sqrt{16} = `{python} f"{se:.3f}"`$.
+- The statistic is $z = (\bar X-\mu_0)/\mathrm{SE} = `{python} f"{z_obs:.2f}"`$ — the sample
+  mean sits about `{python} f"{z_obs:.1f}"` standard errors above the null value.
+- Since $`{python} f"{z_obs:.2f}"` \ge 1.645$, we **reject $H_0$**; equivalently the p-value
+  $`{python} f"{p_one:.4f}"` \le 0.05$ (the @eq-p-equiv equivalence), so the data are too
+  surprising for the "reads correctly" hypothesis.
+
+The honest reading, stated with the discipline of @sec-pnot: *at the $5\%$ level, the data
+are inconsistent with the sensor being unbiased; they indicate it reads high.* We have **not**
+shown "there is a $`{python} f"{100*(1-p_one):.1f}"`\%$ chance the sensor is biased" (Trap 1),
+and we should immediately ask the @sec-effectsize question — is the estimated bias of
+$`{python} f"{xbar-mu0:.3f}"`$ pH large enough to *matter* for the instrument's use?
+
+## Example 2 — significance is not importance: the $n$-trap {#sec-effectsize}
+
+Trap 3 deserves a picture, because it is the misread with the largest real-world cost. We fix
+a true effect so tiny it is practically irrelevant — a mean shifted by just $\delta=0.02$
+standard deviations — and watch the p-value march toward zero as the sample size grows, while
+the *effect* never changes. The statistic is significant not because the effect grew, but
+because the ruler ($\mathrm{SE}=\sigma/\sqrt n$) got finer.
+
+```{python}
+#| label: fig-effectsize
+#| fig-cap: 'Statistical significance is not practical importance. A genuinely trivial effect (true standardized mean shift $\delta=0.02$, far below anything that would matter) is tested at growing sample sizes. **Left:** the median two-sided p-value plunges below 0.05 (red line) as $n$ grows into the tens of thousands — the effect becomes ''significant'' purely because the standard error shrinks like $1/\sqrt{n}$. **Right:** the effect size itself (the standardized shift) is flat — it never changed. A large study can make a meaningless effect significant; a p-value cannot tell you whether an effect matters. Report the effect size and its confidence interval alongside any p-value.'
+delta = 0.02   # true standardized effect (mu - mu0)/sigma, trivially small
+ns = np.array([50, 200, 1000, 5000, 20000, 100000, 500000])
+
+def median_p(n, reps=400):
+    ps = np.empty(reps)
+    for i in range(reps):
+        s = rng.normal(delta, 1.0, size=n)   # sigma = 1, so mean shift = delta
+        z = s.mean() / (1.0 / np.sqrt(n))
+        ps[i] = 2 * (1 - normal_cdf(np.array([abs(z)]))[0])
+    return np.median(ps)
+
+med_ps = np.array([median_p(n) for n in ns])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+axL.plot(ns, med_ps, "o-", color=NULLC)
+axL.axhline(0.05, color=REJECT, ls="--", lw=1.4, label="0.05")
+axL.set_xscale("log"); axL.set_yscale("log")
+axL.set_xlabel("sample size $n$"); axL.set_ylabel("median two-sided p-value")
+axL.set_title("p-value $\\to 0$ as $n$ grows")
+axL.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
+axR.plot(ns, np.full_like(ns, delta, dtype=float), "s-", color=ALTC)
+axR.set_xscale("log")
+axR.set_xlabel("sample size $n$"); axR.set_ylabel("true effect size $\\delta$")
+axR.set_title("the effect itself never changed")
+axR.set_ylim(0, 0.05)
+plt.tight_layout()
+print("median p by n:", {int(n): round(float(p), 4) for n, p in zip(ns, med_ps)})
+```
+
+The lesson is stark: by $n=`{python} f"{ns[-1]:,}"`$ the median p-value for this
+trivial effect is well under $0.05$, so a large enough study would routinely call it
+"significant" — yet the effect is the same negligible $\delta=0.02$ it always was. This is why
+significance and importance are orthogonal, and why a confidence interval (which displays the
+*size* of the effect, [INFR-C1]) belongs beside every test. An effect that is significant but
+whose CI runs from "negligible" to "negligible" is significant and unimportant.
+
+## Example 3 — the base-rate trap: when "significant" findings are mostly false {#sec-baserate}
+
+Here is the edge of applicability, and the most consequential misread of all. Trap 1 said the
+p-value is not $P(H_0\text{ true})$. Now we quantify *how wrong* the conflation can be — and
+show a regime where a field running honest, correctly-sized $\alpha=0.05$ tests still
+produces a majority of **false** "discoveries." This is not a defect of the test; it is the
+base rate biting, and it is why @sec-multiplicity and [INFR-D5] exist.
+
+Imagine a screening lab that tests many candidate hypotheses (drug leads, genetic
+associations), of which only a fraction $\pi$ are *truly* non-null — say $\pi=0.10$, a
+realistic "most ideas don't pan out" rate. Each test runs at $\alpha=0.05$ with power
+$1-\beta$. Among the hypotheses called "significant," what fraction are actually false alarms?
+This is the **false discovery proportion**, and it follows from conditional probability alone
+(the [PROB-09] machinery), no new statistics.
+
+```{python}
+#| label: fig-baserate
+#| fig-cap: 'The base-rate trap. We run a screening field of 10,000 hypotheses where only $\pi=10\%$ are truly non-null, each test at $\alpha=0.05$. **Left:** the breakdown of ''significant'' calls into true discoveries (green) and false alarms (red) as the power varies. Even at high power, the false alarms come from the huge pool of true nulls ($90\%$ of all tests), each firing falsely $5\%$ of the time. **Right:** the resulting *false discovery proportion* — the share of significant findings that are actually false. At realistic power ($\approx 0.5$) it sits near $47\%$: nearly half of ''discoveries'' are wrong, despite every individual test being a valid $\alpha=0.05$ test. A small p-value is weak evidence when most hypotheses tested are null.'
+pi = 0.10            # prior fraction of truly non-null hypotheses
+alpha = 0.05
+M = 10000            # hypotheses screened
+n_true_alt  = pi * M           # truly non-null
+n_true_null = (1 - pi) * M     # truly null
+powers = np.linspace(0.1, 0.99, 40)
+
+# Expected counts.
+false_alarms = alpha * n_true_null              # true nulls wrongly rejected (constant in power)
+true_disc    = powers * n_true_alt              # true alts correctly rejected
+fdp          = false_alarms / (false_alarms + true_disc)   # false discovery proportion
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+axL.stackplot(powers, true_disc, np.full_like(powers, false_alarms),
+              labels=["true discoveries", "false alarms"],
+              colors=[ALTC, REJECT], alpha=0.7)
+axL.set_xlabel("power $1-\\beta$"); axL.set_ylabel("expected # significant")
+axL.set_title("Composition of 'significant' calls")
+axL.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
+
+axR.plot(powers, fdp, color=NULLC)
+axR.axhline(0.5, color=GREY, ls="--", lw=1.2, label="half are false")
+# Mark the realistic power=0.5 point.
+fdp_half = alpha * n_true_null / (alpha * n_true_null + 0.5 * n_true_alt)
+axR.plot([0.5], [fdp_half], "o", color=REJECT, ms=8)
+axR.annotate(f"power 0.5:\nFDP $\\approx$ {fdp_half:.2f}", xy=(0.5, fdp_half),
+             xytext=(0.55, 0.72), fontsize=9,
+             arrowprops=dict(arrowstyle="->", color=GREY, lw=1.1))
+axR.set_xlabel("power $1-\\beta$"); axR.set_ylabel("false discovery proportion")
+axR.set_title("Share of 'discoveries' that are false")
+axR.set_ylim(0, 1); axR.legend(loc="upper right", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"true nulls = {n_true_null:.0f}, false alarms expected = {false_alarms:.0f}")
+print(f"at power 0.5: true discoveries = {0.5*n_true_alt:.0f}, FDP = {fdp_half:.3f}")
+```
+
+The arithmetic is pure conditional probability. Of $`{python} f"{int(M):,}"`$ hypotheses,
+$`{python} f"{int(n_true_null):,}"`$ are truly null, and at $\alpha=0.05$ they generate
+$0.05\times`{python} f"{int(n_true_null):,}"` = `{python} f"{int(false_alarms):,}"`$ false
+alarms *no matter how good the tests are*. Of the $`{python} f"{int(n_true_alt):,}"`$ true
+effects, a study with power $0.5$ catches $`{python} f"{int(0.5*n_true_alt):,}"`$. So among
+the $`{python} f"{int(false_alarms + 0.5*n_true_alt):,}"`$ findings called "significant,"
+$`{python} f"{int(false_alarms):,}"`$ are false — a false discovery proportion of
+$`{python} f"{fdp_half:.0%}"`$. **Nearly half the discoveries are wrong, and every test was a
+valid $\alpha=0.05$ test.** Formally, by Bayes' theorem,
+
+$$
+P(H_0\text{ true}\mid\text{reject})
+= \frac{\alpha(1-\pi)}{\alpha(1-\pi) + (1-\beta)\pi},
+$$
+
+which is large precisely when the base rate $\pi$ of real effects is small — *the exact
+quantity the p-value omits* (Trap 1). The p-value $P(\text{data}\mid H_0)$ can be $0.04$ while
+$P(H_0\mid\text{data})$ is near $0.5$; they are different conditionings and the gap is the
+base rate.
+
+::: {.callout-warning title="Pitfall"}
+**A single small p-value is weak evidence when the prior plausibility of the effect is low,
+or when many hypotheses are being screened.** The base-rate calculation above is the honest
+boundary of the whole apparatus: $\alpha$ controls the false-alarm rate *per test*, not the
+fraction of your declared discoveries that are real. In a low-base-rate field (genomics,
+early drug screening, exploratory data mining) most "$p<0.05$" findings are false positives.
+The repairs are (a) demanding stronger evidence (smaller $\alpha$) when priors are low, (b)
+controlling error *across the family* of tests — the family-wise error rate and false
+discovery rate of [INFR-D5] — and (c) reporting effect sizes and replicating. The p-value is
+not broken here; it is being asked, by Trap 1, to carry information about $\pi$ that it never
+contained.
+:::
+
+# The duality with confidence intervals {#sec-duality}
+
+[INFR-C1] promised that a confidence interval and a hypothesis test are two views of one
+machine; we now prove it in the direction stated there. The payoff is enormous and practical:
+*you can run a two-sided test by reading a confidence interval*, and vice versa.
+
+::: {#thm-duality}
+**Theorem (test/interval duality).** Consider the known-variance Normal setting. The
+two-sided level-$\alpha$ test of $H_0:\mu=\mu_0$ fails to reject $\mu_0$ **if and only if**
+$\mu_0$ lies in the $(1-\alpha)$ confidence interval $\bar X \pm z_{\alpha/2}\,\sigma/\sqrt n$
+from [INFR-C1]. Equivalently, the confidence interval is exactly the set of null values that
+the test does not reject.
+:::
+
+::: {.proof}
+The two-sided test rejects $H_0:\mu=\mu_0$ when $|Z|\ge z_{\alpha/2}$, where
+$Z=(\bar X-\mu_0)/(\sigma/\sqrt n)$ is the statistic of @eq-zstat with the null value
+$\mu_0$. So the test **fails to reject** exactly when
+$$
+\left|\frac{\bar X-\mu_0}{\sigma/\sqrt n}\right| < z_{\alpha/2}.
+$$
+This is a single inequality in $\mu_0$; we solve it for $\mu_0$, every step shown. Remove the
+absolute value (it is equivalent to a two-sided bound):
+$$
+-z_{\alpha/2} < \frac{\bar X-\mu_0}{\sigma/\sqrt n} < z_{\alpha/2}.
+$$
+Multiply all three parts by the **positive** number $\sigma/\sqrt n$ (preserving the
+inequality directions):
+$$
+-z_{\alpha/2}\,\frac{\sigma}{\sqrt n} < \bar X - \mu_0 < z_{\alpha/2}\,\frac{\sigma}{\sqrt n}.
+$$
+Subtract $\bar X$ from all three parts:
+$$
+-\bar X - z_{\alpha/2}\,\frac{\sigma}{\sqrt n} < -\mu_0 < -\bar X + z_{\alpha/2}\,\frac{\sigma}{\sqrt n}.
+$$
+Multiply through by $-1$, which **flips both inequality signs** (the step everyone forgets):
+$$
+\bar X + z_{\alpha/2}\,\frac{\sigma}{\sqrt n} > \mu_0 > \bar X - z_{\alpha/2}\,\frac{\sigma}{\sqrt n}.
+$$
+Read in increasing order, this is exactly
+$$
+\bar X - z_{\alpha/2}\,\frac{\sigma}{\sqrt n} < \mu_0 < \bar X + z_{\alpha/2}\,\frac{\sigma}{\sqrt n},
+$$
+i.e. $\mu_0$ lies strictly inside the $(1-\alpha)$ confidence interval of [INFR-C1]. Every
+step was reversible, so the test fails to reject $\mu_0$ if and only if $\mu_0$ is in the
+interval; the rejected null values are exactly those outside it. $\qquad\blacksquare$
+:::
+
+This is not a coincidence — it is the same pivot $Z$ used two ways. The confidence interval
+*inverts* the family of tests: it collects every $\mu_0$ you would not reject. @fig-duality
+shows the correspondence on real numbers: the interval is the band of null values inside the
+acceptance region.
+
+```{python}
+#| label: fig-duality
+#| fig-cap: 'Test/interval duality made literal. For a sample with $\bar X=5.3$, $\sigma=2$, $n=25$, the green band is the 95% confidence interval $\bar X \pm 1.96\,\sigma/\sqrt{n}$. For each candidate null $\mu_0$ (x-axis) we plot the two-sided p-value of testing $H_0:\mu=\mu_0$ (blue). The p-value exceeds $0.05$ (does not reject) for exactly the $\mu_0$ inside the interval, and drops below $0.05$ (rejects) outside it — the curve crosses $0.05$ precisely at the interval endpoints. ''Is $\mu_0$ in the 95% CI?'' and ''does the level-0.05 test reject $\mu_0$?'' are the same question, as proved in @thm-duality.'
+xbar_d, sigma_d, n_d = 5.3, 2.0, 25
+se_d = sigma_d / np.sqrt(n_d)
+z975 = 1.959963984540054
+lo, hi = xbar_d - z975 * se_d, xbar_d + z975 * se_d
+
+mu0_grid = np.linspace(3.5, 7.1, 400)
+z_grid = (xbar_d - mu0_grid) / se_d
+p_grid = 2 * (1 - normal_cdf(np.abs(z_grid)))
+
+fig, ax = plt.subplots(figsize=(7.0, 4.0))
+ax.axvspan(lo, hi, color=ALTC, alpha=0.18, label=f"95% CI [{lo:.2f}, {hi:.2f}]")
+ax.plot(mu0_grid, p_grid, color=NULLC, label="two-sided p-value of $H_0:\\mu=\\mu_0$")
+ax.axhline(0.05, color=REJECT, ls="--", lw=1.4, label=r"$\alpha=0.05$")
+for s in (lo, hi):
+    ax.axvline(s, color=GREY, ls=":", lw=1.2)
+ax.set_xlabel(r"candidate null value $\mu_0$"); ax.set_ylabel("p-value")
+ax.set_title("CI = the null values the test does not reject")
+ax.legend(loc="upper right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print(f"95% CI: [{lo:.3f}, {hi:.3f}]")
+print(f"p-value at mu0=lo endpoint: {2*(1-normal_cdf(np.abs(np.array([(xbar_d-lo)/se_d]))))[0]:.3f} (=0.05)")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"If a $95\%$ CI for a difference excludes zero, what do you know about the test of 'no
+difference'?"* By @thm-duality, you know the two-sided level-$0.05$ test rejects
+$H_0:\text{difference}=0$ — the result is significant at $p<0.05$ — without computing the test
+separately. The converse is the more useful habit: report the CI rather than just "$p<0.05$,"
+because the interval shows the *effect size and its uncertainty* (defusing Trap 3), whereas
+the bare p-value hides both. The duality is why many fields now prefer CIs: they carry the
+test's verdict *plus* the magnitude the verdict is silent about.
+:::
+
+# The multiplicity preview {#sec-multiplicity}
+
+@sec-baserate showed one way "$p<0.05$" misleads at scale; here is its twin, planted now and
+paid off in [INFR-D5]. Theorem @thm-uniform says each null p-value is Uniform$(0,1)$, so each
+*independent* true-null test rejects with probability $\alpha$. Run $m$ such tests and the
+chance that *at least one* falsely rejects is
+
+$$
+P(\text{at least one false alarm}) = 1 - (1-\alpha)^m,
+$$
+
+derived from independence: each of the $m$ true nulls *avoids* a false alarm with probability
+$1-\alpha$, the $m$ avoidances are independent so they multiply to $(1-\alpha)^m$, and the
+complement is at least one alarm. This climbs fast: at $\alpha=0.05$, twenty independent tests
+give $1-0.95^{20}=`{python} f"{1-0.95**20:.2f}"`$ — a $`{python} f"{100*(1-0.95**20):.0f}"`\%$
+chance of a false "discovery" even when *every* hypothesis is null. @fig-multiplicity draws
+the climb.
+
+```{python}
+#| label: fig-multiplicity
+#| fig-cap: 'Why running many tests inflates false alarms. With each independent true-null test rejecting at rate $\alpha=0.05$, the probability of *at least one* false rejection among $m$ tests is $1-(1-\alpha)^m$ (blue), which races toward 1: by $m=20$ tests it is already $64\%$, by $m=100$ it is over $99\%$. The dashed line is the per-test $\alpha$ we *think* we are controlling. This gap between per-test and family-wise error is the multiple-comparisons problem; correcting it (Bonferroni, Holm, Benjamini–Hochberg) is the subject of INFR-D5. It is the natural sequel to the base-rate trap: both say a lone small p-value is fragile evidence at scale.'
+alpha = 0.05
+ms = np.arange(1, 101)
+fwer = 1 - (1 - alpha) ** ms
+
+fig, ax = plt.subplots()
+ax.plot(ms, fwer, color=NULLC, label=r"$P(\geq 1$ false alarm$) = 1-(1-\alpha)^m$")
+ax.axhline(alpha, color=REJECT, ls="--", lw=1.4, label=r"per-test $\alpha=0.05$")
+for mm in (20, 100):
+    ax.plot([mm], [1 - 0.95 ** mm], "o", color=TYPE2, ms=7)
+    ax.annotate(f"m={mm}: {1-0.95**mm:.2f}", xy=(mm, 1 - 0.95 ** mm),
+                xytext=(mm - 32, 1 - 0.95 ** mm - 0.12), fontsize=8.5,
+                arrowprops=dict(arrowstyle="->", color=GREY, lw=1.0))
+ax.set_xlabel("number of independent tests $m$")
+ax.set_ylabel("family-wise false-alarm probability")
+ax.set_title("$\\alpha$ compounds across many tests")
+ax.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+print("FWER at m = 1, 5, 20, 100:",
+      [f"{1-(1-alpha)**m:.3f}" for m in (1, 5, 20, 100)])
+```
+
+# When is a hypothesis test the right tool? {#sec-when}
+
+The article would be dishonest without an explicit applicability verdict, so here it is.
+
+::: {.callout-tip title="You might be asked"}
+*"When should you reach for a hypothesis test, and when is it the wrong tool?"* The summary
+worth being able to recite:
+
+- **Use it** when you have a genuine, pre-specified yes/no question against a fully-specified
+  null ("does this differ from baseline?", "is this coin fair?"), you fixed $\alpha$ and the
+  direction *before* seeing data, and the consequence of a false alarm is real enough that
+  controlling it at a known rate is worth the loss of power. It is the right tool for
+  *confirmatory* analysis and decision-making under a controlled error budget.
+- **Prefer a confidence interval** when the *magnitude* of the effect is what matters — which
+  is most of the time. By @thm-duality the interval contains the test's verdict *and* the
+  effect size the bare test hides (Trap 3). "Report the CI" is the modern default.
+- **Do not use it, or use it with great care,** when (a) you are screening many hypotheses
+  (the base-rate and multiplicity traps of @sec-baserate–@sec-multiplicity — go to [INFR-D5]
+  and report effect sizes); (b) the question is exploratory and the null was chosen *after*
+  seeing the data (that is hypothesis *generation*, not testing, and the reported p-value is
+  invalid); (c) the sample is so large that everything is "significant" (lean entirely on
+  effect size); or (d) you actually want $P(\text{hypothesis}\mid\text{data})$ — that is a
+  *Bayesian* question requiring a prior, the [INFR-E4] turn.
+- **And the deepest caveat:** a test answers "is the effect distinguishable from the null?"
+  It never answers "does the effect matter?" or "is the null true?" Asking it those questions
+  is the source of every misread in @sec-pnot.
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from the Interval movement: **[INFR-C1]** built the confidence interval and
+*promised* the test/interval duality, which this article proved (@thm-duality). The
+foundations **[INFR-A1]** (the statistic as a random variable) and **[INFR-A2]** (its
+Gaussian shape via the CLT) supplied the null sampling distribution every test computes
+against. From here the Testing movement instantiates this logic over and over:
+
+- **[INFR-D2 *The Workhorse Tests*]** — the everyday one- and two-sample tests (z, t,
+  $\chi^2$, F). Each is *this* logic with a specific statistic and null distribution; the
+  t-test, in particular, is @sec-build with the known $\sigma$ replaced by an estimate
+  (the [INFR-C2] machinery turned into a decision).
+- **[INFR-D3 *The Asymptotic Trinity*]** — the general-purpose likelihood-ratio, Wald, and
+  score tests for *any* MLE-fit model, and the **Neyman–Pearson lemma** that says *which*
+  test statistic is most powerful — the optimality theory under the logic built here.
+- **[INFR-D4 *Power and Sample Size*]** — turns the $\beta$ and power of @sec-errors into a
+  design tool: how large must $n$ be to detect an effect worth detecting? It is the disciplined
+  answer to the significance-vs-importance trap of @sec-effectsize.
+- **[INFR-D5 *Multiple Comparisons*]** — pays off @sec-baserate and @sec-multiplicity:
+  controlling error across many tests (family-wise error, false discovery rate).
+- **[INFR-E3 *Permutation Tests*]** and **[INFR-E4 *The Bayesian Turn*]** — the same testing
+  question answered without a parametric null (permutation) and with a prior on the
+  hypotheses (Bayes), the latter being the framework in which $P(H_0\mid\text{data})$ — the
+  forbidden flip of Trap 1 — finally becomes a legitimate object.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The two founding philosophies.** R. A. Fisher, *Statistical Methods for Research Workers*
+  (1925), for the p-value as a continuous measure of evidence; J. Neyman & E. S. Pearson, "On
+  the Problem of the Most Efficient Tests of Statistical Hypotheses," *Phil. Trans. R. Soc. A*
+  231 (1933), for the accept/reject decision framework with controlled error rates. The hybrid
+  everyone uses, and the confusion it breeds, is best understood by reading both.
+- **The misinterpretations, definitively.** The American Statistical Association's 2016
+  *Statement on p-Values* (Wasserstein & Lazar, *The American Statistician* 70) enumerates the
+  traps of @sec-pnot with the field's official imprimatur — useful to cite in an interview.
+  For the base-rate trap of @sec-baserate, J. Ioannidis, "Why Most Published Research Findings
+  Are False," *PLoS Medicine* 2 (2005), is the canonical treatment.
+- **Open threads deliberately deferred.** *Which test statistic is best?* — the
+  Neyman–Pearson lemma, [INFR-D3]. *How big a sample do I need?* — power analysis, [INFR-D4].
+  *What if I test many hypotheses?* — multiplicity correction, [INFR-D5]. *Can I legitimately
+  compute the probability the null is true?* — only with a prior, the Bayesian turn of
+  [INFR-E4].

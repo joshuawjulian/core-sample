@@ -1,0 +1,1073 @@
+---
+title: "Maximum Likelihood: The Parameter That Best Explains the Data"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240711)
+
+DATA   = "#2b3a67"     # data / samples
+CURVE  = "#c1121f"     # the log-likelihood curve / fitted model
+ACCENT = "#0a7d4d"     # the MLE / highlights
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas / histograms
+```
+
+> **Where this sits in the track.** This is the second article of the **Likelihood Spine**,
+> the engine room of the track. It assumes [INFR-B1 *The Likelihood: Reading Probability
+> Backwards*], which built the central object we maximize here: the **likelihood**
+> $L(\theta)$ — the joint density (or mass) of the observed data read as a *function of the
+> parameter*, with the data held fixed — and its logarithm, the **log-likelihood**
+> $\ell(\theta)=\log L(\theta)$, together with the **score** $\ell'(\theta)$, the slope
+> whose root we are about to chase. It also leans on [INFR-A1 *The Estimator as a Random
+> Variable*] for the language of estimators and estimates. From outside the track it borrows
+> only Calculus-I optimization (finding maxima by setting a derivative to zero and checking
+> the second derivative) and, for the multi-parameter cases, the **gradient** and the
+> **multivariable critical-point condition** — built in the Geometry-of-Data and
+> Optimization tracks and imported here by name. It **sets up** [INFR-B3 *Fisher
+> Information*] (the curvature of the log-likelihood at its peak), [INFR-B4 *Why Maximum
+> Likelihood Works*] (the sampling distribution of the MLE), [INFR-C3] (likelihood-based
+> intervals) and [INFR-D3] (the likelihood-ratio test) — and it is the estimation principle
+> that the entire Regression track consumes to fit its models.
+
+## Abstract {.unnumbered}
+
+Once the likelihood $L(\theta)$ measures *how well a parameter value explains the data we
+actually saw*, one estimate suggests itself above all others: the value that explains the
+data best. That is the **maximum-likelihood estimate** (MLE), the argmax of $L$, equivalently
+of the log-likelihood $\ell$. This article turns that one-sentence idea into a working
+method. We state the first-order condition — the **score equation** $\ell'(\theta)=0$ — and
+the second-order check that confirms a maximum, then derive closed-form MLEs end to end for
+the Bernoulli proportion $p$, the Poisson rate $\lambda$, and the Normal pair $(\mu,\sigma^2)$,
+every algebraic step on the page. We prove the **invariance** of the MLE under
+reparameterization — that the MLE of $g(\theta)$ is just $g$ of the MLE — and use it to read
+off transformed estimates for free. We then confront the cases where the recipe is not so
+clean: when the score equation has no closed-form root (logistic regression's likelihood),
+where we hand off to the numerical optimizers of the Optimization track; and the **edge of
+applicability**, the uniform $[0,\theta]$ model, where the maximum sits on a boundary, the
+score is never zero, and the entire differentiate-and-solve apparatus quietly fails. The
+single claim the article defends is that maximum likelihood is **one disciplined principle —
+"believe the parameter that makes your data most probable" — not a grab-bag of formulas**,
+and that knowing where the score equation does and does not apply is what separates using it
+from trusting it.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+The **maximum-likelihood estimate** is the parameter value that makes the observed data most
+probable:
+$$
+\hat\theta_{\mathrm{MLE}} \;=\; \arg\max_{\theta}\; L(\theta)
+\;=\; \arg\max_{\theta}\; \ell(\theta),
+\qquad \ell(\theta)=\log L(\theta).
+$$
+Because $\log$ is strictly increasing, maximizing $L$ and maximizing $\ell$ give the *same*
+$\hat\theta$ — and $\ell$, a **sum** of log-terms over the data, is what we always work
+with. When $\ell$ is smooth and its maximum is interior, $\hat\theta$ solves the **score
+equation** $\ell'(\theta)=0$ (and $\ell''(\hat\theta)<0$ confirms it is a peak, not a
+valley). For the everyday models this hands back the estimates intuition already wants — a
+proportion is the sample fraction, a rate is the sample average, a Normal mean is the sample
+mean. But the principle, *believe the parameter that best explains the data*, is what is
+fundamental; the score equation is merely how we usually solve it, and there are honest
+cases where it cannot.
+:::
+
+Everything below orbits that box. The phrase to hold onto is **"best explains the data."**
+We are not asking which parameter is *probable* — parameters are not random here; that is
+the Bayesian move of [INFR-E4]. We are asking which fixed-but-unknown parameter would have
+assigned the highest probability to the sample we are holding. Maximum likelihood answers
+*that* question, and it answers it by a search: slide $\theta$ until the data's probability
+peaks. The whole article is the mechanics of that search — when it reduces to a clean
+formula, when it reduces to a numerical hill-climb, and when the hill has no top in the
+ordinary sense.
+
+# Why we are doing this: from "explains well" to "the estimate" {#sec-why}
+
+Keep one question in view for the entire article: **why is the argmax of the likelihood the
+estimate we should report, and how do we actually find it?** Every derivation below answers
+some piece of that.
+
+## The problem the previous article left open
+
+[INFR-B1] handed us a tool, not yet an answer. It built the likelihood $L(\theta)$ as a knob
+we can turn: for each candidate $\theta$ it returns a number measuring how compatible that
+$\theta$ is with the data — large when $\theta$ would have made the observed sample probable,
+small when $\theta$ would have made it a fluke. It even introduced the score $\ell'(\theta)$,
+"the slope whose root we will chase." But B1 deliberately stopped short of committing to a
+single estimate. It showed us the dial without telling us where to set it.
+
+This article makes the commitment. Among all the values of $\theta$, *one* maximizes the
+compatibility, and the maximum-likelihood principle says: **report that one.** It is the
+most natural reading imaginable of "explains the data well" — turn it up to the most.
+The reason this is worth a whole article (and three more after it) is that this single,
+almost obvious choice turns out to be one of the most powerful and most consequential ideas
+in all of statistics. It is the estimator that all of Regression secretly fits; it is
+optimal in a precise asymptotic sense ([INFR-B4]); it has a clean curvature-based uncertainty
+([INFR-B3]); and it generalizes to *any* model you can write a likelihood for, which is
+nearly all of them. The payoff for committing to "the best-explaining parameter" is that the
+rest of inference unfolds from it.
+
+## What came before, and why it was not enough
+
+Before Fisher, estimation was a patchwork. The dominant general recipe was the **method of
+moments** (Karl Pearson, 1890s): match the sample moments — the sample mean, the sample
+variance, and so on — to the theoretical moments of the model, and solve for the parameters.
+It is simple and it sometimes works, but it has no principle behind it beyond "make these
+two averages agree," and it can be wasteful: it throws away information in the data that is
+not captured by the low-order moments it happens to use, and for some models it gives
+nonsensical answers (variances that come out negative, estimates outside the parameter
+space).
+
+R. A. Fisher, in his 1922 paper *On the Mathematical Foundations of Theoretical Statistics*
+— the same paper that named the *statistic* and the *sampling distribution* we met in
+[INFR-A1] — proposed instead that estimation should be founded on the likelihood, and that
+the estimate should be its maximizer. He coined "likelihood" precisely to keep it distinct
+from "probability": the data are fixed and probable-or-not under a varying parameter, which
+is the reverse of a probability distribution over outcomes. His argument was that this
+estimate uses *all* the information in the data about $\theta$ — a claim he made precise with
+the concept of Fisher information ([INFR-B3]) and the efficiency results of [INFR-B4]. The
+*why* of maximum likelihood, the one we hold for the rest of the article, is exactly this:
+it is the estimate that wrings the most out of the data under the model you committed to,
+and it does so by one transparent rule rather than a bag of tricks.
+
+::: {.callout-tip title="You might be asked"}
+*"Maximum likelihood versus method of moments — when would you prefer each?"* Method of
+moments is trivial to compute (solve a couple of average-matching equations) and needs no
+optimization, so it is a fine quick estimate or a *starting value* for an iterative MLE
+search. But it is generally less efficient — it does not use all the information in the
+sample — and can produce out-of-range estimates. Maximum likelihood is the default precisely
+because it is asymptotically efficient ([INFR-B4]) and respects the parameter space, at the
+cost of sometimes needing numerical optimization. The honest catch: both are only as good as
+the model you assumed. If the likelihood is misspecified, the MLE faithfully maximizes the
+*wrong* model — a failure mode we return to in @sec-misspec.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any calculus, picture the search. The log-likelihood $\ell(\theta)$ is a single curve
+over the parameter axis: feed it a candidate $\theta$, get back a number saying how well that
+$\theta$ explains the fixed data. Maximum likelihood is the instruction: **find the top of
+that curve.** @fig-hill draws it for a concrete case — coin flips — and shows the search.
+
+```{python}
+#| label: fig-hill
+#| fig-cap: 'The log-likelihood as a hill to climb. We flipped a coin $n=20$ times and saw $k=13$ heads. Each candidate value of the head-probability $p$ on the horizontal axis is scored by the log-likelihood $\ell(p)$ — how well that $p$ explains ''13 heads in 20 flips.'' The curve rises to a single peak and falls off; the maximum-likelihood estimate (green) is the location of that peak. By eye it sits near $13/20=0.65$, exactly the sample fraction of heads — the closed-form answer we derive in the text. The dashed grey lines show two losing candidates: $p=0.3$ explains the data poorly (too few heads expected), and so does $p=0.9$ (too many).'
+n, k = 20, 13
+p = np.linspace(0.01, 0.99, 400)
+# log-likelihood of Binomial(n, p) at k, dropping the constant log C(n,k)
+loglik = k * np.log(p) + (n - k) * np.log(1 - p)
+phat = k / n
+
+fig, ax = plt.subplots()
+ax.plot(p, loglik, color=CURVE, label=r"$\ell(p)=k\log p+(n-k)\log(1-p)$")
+ax.axvline(phat, color=ACCENT, lw=1.6, ls="-",
+           label=fr"MLE $\hat p = k/n = {phat:.2f}$")
+for pc in (0.30, 0.90):
+    ax.axvline(pc, color=GREY, lw=1.0, ls="--", alpha=0.8)
+    ax.text(pc, loglik.min() + 1.0, f"$p={pc}$", color=GREY,
+            ha="center", fontsize=9)
+ax.scatter([phat], [k*np.log(phat)+(n-k)*np.log(1-phat)],
+           color=ACCENT, s=70, zorder=5)
+ax.set_xlabel(r"candidate head-probability $p$")
+ax.set_ylabel(r"log-likelihood $\ell(p)$")
+ax.set_title("Maximum likelihood is climbing to the top of this curve")
+ax.legend(loc="lower center", fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+Two features of that picture do all the conceptual work, and they are exactly the two things
+Calculus I taught you to look for on a hill:
+
+- **At the top, the curve is flat.** The tangent line is horizontal — the slope, which is the
+  score $\ell'(\theta)$, is zero. So we can *find* the peak by solving $\ell'(\theta)=0$.
+  This is the score equation, and it is the workhorse of the whole article.
+- **At the top, the curve bends downward.** Just left of the peak the slope is positive
+  (still climbing), just right it is negative (now descending), so the slope is *decreasing*
+  through the peak — the second derivative $\ell''(\theta)$ is negative there. That downward
+  bend is what distinguishes a peak from a valley, and (we will see in [INFR-B3]) *how sharply*
+  it bends measures how precisely the data pin down $\theta$.
+
+So the recipe writes itself: differentiate $\ell$, set the derivative to zero, solve for
+$\theta$, and check that the second derivative is negative. The rest of @sec-formal is that
+recipe, executed carefully, plus a frank accounting of the cases where the picture is
+different — where the peak is at the edge of the allowed range and the slope there is *not*
+zero (the uniform model, @sec-uniform), or where solving $\ell'(\theta)=0$ has no formula and
+we must climb numerically (@sec-numerical).
+
+::: {.callout-tip title="You might be asked"}
+*"Why maximize the log-likelihood instead of the likelihood itself — don't you get a
+different answer?"* No, you get the *same* answer, and that is the whole point. The logarithm
+is strictly increasing, so whatever value of $\theta$ makes $L$ largest also makes $\log L$
+largest — taking logs slides every point up or down monotonically but never reorders them,
+so it cannot move the location of the maximum. We work in logs for two concrete reasons,
+both derived in [INFR-B1]: the likelihood of i.i.d. data is a *product* of $n$ densities, and
+$\log$ turns that product into a *sum* (easier to differentiate term by term and far more
+numerically stable, since a product of $n$ small densities underflows to zero in floating
+point while a sum of $n$ logs does not). We confirm the equality of the two maximizers
+formally in @sec-log-equiv.
+:::
+
+# The formal development {#sec-formal}
+
+## Setup and notation {#sec-setup}
+
+We observe data $x_1,\dots,x_n$, modeled as realizations of i.i.d. random variables
+$X_1,\dots,X_n$ each with density (continuous case) or mass function (discrete case)
+$f(x\mid\theta)$, where $\theta$ is the unknown parameter — possibly a vector
+$\theta=(\theta_1,\dots,\theta_d)$. From [INFR-B1], the **likelihood** is the joint density
+of the data read as a function of $\theta$ with the data fixed, and by independence it
+factors into a product:
+$$
+L(\theta) \;=\; \prod_{i=1}^{n} f(x_i\mid\theta),
+\qquad
+\ell(\theta) \;=\; \log L(\theta) \;=\; \sum_{i=1}^{n}\log f(x_i\mid\theta).
+$$ {#eq-loglik}
+
+The right-hand equality is the product-to-sum step: $\log\prod_i a_i = \sum_i\log a_i$,
+applied once. The **score** is the derivative of the log-likelihood,
+$$
+U(\theta) \;=\; \ell'(\theta) \;=\; \frac{d}{d\theta}\sum_{i=1}^{n}\log f(x_i\mid\theta)
+\;=\; \sum_{i=1}^{n}\frac{\partial}{\partial\theta}\log f(x_i\mid\theta),
+$$ {#eq-score}
+the sum of per-observation slopes (the derivative of a sum is the sum of the derivatives).
+For a vector parameter, $U(\theta)$ is the **gradient** $\nabla_\theta\ell$ — the vector of
+partial derivatives, one per component — and the score equation becomes the requirement that
+*every* partial derivative vanish at once. That multivariable critical-point condition is
+imported from the Geometry-of-Data track; we use it explicitly in the Normal case
+(@sec-normal).
+
+::: {#def-mle}
+**Definition (maximum-likelihood estimator).** Given data $x_1,\dots,x_n$ and a model
+$f(\cdot\mid\theta)$ with parameter space $\Theta$, a **maximum-likelihood estimate** is any
+value $\hat\theta\in\Theta$ at which the likelihood attains its largest value:
+$$
+\hat\theta \;\in\; \arg\max_{\theta\in\Theta} L(\theta)
+\;=\; \arg\max_{\theta\in\Theta} \ell(\theta).
+$$
+Read as a function of the random sample $X_1,\dots,X_n$ (capitals), $\hat\theta$ is the
+**maximum-likelihood estimator** — itself a random variable, in the sense of [INFR-A1].
+:::
+
+Three things in that definition are deliberate and matter later. The maximizer is taken
+**over the whole parameter space $\Theta$** — not over the interior, so a maximum on the
+boundary of $\Theta$ counts (that is the uniform model's loophole, @sec-uniform). We wrote
+"$\in\arg\max$" and "*any* value" because the maximizer **need not be unique**, and indeed
+need not exist at all (@sec-failure). And the equality of the two argmaxes — over $L$ and
+over $\ell$ — is the log trick we now prove rather than assert.
+
+## Why maximizing $\ell$ is the same as maximizing $L$ {#sec-log-equiv}
+
+::: {#lem-logequiv}
+**Lemma (the log preserves the maximizer).** Let $L:\Theta\to(0,\infty)$ be any positive
+function and $\ell=\log L$. Then $\theta^\star$ maximizes $L$ over $\Theta$ if and only if it
+maximizes $\ell$ over $\Theta$.
+:::
+
+::: {.proof}
+The natural logarithm is **strictly increasing**: if $0<a<b$ then $\log a<\log b$. (This is a
+Calc-1 fact — its derivative $1/t$ is positive for $t>0$ — and we take it as given.) Suppose
+$\theta^\star$ maximizes $L$, so $L(\theta^\star)\ge L(\theta)$ for every $\theta\in\Theta$.
+Apply $\log$ to both sides; because $\log$ is increasing, the inequality direction is
+preserved:
+$$
+\log L(\theta^\star) \;\ge\; \log L(\theta)
+\quad\Longleftrightarrow\quad
+\ell(\theta^\star)\;\ge\;\ell(\theta)\quad\text{for every }\theta,
+$$
+which is exactly the statement that $\theta^\star$ maximizes $\ell$. Conversely, suppose
+$\theta^\star$ maximizes $\ell$, so $\ell(\theta^\star)\ge\ell(\theta)$ for all $\theta$.
+Apply the inverse function $\exp$, which is also strictly increasing, again preserving the
+inequality:
+$$
+e^{\ell(\theta^\star)} \ge e^{\ell(\theta)}
+\quad\Longleftrightarrow\quad
+L(\theta^\star) \ge L(\theta)\quad\text{for every }\theta,
+$$
+using $e^{\log L}=L$. So $\theta^\star$ maximizes $L$. The two maximization problems have
+the identical solution set. $\qquad\blacksquare$
+:::
+
+The lemma needs only that $L>0$ so that $\log L$ is defined — which holds wherever the data
+have positive density. From here on we maximize $\ell$ without comment, knowing it returns
+the same $\hat\theta$.
+
+## The recipe: score equation and second-order check {#sec-recipe}
+
+When $\ell$ is differentiable and its maximum lies in the *interior* of $\Theta$ (not on a
+boundary), the Calc-1 logic of @sec-intuition applies verbatim:
+
+1. **First-order condition (the score equation).** At an interior maximum the tangent is
+   horizontal, so the score vanishes:
+   $$
+   U(\hat\theta) \;=\; \ell'(\hat\theta) \;=\; 0.
+   $$ {#eq-scoreeqn}
+   Solving this equation for $\hat\theta$ is how we *find* candidate maximizers. For a vector
+   parameter it is the system $\nabla_\theta\ell=\mathbf 0$ — $d$ equations, one per
+   component.
+2. **Second-order condition (confirm it is a peak).** A stationary point could be a maximum,
+   a minimum, or (in higher dimensions) a saddle. We confirm a maximum by the Calc-1
+   second-derivative test: $\ell''(\hat\theta)<0$ means $\ell$ is concave down there — a
+   peak. For a vector parameter the analogue is that the **Hessian** $\nabla^2_\theta\ell$ is
+   negative definite at $\hat\theta$.
+
+Both steps are necessary in principle, but for the three canonical models below the
+second-order check is short and decisive, and in each case it holds for *all* admissible
+data — so the stationary point we find is genuinely the global maximum. We now run the recipe
+three times.
+
+## Closed form 1 — the Bernoulli proportion {#sec-bernoulli}
+
+The simplest nontrivial model. Each $X_i\in\{0,1\}$ is a coin flip — $1$ ("success") with
+probability $p$, $0$ ("failure") with probability $1-p$ — and we want the MLE of $p$ from
+$n$ independent flips. The probability mass function of a single Bernoulli is
+$$
+f(x\mid p) = p^{x}(1-p)^{1-x},\qquad x\in\{0,1\},
+$$
+a one-line trick worth pausing on: when $x=1$ it reads $p^{1}(1-p)^{0}=p$, and when $x=0$ it
+reads $p^{0}(1-p)^{1}=1-p$ — the two cases the model demands, packed into one formula by the
+exponents. The likelihood over the sample, by @eq-loglik, is
+$$
+L(p) = \prod_{i=1}^{n} p^{x_i}(1-p)^{1-x_i}
+     = p^{\sum_i x_i}\,(1-p)^{\sum_i (1-x_i)}
+     = p^{k}(1-p)^{n-k},
+$$
+where we collected exponents using $\prod_i p^{x_i}=p^{\sum_i x_i}$ (multiplying powers of
+the same base adds exponents) and wrote $k=\sum_i x_i$ for the **number of successes**; then
+$\sum_i(1-x_i)=n-k$ is the number of failures. Take logs (@eq-loglik again):
+$$
+\ell(p) = k\log p + (n-k)\log(1-p).
+$$ {#eq-bern-ll}
+This is precisely the curve plotted in @fig-hill (with $n=20,k=13$). Differentiate with
+respect to $p$, using $\frac{d}{dp}\log p=\frac1p$ and $\frac{d}{dp}\log(1-p)=\frac{-1}{1-p}$
+(the second by the chain rule, since the inside $1-p$ has derivative $-1$):
+$$
+\ell'(p) = \frac{k}{p} - \frac{n-k}{1-p}.
+$$ {#eq-bern-score}
+Set the score to zero and solve. Multiply through by $p(1-p)$ (positive for $0<p<1$, so it
+cannot introduce or destroy a root):
+$$
+k(1-p) - (n-k)p = 0
+\;\Longrightarrow\;
+k - kp - np + kp = 0
+\;\Longrightarrow\;
+k - np = 0,
+$$
+where the two $kp$ terms canceled. Therefore
+$$
+\boxed{\;\hat p = \frac{k}{n} = \frac1n\sum_{i=1}^n x_i = \bar x.\;}
+$$ {#eq-bern-mle}
+The MLE of a success probability is **the observed fraction of successes** — the sample mean
+of the 0/1 data. Exactly what intuition wanted, now forced by the principle.
+
+Confirm it is a maximum. Differentiate @eq-bern-score again:
+$$
+\ell''(p) = -\frac{k}{p^2} - \frac{n-k}{(1-p)^2}.
+$$
+Both terms are negative for any $0<p<1$ (numerators $k\ge0$ and $n-k\ge0$ are non-negative,
+denominators are positive, and there is a leading minus sign), so $\ell''<0$ **everywhere** in
+the interior — $\ell$ is strictly concave, the curve in @fig-hill bends down throughout, and
+its single stationary point @eq-bern-mle is the global maximum. (The boundary cases $k=0$ or
+$k=n$ — all failures or all successes — push the maximizer to $p=0$ or $p=1$, the edge of
+$\Theta$; we flag this in @sec-failure.)
+
+The Binomial gives the identical answer. If instead of $n$ individual flips we observe a
+single Binomial count $Y\sim\mathrm{Binom}(n,p)$ — "$k$ successes in $n$ trials" — its mass
+function is $\binom{n}{k}p^k(1-p)^{n-k}$. The $\binom{n}{k}$ does not contain $p$, so its log
+is an additive constant that drops out under differentiation, leaving the *same* score
+@eq-bern-score and the same $\hat p=k/n$. The count and the individual flips carry the same
+information about $p$.
+
+## Closed form 2 — the Poisson rate {#sec-poisson}
+
+Counts of events in a fixed window — emails per hour, defects per wafer, goals per match —
+are the natural home of the Poisson model. Each $X_i\in\{0,1,2,\dots\}$ has mass function
+$$
+f(x\mid\lambda) = \frac{\lambda^{x}e^{-\lambda}}{x!},\qquad \lambda>0,
+$$
+where $\lambda$ is the mean rate. The log-likelihood over $n$ counts is, by @eq-loglik,
+$$
+\ell(\lambda) = \sum_{i=1}^n\Bigl[x_i\log\lambda - \lambda - \log(x_i!)\Bigr]
+= \Bigl(\textstyle\sum_i x_i\Bigr)\log\lambda - n\lambda - \sum_i\log(x_i!),
+$$ {#eq-pois-ll}
+where we used $\log\frac{\lambda^{x_i}e^{-\lambda}}{x_i!}=x_i\log\lambda-\lambda-\log(x_i!)$
+on each term (log of a product/quotient splits into sums and differences of logs, and
+$\log e^{-\lambda}=-\lambda$), then summed: the $\log\lambda$ terms collect into
+$(\sum_i x_i)\log\lambda$, the $-\lambda$ appears $n$ times giving $-n\lambda$, and the
+$\log(x_i!)$ terms gather into a single sum. Differentiate with respect to $\lambda$; the
+last term has no $\lambda$ and dies:
+$$
+\ell'(\lambda) = \frac{\sum_i x_i}{\lambda} - n.
+$$ {#eq-pois-score}
+Set to zero: $\frac{\sum_i x_i}{\lambda}=n$, so $\lambda=\frac1n\sum_i x_i$, i.e.
+$$
+\boxed{\;\hat\lambda = \frac1n\sum_{i=1}^n x_i = \bar x.\;}
+$$ {#eq-pois-mle}
+The MLE of a Poisson rate is **the sample mean of the counts** — again the obvious estimate,
+now derived. Second-order check: differentiate @eq-pois-score,
+$$
+\ell''(\lambda) = -\frac{\sum_i x_i}{\lambda^2} < 0
+\quad\text{whenever }\textstyle\sum_i x_i>0,
+$$
+negative for all $\lambda>0$ (provided at least one count is nonzero), so $\ell$ is concave
+and @eq-pois-mle is the global maximum.
+
+## Closed form 3 — the Normal mean and variance {#sec-normal}
+
+The first genuinely multi-parameter MLE, and the one that quietly underwrites all of
+least-squares regression. The data $X_i\sim\mathcal N(\mu,\sigma^2)$ are i.i.d. Normal with
+unknown mean $\mu$ and unknown variance $\sigma^2$; we estimate **both at once**, so
+$\theta=(\mu,\sigma^2)$ is a vector and the score equation becomes two partial-derivative
+equations set simultaneously to zero. The Normal density is
+$$
+f(x\mid\mu,\sigma^2) = \frac{1}{\sqrt{2\pi\sigma^2}}\,
+\exp\!\Bigl(-\frac{(x-\mu)^2}{2\sigma^2}\Bigr).
+$$
+Its log is $\log f = -\tfrac12\log(2\pi\sigma^2) - \frac{(x-\mu)^2}{2\sigma^2}$ (the
+$\frac{1}{\sqrt{2\pi\sigma^2}}=(2\pi\sigma^2)^{-1/2}$ contributes
+$-\tfrac12\log(2\pi\sigma^2)$, and $\log e^{(\cdot)}=(\cdot)$). Summing over the $n$
+observations (@eq-loglik):
+$$
+\ell(\mu,\sigma^2)
+= -\frac n2\log(2\pi\sigma^2) - \frac{1}{2\sigma^2}\sum_{i=1}^n (x_i-\mu)^2 .
+$$ {#eq-norm-ll}
+We find the joint maximum by setting both partial derivatives to zero. **Hold $\sigma^2$
+fixed and differentiate in $\mu$.** Only the second term depends on $\mu$; using the chain
+rule on $(x_i-\mu)^2$ (inner derivative $-1$):
+$$
+\frac{\partial\ell}{\partial\mu}
+= -\frac{1}{2\sigma^2}\sum_{i=1}^n 2(x_i-\mu)(-1)
+= \frac{1}{\sigma^2}\sum_{i=1}^n (x_i-\mu).
+$$ {#eq-norm-score-mu}
+Set to zero. Since $\sigma^2>0$ we may drop the prefactor, leaving
+$\sum_i(x_i-\mu)=0$, i.e. $\sum_i x_i = n\mu$, hence
+$$
+\boxed{\;\hat\mu = \frac1n\sum_{i=1}^n x_i = \bar x.\;}
+$$ {#eq-norm-mu}
+The Normal mean's MLE is the sample mean — and notice it came out **without reference to
+$\sigma^2$**, a fact we exploit next. Now **differentiate in $\sigma^2$**, treating it as a
+single variable $v=\sigma^2$ to keep the algebra honest. From @eq-norm-ll,
+$\ell = -\frac n2\log(2\pi v) - \frac{1}{2v}\sum_i(x_i-\mu)^2$. The first term's derivative:
+$\frac{d}{dv}\bigl[-\frac n2\log(2\pi v)\bigr] = -\frac n2\cdot\frac{2\pi}{2\pi v} =
+-\frac{n}{2v}$ (chain rule: derivative of $\log(2\pi v)$ is $\frac{2\pi}{2\pi v}=\frac1v$).
+The second term, $-\frac{1}{2v}\cdot C$ with $C=\sum_i(x_i-\mu)^2$ a constant in $v$, has
+derivative $-\tfrac12 C\cdot(-v^{-2}) = \frac{C}{2v^2}$. So
+$$
+\frac{\partial\ell}{\partial v}
+= -\frac{n}{2v} + \frac{1}{2v^2}\sum_{i=1}^n (x_i-\mu)^2.
+$$ {#eq-norm-score-v}
+Set to zero and multiply through by $2v^2>0$:
+$$
+-nv + \sum_{i=1}^n (x_i-\mu)^2 = 0
+\;\Longrightarrow\;
+v = \frac1n\sum_{i=1}^n (x_i-\mu)^2 .
+$$
+Now plug in the already-found $\hat\mu=\bar x$ for $\mu$ — legitimate because @eq-norm-mu
+solved for $\mu$ independently of $v$, so $(\hat\mu,\hat v)$ jointly satisfies both score
+equations:
+$$
+\boxed{\;\widehat{\sigma^2} = \frac1n\sum_{i=1}^n (x_i-\bar x)^2.\;}
+$$ {#eq-norm-var}
+The MLE of the variance is **the average squared deviation from the sample mean** — with
+divisor $n$, not the $n-1$ of the familiar unbiased sample variance. That discrepancy is not
+a mistake; the MLE is *biased* for $\sigma^2$, and the next callout explains exactly why and
+when it matters.
+
+::: {.callout-warning title="Pitfall"}
+**The MLE of $\sigma^2$ divides by $n$, not $n-1$ — it is biased.** The "sample variance"
+$s^2=\frac{1}{n-1}\sum(x_i-\bar x)^2$ taught in introductory courses is the *unbiased*
+estimator; the maximum-likelihood estimator @eq-norm-var divides by $n$ and so
+underestimates $\sigma^2$ on average. The reason, traced in [INFR-A1]'s bias machinery, is
+that we spent one "degree of freedom" estimating $\mu$ with $\bar x$, which makes the
+deviations $x_i-\bar x$ systematically a touch smaller than the deviations $x_i-\mu$ from the
+true mean. Concretely, $\mathbb E[\widehat{\sigma^2}] = \frac{n-1}{n}\sigma^2 < \sigma^2$.
+This is a genuine and instructive feature of maximum likelihood: **the MLE is not in general
+unbiased.** The bias here is $-\sigma^2/n$, which vanishes as $n\to\infty$ — the MLE is
+*asymptotically* unbiased, and consistent ([INFR-B4]) — so for large $n$ the distinction is
+immaterial, but for small $n$ it is real. Interviewers love this exact example as a test of
+whether you know MLEs need not be unbiased.
+:::
+
+We should verify the pair $(\hat\mu,\widehat{\sigma^2})$ is a genuine maximum, not a saddle.
+The Hessian (matrix of second partials) at the solution is diagonal — the off-diagonal
+$\partial^2\ell/\partial\mu\,\partial v$, evaluated where $\sum_i(x_i-\hat\mu)=0$, is zero —
+with diagonal entries $\partial^2\ell/\partial\mu^2=-n/\hat\sigma^2<0$ and
+$\partial^2\ell/\partial v^2=-n/(2\hat\sigma^4)<0$. A symmetric matrix with negative diagonal
+and zero off-diagonal is negative definite, the multivariable "concave down in every
+direction" condition, confirming a maximum. We carry out this Hessian computation in full in
+[INFR-B3], where its negative — the **Fisher information matrix** — is the very object of
+that article; here we have its sign, which is all the second-order test needs.
+
+::: {.callout-tip title="You might be asked"}
+*"You found $\hat\mu$ before involving $\sigma^2$ — is that legal in a joint maximization?"*
+Yes, and the reason is worth stating cleanly. We are solving the simultaneous system
+$\partial\ell/\partial\mu=0$ and $\partial\ell/\partial v=0$. The first equation,
+@eq-norm-score-mu, happens not to contain $v$ at all (the $1/\sigma^2$ prefactor is positive
+and drops out), so it pins $\hat\mu=\bar x$ regardless of $v$. We then substitute that into
+the second equation to solve for $\hat v$. This is ordinary back-substitution in a system
+where one equation decouples — *not* the (sometimes-wrong) shortcut of maximizing one
+parameter while ignoring the other. It worked here only because the $\mu$-equation decoupled;
+in a model where the two score equations are tangled (logistic regression, @sec-numerical),
+no such shortcut exists and we must solve the system jointly, usually numerically.
+:::
+
+# Invariance: the MLE transforms with the parameter {#sec-invariance}
+
+A property that makes maximum likelihood unusually convenient, and that distinguishes it from
+estimators like the posterior mean: if you reparameterize the model, the MLE just *carries
+along*. If $\hat\theta$ is the MLE of $\theta$ and you care instead about some function
+$\psi=g(\theta)$ — the odds $p/(1-p)$ instead of $p$, the standard deviation
+$\sigma=\sqrt{\sigma^2}$ instead of the variance — then the MLE of $\psi$ is simply
+$g(\hat\theta)$. No re-derivation.
+
+::: {#thm-invariance}
+**Theorem (invariance of the MLE).** Let $\hat\theta$ be a maximum-likelihood estimate of
+$\theta$, and let $g$ be any function of the parameter (the new parameter is $\psi=g(\theta)$).
+Then $\hat\psi=g(\hat\theta)$ is a maximum-likelihood estimate of $\psi$.
+:::
+
+::: {.proof}
+We prove the clean case first — $g$ a *one-to-one* (invertible) function — because the idea
+is transparent there; then we handle general $g$, where "the likelihood of $\psi$" needs a
+careful definition.
+
+**One-to-one $g$.** Because $g$ is invertible, every $\theta$ corresponds to exactly one
+$\psi=g(\theta)$ and back, $\theta=g^{-1}(\psi)$. The model written in the new parameter has
+likelihood
+$$
+L^\star(\psi) \;=\; L\bigl(g^{-1}(\psi)\bigr),
+$$
+because describing the *same* probabilistic model by $\psi$ instead of $\theta$ assigns each
+data set the identical density — we have only relabeled the axis. Maximizing $L^\star$ over
+$\psi$ is therefore maximizing $L$ over the relabeled axis, and since the relabeling
+$\psi\leftrightarrow\theta$ is a bijection, the peak lands at the matching point: the $\psi$
+that maximizes $L^\star$ is the image $g(\hat\theta)$ of the $\theta=\hat\theta$ that
+maximizes $L$. Formally, $\hat\psi=\arg\max_\psi L(g^{-1}(\psi))$; substituting
+$\theta=g^{-1}(\psi)$ turns this into $\arg\max_\theta L(\theta)=\hat\theta$ for the
+corresponding $\theta$, so $\hat\psi=g(\hat\theta)$.
+
+**General $g$ (possibly many-to-one).** When $g$ is not invertible — say $\psi=\theta^2$,
+which maps $\pm c$ to the same $\psi$ — there is no unique $\theta$ for a given $\psi$, so
+"the likelihood of $\psi$" must be *defined*. Fisher's definition is the **profile (induced)
+likelihood**: the best the data can do for that value of $\psi$,
+$$
+L^\star(\psi) \;=\; \max_{\{\theta\,:\,g(\theta)=\psi\}} L(\theta),
+$$
+the largest likelihood over all $\theta$ consistent with $g(\theta)=\psi$. Now maximize over
+$\psi$:
+$$
+\max_\psi L^\star(\psi)
+= \max_\psi\;\max_{\{\theta:\,g(\theta)=\psi\}} L(\theta)
+= \max_\theta L(\theta),
+$$
+where the last equality holds because ranging $\psi$ over its values and, for each, $\theta$
+over the fiber $\{g(\theta)=\psi\}$, together sweep $\theta$ over its *entire* space exactly
+once — a maximization over a partition of the domain equals the maximization over the whole
+domain. The right-hand maximum is attained at $\theta=\hat\theta$, with value
+$L(\hat\theta)$, and that value is achieved in the outer problem at
+$\psi=g(\hat\theta)$. Hence $\hat\psi=g(\hat\theta)$ maximizes the induced likelihood.
+$\qquad\blacksquare$
+:::
+
+The payoff is immediate and practical. From @sec-bernoulli, the MLE of the success
+probability is $\hat p=k/n$; by invariance the MLE of the **odds** is
+$\widehat{\frac{p}{1-p}}=\frac{\hat p}{1-\hat p}=\frac{k}{n-k}$, and the MLE of the
+**log-odds** (the quantity logistic regression estimates) is $\log\frac{k}{n-k}$ — no new
+maximization. From @sec-normal, the MLE of the variance is
+$\widehat{\sigma^2}=\frac1n\sum(x_i-\bar x)^2$; by invariance the MLE of the **standard
+deviation** is its square root, $\hat\sigma=\sqrt{\frac1n\sum(x_i-\bar x)^2}$.
+
+```{python}
+#| label: fig-invariance
+#| fig-cap: 'Invariance, seen on the same coin data as @fig-hill ($n=20$, $k=13$). **Left:** the log-likelihood in the original parameter $p$ peaks at $\hat p=k/n=0.65$. **Right:** the *same model* written in the log-odds parameter $\psi=\log\frac{p}{1-p}$; its peak sits at $\hat\psi=\log\frac{k}{n-k}$, which is exactly $\log\frac{\hat p}{1-\hat p}$ (green line). Reparameterizing slides and stretches the curve but never moves *which underlying model* is the best — so the peak tracks the transformation. That is the content of @thm-invariance.'
+n, k = 20, 13
+phat = k / n
+
+# Left: log-likelihood in p
+p = np.linspace(0.02, 0.98, 400)
+ll_p = k * np.log(p) + (n - k) * np.log(1 - p)
+
+# Right: same likelihood reparameterized by psi = logit(p); p = 1/(1+e^-psi)
+psi = np.linspace(-2.5, 2.5, 400)
+p_of_psi = 1.0 / (1.0 + np.exp(-psi))
+ll_psi = k * np.log(p_of_psi) + (n - k) * np.log(1 - p_of_psi)
+psihat = np.log(phat / (1 - phat))
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.plot(p, ll_p, color=CURVE)
+axL.axvline(phat, color=ACCENT, lw=1.6, label=fr"$\hat p={phat:.2f}$")
+axL.set_xlabel(r"$p$"); axL.set_ylabel(r"$\ell$")
+axL.set_title("Original parameter $p$"); axL.legend(fontsize=9, framealpha=0.9)
+
+axR.plot(psi, ll_psi, color=CURVE)
+axR.axvline(psihat, color=ACCENT, lw=1.6,
+            label=fr"$\hat\psi=\log\frac{{k}}{{n-k}}={psihat:.2f}$")
+axR.set_xlabel(r"log-odds $\psi=\log\frac{p}{1-p}$"); axR.set_ylabel(r"$\ell$")
+axR.set_title("Reparameterized to log-odds"); axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+::: {.callout-tip title="You might be asked"}
+*"Does invariance also hold for unbiasedness, or for the posterior mean?"* No — and that
+contrast is the point. Unbiasedness is *not* invariant: if $\hat\theta$ is unbiased for
+$\theta$, $g(\hat\theta)$ is generally biased for $g(\theta)$ unless $g$ is linear, by
+Jensen's inequality (a curved $g$ bends the distribution and shifts its mean). The Bayesian
+posterior mean is not invariant either: the posterior mean of $g(\theta)$ is generally not
+$g$(posterior mean), again for curved $g$. The MLE's clean transformation law is special to
+it, and it is one reason MLEs are so convenient: estimate in whatever parameterization is
+easiest, transform at the end.
+:::
+
+# Worked examples {#sec-examples}
+
+We now run the machinery on real, messy problems — never a toy rigged to flatter the method.
+Each is carried end to end, and the last sits at the edge of where maximum likelihood applies.
+
+## Example 1 — email arrivals as a Poisson rate {#sec-ex-poisson}
+
+A support inbox logs how many tickets arrive in each of $n$ one-hour windows. Counts of
+independent events in fixed windows are the textbook habitat of the Poisson model, so we
+estimate the arrival rate $\lambda$ by maximum likelihood — which, by @sec-poisson, is just
+the sample mean of the counts. We then *look at the whole log-likelihood curve*, not only its
+peak, because the curvature there (the topic of [INFR-B3]) is what tells us how sharply the
+data pin $\lambda$ down.
+
+```{python}
+#| label: fig-poisson
+#| fig-cap: 'Poisson MLE for hourly ticket arrivals ($n=30$ windows). **Left:** the observed counts (bars) with the fitted Poisson mass function at $\hat\lambda=\bar x$ (red points) — the model tracks the data''s shape. **Right:** the log-likelihood $\ell(\lambda)$, peaking at $\hat\lambda$ (green). The peak is the MLE; how *sharply* the curve falls away from it foreshadows Fisher information and the standard error of [INFR-B3]–[INFR-B4].'
+true_lambda = 4.2
+counts = rng.poisson(true_lambda, size=30)
+lam_hat = counts.mean()
+
+# Left panel: data histogram vs fitted pmf
+import math
+kvals = np.arange(0, counts.max() + 2)
+pmf = np.array([lam_hat**kk * np.exp(-lam_hat) / math.factorial(kk) for kk in kvals])
+obs_frac = np.array([(counts == kk).mean() for kk in kvals])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+axL.bar(kvals, obs_frac, width=0.7, color=FILL, label="observed fraction")
+axL.plot(kvals, pmf, "o", color=CURVE, label=fr"Poisson$(\hat\lambda={lam_hat:.2f})$")
+axL.set_xlabel("tickets per hour"); axL.set_ylabel("proportion")
+axL.set_title("Data vs. fitted model"); axL.legend(fontsize=9, framealpha=0.9)
+
+lam_grid = np.linspace(2.5, 6.5, 400)
+S = counts.sum()
+# log-likelihood up to the constant -sum log(x_i!)
+ll = S * np.log(lam_grid) - len(counts) * lam_grid
+axR.plot(lam_grid, ll, color=CURVE)
+axR.axvline(lam_hat, color=ACCENT, lw=1.6, label=fr"$\hat\lambda=\bar x={lam_hat:.2f}$")
+axR.set_xlabel(r"rate $\lambda$"); axR.set_ylabel(r"$\ell(\lambda)$ (up to constant)")
+axR.set_title("Log-likelihood for the rate"); axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"true lambda (unknown to us) = {true_lambda}")
+print(f"sum of counts S = {S},  n = {len(counts)}")
+print(f"MLE  lambda_hat = S/n = {lam_hat:.4f}")
+```
+
+The estimate is $\hat\lambda=\bar x=`{python} f"{lam_hat:.3f}"`$ tickets per hour, computed by
+nothing more than averaging the counts — the closed form @eq-pois-mle. The left panel is the
+honest check: the fitted Poisson mass function sits close to the observed proportions, so the
+model is a reasonable description here. If those bars and points disagreed badly — for
+instance if the counts were far more variable than a Poisson allows (overdispersion) — the
+MLE would still return a number, but it would be the best fit of a *wrong* model, the
+misspecification trap of @sec-misspec.
+
+## Example 2 — Normal MLE for a measurement, and the $n$-vs-$(n-1)$ bias in the open {#sec-ex-normal}
+
+A lab takes $n$ repeated measurements of the same physical quantity (a calibration weight,
+say), each corrupted by independent Gaussian noise. We estimate both the true value $\mu$ and
+the noise variance $\sigma^2$ by maximum likelihood, using the closed forms @eq-norm-mu and
+@eq-norm-var, and we **demonstrate the bias** of the variance MLE by simulation — watching
+the $n$-divisor estimator land low on average while the $(n-1)$-divisor estimator centers on
+the truth.
+
+```{python}
+#| label: fig-normal-bias
+#| fig-cap: 'The MLE of the Normal variance is biased low. We repeatedly draw samples of size $n=5$ from $\mathcal N(\mu=10,\sigma^2=4)$ and, on each, compute the MLE $\widehat{\sigma^2}=\frac1n\sum(x_i-\bar x)^2$ (blue) and the unbiased $s^2=\frac1{n-1}\sum(x_i-\bar x)^2$ (green). The histograms are the two sampling distributions over $20{,}000$ repetitions; vertical lines mark their means. The MLE''s mean sits *below* the true $\sigma^2=4$ (red), by the predicted factor $\frac{n-1}{n}=0.8$; the unbiased estimator''s mean lands on $4$. This is @eq-norm-var''s bias, made visible — and a vivid reminder that maximum likelihood does not promise unbiasedness.'
+mu_true, var_true, n_small = 10.0, 4.0, 5
+reps = 20000
+samples = rng.normal(mu_true, np.sqrt(var_true), size=(reps, n_small))
+xbar = samples.mean(axis=1, keepdims=True)
+ss = ((samples - xbar) ** 2).sum(axis=1)
+mle_var = ss / n_small          # divide by n   (MLE)
+unb_var = ss / (n_small - 1)    # divide by n-1 (unbiased)
+
+fig, ax = plt.subplots(figsize=(6.6, 4.0))
+bins = np.linspace(0, 16, 60)
+ax.hist(mle_var, bins=bins, density=True, alpha=0.55, color=DATA,
+        label=fr"MLE $\hat\sigma^2$ (÷$n$), mean={mle_var.mean():.2f}")
+ax.hist(unb_var, bins=bins, density=True, alpha=0.45, color=ACCENT,
+        label=fr"$s^2$ (÷$n-1$), mean={unb_var.mean():.2f}")
+ax.axvline(var_true, color=CURVE, lw=2.0, label=fr"true $\sigma^2={var_true:.0f}$")
+ax.axvline(mle_var.mean(), color=DATA, lw=1.4, ls="--")
+ax.axvline(unb_var.mean(), color=ACCENT, lw=1.4, ls="--")
+ax.set_xlabel(r"variance estimate"); ax.set_ylabel("density")
+ax.set_title("MLE variance is biased low; $s^2$ is unbiased")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"predicted MLE mean = (n-1)/n * sigma^2 = {(n_small-1)/n_small*var_true:.3f}")
+print(f"observed  MLE mean = {mle_var.mean():.3f}")
+print(f"observed  s^2 mean = {unb_var.mean():.3f}")
+```
+
+The simulation confirms the algebra of @sec-normal to two decimals: the MLE's average is
+$`{python} f"{mle_var.mean():.2f}"`$, essentially the predicted
+$\frac{n-1}{n}\sigma^2=\frac45\cdot4=3.2$, while the $(n-1)$ estimator averages
+$`{python} f"{unb_var.mean():.2f}"`$, on the true value $4$. Two practitioner takeaways. First,
+the bias is real but *shrinks like $1/n$*: at $n=5$ it is a $20\%$ underestimate; at $n=100$
+it is $1\%$; asymptotically it vanishes. Second — and this is the subtler point — the MLE,
+though biased, often has *smaller* mean squared error than the unbiased estimator for small
+$n$, because dividing by the larger $n$ also lowers its variance (the bias-variance trade-off
+of [INFR-A1]). "Unbiased" is not automatically "better," and maximum likelihood is content to
+trade a little bias for the estimate that best explains the data.
+
+## Example 3 — the edge of applicability: the uniform $[0,\theta]$ model {#sec-uniform}
+
+Now the honest boundary, where the differentiate-and-solve recipe *fails completely* — and
+seeing exactly how it fails is the most instructive thing in the article. Suppose each
+$X_i$ is drawn uniformly on the interval $[0,\theta]$, with $\theta>0$ the unknown right
+endpoint. This is the classic "German tank problem" shape: from observed values, estimate the
+largest possible value. The density of a single observation is
+$$
+f(x\mid\theta) = \begin{cases} \dfrac{1}{\theta}, & 0\le x\le\theta,\\[4pt] 0, & \text{otherwise.}\end{cases}
+$$
+The likelihood is the product over the sample — but only as long as *every* $x_i$ falls inside
+$[0,\theta]$; if any $x_i>\theta$ then that point has density $0$ and the whole product
+collapses to $0$ (a $\theta$ smaller than an observed value cannot have produced it). So
+$$
+L(\theta) = \prod_{i=1}^n f(x_i\mid\theta)
+= \begin{cases} \theta^{-n}, & \theta\ge \max_i x_i,\\[4pt] 0, & \theta<\max_i x_i,\end{cases}
+$$
+where $\theta^{-n}$ collects the $n$ factors of $1/\theta$, and the switch happens at
+$\theta=\max_i x_i$: we need $\theta$ at least as large as the biggest observation for the
+likelihood to be nonzero. Now try the recipe. For $\theta>\max_i x_i$ the log-likelihood is
+$\ell(\theta)=-n\log\theta$, whose derivative is
+$$
+\ell'(\theta) = -\frac n\theta,
+$$
+which is **never zero** for any finite $\theta>0$ — it is strictly negative everywhere. The
+score equation $\ell'(\theta)=0$ has *no solution*. If you blindly trusted it you would
+conclude "no MLE exists," which is wrong. What is actually true: because $\ell(\theta)=-n\log\theta$
+is *decreasing*, the likelihood wants $\theta$ as small as possible — but $\theta$ cannot drop
+below $\max_i x_i$ without crashing $L$ to zero. So the maximum sits exactly at the **boundary
+of the feasible region**:
+$$
+\boxed{\;\hat\theta = \max_{1\le i\le n} x_i = x_{(n)},\;}
+$$
+the largest observation (the $n$-th order statistic). @fig-uniform shows the likelihood: it is
+zero up to $\max_i x_i$, jumps up there, and then decays — a *peak at a corner*, not a smooth
+summit.
+
+```{python}
+#| label: fig-uniform
+#| fig-cap: 'Where the score equation fails. Data are $n=8$ draws from Uniform$[0,\theta]$ with true $\theta=10$. The likelihood $L(\theta)$ (red) is exactly zero for $\theta<\max_i x_i$ (no such $\theta$ could have produced the largest observation), jumps to its maximum *at* $\theta=\max_i x_i=x_{(8)}$ (green), then decays as $\theta^{-n}$. The maximum is a sharp corner on the boundary — there is no point where the slope is zero, so ''set the derivative to zero'' returns nothing. The MLE is the largest data value, found by reasoning about the constraint, not by calculus.'
+true_theta = 10.0
+xu = rng.uniform(0, true_theta, size=8)
+xmax = xu.max()
+theta = np.linspace(0.1, 18, 800)
+L = np.where(theta >= xmax, theta ** (-len(xu)), 0.0)
+
+fig, ax = plt.subplots()
+ax.plot(theta, L, color=CURVE, label=r"$L(\theta)$")
+ax.axvline(xmax, color=ACCENT, lw=1.6,
+           label=fr"$\hat\theta=\max_i x_i = x_{{(n)}}={xmax:.2f}$")
+ax.scatter(xu, np.zeros_like(xu), color=DATA, s=40, zorder=5,
+           label="observations $x_i$")
+ax.axvline(true_theta, color=GREY, lw=1.0, ls="--", label=r"true $\theta=10$")
+ax.set_xlabel(r"$\theta$"); ax.set_ylabel(r"likelihood $L(\theta)$")
+ax.set_title("Uniform $[0,\\theta]$: the maximum is a boundary corner")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+print(f"observations sorted: {np.sort(xu).round(2)}")
+print(f"MLE theta_hat = max(x_i) = {xmax:.3f}   (true theta = {true_theta})")
+```
+
+This example earns its place because it breaks the article's main tool in a way you must
+recognize in practice. Three lessons fall out, and you should be able to state all three:
+
+- **The score equation is a method, not the definition.** The definition (@def-mle) is "the
+  argmax over $\Theta$." Usually the argmax is interior and the score equation finds it; here
+  the argmax is on the boundary $\theta=x_{(n)}$ and the score is never zero. *Always* return
+  to the definition when the recipe misbehaves.
+- **The support depending on the parameter is the warning sign.** Here the *range* of the
+  data, $[0,\theta]$, depends on $\theta$ itself. Whenever the parameter sets the boundaries
+  of where the data can live, the smooth regularity conditions that justify "set the score to
+  zero" — and that underpin the asymptotic theory of [INFR-B4] — are violated. The uniform is
+  the canonical example.
+- **The MLE here is also biased, and instructively so.** Since every observation is
+  $\le\theta$, the maximum is too, so $\hat\theta=x_{(n)}\le\theta$ *always* — it can never
+  overshoot, only fall short, so it *systematically underestimates*. We can pin down the bias
+  exactly, and the calculation is short enough to do here rather than defer.
+
+The estimator is $\hat\theta=x_{(n)}=\max_i X_i$, so we need $\mathbb E[\max_i X_i]$ for $n$
+i.i.d. draws on $[0,\theta]$. Start from the **cumulative distribution function (CDF)** of a
+single uniform draw, $F(t)=P(X_i\le t)$. For $0\le t\le\theta$ the uniform density is the
+constant $1/\theta$, so the probability of landing in $[0,t]$ is the area of that strip,
+$F(t)=t/\theta$ (and $F(t)=0$ for $t<0$, $F(t)=1$ for $t>\theta$). Now the maximum is at most
+$t$ exactly when *every* observation is at most $t$; by independence the joint probability is
+the product of the individual ones, so the CDF of $M=\max_i X_i$ is
+$$
+F_M(t) = P(M\le t) = P(X_1\le t,\dots,X_n\le t)
+= \prod_{i=1}^n P(X_i\le t) = \Bigl(\tfrac{t}{\theta}\Bigr)^{n},
+\qquad 0\le t\le\theta.
+$$
+Differentiate the CDF to get the **density** of $M$ (the density is the derivative of the
+CDF, the Calc-1 fundamental-theorem relationship between the two):
+$$
+f_M(t) = \frac{d}{dt}\Bigl(\tfrac{t}{\theta}\Bigr)^{n}
+= \frac{n\,t^{\,n-1}}{\theta^{n}},\qquad 0\le t\le\theta,
+$$
+using the power rule. The expectation is then the integral of $t$ against this density:
+$$
+\mathbb E[M] = \int_0^{\theta} t\,f_M(t)\,dt
+= \int_0^{\theta} t\cdot\frac{n\,t^{\,n-1}}{\theta^{n}}\,dt
+= \frac{n}{\theta^{n}}\int_0^{\theta} t^{\,n}\,dt
+= \frac{n}{\theta^{n}}\cdot\frac{\theta^{\,n+1}}{n+1}
+= \frac{n}{n+1}\,\theta,
+$$
+where we pulled the constant $n/\theta^{n}$ out of the integral, integrated $t^n$ to
+$t^{n+1}/(n+1)$ by the power rule, and evaluated at the limits ($t=\theta$ gives
+$\theta^{n+1}/(n+1)$, $t=0$ gives $0$). So $\mathbb E[\hat\theta]=\frac{n}{n+1}\theta<\theta$,
+confirming the downward bias and quantifying it: the MLE undershoots by a factor $n/(n+1)$,
+about $1/(n+1)$ of the way. The fix follows by rescaling: the **bias-corrected** estimator
+$\frac{n+1}{n}x_{(n)}$ has expectation $\frac{n+1}{n}\cdot\frac{n}{n+1}\theta=\theta$ exactly,
+so it is unbiased. The method-of-moments estimator $2\bar x$ (matching the sample mean to the
+uniform's theoretical mean $\theta/2$, then solving) is another competitor. Which to prefer is
+a real judgment call, and a favorite interview follow-up.
+
+::: {.callout-warning title="Pitfall"}
+**Do not differentiate blindly.** The single most common maximum-likelihood error is to write
+down $\ell$, take $\ell'(\theta)=0$, solve, and report — without checking whether the maximum
+is actually interior. If the support of the data depends on the parameter (uniform $[0,\theta]$,
+shifted exponentials, truncated distributions), or if the natural maximizer lies on the edge
+of the parameter space (a Bernoulli with all-successes wants $\hat p=1$), the score equation
+either has no root or finds the wrong point. Sketch the likelihood, or at least ask "could the
+maximum be at a boundary?" before reaching for the derivative.
+:::
+
+# When there is no closed form: climbing the hill numerically {#sec-numerical}
+
+For the three canonical models the score equation $\ell'(\theta)=0$ solved in closed form
+because it happened to be a simple algebraic equation. That is the exception, not the rule.
+For most models — logistic regression, generalized linear models, mixture models, almost any
+realistic likelihood — the score equation is a transcendental system with no algebraic
+solution. The principle is unchanged (still "find the argmax of $\ell$"); only the *method*
+changes: instead of solving $\ell'(\theta)=0$ by algebra, we climb $\ell$ numerically.
+
+The canonical case is **logistic regression**, which the Classification and Regression tracks
+fit constantly. With binary outcomes $y_i\in\{0,1\}$ and a predictor $x_i$, the model is
+$P(y_i=1)=\sigma(\beta_0+\beta_1 x_i)$ where $\sigma(z)=1/(1+e^{-z})$ is the logistic function.
+The log-likelihood is
+$$
+\ell(\beta_0,\beta_1) = \sum_{i=1}^n\Bigl[y_i\log\sigma(\eta_i) + (1-y_i)\log\bigl(1-\sigma(\eta_i)\bigr)\Bigr],
+\qquad \eta_i=\beta_0+\beta_1 x_i,
+$$
+and its score equations $\partial\ell/\partial\beta_0=0$, $\partial\ell/\partial\beta_1=0$
+work out to $\sum_i(y_i-\sigma(\eta_i))=0$ and $\sum_i x_i(y_i-\sigma(\eta_i))=0$ — coupled
+*nonlinear* equations in $(\beta_0,\beta_1)$, with the unknowns buried inside the logistic
+$\sigma$. There is no rearranging them into a formula for $\hat\beta$. So we hand off to the
+**Optimization track**: gradient ascent steps uphill along the score (the gradient of $\ell$);
+**Newton's method** uses the curvature (the Hessian, the same second-derivative matrix that
+becomes Fisher information in [INFR-B3]) to take smarter steps, which for this likelihood is
+the classical *iteratively reweighted least squares* algorithm. @fig-logistic shows the climb.
+
+```{python}
+#| label: fig-logistic
+#| fig-cap: 'Maximum likelihood with no closed form: logistic regression. Data are $n=120$ points with binary outcomes whose success probability rises with $x$. **Left:** the fitted logistic curve $\sigma(\hat\beta_0+\hat\beta_1 x)$ (red) found by numerically maximizing $\ell$, over the 0/1 data (blue). **Right:** the value of the log-likelihood at each iteration of gradient ascent, climbing to a plateau — the numerical analogue of reaching the top of @fig-hill''s hill. The score equations have no algebraic solution, so we *climb* instead of *solve*; the destination is still the argmax of the likelihood.'
+# Generate logistic data
+n_log = 120
+x_log = rng.uniform(-3, 3, size=n_log)
+true_b0, true_b1 = -0.4, 1.3
+def sigmoid(z): return 1.0 / (1.0 + np.exp(-z))
+probs = sigmoid(true_b0 + true_b1 * x_log)
+y_log = (rng.uniform(size=n_log) < probs).astype(float)
+
+# Gradient ascent on the log-likelihood
+b0, b1 = 0.0, 0.0
+lr = 0.05
+ll_path = []
+for _ in range(400):
+    eta = b0 + b1 * x_log
+    mu = sigmoid(eta)
+    # log-likelihood (current)
+    eps = 1e-12
+    ll_path.append(np.sum(y_log*np.log(mu+eps) + (1-y_log)*np.log(1-mu+eps)))
+    # gradient of ell
+    g0 = np.sum(y_log - mu)
+    g1 = np.sum(x_log * (y_log - mu))
+    b0 += lr * g0 / n_log
+    b1 += lr * g1 / n_log
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.8))
+order = np.argsort(x_log)
+xs = np.linspace(-3.2, 3.2, 200)
+axL.scatter(x_log, y_log, color=DATA, s=22, alpha=0.6, label="data (0/1)")
+axL.plot(xs, sigmoid(b0 + b1 * xs), color=CURVE,
+         label=fr"$\sigma(\hat\beta_0+\hat\beta_1 x)$")
+axL.set_xlabel("$x$"); axL.set_ylabel(r"$P(y=1)$")
+axL.set_title("Fitted logistic model"); axL.legend(fontsize=9, framealpha=0.9, loc="center right")
+
+axR.plot(ll_path, color=ACCENT)
+axR.set_xlabel("gradient-ascent iteration"); axR.set_ylabel(r"$\ell(\beta_0,\beta_1)$")
+axR.set_title("Log-likelihood climbing to its peak")
+plt.tight_layout()
+print(f"true   (b0, b1) = ({true_b0}, {true_b1})")
+print(f"MLE    (b0, b1) = ({b0:.3f}, {b1:.3f})  [numerical]")
+```
+
+The fitted coefficients $(\hat\beta_0,\hat\beta_1)\approx(`{python} f"{b0:.2f}"`,
+`{python} f"{b1:.2f}"`)$ were not solved for — they were *climbed to*, and the right panel
+shows the log-likelihood rising to its plateau as the optimizer converges. Two cautions the
+closed-form cases hid. The numerical search needs the likelihood to be **concave** (a single
+hill) for the climb to find the *global* maximum; logistic regression's log-likelihood is
+concave, so any uphill method lands at the unique MLE, but other models (mixtures, neural
+nets) have many local maxima and the optimizer can stall on the wrong one. And convergence is
+not free: ill-conditioned or separable data can make the climb crawl or diverge. The full
+treatment of *how* to climb — step sizes, Newton vs. gradient, convergence guarantees — is the
+Optimization track's; this article only marks the handoff and insists the *target* is
+unchanged.
+
+::: {.callout-tip title="You might be asked"}
+*"If logistic regression has no closed-form MLE, how does `sklearn` or `statsmodels` give you
+coefficients instantly?"* They run a numerical optimizer under the hood — typically
+Newton-based **iteratively reweighted least squares** or a quasi-Newton method like L-BFGS —
+on the concave log-likelihood, iterating to convergence in a handful of steps. The "instant"
+answer is the converged $\hat\beta$ of exactly the climb in @fig-logistic. Knowing this
+matters in practice: when the optimizer warns of non-convergence (perfectly separable data
+sends $\hat\beta$ to infinity, because the likelihood keeps rising as the coefficients grow),
+that is not a bug — it is the likelihood telling you the MLE does not exist in the interior,
+which is why regularization (a penalty that pulls $\hat\beta$ back, the MAP estimate of
+[INFR-E4]) is the standard fix.
+:::
+
+# Failure modes and the edge of applicability {#sec-failure}
+
+Maximum likelihood is the default estimator for good reasons, but a graduate-level command
+means knowing precisely where it strains or breaks. We have already met two failures in the
+worked examples; here is the consolidated honest map.
+
+## The maximum may be on a boundary, or may not exist {#sec-boundary}
+
+The score equation assumes an interior maximum. When the true optimizer is on the edge of
+$\Theta$, the score there is generally nonzero and the equation misleads — the uniform model
+(@sec-uniform) and all-successes Bernoulli are the standard examples. Worse, the maximum may
+**fail to exist**: in separable logistic regression the likelihood increases without bound as
+$\|\beta\|\to\infty$, so there is no finite argmax. The honest move is to recognize the
+symptom (an optimizer that will not converge, coefficients running to infinity) and respond
+with a constraint or a penalty rather than reporting a spurious "estimate."
+
+## Non-identifiability: two parameters, one likelihood {#sec-nonident}
+
+A model is **non-identifiable** if distinct parameter values produce the *same* distribution
+of data — then the likelihood is flat along a whole direction (a ridge, not a peak), and the
+argmax is not unique. The textbook case is a two-component mixture
+$\frac12\mathcal N(\mu_1,1)+\frac12\mathcal N(\mu_2,1)$: swapping $\mu_1\leftrightarrow\mu_2$
+gives the identical density ("label switching"), so the likelihood has two equal maxima, and
+any optimizer will land at one arbitrarily. More insidiously, a model can be non-identifiable
+because a parameter has *no effect at all* on the data (a coefficient on a column of
+collinear predictors, the regression analogue), in which case the data simply cannot speak to
+it. Maximum likelihood cannot manufacture information the model does not encode; the fix is to
+re-specify the model so each parameter is identifiable.
+
+## Model misspecification: the right answer to the wrong question {#sec-misspec}
+
+This is the quietest and most dangerous failure, because nothing crashes. If the model family
+$f(\cdot\mid\theta)$ does not contain the truth — you fit a Poisson to overdispersed counts, a
+Normal to skewed data — the MLE still happily returns the $\theta$ that best fits *within the
+wrong family*. It converges (this is the theory of the **quasi-MLE**) to the parameter whose
+model is "closest" to the truth in a precise information-theoretic sense (minimizing the
+Kullback-Leibler divergence), but that limit is not a meaningful population quantity, and the
+usual standard errors ([INFR-B3]) are wrong. There is no internal alarm: the optimizer
+converges, you get tidy coefficients and confidence intervals, and they describe a model the
+data did not come from.
+
+::: {.callout-warning title="Pitfall"}
+**Maximum likelihood is only as honest as the model.** The method finds the best parameter
+*assuming your likelihood is the data-generating mechanism*. If the model is misspecified,
+the MLE faithfully optimizes the wrong objective and reports uncertainty as if the model were
+true — quietly, with no error. Always pair an MLE with a goodness-of-fit check (overlay the
+fitted model on the data, as in @fig-poisson; inspect residuals; compare to a richer model).
+The estimate's validity is inherited entirely from the model's validity.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"When is maximum likelihood the right tool, and when would you reach for something else?"*
+The summary you should be able to recite:
+
+- **Use it** when you can write down a credible likelihood for the data, the model is
+  identifiable, and the sample is not tiny. In that regime it is hard to beat: it uses all the
+  information in the data, it is asymptotically efficient and consistent ([INFR-B4]), it
+  transforms cleanly (invariance, @thm-invariance), and it generalizes to any model you can
+  write down — which is why all of Regression fits its models by maximum likelihood.
+- **Be careful** with small samples (the MLE can be badly biased, like the variance
+  @eq-norm-var), boundary parameters (the score equation fails, @sec-uniform), and
+  non-identifiable models (flat likelihood, @sec-nonident).
+- **Reach for something else** when the model is misspecified or you doubt the likelihood:
+  the **method of moments** for a quick assumption-light estimate; the **bootstrap**
+  ([INFR-E1]) to get uncertainty without trusting the parametric form; **robust M-estimators**
+  when outliers would dominate the likelihood; and **Bayesian** estimation ([INFR-E4]) when
+  you have genuine prior information or want to regularize the estimate (the MAP estimate,
+  which is penalized maximum likelihood).
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-B1 *The Likelihood*]**, which built $L(\theta)$, $\ell(\theta)$, and
+the score $\ell'(\theta)$ — the dial. This article set the dial: maximum likelihood reports
+the $\theta$ that turns the data's probability up to the most. From here the Likelihood Spine
+continues, and each next article answers a question this one raised:
+
+- **[INFR-B3 *Fisher Information*]** — we kept noting that *how sharply* the log-likelihood
+  bends at its peak matters. That curvature, $-\ell''(\hat\theta)$, is the Fisher information,
+  and it sets the best precision any estimator can achieve (the Cramér-Rao bound). It is the
+  second-order companion to this article's first-order condition.
+- **[INFR-B4 *Why Maximum Likelihood Works*]** — the MLE is a random variable ([INFR-A1]); what
+  is its sampling distribution? B4 proves the MLE is *consistent* (converges to the truth) and
+  *asymptotically normal* with variance $1/I$ — the payoff that makes the curvature of B3 into
+  a standard error, and that justifies calling the MLE optimal.
+- **[INFR-C3 *Likelihood Intervals*]** and **[INFR-D3 *The Asymptotic Trinity*]** — turn the
+  MLE and its curvature into confidence intervals (Wald, profile) and tests (likelihood-ratio,
+  Wald, score). These are the inferential outputs the whole track was building toward.
+- **The Regression track** consumes this article wholesale: fitting a linear model is Gaussian
+  maximum likelihood (which is why it equals least squares, derived in [REGR-01]); fitting a
+  logistic or Poisson GLM is the numerical maximum likelihood of @sec-numerical.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **The founding source.** R. A. Fisher, "On the Mathematical Foundations of Theoretical
+  Statistics," *Philosophical Transactions of the Royal Society A* 222 (1922) — the paper that
+  introduced maximum likelihood, the word *likelihood*, and the program of founding estimation
+  on it. Fisher's 1925 *Statistical Methods for Research Workers* carried it to practitioners.
+- **The invariance subtlety.** The clean theorem (@thm-invariance) for non-invertible $g$ rests
+  on the *induced/profile likelihood* definition; Zehna (1966) gave the standard short
+  treatment, and any graduate text (Casella & Berger, *Statistical Inference*, §7.2) develops
+  it carefully.
+- **The misspecification theory.** Halbert White's "Maximum Likelihood Estimation of
+  Misspecified Models," *Econometrica* 50 (1982), is the rigorous account of what the MLE
+  converges to when the model is wrong (the quasi-MLE and the "sandwich" standard error) —
+  the formal backbone of @sec-misspec.
+- **Open threads this article deferred.** *How precise is $\hat\theta$, exactly?* — the
+  curvature story of [INFR-B3] and the asymptotic-normality story of [INFR-B4]. *How do we
+  actually run the numerical climb of @sec-numerical?* — Newton's method, gradient ascent, and
+  IRLS in the Optimization track. *What if we treat $\theta$ as random and have prior beliefs?*
+  — the Bayesian turn of [INFR-E4], where the MAP estimate is maximum likelihood with a penalty.

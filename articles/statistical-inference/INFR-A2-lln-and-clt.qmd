@@ -1,0 +1,1057 @@
+---
+title: "Two Theorems That Make Statistics Possible: LLN and the CLT"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+rng = np.random.default_rng(20240607)
+
+DATA   = "#2b3a67"     # samples / histograms
+LIMIT  = "#c1121f"     # the limiting object (truth, normal curve)
+ACCENT = "#0a7d4d"     # highlights / exact values
+GREY   = "#6c757d"
+
+def normal_pdf(t, mu=0.0, sigma=1.0):
+    """The Gaussian density — used only to overlay the CLT's prediction."""
+    return np.exp(-0.5 * ((t - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+```
+
+> **Where this sits in the track.** This is the second article in the **Foundations of
+> Estimation** movement, and it is the theoretical hinge the whole track swings on. It
+> assumes [INFR-A1 *The Estimator as a Random Variable*], which established that a statistic
+> like the sample mean is itself a random variable with a **sampling distribution**, and
+> that its standard deviation — the **standard error** — measures how much the estimate
+> wobbles from sample to sample. INFR-A1 left two promissory notes open: *why does the
+> wobble shrink as we collect more data*, and *what shape does the wobble take*. This
+> article pays both. It borrows three results, each built from scratch elsewhere and
+> imported here only by name: **Chebyshev's inequality** [PROB-19], the
+> **moment-generating / characteristic function** and its uniqueness and Taylor properties
+> [PROB-20], and the **modes of convergence** — convergence in probability and in
+> distribution — together with **Lévy's continuity theorem** and **Slutsky's theorem**
+> [PROB-21]. It **sets up** the rest of the track: the CLT-based confidence interval
+> [INFR-C1], the asymptotic normality of the maximum-likelihood estimator [INFR-B4], and the
+> null distributions of the workhorse test statistics [INFR-D2]. Everything downstream that
+> says "approximately normal" or "the standard error is $\sigma/\sqrt n$" traces back to the
+> two theorems proved here.
+
+## Abstract {.unnumbered}
+
+All of frequentist statistics rests on two limit theorems, and this article proves both
+with nothing above a Calculus-I floor. The **Law of Large Numbers** says the sample mean of
+$n$ independent measurements converges to the true mean as $n$ grows — *averaging more data
+homes in on the truth*. We prove the weak form in three lines from Chebyshev's inequality
+and read off the rate for free: the probability of a miss shrinks like $1/n$. The **Central
+Limit Theorem** says that once you subtract that true mean and magnify the leftover wobble
+by exactly $\sqrt n$, the distribution of the result settles onto a single universal shape —
+the Gaussian — *no matter what distribution the data came from*. We prove it by following
+the moment-generating function through the limit and watching every distribution's
+fingerprint collapse to the same bell curve, and we derive *why the magnification factor is
+$\sqrt n$ and not $n$ or $\sqrt[3]{n}$*. The single claim the article defends is that these
+two theorems are what make a sample mean *usable*: the LLN says it is eventually right, the
+CLT says exactly how uncertain it is along the way. We close at the honest edge — a
+heavy-tailed sample where the magnification is too slow to trust, and a Cauchy sample where
+the mean is the wrong target and both theorems fail outright — so the reader leaves knowing
+not just the theorems but their boundary.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+Let $X_1, X_2, \dots$ be independent draws from a distribution with mean $\mu$ and finite
+variance $\sigma^2$, and let $\bar X_n = \frac1n\sum_{i=1}^n X_i$ be the sample mean.
+
+**Law of Large Numbers (weak form).** The sample mean converges *in probability* to the
+truth:
+$$
+\bar X_n \xrightarrow{\;P\;} \mu
+\qquad\text{i.e.}\qquad
+P\bigl(|\bar X_n - \mu| \ge \varepsilon\bigr)\to 0
+\ \text{ for every } \varepsilon>0.
+$$
+*More data makes the average reliably close to the true mean.*
+
+**Central Limit Theorem.** The *re-centered, re-scaled* sample mean converges *in
+distribution* to a standard Gaussian:
+$$
+\frac{\bar X_n - \mu}{\sigma/\sqrt n}
+\;=\;
+\frac{\sqrt n\,(\bar X_n - \mu)}{\sigma}
+\xrightarrow{\;d\;}
+\mathcal N(0,1).
+$$
+*Whatever the data's distribution, the estimation error is approximately Gaussian, and its
+typical size is $\sigma/\sqrt n$.*
+
+The LLN tells you the estimate is eventually **right**; the CLT tells you, along the way,
+exactly **how wrong** it is likely to be — and that the answer wears the same bell-shaped
+suit no matter what you sampled.
+:::
+
+Everything orbits that box. The LLN is the promise that estimation is even possible — that
+collecting data is not futile. The CLT is the promise that we can put a number on our
+remaining ignorance, the *standard error* $\sigma/\sqrt n$, and that the number means the
+same thing (a Gaussian spread) across wildly different problems. The two together are why a
+single piece of machinery — *estimate $\pm$ a multiple of the standard error* — works for
+the mean of incomes, the proportion of voters, the average lifetime of a part, and a
+thousand other things that share no other family resemblance.
+
+# Why we are doing this: the problem that forced the theorems {#sec-why}
+
+Hold one question in view for the whole article: **why is a sample mean trustworthy, and
+how trustworthy is it?** INFR-A1 made the danger vivid. A sample mean is a *random
+variable*: collect a different sample and you get a different number. So when a pollster
+reports "$52\%$ support," that $52$ is one draw from a distribution of possible answers. Two
+worries follow immediately, and a working statistic must answer both.
+
+1. **Does the noise wash out?** If I keep collecting data, does my estimate settle down
+   toward the real answer, or could it wander forever? Without a guarantee here, more data
+   is not obviously better, and statistics has no foundation.
+2. **How big is the remaining error, and what does it look like?** Even granting that the
+   estimate settles, at any finite sample size there is a gap between estimate and truth. To
+   report honest uncertainty — a margin of error, a confidence interval — I need the
+   *distribution* of that gap, not just a vague sense that it is "small."
+
+The first worry is answered by the **Law of Large Numbers**, the second by the **Central
+Limit Theorem**. They are not abstract ornaments; they are the two load-bearing beams under
+every standard error, every confidence interval, and every p-value in the rest of this
+track.
+
+## A little history, because it carries the why {#sec-history}
+
+The LLN is the older idea. **Jacob Bernoulli**, in *Ars Conjectandi* (published
+posthumously in 1713), proved the first version for coin-flip proportions and called it his
+"golden theorem." His motivation was exactly worry (1): he wanted to justify *learning a
+probability from its observed frequency* — that if you flip a biased coin enough times, the
+observed fraction of heads will, with near-certainty, sit as close as you please to the true
+bias. Bernoulli grasped that this needed *proof*, not assumption; it is the mathematical
+license for the entire empirical enterprise of estimating an unknown chance from data.
+
+The CLT took longer and answers worry (2). **Abraham de Moivre** (1733) found that the
+binomial distribution, suitably scaled, was approximated by the bell curve — the first
+central limit result, for coin flips only. **Pierre-Simon Laplace** generalized it, and
+**Carl Friedrich Gauss** tied the same curve to measurement error (which is why we call it
+*Gaussian*). But the clean modern statement — *any* distribution with finite variance,
+scaled by $\sqrt n$, becomes Gaussian — was nailed down by **Aleksandr Lyapunov** (1901)
+and **Jarl Lindeberg** (1922), using exactly the characteristic-function machinery we will
+borrow. The name "central limit theorem" is **George Pólya's** (1920): *central* not because
+it is in the middle of anything, but because it is *central to the subject* — the theorem
+the whole field is organized around.
+
+That history is the *why* in one sentence: **Bernoulli made estimation possible; de
+Moivre–Laplace–Gauss made its uncertainty quantifiable.** Keep that split in mind — it is
+exactly the LLN/CLT split of the Core — and every step below will feel like an answer to one
+of the two original worries rather than an arbitrary manipulation.
+
+::: {.callout-tip title="You might be asked"}
+*"In one breath, what is the difference between the LLN and the CLT?"* The LLN is a statement
+about a **point**: $\bar X_n$ collapses onto the single number $\mu$. The CLT is a statement
+about a **shape**: the *fluctuations of $\bar X_n$ around $\mu$*, blown up by $\sqrt n$,
+spread out into a Gaussian. The LLN kills the variability ($\operatorname{Var}(\bar X_n)\to
+0$); the CLT looks at that vanishing variability under a microscope tuned to exactly the
+right magnification and finds universal structure in it. One says *where* the estimate goes;
+the other says *how* it gets there.
+:::
+
+# Intuition before symbols {#sec-intuition}
+
+Before any proof, two pictures.
+
+**The LLN picture: a shrinking cloud.** Imagine running the experiment "average $n$ draws"
+over and over for a fixed $n$, and plotting where $\bar X_n$ lands each time. You get a cloud
+of points centered on $\mu$. INFR-A1 already told us this cloud has standard deviation
+$\sigma/\sqrt n$ — the standard error. As $n$ grows, $\sigma/\sqrt n$ shrinks, so the cloud
+tightens around $\mu$. The LLN is the statement that the cloud tightens *all the way to a
+point*: for any window around $\mu$, however narrow, eventually essentially all of the cloud
+is inside it. @fig-lln-funnel shows a single long run of $\bar X_n$ as $n$ climbs, funneling
+in on the truth.
+
+```{python}
+#| label: fig-lln-funnel
+#| fig-cap: 'The Law of Large Numbers as a funnel. For each of five independent experiments we draw a long stream from an Exponential distribution with true mean $\mu=2$ (a skewed, decidedly non-normal source) and plot the running average $\bar X_n$ against $n$ on a log axis. Every path is jittery at small $n$ but is squeezed toward the true mean (red line) as $n$ grows. The grey band is $\mu \pm 2\sigma/\sqrt n$, the $\pm 2$ standard-error envelope from INFR-A1; the paths stay inside it about as often as the CLT will later predict, and the band itself narrows like $1/\sqrt n$.'
+mu_true = 2.0
+sigma_true = 2.0           # Exponential(rate 1/2): mean = sd = 2
+N = 4000
+ns = np.arange(1, N + 1)
+
+fig, ax = plt.subplots()
+for k in range(5):
+    draws = rng.exponential(scale=mu_true, size=N)
+    running = np.cumsum(draws) / ns
+    ax.plot(ns, running, color=DATA, alpha=0.55, lw=1.0)
+ax.axhline(mu_true, color=LIMIT, lw=2.0, label=r"true mean $\mu=2$")
+ax.fill_between(ns, mu_true - 2 * sigma_true / np.sqrt(ns),
+                mu_true + 2 * sigma_true / np.sqrt(ns),
+                color=GREY, alpha=0.22, label=r"$\mu \pm 2\sigma/\sqrt{n}$")
+ax.set_xscale("log")
+ax.set_xlabel("sample size $n$ (log scale)")
+ax.set_ylabel(r"running average $\bar X_n$")
+ax.set_ylim(0.5, 3.5)
+ax.set_title("Five running averages funnel onto the truth")
+ax.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+```
+
+**The CLT picture: a shape that forgets where it came from.** Now stop letting the cloud
+collapse. Instead, after each averaging, *re-magnify* the leftover gap $\bar X_n - \mu$ by
+$\sqrt n$ — just enough to undo the shrinking — and histogram the magnified gaps. The
+astonishing fact is that this histogram converges to a fixed bell curve, and the bell curve
+is the *same* whether the raw draws were coin flips, exponential waiting times, or dice
+rolls. The lumpiness of the source distribution gets ironed out by averaging.
+@fig-clt-emergence shows the bell curve emerging from a wildly non-normal source as $n$
+grows.
+
+```{python}
+#| label: fig-clt-emergence
+#| fig-cap: 'The Central Limit Theorem in action, from a source that looks nothing like a bell. The raw data are draws from a *discrete* distribution on $\{0,1,10\}$ with probabilities $(0.6, 0.3, 0.1)$ — lumpy and right-skewed (top-left). We form the standardized sample mean $Z_n=\sqrt n\,(\bar X_n-\mu)/\sigma$ and histogram $30{,}000$ independent values of it for $n=2,10,50$. The histograms march toward the standard normal density (red), forgetting the three spikes they came from. The convergence is in *distribution*: the shape settles, even though the underlying draws never become continuous.'
+vals = np.array([0.0, 1.0, 10.0])
+probs = np.array([0.6, 0.3, 0.1])
+mu = np.sum(vals * probs)
+var = np.sum(probs * (vals - mu) ** 2)
+sigma = np.sqrt(var)
+
+def standardized_means(n, reps=30000):
+    draws = rng.choice(vals, size=(reps, n), p=probs)
+    means = draws.mean(axis=1)
+    return np.sqrt(n) * (means - mu) / sigma
+
+fig, axes = plt.subplots(2, 2, figsize=(8.6, 6.2))
+grid = np.linspace(-4, 4, 200)
+
+axes[0, 0].bar(vals, probs, width=0.5, color=DATA)
+axes[0, 0].set_title("Raw source: spikes at 0, 1, 10")
+axes[0, 0].set_xlabel("value"); axes[0, 0].set_ylabel("probability")
+axes[0, 0].grid(False)
+
+for ax, n in zip([axes[0, 1], axes[1, 0], axes[1, 1]], [2, 10, 50]):
+    z = standardized_means(n)
+    ax.hist(z, bins=60, density=True, color=DATA, alpha=0.75,
+            range=(-4, 4))
+    ax.plot(grid, normal_pdf(grid), color=LIMIT, lw=2.0)
+    ax.set_title(fr"standardized mean, $n={n}$")
+    ax.set_xlabel(r"$Z_n$"); ax.set_ylabel("density")
+plt.tight_layout()
+```
+
+Notice already, in the top-right panel of @fig-clt-emergence, that $n=2$ is *not* yet
+Gaussian — the skew of the source still shows. That lag is the honest subject of
+@sec-finite-sample. The theorem is a statement about the *limit*; how fast a real, finite
+sample approaches it depends on how ugly the source is.
+
+# The Law of Large Numbers {#sec-lln}
+
+We prove the weak law first, because it is short, exact, and hands us the convergence rate
+for free. It rests entirely on one imported inequality.
+
+## The one imported tool: Chebyshev {#sec-cheby}
+
+::: {#thm-chebyshev}
+**Chebyshev's inequality (imported from [PROB-19]).** Let $Y$ be any random variable with
+finite mean $E[Y]$ and finite variance $\operatorname{Var}(Y)$. Then for every $\varepsilon>0$,
+$$
+P\bigl(|Y - E[Y]| \ge \varepsilon\bigr) \;\le\; \frac{\operatorname{Var}(Y)}{\varepsilon^2}.
+$$
+:::
+
+This is the single result we borrow for the LLN, and [PROB-19] derives it from scratch (it
+is two lines from Markov's inequality applied to $(Y-E[Y])^2$). We do not re-prove it; we
+*flag* it as imported and use its statement. In words: a random variable rarely lands many
+"variance-widths" from its mean, and the probability of a large miss is bounded by the
+variance divided by the square of the miss size — *no knowledge of $Y$'s shape required*.
+That distribution-freeness is exactly why it works for the sample mean of an *arbitrary*
+source.
+
+## Two facts about the sample mean we need {#sec-mean-moments}
+
+To apply Chebyshev to $Y = \bar X_n$ we need its mean and variance. Both were established in
+INFR-A1, but they are short enough to re-derive here so nothing is implicit, using only the
+linearity of expectation and the variance-of-a-sum rule for independent variables (both
+built in the Probability track, [PROB-05] and [PROB-08]).
+
+Let $X_1,\dots,X_n$ be independent, each with mean $\mu$ and variance $\sigma^2$, and write
+$\bar X_n = \frac1n\sum_{i=1}^n X_i$.
+
+**Its mean.** Expectation is linear — $E[aX+bY]=aE[X]+bE[Y]$ — so the expectation of a sum is
+the sum of expectations and constants pull out:
+$$
+E[\bar X_n]
+= E\!\left[\frac1n\sum_{i=1}^n X_i\right]
+= \frac1n\sum_{i=1}^n E[X_i]
+= \frac1n\sum_{i=1}^n \mu
+= \frac1n\,(n\mu)
+= \mu.
+$$ {#eq-mean-of-mean}
+
+So $\bar X_n$ is **unbiased**: on average it equals the truth. This is half of why averaging
+is sensible — it does not systematically over- or under-shoot.
+
+**Its variance.** Two rules. First, scaling a random variable by a constant $c$ multiplies
+its variance by $c^2$, because variance is built from squared deviations:
+$\operatorname{Var}(cZ)=E[(cZ-cE[Z])^2]=c^2E[(Z-E[Z])^2]=c^2\operatorname{Var}(Z)$. Second,
+for **independent** variables the variance of a sum is the sum of the variances (the
+cross-terms $E[(X_i-\mu)(X_j-\mu)]$ vanish for $i\ne j$ under independence — derived in
+[PROB-08]). Apply both, with $c=1/n$:
+$$
+\operatorname{Var}(\bar X_n)
+= \operatorname{Var}\!\left(\frac1n\sum_{i=1}^n X_i\right)
+= \frac{1}{n^2}\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right)
+= \frac{1}{n^2}\sum_{i=1}^n \operatorname{Var}(X_i)
+= \frac{1}{n^2}\,(n\sigma^2)
+= \frac{\sigma^2}{n}.
+$$ {#eq-var-of-mean}
+
+There it is — the fact the whole article hangs on. **The variance of the sample mean is
+$\sigma^2/n$, so its standard deviation, the standard error, is $\sigma/\sqrt n$.** It
+shrinks to zero as $n\to\infty$. The $\sqrt n$ in the denominator (from the square root of
+the $n$ in @eq-var-of-mean) is the same $\sqrt n$ that will reappear as the CLT's
+magnification factor; that is no coincidence, and we will see why in @sec-why-root-n.
+
+## The weak law, proved {#sec-wlln-proof}
+
+::: {#thm-wlln}
+**Weak Law of Large Numbers.** Let $X_1,X_2,\dots$ be independent random variables, each with
+the same mean $\mu$ and the same finite variance $\sigma^2$. Then the sample mean converges
+to $\mu$ *in probability*: for every $\varepsilon>0$,
+$$
+P\bigl(|\bar X_n - \mu| \ge \varepsilon\bigr)\;\longrightarrow\;0
+\qquad\text{as } n\to\infty.
+$$
+:::
+
+::: {.proof}
+The entire proof is: *apply Chebyshev to $\bar X_n$.* We have everything we need —
+@eq-mean-of-mean says $E[\bar X_n]=\mu$, and @eq-var-of-mean says
+$\operatorname{Var}(\bar X_n)=\sigma^2/n$. Substitute $Y=\bar X_n$ into @thm-chebyshev. Its
+mean $E[Y]$ is $\mu$, so the event $\{|Y-E[Y]|\ge\varepsilon\}$ is exactly
+$\{|\bar X_n-\mu|\ge\varepsilon\}$, and its variance is $\sigma^2/n$:
+$$
+P\bigl(|\bar X_n - \mu| \ge \varepsilon\bigr)
+\;\le\; \frac{\operatorname{Var}(\bar X_n)}{\varepsilon^2}
+\;=\; \frac{\sigma^2/n}{\varepsilon^2}
+\;=\; \frac{\sigma^2}{n\,\varepsilon^2}.
+$$ {#eq-wlln-bound}
+
+Now fix $\varepsilon>0$ and let $n\to\infty$. The right-hand side $\dfrac{\sigma^2}{n\varepsilon^2}$
+has $\sigma^2$ and $\varepsilon^2$ fixed and $n$ in the denominator, so it is a constant over
+$n$ and tends to $0$. The left-hand side is a probability, so it is squeezed between $0$ and
+that vanishing bound:
+$$
+0 \;\le\; P\bigl(|\bar X_n - \mu| \ge \varepsilon\bigr) \;\le\; \frac{\sigma^2}{n\,\varepsilon^2}
+\;\xrightarrow[n\to\infty]{}\; 0.
+$$
+By the squeeze, the middle term tends to $0$. Since $\varepsilon>0$ was arbitrary, this is
+exactly the definition of convergence in probability ([PROB-21]): $\bar X_n\xrightarrow{P}\mu$.
+$\qquad\blacksquare$
+:::
+
+Three lines, and worry (1) from @sec-why is settled: **average enough independent
+measurements and the average is, with overwhelming probability, as close to the truth as you
+like.** Two observations make this proof worth more than its length.
+
+**First — the rate is free.** The bound @eq-wlln-bound is not just qualitative. To force the
+miss probability below a target $\delta$, set $\sigma^2/(n\varepsilon^2)\le\delta$ and solve:
+$$
+n \;\ge\; \frac{\sigma^2}{\varepsilon^2\,\delta}.
+$$ {#eq-lln-rate}
+So to be within $\varepsilon$ of the truth with probability $1-\delta$, it *suffices* to take
+$n$ at least $\sigma^2/(\varepsilon^2\delta)$ samples. This is a genuine, if conservative,
+sample-size rule that falls straight out of the proof. (It is conservative precisely because
+Chebyshev is conservative — @sec-finite-sample and the CLT give a much sharper count when the
+source is well-behaved.)
+
+**Second — what we did and did not assume.** We assumed a finite variance $\sigma^2$ and
+independence. We did *not* assume any particular distribution: not normal, not symmetric, not
+continuous. The Exponential paths in @fig-lln-funnel and the three-spike source in
+@fig-clt-emergence both obey this law for the same reason. That universality is the point.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between the weak law and the strong law?"* The **weak** law (what we
+proved) says $\bar X_n\xrightarrow{P}\mu$: for each fixed large $n$, the probability that
+*this* $\bar X_n$ is far from $\mu$ is small. The **strong** law says
+$\bar X_n\xrightarrow{a.s.}\mu$ — *almost-sure* convergence — that with probability one the
+*entire sequence* $\bar X_1,\bar X_2,\dots$ settles down and never wanders far again. The
+strong law is genuinely stronger (almost-sure convergence implies convergence in probability;
+[PROB-21] proves the hierarchy and that it does not reverse), and its standard proofs need
+more machinery — fourth moments, or the Borel–Cantelli lemma, or Kolmogorov's inequality —
+which is why the weak law, provable in three lines from Chebyshev, is the one we lean on. For
+the working statistician the practical content is the same: more data, better estimate. The
+distinction matters when you reason about a *single long run* of an algorithm (strong law)
+versus a *fixed sample size repeated* (weak law).
+:::
+
+::: {.callout-warning title="Pitfall"}
+**The LLN does not say later draws "compensate" for earlier ones — that is the gambler's
+fallacy.** After a run of ten heads, the LLN does *not* push the coin toward tails to "balance
+out." The draws are independent; the coin has no memory. What actually happens is *dilution*,
+not compensation: the early imbalance becomes a smaller and smaller fraction of an
+ever-larger total. Ten extra heads out of $20$ flips is a $50\%$ surplus; ten extra heads out
+of $20{,}000$ flips is a $0.05\%$ surplus. The sum of deviations need not shrink — in fact it
+typically grows like $\sqrt n$, which is precisely the CLT — but *divided by $n$* it vanishes.
+The average converges because the denominator outruns the numerator, not because the future
+corrects the past.
+:::
+
+## Sanity-checking the rate against the bound {#sec-lln-numeric}
+
+The bound @eq-wlln-bound is exact arithmetic, so we can watch a simulated miss probability sit
+under it. @fig-lln-bound does this for the three-spike source of @fig-clt-emergence.
+
+```{python}
+#| label: fig-lln-bound
+#| fig-cap: 'Chebyshev''s bound on the LLN, checked by simulation. For the three-spike source ($\mu, \sigma^2$ as computed in @fig-clt-emergence) and a fixed tolerance $\varepsilon=0.5$, the blue dots are the simulated $P(|\bar X_n-\mu|\ge\varepsilon)$ over $20{,}000$ replicates at each $n$; the red curve is the Chebyshev bound $\sigma^2/(n\varepsilon^2)$. The bound always sits above the truth (it must — it is a theorem) and both march to zero like $1/n$. The gap is the price of distribution-freeness: Chebyshev knows only the variance, so it cannot exploit the source''s actual shape.'
+vals = np.array([0.0, 1.0, 10.0])
+probs = np.array([0.6, 0.3, 0.1])
+mu = np.sum(vals * probs)
+var = np.sum(probs * (vals - mu) ** 2)
+eps = 0.5
+
+n_grid = np.array([5, 10, 20, 40, 80, 160, 320, 640])
+emp = []
+for n in n_grid:
+    draws = rng.choice(vals, size=(20000, n), p=probs)
+    means = draws.mean(axis=1)
+    emp.append(np.mean(np.abs(means - mu) >= eps))
+emp = np.array(emp)
+bound = var / (n_grid * eps ** 2)
+
+fig, ax = plt.subplots()
+ax.plot(n_grid, bound, color=LIMIT, marker="o", label=r"Chebyshev bound $\sigma^2/(n\varepsilon^2)$")
+ax.plot(n_grid, emp, color=DATA, marker="s", label=r"simulated $P(|\bar X_n-\mu|\geq\varepsilon)$")
+ax.set_xscale("log"); ax.set_yscale("log")
+ax.set_xlabel("sample size $n$ (log scale)")
+ax.set_ylabel(r"miss probability (log scale)")
+ax.set_title(r"The bound dominates the truth, both $\sim 1/n$")
+ax.legend(framealpha=0.9)
+plt.tight_layout()
+```
+
+The bound is loose — often by an order of magnitude — but it is *valid for every $n$* and
+needs nothing but the variance. That is the recurring trade we will see again: distribution-
+free guarantees (Chebyshev, the LLN) are robust but conservative; distributional results (the
+CLT, next) are sharp but lean on an assumption.
+
+# The Central Limit Theorem {#sec-clt}
+
+The LLN crushed the variability of $\bar X_n$ to zero. The CLT puts that vanishing
+variability under a microscope and finds a universal shape. We first settle the question the
+LLN already poses — *why magnify by $\sqrt n$?* — then state and prove the theorem.
+
+## Why the magnification is exactly $\sqrt n$ {#sec-why-root-n}
+
+The CLT studies the gap $\bar X_n - \mu$. By the LLN this gap collapses to $0$, so to see any
+structure we must blow it up by some factor $a_n\to\infty$ and ask: which $a_n$ gives a
+*non-degenerate* limit — neither exploding to infinity nor collapsing to a spike at $0$? The
+answer is forced by matching the variance, and we can find it before proving anything.
+
+Consider the scaled gap $a_n(\bar X_n-\mu)$. Its mean is $a_n\cdot 0 = 0$ (using
+@eq-mean-of-mean). Its variance, using $\operatorname{Var}(cZ)=c^2\operatorname{Var}(Z)$ and
+@eq-var-of-mean, is
+$$
+\operatorname{Var}\!\bigl(a_n(\bar X_n-\mu)\bigr)
+= a_n^2\,\operatorname{Var}(\bar X_n)
+= a_n^2\cdot\frac{\sigma^2}{n}
+= \sigma^2\,\frac{a_n^2}{n}.
+$$
+For the limit to be non-degenerate, this variance must approach a *finite, nonzero* constant
+— if it went to $0$ the scaled gap would collapse to a spike at $0$ (we would not have
+magnified enough), and if it went to $\infty$ the distribution would spread out forever (too
+much magnification). A finite nonzero limit requires $a_n^2/n$ to settle on a constant, i.e.
+$a_n^2\propto n$, i.e.
+$$
+a_n \propto \sqrt n.
+$$
+Choosing $a_n=\sqrt n$ exactly makes the variance equal to $\sigma^2$:
+$$
+\operatorname{Var}\!\bigl(\sqrt n\,(\bar X_n-\mu)\bigr) = \sigma^2 \quad\text{for every } n.
+$$ {#eq-root-n-var}
+So $\sqrt n$ is the *unique* magnification (up to a constant) that keeps the spread fixed as
+$n$ grows. Dividing additionally by $\sigma$ standardizes the variance to $1$, giving the
+quantity in the Core,
+$$
+Z_n \;=\; \frac{\sqrt n\,(\bar X_n - \mu)}{\sigma}, \qquad E[Z_n]=0,\quad \operatorname{Var}(Z_n)=1.
+$$ {#eq-Zn}
+The CLT will say $Z_n\xrightarrow{d}\mathcal N(0,1)$. Matching the variance, as we just did,
+pins down the *scaling* and the *mean and variance* of the limit; what it cannot tell us is
+the *shape*. That the shape is Gaussian — and the same Gaussian regardless of the source — is
+the content of the theorem, and it needs the moment-generating function to prove.
+
+::: {.callout-tip title="You might be asked"}
+*"Why $\sqrt n$ and not $n$?"* Because the standard error scales like $1/\sqrt n$
+(@eq-var-of-mean), so to undo the shrinking and hold the spread fixed you must multiply by
+$\sqrt n$. Multiply by the full $n$ and you over-correct: the variance becomes
+$\sigma^2 n\to\infty$ and the distribution blows apart. Multiply by less and you under-correct
+and get a spike. The $\sqrt n$ is the Goldilocks rate, and it is *the same* $\sqrt n$ that
+shows up in the standard error $\sigma/\sqrt n$ and in the $\sqrt n$ growth of the *sum*'s
+fluctuations — three faces of the one $1/n$ in the variance of the mean.
+:::
+
+## The second imported tool: the moment-generating function {#sec-mgf}
+
+For the LLN, Chebyshev was enough. For the CLT we need a tool that controls *shape*, not just
+spread, and that turns the sum inside $\bar X_n$ into something manageable. That tool is the
+**moment-generating function (MGF)**, built in full in [PROB-20]. We import three facts.
+
+::: {#def-mgf}
+**Definition (MGF, imported from [PROB-20]).** The moment-generating function of a random
+variable $X$ is $M_X(t)=E\!\left[e^{tX}\right]$, defined for $t$ in an open interval around
+$0$ where the expectation is finite.
+:::
+
+The three imported properties, each derived from scratch in [PROB-20], are these.
+
+**(P1) Taylor expansion in terms of moments ([PROB-20], @thm-moments there).** Where it
+exists, the MGF has the expansion about $t=0$
+$$
+M_X(t) = 1 + E[X]\,t + \frac{E[X^2]}{2}\,t^2 + \frac{E[X^3]}{6}\,t^3 + \cdots,
+$$
+because $e^{tX}=\sum_k (tX)^k/k!$ and expectation passes through the series term by term, so
+the coefficient of $t^k$ is the $k$-th moment $E[X^k]/k!$. We need only the first three terms.
+
+**(P2) The MGF of a sum of independent variables is the product of their MGFs ([PROB-20]).**
+If $X$ and $Y$ are independent, $e^{t(X+Y)}=e^{tX}e^{tY}$, and independence lets the
+expectation of the product split into the product of expectations:
+$M_{X+Y}(t)=E[e^{tX}e^{tY}]=E[e^{tX}]E[e^{tY}]=M_X(t)M_Y(t)$. This is the property that makes
+the MGF the natural tool for a *sum* — and the sample mean is a scaled sum.
+
+**(P3) Uniqueness and continuity (the convergence bridge).** If the MGFs $M_{Z_n}(t)$
+converge, for every $t$ in a neighborhood of $0$, to the MGF $M_Z(t)$ of a random variable
+$Z$, then $Z_n\xrightarrow{d}Z$ — convergence of MGFs implies convergence in distribution.
+This is the moment-generating-function form of **Lévy's continuity theorem** ([PROB-21],
+@thm-levy, stated there for characteristic functions); it is the rigorous bridge from "the
+transforms match in the limit" to "the distributions match in the limit," and rests on the
+**uniqueness theorem** that an MGF determines its distribution ([PROB-20], @thm-uniqueness).
+
+::: {.callout-note title="A note on rigor: MGF versus characteristic function"}
+The cleanest fully general proof of the CLT uses the **characteristic function**
+$\varphi_X(t)=E[e^{itX}]$ instead of the MGF, because $\varphi_X$ exists for *every*
+distribution with finite variance, whereas $M_X$ can fail to exist (heavy-tailed laws have no
+MGF). The two arguments are *identical line for line* — replace $t$ by $it$ throughout — and
+[PROB-20] builds both. We run the proof with the MGF because the algebra reads more cleanly to
+a rusty eye and the logic is unchanged; the characteristic-function version, which removes the
+"assume the MGF exists" caveat, is the one a measure-theory course would insist on. We flag
+this honestly rather than hide it: the *theorem* needs only finite variance; our *proof*, as
+written, additionally assumes the MGF exists near $0$, and the cf-version lifts that crutch.
+:::
+
+## The theorem, and its proof {#sec-clt-proof}
+
+::: {#thm-clt}
+**Central Limit Theorem (i.i.d. case).** Let $X_1,X_2,\dots$ be independent and identically
+distributed with mean $\mu$ and finite, nonzero variance $\sigma^2$. Then
+$$
+Z_n \;=\; \frac{\sqrt n\,(\bar X_n - \mu)}{\sigma}
+\;=\; \frac{1}{\sqrt n}\sum_{i=1}^n \frac{X_i-\mu}{\sigma}
+\;\xrightarrow{\;d\;}\; \mathcal N(0,1).
+$$
+:::
+
+Before the proof, confirm the two forms of $Z_n$ agree. Starting from the middle expression
+and writing $\bar X_n=\frac1n\sum X_i$:
+$$
+\frac{\sqrt n\,(\bar X_n-\mu)}{\sigma}
+= \frac{\sqrt n}{\sigma}\left(\frac1n\sum_{i=1}^n X_i - \mu\right)
+= \frac{\sqrt n}{\sigma}\cdot\frac1n\sum_{i=1}^n (X_i-\mu)
+= \frac{1}{\sigma\sqrt n}\sum_{i=1}^n (X_i-\mu)
+= \frac{1}{\sqrt n}\sum_{i=1}^n \frac{X_i-\mu}{\sigma},
+$$
+using $\sqrt n/n = 1/\sqrt n$ and distributing $\mu = \frac1n\sum\mu$ inside the sum. The
+right-hand form shows $Z_n$ as a *normalized sum of i.i.d. standardized pieces*, which is
+exactly the shape the MGF was built to handle.
+
+::: {.proof}
+**Step 0 — standardize the summands.** Define
+$$
+W_i = \frac{X_i - \mu}{\sigma}.
+$$
+The $W_i$ are i.i.d. (a fixed shift and scale of i.i.d. variables), and they are
+*standardized*: by linearity of expectation $E[W_i]=\frac{E[X_i]-\mu}{\sigma}=\frac{\mu-\mu}
+{\sigma}=0$, and by the scaling rule for variance
+$\operatorname{Var}(W_i)=\frac{1}{\sigma^2}\operatorname{Var}(X_i)=\frac{\sigma^2}{\sigma^2}=1$.
+Because $E[W_i]=0$, the second moment equals the variance: $E[W_i^2]=\operatorname{Var}(W_i)+
+(E[W_i])^2 = 1 + 0 = 1$. In this notation $Z_n=\frac1{\sqrt n}\sum_{i=1}^n W_i$.
+
+**Step 1 — the MGF of one standardized summand.** Let $m(t)=M_{W}(t)=E[e^{tW}]$ be the common
+MGF of the $W_i$ (assumed to exist near $0$; see the note above). By property (P1), its Taylor
+expansion about $0$ uses the moments we just computed, $E[W]=0$ and $E[W^2]=1$:
+$$
+m(t) = 1 + \underbrace{E[W]}_{=0}\,t + \frac{\overbrace{E[W^2]}^{=1}}{2}\,t^2 + r(t)
+     = 1 + \frac{t^2}{2} + r(t),
+$$ {#eq-m-expand}
+where $r(t)$ collects the cubic-and-higher terms. The key fact about $r(t)$, which is all we
+use, is that it is *negligible compared to $t^2$ near $0$*: $r(t)/t^2\to 0$ as $t\to 0$. (This
+is just the statement that a Taylor remainder past the quadratic term is smaller order than
+the quadratic; it requires $E[W^2]<\infty$, which we have, and is made precise in [PROB-20]'s
+treatment of the expansion.)
+
+**Step 2 — the MGF of $Z_n$.** Here properties (P2) and the scaling of the MGF combine. First,
+the MGF of a scaled variable $cW$ is $M_{cW}(t)=E[e^{t(cW)}]=E[e^{(ct)W}]=m(ct)$ — scaling the
+variable rescales the argument. Each summand of $Z_n$ is $W_i/\sqrt n$, i.e. $c=1/\sqrt n$, so
+each contributes $m(t/\sqrt n)$. Since the $W_i$ are independent, (P2) turns the MGF of their
+sum into a product, and because they are *identically* distributed all $n$ factors are equal:
+$$
+M_{Z_n}(t)
+= M_{\frac1{\sqrt n}\sum_i W_i}(t)
+= \prod_{i=1}^n M_{W_i/\sqrt n}(t)
+= \prod_{i=1}^n m\!\left(\frac{t}{\sqrt n}\right)
+= \left[\,m\!\left(\frac{t}{\sqrt n}\right)\right]^{n}.
+$$ {#eq-MZn}
+
+**Step 3 — expand the inside.** Substitute $t/\sqrt n$ for the argument in @eq-m-expand. Since
+$(t/\sqrt n)^2 = t^2/n$,
+$$
+m\!\left(\frac{t}{\sqrt n}\right)
+= 1 + \frac{1}{2}\cdot\frac{t^2}{n} + r\!\left(\frac{t}{\sqrt n}\right)
+= 1 + \frac{1}{n}\!\left[\frac{t^2}{2} + n\,r\!\left(\frac{t}{\sqrt n}\right)\right].
+$$
+Call the bracket $c_n(t)=\frac{t^2}{2}+n\,r\!\left(\frac{t}{\sqrt n}\right)$, so that
+$$
+M_{Z_n}(t) = \left[\,1 + \frac{c_n(t)}{n}\,\right]^{n}.
+$$ {#eq-MZn-cn}
+
+**Step 4 — the remainder washes out.** Fix $t$. As $n\to\infty$, the argument $t/\sqrt n\to 0$,
+so we may use the negligibility of $r$ from Step 1. Write the remainder term as
+$$
+n\,r\!\left(\frac{t}{\sqrt n}\right)
+= \underbrace{\frac{r(t/\sqrt n)}{(t/\sqrt n)^2}}_{\to\, 0}\cdot\, n\cdot\frac{t^2}{n}
+= \frac{r(t/\sqrt n)}{(t/\sqrt n)^2}\cdot t^2.
+$$
+The middle step just multiplied and divided by $(t/\sqrt n)^2 = t^2/n$ and used $n\cdot t^2/n
+= t^2$. As $n\to\infty$ the fraction $\to 0$ (Step 1) while $t^2$ is fixed, so $n\,r(t/\sqrt
+n)\to 0$. Therefore
+$$
+c_n(t) = \frac{t^2}{2} + n\,r\!\left(\frac{t}{\sqrt n}\right) \;\longrightarrow\; \frac{t^2}{2}.
+$$ {#eq-cn-limit}
+
+**Step 5 — the famous limit.** We need $\lim_{n\to\infty}\bigl[1+c_n(t)/n\bigr]^n$ where
+$c_n(t)\to c=t^2/2$. This is the compound-interest limit. Recall the Calc-1 fact, taken as
+known at our floor,
+$$
+\lim_{n\to\infty}\left(1 + \frac{c}{n}\right)^n = e^{c}.
+$$ {#eq-e-limit}
+We need the version where the constant $c$ is replaced by a sequence $c_n\to c$; the limit is
+still $e^c$. Here is the one-line justification so it is not assumed. Take logarithms:
+$\ln\bigl[(1+c_n/n)^n\bigr] = n\ln(1+c_n/n)$. For large $n$ the argument $c_n/n\to 0$, and the
+Taylor expansion of the logarithm at $1$ is $\ln(1+u)=u-\tfrac{u^2}{2}+\cdots$, so
+$$
+n\ln\!\left(1+\frac{c_n}{n}\right)
+= n\left[\frac{c_n}{n} - \frac{1}{2}\Bigl(\frac{c_n}{n}\Bigr)^2 + \cdots\right]
+= c_n - \frac{c_n^2}{2n} + \cdots
+\;\xrightarrow[n\to\infty]{}\; c,
+$$
+because $c_n\to c$ and every later term carries a $1/n$ (or higher) that kills it. Exponentiating
+the limit of the logarithm (the exponential is continuous, so it passes through the limit)
+gives $e^{c}$. Applying this with $c=t^2/2$:
+$$
+M_{Z_n}(t) = \left[\,1+\frac{c_n(t)}{n}\,\right]^n \;\longrightarrow\; e^{\,t^2/2}.
+$$ {#eq-MZn-limit}
+
+**Step 6 — recognize the limit and conclude.** The function $e^{t^2/2}$ is exactly the MGF of
+the standard normal $\mathcal N(0,1)$. (We can verify this directly: for $Z\sim\mathcal
+N(0,1)$, $M_Z(t)=\int_{-\infty}^{\infty}e^{tz}\frac{1}{\sqrt{2\pi}}e^{-z^2/2}\,dz$; completing
+the square in the exponent, $tz-\tfrac{z^2}{2}=-\tfrac12(z-t)^2+\tfrac{t^2}{2}$, pulls the
+constant $e^{t^2/2}$ out front and leaves a standard normal density that integrates to $1$,
+giving $M_Z(t)=e^{t^2/2}$. This computation is done in full in [PROB-13].) So
+$M_{Z_n}(t)\to M_Z(t)$ for every $t$ near $0$, and by property (P3) — the continuity theorem —
+convergence of MGFs implies convergence in distribution:
+$$
+Z_n \xrightarrow{\;d\;} \mathcal N(0,1). \qquad\blacksquare
+$$
+:::
+
+Step back and see what the proof *did*. The source distribution entered only through its
+MGF $m(t)$, and only through the first three Taylor coefficients: the constant $1$, the mean
+(which we zeroed by centering), and the second moment (which we set to $1$ by scaling).
+*Everything else about the source — its skew, its kurtosis, its lumps and spikes — sits in the
+remainder $r$, and Step 4 showed the remainder washes out under the $\sqrt n$ scaling.* That is
+the mechanism of universality: the magnification by $\sqrt n$ is tuned so that only the
+mean and variance survive into the limit, and all higher structure is squeezed to zero. The
+bell curve is what is left when you keep two moments and erase the rest.
+
+::: {.callout-tip title="You might be asked"}
+*"Where exactly in the proof is the assumption of finite variance used, and what breaks
+without it?"* In Step 1, the Taylor expansion @eq-m-expand keeps terms through $t^2$, whose
+coefficient is $E[W^2]=1$ — *finite variance is what makes that coefficient exist and be a
+real number*. If the variance is infinite (heavy tails), $m(t)$ has no quadratic term to
+extract, the whole $\sqrt n$-scaling argument collapses, and the limit is generally *not*
+Gaussian — it is a **stable law** with heavier tails, reached under a different scaling
+$n^{1/\alpha}$ with $\alpha<2$. We meet exactly this failure in @sec-cauchy. Finite mean alone
+gives you the LLN (well, the LLN needs finite variance too in our Chebyshev proof, though it
+holds under just a finite mean by a harder argument); finite *variance* is the price of the
+CLT.
+:::
+
+## Watching the proof's mechanism: the bell emerges {#sec-clt-numeric}
+
+The proof says the bell appears because everything above the second moment is scrubbed away by
+the $\sqrt n$ scaling. @fig-clt-sources makes that claim falsifiable: it runs the standardized
+mean for three sources that disagree violently in shape but all have finite variance, and
+overlays the *same* normal curve.
+
+```{python}
+#| label: fig-clt-sources
+#| fig-cap: "Universality. Three sources with finite variance but very different shapes — a fair coin (Bernoulli, two spikes), an Exponential (right-skewed, continuous), and a Uniform (flat) — each pushed through the standardized sample mean $Z_n$ at $n=30$, with $40{,}000$ replicates each. All three histograms converge to the *same* standard normal density (red). The sources are forgotten; only mean and variance survived. The skewed Exponential lags slightly (a touch of residual right-skew at $n=30$), foreshadowing @sec-finite-sample."
+def standardized_mean_from(sampler, src_mu, src_sigma, n=30, reps=40000):
+    draws = sampler(size=(reps, n))
+    means = draws.mean(axis=1)
+    return np.sqrt(n) * (means - src_mu) / src_sigma
+
+sources = {
+    "Bernoulli(0.5)": (lambda size: rng.integers(0, 2, size=size).astype(float), 0.5, 0.5),
+    "Exponential(1)": (lambda size: rng.exponential(1.0, size=size), 1.0, 1.0),
+    "Uniform(0,1)":   (lambda size: rng.uniform(0.0, 1.0, size=size), 0.5, np.sqrt(1/12)),
+}
+
+grid = np.linspace(-4, 4, 200)
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 3.5), sharey=True)
+for ax, (name, (samp, smu, ssig)) in zip(axes, sources.items()):
+    z = standardized_mean_from(samp, smu, ssig)
+    ax.hist(z, bins=55, density=True, range=(-4, 4), color=DATA, alpha=0.75)
+    ax.plot(grid, normal_pdf(grid), color=LIMIT, lw=2.0)
+    ax.set_title(name, fontsize=10)
+    ax.set_xlabel(r"$Z_{30}$")
+axes[0].set_ylabel("density")
+plt.tight_layout()
+```
+
+# Why the CLT is what makes the standard error usable {#sec-usable}
+
+This section is the *why* cashing out. INFR-A1 defined the standard error $\sigma/\sqrt n$ as
+the standard deviation of $\bar X_n$. By itself a standard deviation is just a spread number;
+it does not tell you *how often* the estimate lands within one or two of them, because that
+depends on the *shape* of the sampling distribution. The CLT supplies the shape — Gaussian —
+and the Gaussian has famous, memorizable tail probabilities. That marriage is what turns a
+spread into a usable statement of uncertainty.
+
+Concretely, rearrange the CLT. Saying $Z_n=\frac{\bar X_n-\mu}{\sigma/\sqrt n}$ is
+approximately $\mathcal N(0,1)$ is the same as saying
+$$
+\bar X_n \;\approx\; \mathcal N\!\left(\mu,\ \frac{\sigma^2}{n}\right)
+\qquad\text{for large } n.
+$$ {#eq-clt-mean-form}
+Now use the standard-normal fact (from [PROB-13]) that a $\mathcal N(0,1)$ variable lands in
+$[-1.96, 1.96]$ with probability $0.95$. Translating through @eq-clt-mean-form, with
+probability about $0.95$,
+$$
+-1.96 \le \frac{\bar X_n - \mu}{\sigma/\sqrt n} \le 1.96
+\quad\Longleftrightarrow\quad
+\bar X_n - 1.96\,\frac{\sigma}{\sqrt n} \;\le\; \mu \;\le\; \bar X_n + 1.96\,\frac{\sigma}{\sqrt n}.
+$$ {#eq-ci-preview}
+That interval $\bar X_n \pm 1.96\,\sigma/\sqrt n$ is the **confidence interval** for a mean —
+the single most-used object in applied statistics — and it exists *only because the CLT tells
+us the sampling distribution is Gaussian*. Without the CLT we would know the spread but not how
+to convert it into a coverage statement. @fig-ci-coverage shows these intervals doing their
+job. (We build this object carefully, including what "$95\%$ confident" does and does *not*
+mean, in [INFR-C1]; here it is a preview of the payoff.)
+
+```{python}
+#| label: fig-ci-coverage
+#| fig-cap: 'The CLT turning a standard error into coverage. From an Exponential source with true mean $\mu=2$ (red line) we draw $50$ samples of size $n=60$, and for each compute the CLT interval $\bar X_n \pm 1.96\,\sigma/\sqrt n$. Each horizontal bar is one interval; green bars cover the truth, red bars miss. About $95\%$ are expected to cover, and the count printed below confirms it. The intervals have a well-defined coverage rate *because* the CLT makes $\bar X_n$ approximately Gaussian — that is the whole point of the theorem for practice.'
+mu_t, sig_t = 2.0, 2.0     # Exponential(mean 2): sd = 2
+n = 60
+reps = 50
+covers = 0
+fig, ax = plt.subplots(figsize=(6.4, 5.0))
+for j in range(reps):
+    samp = rng.exponential(mu_t, size=n)
+    xbar = samp.mean()
+    half = 1.96 * sig_t / np.sqrt(n)
+    lo, hi = xbar - half, xbar + half
+    hit = lo <= mu_t <= hi
+    covers += hit
+    ax.plot([lo, hi], [j, j], color=(ACCENT if hit else LIMIT), lw=2.0)
+    ax.plot(xbar, j, "o", color=DATA, ms=3)
+ax.axvline(mu_t, color=LIMIT, lw=2.0, label=r"true $\mu=2$")
+ax.set_xlabel(r"$\bar X_n \pm 1.96\,\sigma/\sqrt{n}$")
+ax.set_ylabel("sample index")
+ax.set_title(f"{covers}/{reps} intervals cover the truth")
+ax.legend(loc="upper right", framealpha=0.9)
+plt.tight_layout()
+print(f"coverage: {covers}/{reps} = {covers/reps:.0%}  (target 95%)")
+```
+
+::: {.callout-tip title="You might be asked"}
+*"In practice you don't know $\sigma$ — you estimate it with $s$. Why is it still legitimate
+to use the normal (or t) interval?"* Because of **Slutsky's theorem** ([PROB-21],
+@thm-slutsky). The sample standard deviation $s$ converges in probability to $\sigma$ (a
+constant) by the LLN applied to the squared deviations. Slutsky says that dividing a
+sequence that converges in distribution (here $\sqrt n(\bar X_n-\mu)\xrightarrow{d}\mathcal
+N(0,\sigma^2)$) by a sequence converging in probability to a constant ($s\to\sigma$) leaves
+the limiting distribution intact, only rescaled: $\frac{\sqrt n(\bar X_n-\mu)}{s}\xrightarrow
+{d}\mathcal N(0,1)$. So plugging in the estimated $s$ is asymptotically free. The *small-sample*
+correction for having estimated $\sigma$ is the **Student t-distribution**, the subject of
+[INFR-C2]; the CLT plus Slutsky is why it converges back to the normal as $n$ grows.
+:::
+
+# Failure modes and the edge of applicability {#sec-finite-sample}
+
+The CLT is a statement about the *limit* $n\to\infty$. Every real sample is finite, so the
+honest questions are: *how large must $n$ be for the Gaussian approximation to be good, and
+when is it never good?* This is where most misuse happens, so we treat it carefully.
+
+## The "$n\ge 30$" myth, dismantled {#sec-n30}
+
+A rule repeated in countless intro courses says "the CLT kicks in at $n\ge 30$." This is
+folklore, and it is wrong as a universal claim. **There is no magic $n$.** The sample size you
+need depends entirely on how far the source is from Gaussian — specifically on its **skewness**
+and **kurtosis** (its third and fourth standardized moments). A symmetric, light-tailed source
+is nearly Gaussian after averaging just a handful of draws; a violently skewed or heavy-tailed
+source can need hundreds or thousands. @fig-n30 makes this concrete by holding $n=30$ fixed and
+varying only the source.
+
+```{python}
+#| label: fig-n30
+#| fig-cap: 'The ''$n\geq 30$'' rule is not universal. All three panels use the *same* sample size $n=30$; only the source changes. **Left:** a symmetric Uniform source is essentially perfectly Gaussian after averaging — $n=30$ is overkill. **Middle:** a moderately skewed Exponential is close but visibly right-leaning. **Right:** a strongly skewed source (Exponential of an exponential — a log-normal-like heavy right tail) is still markedly non-Gaussian at $n=30$. The required $n$ is a property of the source''s skew, not a constant.'
+grid = np.linspace(-4, 4, 200)
+n = 30
+reps = 40000
+
+def std_mean(sampler, smu, ssig, n=n, reps=reps):
+    d = sampler((reps, n))
+    m = d.mean(axis=1)
+    return np.sqrt(n) * (m - smu) / ssig
+
+# Uniform(0,1): mean 1/2, sd sqrt(1/12)
+unif = (lambda s: rng.uniform(0, 1, s), 0.5, np.sqrt(1/12))
+# Exponential(1): mean 1, sd 1
+expo = (lambda s: rng.exponential(1.0, s), 1.0, 1.0)
+# Strongly skewed: lognormal exp(N(0,1)) -> mean e^{0.5}, var (e-1)e
+ln_mu = np.exp(0.5)
+ln_sd = np.sqrt((np.exp(1) - 1) * np.exp(1))
+logn = (lambda s: np.exp(rng.normal(0, 1, s)), ln_mu, ln_sd)
+
+panels = [("Uniform (symmetric)", unif),
+          ("Exponential (skew 2)", expo),
+          ("Log-normal (skew ~6)", logn)]
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 3.5), sharey=True)
+for ax, (name, (samp, smu, ssig)) in zip(axes, panels):
+    z = std_mean(samp, smu, ssig)
+    ax.hist(z, bins=60, density=True, range=(-4, 4), color=DATA, alpha=0.75)
+    ax.plot(grid, normal_pdf(grid), color=LIMIT, lw=2.0)
+    ax.set_title(f"{name}, $n=30$", fontsize=10)
+    ax.set_xlabel(r"$Z_{30}$")
+axes[0].set_ylabel("density")
+plt.tight_layout()
+```
+
+There is even a quantitative version, the **Berry–Esseen theorem**, which we state but do not
+prove (its proof is a substantial undertaking; we flag it as an imported fact). It says the
+worst-case gap between the true distribution of $Z_n$ and the standard normal is bounded by
+$$
+\sup_z\bigl|\,P(Z_n\le z) - \Phi(z)\,\bigr| \;\le\; \frac{C\,\rho}{\sigma^3\sqrt n},
+\qquad \rho = E\bigl[\,|X-\mu|^3\,\bigr],
+$$
+where $\Phi$ is the standard normal CDF and $C$ is a universal constant (around $0.41$). Read
+it: the approximation error shrinks like $1/\sqrt n$ — *the same $\sqrt n$ again* — but the
+numerator carries the **third absolute moment** $\rho$, which explodes for skewed, heavy-tailed
+sources. A big $\rho$ means you need a big $n$ to drive the bound down. That is the honest,
+quantitative replacement for the "$n\ge 30$" slogan: *the convergence rate is $1/\sqrt n$, with
+a constant that depends on the source's third moment.*
+
+::: {.callout-warning title="Pitfall"}
+**The CLT is about the distribution of the *average*, not the data.** A common error is to
+look at a histogram of the raw data, see that it is not bell-shaped, and conclude "the CLT
+doesn't apply." The CLT never claimed the data were Gaussian — it claims the *sample mean* (or
+sum) is approximately Gaussian. Conversely, and more dangerously, people apply normal-theory
+intervals to a *single* heavy-tailed measurement, or to a statistic that is not a sum or
+average (a maximum, a ratio, a variance) without checking that a CLT-type result even holds for
+it. The theorem is specifically about sums and averages of many independent, finite-variance
+pieces. Outside that template, reach for the bootstrap ([INFR-E1]) instead of assuming
+normality.
+:::
+
+## The edge of applicability: heavy tails and the Pareto mean {#sec-heavy}
+
+Now the honest boundary the track demands. Consider a **Pareto** distribution — a power law,
+the canonical model of incomes, city sizes, file sizes, and insurance losses. With shape
+parameter $\alpha$, its tail falls like $P(X>x)\sim x^{-\alpha}$. The catch:
+
+- The **mean** is finite only if $\alpha>1$.
+- The **variance** is finite only if $\alpha>2$.
+
+When $1<\alpha\le 2$, the mean exists but the variance is *infinite* — and **the CLT's
+hypothesis (finite variance) fails**. The sample mean still converges to the true mean (the
+LLN holds, since the mean is finite), but the *fluctuations* are not Gaussian and the
+$\sqrt n$-standardization does not stabilize. @fig-pareto shows a Pareto with $\alpha=1.5$
+(finite mean, infinite variance): the standardized sample mean refuses to become Gaussian even
+at large $n$, dominated by occasional gigantic draws.
+
+```{python}
+#| label: fig-pareto
+#| fig-cap: 'The edge of applicability: a Pareto source with shape $\alpha=1.5$ — finite mean, *infinite* variance. Because the CLT''s finite-variance hypothesis fails, the standardized sample mean does **not** converge to a Gaussian. **Left:** even at $n=500$ the histogram of the (sample-SD-standardized) mean is sharply peaked with a long right tail, nothing like the normal curve (red). **Right:** the running average is repeatedly knocked off course by rare enormous draws and converges agonizingly slowly. The bell never forms; this is outside the CLT''s domain.'
+alpha = 1.5
+# scipy-free Pareto draws: inverse-CDF of Pareto(alpha) with xm=1 is U^{-1/alpha}
+def pareto(size):
+    u = rng.uniform(0, 1, size)
+    return u ** (-1.0 / alpha)
+
+true_mean = alpha / (alpha - 1.0)   # = 3.0 for alpha=1.5
+
+# Left: standardized mean at n=500 using the SAMPLE sd (since true sd is infinite)
+n = 500
+reps = 20000
+draws = pareto((reps, n))
+means = draws.mean(axis=1)
+sds = draws.std(axis=1, ddof=1)
+z = np.sqrt(n) * (means - true_mean) / sds
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.7))
+grid = np.linspace(-4, 4, 200)
+axL.hist(z, bins=80, density=True, range=(-4, 4), color=DATA, alpha=0.75)
+axL.plot(grid, normal_pdf(grid), color=LIMIT, lw=2.0, label="normal (does NOT fit)")
+axL.set_title(r"Pareto($\alpha=1.5$), $n=500$")
+axL.set_xlabel(r"$Z_n$ (sample-SD standardized)"); axL.set_ylabel("density")
+axL.legend(fontsize=9, framealpha=0.9)
+
+ns = np.arange(1, 8001)
+for _ in range(4):
+    d = pareto(8000)
+    axR.plot(ns, np.cumsum(d) / ns, color=DATA, alpha=0.6, lw=1.0)
+axR.axhline(true_mean, color=LIMIT, lw=2.0, label=r"true mean $=3$")
+axR.set_xscale("log")
+axR.set_title("Running average: slow, jumpy")
+axR.set_xlabel("$n$ (log scale)"); axR.set_ylabel(r"$\bar X_n$")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The practical lesson is sharp: for heavy-tailed data (incomes, losses, network traffic), a
+sample-mean-plus-CLT-interval can be badly miscalibrated even at large $n$, because the
+infinite (or merely enormous) variance makes the $\sqrt n$ machinery either fail outright
+($\alpha\le 2$) or converge far too slowly to trust. The fixes are real and named: work with a
+**transformed** quantity (the log, where a log-normal becomes Gaussian-friendly), estimate a
+**robust** center (the median or a trimmed mean, which have their own well-behaved CLTs),
+report a **different functional** entirely, or get the sampling distribution by **bootstrap**
+([INFR-E1]) — though even the bootstrap struggles in the infinite-variance regime, an honesty
+[INFR-E1] makes explicit.
+
+## When the mean is the wrong target at all: Cauchy {#sec-cauchy}
+
+The hardest edge case is when even the *mean* fails to exist. The **Cauchy** distribution
+(the bell-shaped but heavy-tailed law you get as the ratio of two independent standard
+normals, or as $\tan$ of a uniform angle) has $\alpha=1$-style tails so heavy that $E[X]$ is
+not defined — the defining integral $\int x\,f(x)\,dx$ does not converge. Here *both* theorems
+fail, and spectacularly:
+
+- The **LLN fails**: $\bar X_n$ does not converge to anything. In fact, a remarkable exact
+  fact (provable in one line with characteristic functions, [PROB-20]) is that the average of
+  $n$ i.i.d. Cauchy variables is *itself* Cauchy with the *same* spread — averaging buys you
+  **nothing**. More data does not help at all.
+- The **CLT fails**: there is no finite variance (indeed no finite mean) to standardize by.
+
+@fig-cauchy shows the catastrophe: the running average of Cauchy draws wanders forever,
+periodically yanked across the plane by a single colossal outlier, never settling.
+
+```{python}
+#| label: fig-cauchy
+#| fig-cap: "Where both theorems die: the standard Cauchy distribution, which has no finite mean. **Left:** five running averages of Cauchy draws — they never settle, each jerked to a new level whenever a giant outlier arrives, in flat contradiction to the LLN funnel of @fig-lln-funnel. The 'true mean' (the distribution's center of symmetry, $0$, red) is never homed in on. **Right:** the *sample median* of the same draws, which **does** converge to $0$ — the right tool when the mean does not exist. The median has its own LLN and CLT; the mean simply has no target here."
+def cauchy(size):
+    return rng.standard_cauchy(size)
+
+N = 4000
+ns = np.arange(1, N + 1)
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.2, 3.7))
+for _ in range(5):
+    d = cauchy(N)
+    axL.plot(ns, np.cumsum(d) / ns, color=DATA, alpha=0.6, lw=1.0)
+axL.axhline(0.0, color=LIMIT, lw=2.0, label="center $=0$")
+axL.set_xscale("log")
+axL.set_ylim(-15, 15)
+axL.set_title("Cauchy running MEAN never settles")
+axL.set_xlabel("$n$ (log scale)"); axL.set_ylabel(r"$\bar X_n$")
+axL.legend(fontsize=9, framealpha=0.9)
+
+for _ in range(5):
+    d = cauchy(N)
+    run_med = np.array([np.median(d[:k]) for k in ns])
+    axR.plot(ns, run_med, color=ACCENT, alpha=0.6, lw=1.0)
+axR.axhline(0.0, color=LIMIT, lw=2.0, label="center $=0$")
+axR.set_xscale("log")
+axR.set_ylim(-2, 2)
+axR.set_title("Cauchy running MEDIAN converges")
+axR.set_xlabel("$n$ (log scale)"); axR.set_ylabel("running median")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+```
+
+The right panel carries the constructive moral. When the mean is undefined or wild, *the mean
+is the wrong summary*, and the fix is to estimate a different functional — here the **median**,
+which exists for every distribution and obeys its own LLN and CLT (the median has an asymptotic
+normal distribution under mild conditions). The lesson generalizes: the LLN and CLT are about
+the *sample mean as an estimator of the population mean*; if the population mean does not exist
+or is not what you care about, you change the estimator, not the theorem.
+
+::: {.callout-tip title="You might be asked"}
+*"Give me a concrete distribution where the CLT fails, and say precisely why."* The cleanest
+answers, in increasing severity: **(1)** a Pareto with $1<\alpha\le 2$ — the mean exists so
+the LLN holds, but the variance is infinite, so the CLT's hypothesis fails and the
+$\sqrt n$-scaled mean converges to a *stable law*, not a Gaussian. **(2)** the **Cauchy**
+distribution — even the mean is undefined, so the LLN fails too and $\bar X_n$ stays Cauchy
+forever; the right estimator is the median. The principle to state out loud: *the CLT requires
+finite variance; the LLN (in its usual forms) requires at least a finite mean. Heavy tails
+break these in order — first the variance, then the mean — and each break costs you a theorem.*
+:::
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+You arrived from **[INFR-A1 *The Estimator as a Random Variable*]**, which defined the
+sampling distribution and the standard error and left two questions open. This article
+answered them: the **LLN** says the sample mean converges to the truth (the standard error
+shrinks to $0$), and the **CLT** says the standardized error is asymptotically Gaussian (the
+standard error becomes a usable margin of error). From here:
+
+- **[INFR-B4 *Why Maximum Likelihood Works*]** reuses this exact machinery: the asymptotic
+  normality of the MLE, $\sqrt n(\hat\theta-\theta_0)\xrightarrow{d}\mathcal N(0, I^{-1})$, is
+  proved by Taylor-expanding the score and applying the **CLT** to a sum of i.i.d. score
+  terms — the same Step-2-through-Step-6 move done here, with the score in place of $X_i$.
+- **[INFR-C1 *Confidence Intervals*]** builds the interval previewed in @eq-ci-preview into a
+  careful object, and pins down what "$95\%$ confident" means (it is a property of the
+  procedure, licensed by the CLT's coverage guarantee).
+- **[INFR-C2 *The t-Distribution*]** handles the small-$n$, unknown-$\sigma$ correction that
+  Slutsky waved away asymptotically here.
+- **[INFR-D2 *The Workhorse Tests*]** gets its null distributions — the $z$, $t$, $\chi^2$,
+  and $F$ reference curves — from CLT-type limits of test statistics.
+- For heavy-tailed and small-sample cases where the CLT is untrustworthy (@sec-heavy,
+  @sec-cauchy), **[INFR-E1 *The Bootstrap*]** is the assumption-light alternative — it
+  simulates the sampling distribution instead of assuming it is Gaussian.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary sources.** Jacob Bernoulli, *Ars Conjectandi* (1713), for the original LLN
+  ("golden theorem"); Abraham de Moivre, *The Doctrine of Chances* (1738 ed.), for the first
+  central-limit result on coin flips; and Lindeberg's 1922 and Lyapunov's 1901 papers for the
+  general finite-variance CLT via characteristic functions.
+- **The honest-rate result.** The **Berry–Esseen theorem** (@sec-n30) is the quantitative
+  refinement: it converts "$Z_n$ is approximately normal" into an explicit $1/\sqrt n$ error
+  bound scaled by the third moment. It is the right citation whenever someone invokes
+  "$n\ge 30$."
+- **Beyond i.i.d.** The CLT holds far beyond identical distributions — the **Lindeberg** and
+  **Lyapunov** conditions give CLTs for independent-but-not-identical summands, and there are
+  CLTs for *dependent* data (martingale and mixing CLTs) that underpin time-series and MCMC
+  inference. The thread to pull is: *what is the weakest condition under which sums become
+  Gaussian?*
+- **When the limit is not Gaussian.** The Pareto and Cauchy failures (@sec-heavy,
+  @sec-cauchy) are not pathologies but a doorway to **stable distributions** and the
+  **generalized central limit theorem**: under infinite variance, normalized sums converge to
+  non-Gaussian stable laws, with the Gaussian as the special finite-variance case. This is the
+  mathematics behind heavy-tailed finance and network models.
+- **Open thread this article deferred.** *How fast, for my specific distribution, and how do I
+  know my $n$ is big enough?* — answered partly by Berry–Esseen, but in practice by
+  resampling, which is the entire point of **[INFR-E1]**.

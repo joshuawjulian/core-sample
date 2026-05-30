@@ -1,0 +1,1126 @@
+---
+title: "The Estimator as a Random Variable"
+subtitle: "Core Sample · Statistical Inference"
+---
+
+```{python}
+#| label: setup
+#| include: false
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A consistent, restrained visual style for every figure in this article.
+plt.rcParams.update({
+    "figure.figsize": (6.2, 4.0),
+    "figure.dpi": 140,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "lines.linewidth": 2.0,
+})
+
+POINT  = "#2b3a67"     # data / samples
+LINE   = "#c1121f"     # the curve / theoretical / true value
+ACCENT = "#0a7d4d"     # highlights / the estimate
+GREY   = "#6c757d"
+FILL   = "#9fb3d1"     # shaded areas / histograms
+```
+
+> **Where this sits in the track.** This is the entry point of the **Statistical
+> Inference** track — the first article, assuming nothing from inside the track. From the
+> Probability Foundations track it leans on three things, each built there from the ground
+> up: **random variables, expectation, and variance** ([PROB-02], [PROB-05], [PROB-06]);
+> **independence and the i.i.d. sample** ([PROB-08]); and the fact, derived in [PROB-08],
+> that the variance of a sample mean is $\sigma^2/n$. Everything else is on this page.
+> Where Probability asks *"given a known distribution, what does a sample look like?"*,
+> Inference reverses the arrow: *"given a sample, what can we say about the unknown
+> distribution that produced it?"* The hinge that makes the reversal possible is the
+> single idea this article installs — that **the number an estimator computes is itself a
+> random variable**, with a distribution we can describe, simulate, and reason about. It
+> sets up [INFR-A2] (the two limit theorems that pin down the *shape* of that
+> distribution), [INFR-B1] (the likelihood, our first principled way to build an
+> estimator), and [INFR-C1] (confidence intervals, which exist only because an estimator
+> has a sampling distribution to begin with).
+
+## Abstract {.unnumbered}
+
+An **estimator** is a function of the sample — a recipe like "average the numbers" — and
+because the sample is random, the number that recipe returns is *itself a random
+variable*. This single shift in viewpoint is the foundation of the entire track. This
+article builds the **sampling distribution** of an estimator from first principles: the
+distribution of its output across all the samples we *might* have drawn. We derive, every
+step shown, that the sample mean $\bar X_n$ has expectation equal to the true mean $\mu$
+and standard deviation $\sigma/\sqrt{n}$ — the quantity we name the **standard error** —
+and we confirm the same answer by exact algebra and by simulation. We define **bias** and
+**variance** as the two ways an estimator can miss, and prove the **mean-squared-error
+decomposition** $\mathrm{MSE} = \text{bias}^2 + \text{variance}$ in full. The single claim
+the article defends is that **every estimate you will ever report is one draw from a
+distribution you never see** — and that quantifying that distribution, not the single
+number, is what inference *is*.
+
+# The Core {#sec-core}
+
+::: {.callout-important title="The Core"}
+An **estimator** $\hat\theta = g(X_1,\dots,X_n)$ is a function of the random sample, so it
+is **itself a random variable**: re-run the experiment, draw a fresh sample, and the
+estimate changes. The distribution of those would-be values is the **sampling
+distribution**. Two numbers summarize how well the estimator does its job. Its **bias**,
+$\mathbb{E}[\hat\theta]-\theta$, is how far off it sits *on average*; its **standard
+error**, $\mathrm{SE}=\sqrt{\operatorname{Var}(\hat\theta)}$, is how much it bounces from
+sample to sample. Total error combines both, and combines them in exactly one way:
+$$
+\mathrm{MSE}(\hat\theta) = \mathbb{E}\!\bigl[(\hat\theta-\theta)^2\bigr]
+= \underbrace{\bigl(\mathbb{E}[\hat\theta]-\theta\bigr)^2}_{\text{bias}^2}
+\;+\; \underbrace{\operatorname{Var}(\hat\theta)}_{\text{variance}}.
+$$
+The estimate you report is one draw from this distribution. **Inference is the discipline
+of describing the distribution, not the draw.**
+:::
+
+Everything below orbits that box. The most important sentence is the quiet one: *the
+estimate is one draw*. A coder's instinct is to treat the output of a function as a fixed
+answer — you ran `mean(data)` and got `4.7`, end of story. The whole of this track refuses
+that instinct. Feed the same recipe a different sample from the same world and you get
+`4.4`, or `5.1`. Those alternative answers are not errors; they are the *other realizations
+of the same random variable*, and their spread — captured by the standard error — is the
+honest measure of how seriously to take the `4.7` you happened to see.
+
+# Why we are doing this: the problem that forced the idea {#sec-why}
+
+Keep one question in view for the entire article: **why is a computed estimate a random
+variable, and what does treating it as one buy us?** Every definition and derivation below
+is an answer to some piece of that question. If a step feels abstract, return here.
+
+## The original problem: one sample, infinite worlds it could have been
+
+The reason this track exists is a gap that opens the instant you collect data. You measure
+the cholesterol of $200$ patients and compute the average, $\bar x = 193$ mg/dL. You want
+to say something about *the population* — all patients like these, not just the $200$ you
+happened to enroll. But you did not measure the population. You measured a **sample**, and
+a different random draw of $200$ patients would have handed you a different average:
+$191$, or $196$. Which one is "the" answer?
+
+The conceptual leap — made gradually through the nineteenth century, from Gauss and
+Laplace formalizing the "error" in astronomical measurements, through Quetelet applying
+the same idea to human populations, to Karl Pearson and R. A. Fisher in the early
+twentieth century turning it into a discipline — was to stop asking *"which sample average
+is right?"* and start asking *"what is the distribution of the sample average across all
+the samples I might have drawn?"* That distribution is the **sampling distribution**, and
+once you have it, the original anxiety dissolves. You no longer pretend $\bar x = 193$ is
+the truth. You say: my estimator centers on the true mean and scatters around it with a
+spread I can compute, and $193$ is one realization from that scatter. *That* is a
+defensible statement, and producing defensible statements is the charter of this track.
+
+Fisher gave the central object its modern name in his 1922 paper *On the Mathematical
+Foundations of Theoretical Statistics* — he called a sample-based recipe a **statistic**,
+and insisted its **sampling distribution** was the proper subject of the theory. The word
+*estimator* (the recipe) versus *estimate* (the number it returns on one sample) is the
+distinction that the rest of this article makes precise and never lets go.
+
+::: {.callout-tip title="You might be asked"}
+*"What is the difference between an estimator and an estimate? Interviewers love this one."*
+An **estimator** is a *function* — a rule, written before you see data, that turns any
+sample into a number: $\hat\theta = g(X_1,\dots,X_n)$, with capital $X_i$ to signal the
+sample is still random. An **estimate** is the *value* that rule returns on the one sample
+you actually collected: $\hat\theta = g(x_1,\dots,x_n)$, lowercase, a fixed number like
+$193$. The estimator is a random variable and has a distribution; the estimate is one
+realization of it. Sloppy speech blurs them, but the entire track hinges on keeping them
+apart: you cannot ask for "the variance of $193$" — a constant has no variance — but you
+can and must ask for the variance of the estimator that produced it.
+:::
+
+## What came before, and why it was not enough
+
+Before this viewpoint, a measurement was just a number, and the only acknowledgement of
+uncertainty was the vague hedge "give or take a bit." That is useless for a decision: how
+much is "a bit"? Is a drug that lowers cholesterol by $4$ mg/dL on a sample of $30$ a real
+effect or a fluke of who walked into the clinic? You cannot answer without a *model of how
+much the estimate would wobble under resampling*. The sampling-distribution viewpoint
+turns "give or take a bit" into a specific number — the standard error — and turns "real
+effect or fluke?" into a calculation. Everything downstream in the track (confidence
+intervals, hypothesis tests, the bootstrap) is machinery for getting at that distribution
+when the simple algebra of this article runs out.
+
+# Intuition before symbols {#sec-intuition}
+
+Picture a factory. The **population** is an enormous, fixed urn of numbers — every
+patient's cholesterol, say — with a true but unknown mean $\mu$ and standard deviation
+$\sigma$. You cannot see the urn. You are allowed one action: reach in and draw $n$
+numbers at random, the **sample**. You feed those $n$ numbers into a recipe (the
+estimator) and out comes a single number (the estimate).
+
+Now imagine doing this not once but *thousands* of times — draw $n$, compute the estimate,
+write it down, return the numbers to the urn, repeat. You accumulate a long list of
+estimates, all targeting the same fixed $\mu$, all slightly different because each came
+from a different lucky-or-unlucky handful. **Histogram that list.** The shape you get is
+the sampling distribution. It has a center (where the estimates pile up) and a spread (how
+widely they scatter). The center tells you whether the recipe aims at the truth; the
+spread tells you how much to trust any single estimate. @fig-factory draws this factory
+explicitly: many samples, many estimates, one histogram.
+
+```{python}
+#| label: fig-factory
+#| fig-cap: 'The estimator factory. A fixed population (left, true mean $\mu$ marked in red) is sampled many times; each sample of size $n=30$ is fed to the recipe ''take the mean'' and yields one estimate. Collecting thousands of those estimates and histogramming them (right) reveals the *sampling distribution* of $\bar X_n$: it centers on the true $\mu$ and is far narrower than the population itself. The single estimate you would actually compute is just one of the bars in that histogram.'
+rng = np.random.default_rng(0)
+
+# A skewed, decidedly non-normal population so the picture is honest.
+pop = rng.gamma(shape=2.0, scale=2.0, size=200_000)
+mu_true = pop.mean()
+sigma_true = pop.std()
+
+n = 30
+n_reps = 4000
+means = np.array([rng.choice(pop, size=n, replace=False).mean() for _ in range(n_reps)])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+
+axL.hist(pop, bins=80, color=FILL, edgecolor="none")
+axL.axvline(mu_true, color=LINE, lw=2.0, label=fr"true mean $\mu={mu_true:.2f}$")
+axL.set_title("The population (one fixed urn)")
+axL.set_xlabel("value"); axL.set_ylabel("count")
+axL.legend(fontsize=9, framealpha=0.9)
+axL.set_xlim(0, 20)
+
+axR.hist(means, bins=40, color=FILL, edgecolor="white", density=True)
+axR.axvline(mu_true, color=LINE, lw=2.0, label=fr"true mean $\mu={mu_true:.2f}$")
+axR.axvline(means.mean(), color=ACCENT, lw=2.0, ls="--",
+            label=fr"mean of estimates $={means.mean():.2f}$")
+axR.set_title(fr"Sampling distribution of $\bar X_n$  ($n={n}$)")
+axR.set_xlabel(r"value of the estimate $\bar x$"); axR.set_ylabel("density")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"population mean   mu      = {mu_true:.3f}")
+print(f"population stddev sigma   = {sigma_true:.3f}")
+print(f"mean of the 4000 estimates= {means.mean():.3f}   (lands on mu)")
+print(f"stddev of the estimates   = {means.std():.3f}")
+print(f"sigma / sqrt(n)           = {sigma_true/np.sqrt(n):.3f}   (matches the spread)")
+```
+
+Two features of @fig-factory are the whole article in miniature, and we will *derive* both
+rather than leave them as pictures. First, the histogram of estimates is **centered on the
+true $\mu$** — the recipe aims true. Second, it is **dramatically narrower than the
+population** — averaging $30$ noisy numbers gives a far steadier output than any single
+number, and the printed line shows the spread is almost exactly $\sigma/\sqrt{n}$. The
+narrowing is *why we collect more than one observation*, and the rate of narrowing
+($1/\sqrt{n}$) is one of the most consequential numbers in all of statistics.
+
+::: {.callout-tip title="You might be asked"}
+*"The population in that figure is skewed and lumpy — yet the sampling distribution looks
+almost like a bell curve. Why?"* That is the **Central Limit Theorem** showing its hand,
+and it is the subject of the very next article, [INFR-A2]. The headline: averages of i.i.d.
+quantities tend toward a normal shape *regardless* of the population's shape, as $n$ grows.
+This article deliberately stops *before* claiming the shape — we will pin down the
+sampling distribution's **center and spread** exactly and for any $n$, because those need
+no limit theorem. The *shape* is genuinely harder and earns its own article. Knowing which
+facts are exact-and-cheap (center, spread) versus deep-and-asymptotic (the bell shape) is
+itself an interview-grade distinction.
+:::
+
+# The formal development {#sec-formal}
+
+## The two players: population parameter and sample statistic {#sec-two-players}
+
+We must be ruthless about a distinction that informal language smears together. There is a
+**population** — the entire collection of units we care about, or equivalently the
+probability distribution that generated our data. It has fixed, true, but *unknown*
+numerical features. There is a **sample** — the finite batch of data we actually observe,
+drawn at random from that population.
+
+::: {#def-parameter-statistic}
+**Definition (parameter vs. statistic).** A **parameter** is a fixed numerical feature of
+the population (or its generating distribution) — for instance the true mean $\mu$, the
+true variance $\sigma^2$, or the true success probability $p$. It is an unknown *constant*:
+it does not vary, we just do not know it. A **statistic** is any quantity computed
+entirely from the observed sample — for instance the sample mean $\bar x$ or the sample
+proportion $\hat p$. Because the sample is random, a statistic is a *random variable*.
+:::
+
+The word **estimator** is reserved for a statistic that we have nominated to *stand in for*
+a particular parameter. Writing $\theta$ (Greek, the convention for the unknown) for the
+parameter and $\hat\theta$ (theta-with-a-hat, the convention for "our guess at $\theta$")
+for the estimator:
+
+::: {#def-estimator}
+**Definition (estimator).** Let $X_1,\dots,X_n$ be a random sample (the $X_i$ are random
+variables). An **estimator** of a parameter $\theta$ is a function of the sample,
+$$
+\hat\theta \;=\; g(X_1, X_2, \dots, X_n),
+$$ {#eq-estimator}
+that contains *no unknown quantities* — you can compute it from data alone. Because it is a
+function of random variables, $\hat\theta$ is itself a random variable.
+:::
+
+The clause "*no unknown quantities*" is not pedantry; it is what makes an estimator
+*usable*. "$\bar X_n - \mu$" is a function of the sample and $\mu$, but you cannot compute
+it without knowing $\mu$ — the very thing you are trying to estimate — so it is not an
+estimator. "$\frac1n\sum X_i$" uses only data, so it is. Two concrete estimators carry the
+whole article:
+
+- The **sample mean** $\displaystyle \bar X_n = \frac1n\sum_{i=1}^n X_i$, our estimator of
+  the population mean $\mu$.
+- The **sample proportion** $\displaystyle \hat p = \frac1n\sum_{i=1}^n X_i$ where each
+  $X_i\in\{0,1\}$ is a yes/no outcome, our estimator of the population success probability
+  $p$. (It is literally a sample mean of $0$s and $1$s — a fact we will exploit.)
+
+::: {.callout-important title="The pivot: the recipe is fixed, the input is random"}
+In ordinary programming, a function applied to fixed inputs gives a fixed output, and you
+stop thinking about it. Here the *function* $g$ is fixed and known — it is your chosen
+recipe — but its *inputs* $X_1,\dots,X_n$ are random, because they are a random draw from
+the population. Randomness flows through the function: a random input makes a random
+output. This is the entire reason $\hat\theta$ has a distribution. The output's randomness
+is inherited, not intrinsic — and it is inherited from the sampling, which is why the
+distribution is called the *sampling* distribution.
+:::
+
+## The sampling distribution, from first principles {#sec-sampling-dist}
+
+::: {#def-sampling-dist}
+**Definition (sampling distribution).** The **sampling distribution** of an estimator
+$\hat\theta = g(X_1,\dots,X_n)$ is the probability distribution of the random variable
+$\hat\theta$, induced by the randomness of the sample. Concretely: it is the distribution
+of values $g(x_1,\dots,x_n)$ obtained as $(x_1,\dots,x_n)$ ranges over all samples of size
+$n$ that the population could produce, each weighted by how probable that sample is.
+:::
+
+Read that definition operationally and it *is* the factory of @fig-factory: enumerate (or
+in practice, simulate) all possible samples, run each through $g$, and the spread of
+outputs — weighted by probability — is the sampling distribution. Nothing mysterious is
+happening; it is the ordinary "distribution of a function of random variables" from
+probability theory, named specially because the function is an estimator and the random
+variables are a sample.
+
+Two summaries of this distribution do almost all the work in practice, and both have names.
+
+::: {#def-se}
+**Definition (sampling expectation, bias, and standard error).** For an estimator
+$\hat\theta$ of a parameter $\theta$:
+
+- its **sampling mean** is $\mathbb{E}[\hat\theta]$ — the center of the sampling
+  distribution, the long-run average of the estimate over infinitely many resamples;
+- its **bias** is $\operatorname{Bias}(\hat\theta) = \mathbb{E}[\hat\theta] - \theta$ —
+  how far that center sits from the truth; an estimator with bias $0$ is called
+  **unbiased**;
+- its **standard error** is
+  $\operatorname{SE}(\hat\theta) = \sqrt{\operatorname{Var}(\hat\theta)}$ — the standard
+  deviation of the sampling distribution, i.e. the typical sample-to-sample wobble of the
+  estimate.
+:::
+
+::: {.callout-warning title="Pitfall"}
+**The standard error is not the standard deviation of your data.** The sample standard
+deviation $s$ measures how spread out the individual observations are; the standard error
+measures how spread out the *estimate* is across hypothetical resamples. They are
+different quantities with different units of meaning, and confusing them is one of the most
+common errors in applied work. For the sample mean they are related — $\operatorname{SE} =
+\sigma/\sqrt{n}$, as we derive next — but that relationship has the crucial $\sqrt{n}$ in
+it precisely *because* one describes data and the other describes an average of data. When
+someone reports "$193 \pm 2$," the $2$ is a standard error (how sure we are of the mean),
+not the spread of patients (which might be $\pm 40$).
+:::
+
+## The sampling distribution of the sample mean, derived exactly {#sec-mean-exact}
+
+We now compute the center and spread of $\bar X_n$ exactly — no simulation, no limit
+theorem, just the algebra of expectation and variance, every step shown. The only
+ingredients are the i.i.d. assumption and two rules established in the Probability track,
+which we state before using.
+
+**Imported facts (and where they are built).** We use, but do not re-derive here, two
+properties proved in [PROB-05], [PROB-06], and [PROB-08]:
+
+1. **Linearity of expectation:** for any random variables $Y_i$ and constants $a_i$,
+   $\mathbb{E}\!\left[\sum_i a_i Y_i\right] = \sum_i a_i \mathbb{E}[Y_i]$. This holds
+   *always* — no independence required.
+2. **Variance of a sum of independent variables, and scaling:**
+   $\operatorname{Var}(aY) = a^2\operatorname{Var}(Y)$ for a constant $a$, and if the $Y_i$
+   are independent then
+   $\operatorname{Var}\!\left(\sum_i Y_i\right) = \sum_i \operatorname{Var}(Y_i)$.
+
+We assume the sample is **i.i.d.**: the $X_i$ are independent and each has the same
+distribution as the population, so each has $\mathbb{E}[X_i] = \mu$ and
+$\operatorname{Var}(X_i) = \sigma^2$.
+
+::: {#thm-mean-sampling}
+**Theorem (mean and variance of the sample mean).** If $X_1,\dots,X_n$ are i.i.d. with
+mean $\mu$ and variance $\sigma^2$, then the sample mean $\bar X_n = \frac1n\sum_i X_i$
+satisfies
+$$
+\mathbb{E}[\bar X_n] = \mu,
+\qquad
+\operatorname{Var}(\bar X_n) = \frac{\sigma^2}{n},
+\qquad
+\operatorname{SE}(\bar X_n) = \frac{\sigma}{\sqrt{n}}.
+$$
+In words: $\bar X_n$ is an **unbiased** estimator of $\mu$, and its standard error shrinks
+like $1/\sqrt{n}$.
+:::
+
+::: {.proof}
+**The expectation.** Start from the definition and pull the constant $\frac1n$ out of the
+expectation, then apply linearity (rule 1):
+$$
+\mathbb{E}[\bar X_n]
+= \mathbb{E}\!\left[\frac1n\sum_{i=1}^n X_i\right]
+= \frac1n\,\mathbb{E}\!\left[\sum_{i=1}^n X_i\right]
+= \frac1n\sum_{i=1}^n \mathbb{E}[X_i].
+$$
+Each $\mathbb{E}[X_i] = \mu$ because the $X_i$ are identically distributed, so the sum is
+$n$ copies of $\mu$:
+$$
+\mathbb{E}[\bar X_n] = \frac1n\sum_{i=1}^n \mu = \frac1n\,(n\mu) = \mu.
+$$
+The center of the sampling distribution is exactly the truth — that is what "unbiased"
+means, and note it required *no* independence, only that each observation is centered on
+$\mu$.
+
+**The variance.** Start again from the definition. Pull the constant out, but now it is
+*inside* a variance, so by the scaling rule $\operatorname{Var}(aY)=a^2\operatorname{Var}(Y)$
+with $a = \frac1n$ it comes out **squared**:
+$$
+\operatorname{Var}(\bar X_n)
+= \operatorname{Var}\!\left(\frac1n\sum_{i=1}^n X_i\right)
+= \frac{1}{n^2}\,\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right).
+$$
+Here is where independence earns its keep. Because the $X_i$ are independent, the variance
+of their sum is the sum of their variances (rule 2) — the cross terms that would otherwise
+appear all vanish:
+$$
+\operatorname{Var}\!\left(\sum_{i=1}^n X_i\right) = \sum_{i=1}^n \operatorname{Var}(X_i)
+= \sum_{i=1}^n \sigma^2 = n\sigma^2,
+$$
+again $n$ identical copies, now of $\sigma^2$. Substitute back:
+$$
+\operatorname{Var}(\bar X_n) = \frac{1}{n^2}\,(n\sigma^2) = \frac{\sigma^2}{n}.
+$$
+**The standard error** is the square root of the variance:
+$$
+\operatorname{SE}(\bar X_n) = \sqrt{\operatorname{Var}(\bar X_n)} = \sqrt{\frac{\sigma^2}{n}}
+= \frac{\sigma}{\sqrt{n}}. \qquad\blacksquare
+$$
+:::
+
+Three things deserve to be read off this result, because they answer questions the reader
+is already forming.
+
+- **Why the square in $n^2$, and why the survivor is $\sigma^2/n$ not $\sigma^2/n^2$.** The
+  $\frac1n$ pulled out as $\frac{1}{n^2}$ (variance squares constants), but the sum of $n$
+  independent variances contributed a factor of $n$ back, and $\frac{1}{n^2}\cdot n =
+  \frac1n$. The two $n$'s do not cancel to nothing; they leave exactly one factor of $1/n$.
+- **Why $1/\sqrt{n}$, not $1/n$.** Precision is measured by the *standard* error — the
+  square root of the variance — and $\sqrt{\sigma^2/n} = \sigma/\sqrt{n}$. So to *halve*
+  your standard error you must *quadruple* your sample. This is the diminishing-returns law
+  of data collection, and it falls straight out of the square root.
+- **The recipe matters: averaging beats not-averaging.** A *single* observation $X_1$ is
+  also an unbiased estimator of $\mu$ (its expectation is $\mu$), but its standard error is
+  the full $\sigma$. Averaging $n$ of them divides that by $\sqrt{n}$. Same target,
+  $\sqrt{n}$ times less wobble — the entire payoff of collecting a sample instead of a
+  single measurement.
+
+::: {.callout-tip title="You might be asked"}
+*"You used independence for the variance but not for the mean — what breaks if the data
+are dependent?"* The **unbiasedness survives** dependence: $\mathbb{E}[\bar X_n]=\mu$ used
+only linearity, which never needs independence, so a correlated sample still centers on the
+truth. But the **variance formula breaks**. With dependence the cross-covariances
+$\operatorname{Cov}(X_i,X_j)$ no longer vanish, and the true variance of $\bar X_n$
+picks up $\frac{1}{n^2}\sum_{i\ne j}\operatorname{Cov}(X_i,X_j)$ on top of $\sigma^2/n$.
+For *positively* correlated data (the usual case — think consecutive days of a time
+series, or students in the same classroom) those covariances are positive, the real
+standard error is *larger* than $\sigma/\sqrt{n}$, and naively using $\sigma/\sqrt{n}$ makes
+you **overconfident**. This is exactly why "effective sample size" is smaller than $n$ for
+clustered or autocorrelated data, and it is one of the most common ways real analyses go
+wrong. We meet the honest version of this at @sec-failure.
+:::
+
+## The estimable problem: we never know $\sigma$ {#sec-plug-in}
+
+The standard error $\sigma/\sqrt{n}$ contains $\sigma$, the population standard deviation —
+which, like $\mu$, we do not know. So $\sigma/\sqrt{n}$ is not yet an estimator: it
+violates the "no unknown quantities" clause of @def-estimator. In practice we plug in the
+**sample** standard deviation $s$ to get the **estimated standard error** $s/\sqrt{n}$,
+where
+$$
+s^2 = \frac{1}{n-1}\sum_{i=1}^n (X_i - \bar X_n)^2.
+$$ {#eq-sample-var}
+
+Why the divisor $n-1$ and not $n$? Because dividing by $n$ gives a *biased* estimator of
+$\sigma^2$ — it systematically underestimates — and $n-1$ corrects exactly that bias. The
+short reason: the deviations are taken from $\bar X_n$, not the true $\mu$, and $\bar X_n$
+is by construction the value that makes $\sum (X_i-\bar X_n)^2$ as small as possible, so it
+under-counts the spread; the correction restores it. We prove this carefully, because it is
+a clean and famous worked example of *bias*, in @sec-example-variance below. For now,
+register that the *estimated* standard error introduces a small extra layer of uncertainty
+(we estimated $\sigma$ too), and that handling that extra layer honestly is precisely what
+forces the $t$-distribution in [INFR-C2]. This article uses the *exact* $\sigma/\sqrt{n}$
+when illustrating, so the algebra stays clean.
+
+## The sampling distribution of the sample proportion {#sec-proportion}
+
+The second canonical estimator is the **sample proportion** $\hat p$, the natural estimator
+of a true success probability $p$ — the fraction of patients who respond to a drug, of
+emails that are spam, of voters favoring a candidate. We get its sampling distribution for
+free, because $\hat p$ *is* a sample mean.
+
+Code each observation as $X_i = 1$ for a "success" and $X_i = 0$ for a "failure". Then $X_i$
+is a **Bernoulli$(p)$** random variable, and the sample proportion is literally their
+average:
+$$
+\hat p = \frac{\text{number of successes}}{n} = \frac1n\sum_{i=1}^n X_i = \bar X_n.
+$$
+So @thm-mean-sampling applies verbatim once we know the mean and variance of a single
+Bernoulli. We derive both rather than quote them.
+
+A Bernoulli$(p)$ variable takes value $1$ with probability $p$ and $0$ with probability
+$1-p$. Its expectation is the probability-weighted sum of its values:
+$$
+\mathbb{E}[X_i] = (1)\cdot p + (0)\cdot(1-p) = p.
+$$
+For the variance, use the computational identity $\operatorname{Var}(X) = \mathbb{E}[X^2]
+- (\mathbb{E}[X])^2$ (derived in [PROB-06]). Because $X_i\in\{0,1\}$, we have $X_i^2 = X_i$
+(since $0^2=0$ and $1^2=1$), so $\mathbb{E}[X_i^2] = \mathbb{E}[X_i] = p$. Therefore
+$$
+\operatorname{Var}(X_i) = \mathbb{E}[X_i^2] - (\mathbb{E}[X_i])^2 = p - p^2 = p(1-p).
+$$
+Now feed $\mu = p$ and $\sigma^2 = p(1-p)$ into @thm-mean-sampling:
+$$
+\boxed{\;
+\mathbb{E}[\hat p] = p,
+\qquad
+\operatorname{Var}(\hat p) = \frac{p(1-p)}{n},
+\qquad
+\operatorname{SE}(\hat p) = \sqrt{\frac{p(1-p)}{n}}.
+\;}
+$$ {#eq-prop-se}
+
+So $\hat p$ is unbiased for $p$, and its standard error again carries the $1/\sqrt{n}$. One
+extra fact, visible in @eq-prop-se and worth carrying: the standard error depends on $p$
+itself, and $p(1-p)$ is largest at $p=\tfrac12$ (a fair coin is the hardest proportion to
+pin down) and shrinks toward $0$ as $p$ approaches $0$ or $1$ (a near-certain outcome is
+easy to estimate). @fig-binomial-sampling shows the sampling distribution of $\hat p$ built
+two ways — by the *exact* binomial probabilities and by simulation — and confirms they
+agree.
+
+```{python}
+#| label: fig-binomial-sampling
+#| fig-cap: 'Sampling distribution of the sample proportion $\hat p$ for $n=40$, true $p=0.3$, built two ways. Grey bars: the *exact* distribution, computed from the binomial probabilities $P(\text{count}=k)=\binom{n}{k}p^k(1-p)^{n-k}$ placed at $\hat p = k/n$ — no simulation. Blue outline: a histogram of 20,000 simulated $\hat p$ values. They coincide. The red line marks the true $p$; the estimate centers there, with spread matching $\sqrt{p(1-p)/n}$ (annotated).'
+from math import comb
+
+n = 40
+p = 0.3
+ks = np.arange(0, n + 1)
+phat_grid = ks / n
+# Exact binomial pmf, computed termwise so nothing is hidden.
+exact_pmf = np.array([comb(n, int(k)) * p**k * (1 - p)**(n - k) for k in ks])
+
+rng = np.random.default_rng(3)
+sims = rng.binomial(n, p, size=20_000) / n
+
+se_exact = np.sqrt(p * (1 - p) / n)
+
+fig, ax = plt.subplots(figsize=(7.0, 4.2))
+ax.bar(phat_grid, exact_pmf / (1 / n), width=1 / n * 0.95, color=FILL,
+       edgecolor="white", label="exact (binomial)", align="center")
+ax.hist(sims, bins=np.arange(-0.5, n + 1.5) / n, density=True,
+        histtype="step", color=POINT, lw=1.8, label="simulated (20,000 draws)")
+ax.axvline(p, color=LINE, lw=2.0, label=fr"true $p={p}$")
+ax.annotate(fr"SE $=\sqrt{{p(1-p)/n}}={se_exact:.3f}$",
+            xy=(p + se_exact, 4.0), xytext=(p + 0.12, 6.5),
+            arrowprops=dict(arrowstyle="->", color=GREY), fontsize=10, color=GREY)
+ax.set_xlabel(r"value of the estimate $\hat p$"); ax.set_ylabel("density")
+ax.set_title(r"Exact vs. simulated sampling distribution of $\hat p$")
+ax.legend(fontsize=9, framealpha=0.9)
+ax.set_xlim(0, 0.65)
+plt.tight_layout()
+
+print(f"exact mean of phat      = {np.sum(phat_grid * exact_pmf):.4f}   (= p = {p})")
+print(f"exact SE  of phat       = {np.sqrt(np.sum((phat_grid - p)**2 * exact_pmf)):.4f}")
+print(f"formula   sqrt(p(1-p)/n)= {se_exact:.4f}")
+print(f"simulated SE            = {sims.std():.4f}")
+```
+
+The point of building it *both* ways is methodological: the exact bars come from pure
+probability (the binomial pmf, every term computed), the outline comes from brute-force
+simulation, and their agreement is a sanity check that "sampling distribution" is not a
+vague idea but a concrete, computable object. When a closed form exists, we can write it
+down; when it does not (the situation that eventually forces the bootstrap, [INFR-E1]),
+simulation is how we see the same distribution anyway.
+
+::: {.callout-tip title="You might be asked"}
+*"The count of successes is Binomial$(n,p)$ — so why call $\hat p$'s distribution something
+new?"* It is the same distribution, rescaled. The success *count* $K=\sum X_i$ is
+Binomial$(n,p)$, living on $\{0,1,\dots,n\}$; the *proportion* $\hat p = K/n$ is that same
+random variable divided by $n$, living on $\{0, \tfrac1n, \dots, 1\}$. Dividing by the
+constant $n$ rescales the axis but does not change the underlying probabilities — which is
+exactly why $\mathbb{E}[\hat p] = \mathbb{E}[K]/n = np/n = p$ and $\operatorname{Var}(\hat
+p) = \operatorname{Var}(K)/n^2 = np(1-p)/n^2 = p(1-p)/n$. The "sampling distribution of
+$\hat p$" is just the binomial wearing the units of a proportion.
+:::
+
+# Bias, variance, and the mean-squared-error decomposition {#sec-mse}
+
+We have two ways to judge an estimator — bias (does it aim true?) and variance (how much
+does it wobble?). The natural single number that combines them is the **mean squared
+error**: the average squared distance between the estimate and the truth, over all
+samples.
+
+::: {#def-mse}
+**Definition (mean squared error).** The **mean squared error** of an estimator
+$\hat\theta$ for a parameter $\theta$ is
+$$
+\mathrm{MSE}(\hat\theta) = \mathbb{E}\!\bigl[(\hat\theta - \theta)^2\bigr],
+$$ {#eq-mse-def}
+the expectation taken over the sampling distribution of $\hat\theta$ (i.e. over all
+possible samples). It is in the squared units of $\theta$.
+:::
+
+The MSE looks like it might depend on bias and variance in some tangled way. It does not —
+it splits cleanly into the two, and the split is one of the most useful identities in
+estimation theory. We derive it in full.
+
+::: {#thm-mse-decomp}
+**Theorem (bias–variance decomposition).** For any estimator $\hat\theta$ of a (fixed,
+non-random) parameter $\theta$,
+$$
+\mathrm{MSE}(\hat\theta)
+= \underbrace{\bigl(\mathbb{E}[\hat\theta] - \theta\bigr)^2}_{\textstyle\operatorname{Bias}(\hat\theta)^2}
+\;+\; \underbrace{\operatorname{Var}(\hat\theta)}_{\text{variance}}.
+$$
+:::
+
+::: {.proof}
+Write $\mu_{\hat\theta} = \mathbb{E}[\hat\theta]$ for the center of the sampling
+distribution — a fixed number, since it is an expectation. The trick is the oldest one in
+this kind of algebra: **add and subtract $\mu_{\hat\theta}$** inside the square, turning
+one gap into two whose meanings we know. Starting from @eq-mse-def,
+$$
+\mathrm{MSE}(\hat\theta)
+= \mathbb{E}\!\bigl[(\hat\theta - \theta)^2\bigr]
+= \mathbb{E}\!\Bigl[\bigl((\hat\theta - \mu_{\hat\theta}) + (\mu_{\hat\theta} - \theta)\bigr)^2\Bigr].
+$$
+The first piece, $\hat\theta - \mu_{\hat\theta}$, is the estimator's deviation from *its
+own* center — random, mean zero. The second piece, $\mu_{\hat\theta} - \theta$, is the
+bias — a fixed constant. Expand the square with $(a+b)^2 = a^2 + 2ab + b^2$:
+$$
+\mathrm{MSE}(\hat\theta)
+= \mathbb{E}\!\Bigl[(\hat\theta - \mu_{\hat\theta})^2
++ 2(\hat\theta - \mu_{\hat\theta})(\mu_{\hat\theta} - \theta)
++ (\mu_{\hat\theta} - \theta)^2\Bigr].
+$$
+Now apply linearity of expectation to split this into three expectations, and handle each:
+$$
+\mathrm{MSE}(\hat\theta)
+= \underbrace{\mathbb{E}\!\bigl[(\hat\theta - \mu_{\hat\theta})^2\bigr]}_{(\mathrm{I})}
++ \underbrace{2(\mu_{\hat\theta} - \theta)\,\mathbb{E}\!\bigl[\hat\theta - \mu_{\hat\theta}\bigr]}_{(\mathrm{II})}
++ \underbrace{(\mu_{\hat\theta} - \theta)^2}_{(\mathrm{III})}.
+$$
+Take the three terms in turn.
+
+- **Term (I)** is, by definition, $\operatorname{Var}(\hat\theta)$: the expected squared
+  deviation of $\hat\theta$ from its own mean $\mu_{\hat\theta}$ is exactly what variance
+  *means*.
+- **Term (II) vanishes.** The constant $2(\mu_{\hat\theta}-\theta)$ pulls out of the
+  expectation (it does not depend on the sample). What remains is
+  $\mathbb{E}[\hat\theta - \mu_{\hat\theta}] = \mathbb{E}[\hat\theta] - \mu_{\hat\theta} =
+  \mu_{\hat\theta} - \mu_{\hat\theta} = 0$, because $\mu_{\hat\theta}$ is *defined* as
+  $\mathbb{E}[\hat\theta]$. A random variable's deviation from its own mean averages to
+  zero. So the whole cross term is $2(\mu_{\hat\theta}-\theta)\cdot 0 = 0$.
+- **Term (III)** is a constant — its expectation is itself — and it equals
+  $(\mu_{\hat\theta}-\theta)^2 = \operatorname{Bias}(\hat\theta)^2$.
+
+Adding the survivors:
+$$
+\mathrm{MSE}(\hat\theta) = \operatorname{Var}(\hat\theta) + \operatorname{Bias}(\hat\theta)^2.
+\qquad\blacksquare
+$$
+:::
+
+The cancellation of the cross term is the heart of the identity, and it is worth saying why
+it *had* to vanish: the random part of the error (deviation from the estimator's center)
+and the systematic part (the center's offset from truth) are, in the averaging,
+**uncorrelated by construction** — one has mean zero, the other is a constant — so they do
+not interact and the squared total error is just the sum of the two squared pieces. Bias
+and variance are *orthogonal* contributions to error.
+
+::: {.callout-important title="Why this identity is the spine of estimator choice"}
+The decomposition reframes "find a good estimator" as a **trade-off**, and that reframing
+governs an astonishing amount of statistics and machine learning. You can sometimes
+*lower* an estimator's variance by accepting a little bias, and if the variance drops more
+than the squared bias rises, the MSE — the thing you actually care about — goes *down*. An
+unbiased estimator is not automatically the best one. This is the formal engine behind
+**regularization** (ridge and lasso accept bias to slash variance, [REGR] track),
+**shrinkage** estimators, and the bias–variance picture of overfitting in supervised
+learning. Every time you hear "the bias–variance trade-off," this theorem is what is being
+traded.
+:::
+
+::: {.callout-tip title="You might be asked"}
+*"Is an unbiased estimator always preferable to a biased one?"* No — and this identity is
+why. What you ultimately want is small *total* error, which is MSE, not zero bias. A biased
+estimator with much smaller variance can have smaller MSE than an unbiased one. The classic
+example: to estimate a normal variance, the unbiased estimator divides by $n-1$, but the
+estimator dividing by $n+1$ has *larger* bias yet *smaller* MSE. Unbiasedness is a nice
+property, not a sacred one; minimizing MSE is the goal, and sometimes a touch of bias buys
+a lot of stability. Saying this out loud separates someone who memorized "unbiased = good"
+from someone who understands estimation.
+:::
+
+# Worked examples {#sec-examples}
+
+We run the machinery on real, messy data, never a toy rigged to flatter it. The examples
+build: first the sample mean on real measurements (where the algebra is exact), then a
+proportion on a real yes/no question, then a full bias calculation, and finally an estimator
+*at the edge of applicability* where the whole framework strains.
+
+## Example 1 — the standard error of a mean on real body-temperature data {#sec-example-temp}
+
+The textbook "normal" human body temperature is $98.6^\circ$F, a figure from Carl
+Wunderlich's 1868 study. A celebrated re-analysis (Mackowiak et al., 1992) measured many
+healthy adults and found the true mean is slightly *lower*. We use a realistic sample to
+watch the estimator-as-random-variable machinery operate on data a clinician would actually
+collect, and to see the standard error do its job.
+
+```{python}
+#| label: fig-temp
+#| fig-cap: 'Body temperature, $n=`{python} f''{len(temps)}''`$ healthy adults. **Left:** the raw measurements (blue) scatter widely — individual people vary by degrees — with the sample mean (green) and the conventional 98.6 (red) marked. **Right:** the *sampling distribution* of the mean, obtained by resampling: it is far tighter than the data, centered near the sample mean. The single estimate we report ($\bar x$) is one draw from that tight distribution; its width is the standard error.'
+rng = np.random.default_rng(42)
+# Realistic individual temperatures (deg F): mean ~98.25, SD ~0.73, mildly skewed.
+temps = np.round(rng.normal(98.25, 0.73, size=65), 1)
+
+n = len(temps)
+xbar = temps.mean()
+s = temps.std(ddof=1)            # sample SD with the n-1 divisor
+se = s / np.sqrt(n)              # estimated standard error of the mean
+
+# Resample to *show* the sampling distribution (this is simulation for the picture;
+# the exact SE is the algebra s/sqrt(n) printed below).
+boot_means = np.array([rng.choice(temps, size=n, replace=True).mean()
+                       for _ in range(5000)])
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+axL.hist(temps, bins=15, color=FILL, edgecolor="white")
+axL.axvline(xbar, color=ACCENT, lw=2.0, label=fr"$\bar x={xbar:.2f}$")
+axL.axvline(98.6, color=LINE, lw=2.0, ls="--", label="98.6 (Wunderlich)")
+axL.set_title(fr"The data: {n} individual temperatures")
+axL.set_xlabel(r"temperature ($^\circ$F)"); axL.set_ylabel("count")
+axL.legend(fontsize=9, framealpha=0.9)
+
+axR.hist(boot_means, bins=35, color=FILL, edgecolor="white", density=True)
+axR.axvline(xbar, color=ACCENT, lw=2.0, label=fr"$\bar x={xbar:.2f}$")
+axR.axvline(98.6, color=LINE, lw=2.0, ls="--", label="98.6")
+axR.set_title("Sampling distribution of the mean")
+axR.set_xlabel(r"value of $\bar x$ ($^\circ$F)"); axR.set_ylabel("density")
+axR.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"n                         = {n}")
+print(f"sample mean   xbar        = {xbar:.3f}  deg F")
+print(f"sample SD     s           = {s:.3f}  deg F   (spread of PEOPLE)")
+print(f"standard error s/sqrt(n)  = {se:.3f}  deg F   (spread of the ESTIMATE)")
+print(f"resampled SE of the mean  = {boot_means.std():.3f}  deg F   (matches s/sqrt(n))")
+print(f"how many SEs is 98.6 away = {(98.6 - xbar)/se:.1f}")
+```
+
+Read the printed numbers against the theory. The spread of *people* is $s \approx
+`{python} f"{s:.2f}"`^\circ$F — temperatures genuinely vary by more than a degree across
+healthy adults. But the spread of the *estimate of the mean* is the standard error
+$s/\sqrt{n} \approx `{python} f"{se:.3f}"`^\circ$F — roughly `{python} f"{s/se:.0f}"` times
+smaller, because of the $\sqrt{n}$ in the denominator (@thm-mean-sampling). The resampled
+standard error in the right panel matches $s/\sqrt{n}$ to the third decimal, confirming the
+formula operationally. And the conventional $98.6$ sits about $`{python} f"{(98.6-xbar)/se:.0f}"`$
+standard errors above our estimate — a gap many times the wobble of the estimate, which is
+exactly the kind of "is this difference real?" question the standard error was invented to
+answer (and which [INFR-D1] turns into a formal test).
+
+## Example 2 — a sample proportion: vaccine efficacy from a clinical trial {#sec-example-prop}
+
+A real-world proportion: in a vaccine trial, a number of vaccinated participants either do
+or do not contract the disease over the study window. The parameter is $p$, the true
+infection probability under vaccination; the estimator is $\hat p$, the observed infection
+fraction. We use figures in the spirit of an early-phase efficacy readout — a modest sample
+size, so the standard error is not negligible, which is the honest regime.
+
+```{python}
+#| label: fig-prop
+#| fig-cap: 'Sample proportion $\hat p$ as an estimator, $n=`{python} f''{n_trial}''`$ vaccinated participants with `{python} f''{infections}''` infections, so $\hat p=`{python} f''{phat:.3f}''`$. The curve is the *exact* sampling distribution of $\hat p$ if the true rate equalled our estimate, $\binom{n}{k}\hat p^{\,k}(1-\hat p)^{n-k}$ placed at $k/n$. The shaded band is one standard error $\sqrt{\hat p(1-\hat p)/n}$ either side of the estimate — visibly wide, the honest message that a small trial pins $p$ down only loosely.'
+from math import comb
+
+n_trial = 80
+infections = 6
+phat = infections / n_trial
+se_p = np.sqrt(phat * (1 - phat) / n_trial)
+
+ks = np.arange(0, n_trial + 1)
+grid = ks / n_trial
+pmf = np.array([comb(n_trial, int(k)) * phat**k * (1 - phat)**(n_trial - k) for k in ks])
+
+fig, ax = plt.subplots(figsize=(7.0, 4.2))
+ax.bar(grid, pmf, width=1 / n_trial * 0.9, color=FILL, edgecolor="white",
+       label="exact sampling distribution")
+band = (grid >= phat - se_p) & (grid <= phat + se_p)
+ax.bar(grid[band], pmf[band], width=1 / n_trial * 0.9, color=ACCENT, alpha=0.55,
+       label=r"$\hat p \pm$ one SE")
+ax.axvline(phat, color=LINE, lw=2.0, label=fr"$\hat p={phat:.3f}$")
+ax.set_xlabel(r"value of the estimate $\hat p$"); ax.set_ylabel("probability")
+ax.set_title(r"Sampling distribution of an infection-rate estimate")
+ax.legend(fontsize=9, framealpha=0.9)
+ax.set_xlim(0, 0.25)
+plt.tight_layout()
+
+print(f"n            = {n_trial}")
+print(f"infections   = {infections}")
+print(f"phat         = {phat:.4f}")
+print(f"SE(phat)     = sqrt(phat(1-phat)/n) = {se_p:.4f}")
+print(f"phat +/- 1SE = [{phat-se_p:.4f}, {phat+se_p:.4f}]")
+```
+
+The estimate is $\hat p = `{python} f"{phat:.3f}"`$, but the standard error is
+$`{python} f"{se_p:.3f}"`$ — so a one-standard-error band already spans roughly
+$[`{python} f"{phat-se_p:.3f}"`, `{python} f"{phat+se_p:.3f}"`]$, a wide range relative to
+the estimate itself. The lesson the picture forces is sobering and correct: **with $n=80$
+and a low event rate, the estimator is genuinely imprecise**, and reporting $\hat p =
+`{python} f"{phat:.3f}"`$ without its standard error would be dishonest. Note also that
+$p(1-p)$ is near its small end here (low $p$), which *helps* — had the rate been near
+$0.5$, the standard error would be larger still. This is the proportion-specific reading of
+@eq-prop-se.
+
+## Example 3 — bias, made concrete: why we divide by $n-1$ {#sec-example-variance}
+
+Earlier (@sec-plug-in) we asserted that dividing the sum of squared deviations by $n$
+produces a *biased* estimator of $\sigma^2$, and that $n-1$ fixes it. Here is the full
+proof — it is the cleanest non-trivial bias calculation in elementary statistics, and a
+perfect worked instance of @def-se. Then we *watch* the bias in simulation.
+
+Define the "divide by $n$" estimator $\hat\sigma^2_n = \frac1n\sum_i (X_i - \bar X_n)^2$. We
+compute $\mathbb{E}[\hat\sigma^2_n]$ and find it falls short of $\sigma^2$.
+
+The key algebraic move is to relate the sum of squared deviations from the *sample* mean to
+deviations from the *true* mean $\mu$. Add and subtract $\mu$ inside each term:
+$$
+\sum_{i=1}^n (X_i - \bar X_n)^2
+= \sum_{i=1}^n \bigl((X_i - \mu) - (\bar X_n - \mu)\bigr)^2.
+$$
+Expand the square inside the sum with $(a-b)^2 = a^2 - 2ab + b^2$, where $a = X_i-\mu$ and
+$b = \bar X_n - \mu$ (note $b$ does not depend on $i$):
+$$
+= \sum_{i=1}^n (X_i-\mu)^2
+- 2(\bar X_n-\mu)\sum_{i=1}^n (X_i-\mu)
++ \sum_{i=1}^n (\bar X_n-\mu)^2.
+$$
+Handle the middle and last sums. The sum $\sum_i (X_i-\mu) = \sum_i X_i - n\mu = n\bar X_n
+- n\mu = n(\bar X_n - \mu)$, so the middle term is $-2(\bar X_n-\mu)\cdot n(\bar X_n-\mu) =
+-2n(\bar X_n-\mu)^2$. The last sum is $n$ copies of the constant $(\bar X_n-\mu)^2$, i.e.
+$n(\bar X_n-\mu)^2$. Combining:
+$$
+\sum_{i=1}^n (X_i - \bar X_n)^2
+= \sum_{i=1}^n (X_i-\mu)^2 - 2n(\bar X_n-\mu)^2 + n(\bar X_n-\mu)^2
+= \sum_{i=1}^n (X_i-\mu)^2 - n(\bar X_n-\mu)^2.
+$$ {#eq-ss-identity}
+
+This is a pure algebraic identity — no expectations yet. Now take expectations of both
+sides, using linearity. For the first sum, $\mathbb{E}[(X_i-\mu)^2] = \operatorname{Var}(X_i)
+= \sigma^2$ by the definition of variance (each $X_i$ has mean $\mu$), so its expectation is
+$n\sigma^2$. For the second term, $\mathbb{E}[(\bar X_n - \mu)^2]$ is the expected squared
+deviation of $\bar X_n$ from *its own* mean $\mu$ — which is exactly
+$\operatorname{Var}(\bar X_n) = \sigma^2/n$ from @thm-mean-sampling. Therefore
+$$
+\mathbb{E}\!\left[\sum_{i=1}^n (X_i - \bar X_n)^2\right]
+= n\sigma^2 - n\cdot\frac{\sigma^2}{n}
+= n\sigma^2 - \sigma^2
+= (n-1)\sigma^2.
+$$ {#eq-ss-expectation}
+
+The sum of squared deviations from the sample mean has expectation $(n-1)\sigma^2$, *not*
+$n\sigma^2$. So the "divide by $n$" estimator has
+$$
+\mathbb{E}[\hat\sigma^2_n]
+= \frac1n\,\mathbb{E}\!\left[\sum_i (X_i-\bar X_n)^2\right]
+= \frac{(n-1)\sigma^2}{n}
+= \sigma^2 - \frac{\sigma^2}{n} < \sigma^2,
+$$
+biased *low* by exactly $\sigma^2/n$. Dividing instead by $n-1$ cancels the deficit and
+restores unbiasedness, which is why @eq-sample-var uses $n-1$:
+$$
+\mathbb{E}\!\left[\frac{1}{n-1}\sum_i (X_i-\bar X_n)^2\right]
+= \frac{1}{n-1}\,(n-1)\sigma^2 = \sigma^2.
+$$
+The intuition behind the missing $\sigma^2/n$ is now visible in @eq-ss-identity: deviations
+from the *sample* mean are systematically *smaller* than deviations from the *true* mean,
+by precisely the $n(\bar X_n-\mu)^2$ term, because $\bar X_n$ is pulled toward the data.
+The sample "uses up" one piece of information to locate its own center — the famous "lost
+degree of freedom" — and $n-1$ accounts for it. @fig-bias confirms the whole story in
+simulation.
+
+```{python}
+#| label: fig-bias
+#| fig-cap: 'The $n-1$ correction, watched in simulation. For each of 20,000 samples of size $n=5$ from a population with true variance $\sigma^2=4$, we compute both variance estimators. The ''divide by $n$'' estimator (blue) centers *below* the truth (red) — visibly biased low, by the predicted $\sigma^2/n=0.8$. The ''divide by $n-1$'' estimator (green) centers on the truth. Small $n$ makes the bias large and obvious; it shrinks like $1/n$.'
+rng = np.random.default_rng(7)
+sigma2_true = 4.0
+n = 5
+reps = 20_000
+
+samples = rng.normal(0.0, np.sqrt(sigma2_true), size=(reps, n))
+ss = np.sum((samples - samples.mean(axis=1, keepdims=True))**2, axis=1)
+var_div_n = ss / n
+var_div_nm1 = ss / (n - 1)
+
+fig, ax = plt.subplots(figsize=(7.2, 4.2))
+bins = np.linspace(0, 16, 60)
+ax.hist(var_div_n, bins=bins, density=True, color=FILL, alpha=0.7,
+        label=fr"divide by $n$:    mean $={var_div_n.mean():.2f}$")
+ax.hist(var_div_nm1, bins=bins, density=True, histtype="step", color=ACCENT, lw=2.0,
+        label=fr"divide by $n-1$: mean $={var_div_nm1.mean():.2f}$")
+ax.axvline(sigma2_true, color=LINE, lw=2.0, label=fr"true $\sigma^2={sigma2_true}$")
+ax.set_xlabel(r"value of the variance estimate"); ax.set_ylabel("density")
+ax.set_title(r"Bias of the two variance estimators ($n=5$)")
+ax.legend(fontsize=9, framealpha=0.9)
+plt.tight_layout()
+
+print(f"true sigma^2                 = {sigma2_true}")
+print(f"E[divide by n]   (simulated) = {var_div_n.mean():.3f}   predicted {sigma2_true*(n-1)/n:.3f}")
+print(f"E[divide by n-1] (simulated) = {var_div_nm1.mean():.3f}   predicted {sigma2_true:.3f}")
+print(f"bias of divide-by-n          = {var_div_n.mean()-sigma2_true:.3f}   predicted {-sigma2_true/n:.3f}")
+```
+
+The simulated means land on the predicted values: the divide-by-$n$ estimator averages
+$\approx `{python} f"{4.0*(5-1)/5:.1f}"`$ against a truth of $4.0$ — biased low by the
+predicted $\sigma^2/n = `{python} f"{4.0/5:.1f}"`$ — while divide-by-$(n-1)$ averages on the
+truth. This is @def-se and @thm-mse-decomp made flesh: a real estimator, a real bias, and
+the exact correction derived line by line.
+
+## Example 4 — the edge of applicability: estimating the maximum of a uniform {#sec-example-edge}
+
+Every example so far had the estimator behaving beautifully: unbiased, with a tidy
+$1/\sqrt{n}$ standard error. That regularity is *not* automatic, and an honest article must
+show where it fails. Consider estimating the upper endpoint $\theta$ of a Uniform$[0,\theta]$
+population — think of inferring the highest possible value of a meter that reads uniformly
+between $0$ and an unknown ceiling, or the German-tank problem of estimating production from
+serial numbers. The instinctive estimator is the **sample maximum**, $\hat\theta =
+\max_i X_i$. Everything about it violates the comfortable pattern of the earlier examples.
+
+```{python}
+#| label: fig-edge
+#| fig-cap: 'An estimator at the edge of applicability: the sample maximum for Uniform$[0,\theta]$, $\theta=10$, $n=10$. **Left:** its sampling distribution is sharply *asymmetric* and piles up just below $\theta$ — nothing like a symmetric bell, and it can never exceed $\theta$, so it is biased *low*. **Right:** the standard error shrinks like $1/n$ (not $1/\sqrt{n}$): the log-log slope is about $-1$, twice as fast as a mean. The clean theory of @thm-mean-sampling simply does not apply here.'
+rng = np.random.default_rng(1)
+theta = 10.0
+n = 10
+reps = 20_000
+
+maxes = rng.uniform(0, theta, size=(reps, n)).max(axis=1)
+
+fig, (axL, axR) = plt.subplots(1, 2, figsize=(8.8, 3.7))
+
+axL.hist(maxes, bins=50, color=FILL, edgecolor="white", density=True)
+axL.axvline(theta, color=LINE, lw=2.0, label=fr"true $\theta={theta:.0f}$")
+axL.axvline(maxes.mean(), color=ACCENT, lw=2.0, ls="--",
+            label=fr"mean $={maxes.mean():.2f}$ (biased low)")
+axL.set_title(r"Sampling distribution of $\max_i X_i$")
+axL.set_xlabel(r"value of the estimate"); axL.set_ylabel("density")
+axL.legend(fontsize=9, framealpha=0.9, loc="upper left")
+
+ns = np.array([5, 10, 20, 40, 80, 160, 320])
+ses = []
+for nn in ns:
+    mx = rng.uniform(0, theta, size=(8000, nn)).max(axis=1)
+    ses.append(mx.std())
+ses = np.array(ses)
+axR.loglog(ns, ses, "o-", color=POINT, label="SE of sample max")
+# Reference slopes: 1/n and 1/sqrt(n), anchored at the first point.
+axR.loglog(ns, ses[0] * (ns / ns[0])**(-1.0), color=LINE, ls="--",
+           label=r"slope $-1$  (i.e. $1/n$)")
+axR.loglog(ns, ses[0] * (ns / ns[0])**(-0.5), color=GREY, ls=":",
+           label=r"slope $-1/2$  (i.e. $1/\sqrt{n}$)")
+axR.set_title("Standard error vs. sample size")
+axR.set_xlabel(r"sample size $n$"); axR.set_ylabel("standard error")
+axR.legend(fontsize=8.5, framealpha=0.9)
+plt.tight_layout()
+
+slope = np.polyfit(np.log(ns), np.log(ses), 1)[0]
+print(f"mean of sample max  = {maxes.mean():.3f}   (true theta = {theta})")
+print(f"bias                = {maxes.mean()-theta:.3f}   (negative: always under)")
+print(f"empirical log-log slope of SE = {slope:.2f}   (~ -1, so SE ~ 1/n, NOT 1/sqrt(n))")
+```
+
+Three pathologies, all visible in @fig-edge, each breaking an assumption we leaned on:
+
+- **It is biased**, and unfixable by the $\sqrt{n}$ intuition. The maximum of a sample can
+  never exceed $\theta$, so $\mathbb{E}[\max_i X_i] < \theta$ *always* — here the mean lands
+  around $`{python} f"{maxes.mean():.1f}"`$, short of $10$. The exact bias is
+  $\mathbb{E}[\max_i X_i] = \frac{n}{n+1}\theta$ (derived just below), so the maximum
+  underestimates $\theta$ by $\frac{1}{n+1}\theta$; the unbiased fix multiplies by
+  $\frac{n+1}{n}$ — but you had to *know* to correct it, and the naive estimator misleads.
+- **Its standard error shrinks like $1/n$, not $1/\sqrt{n}$.** The right panel's log-log
+  slope is about $-1$ (empirically $`{python} f"{slope:.2f}"`$), so the maximum *converges
+  faster* than any sample mean. The $\sigma/\sqrt{n}$ law of @thm-mean-sampling is a fact
+  about *averages*, not about all estimators.
+- **Its sampling distribution is sharply skewed**, not symmetric, and stays skewed no
+  matter how large $n$ is — it is *not* heading toward a bell curve. The Central Limit
+  Theorem of [INFR-A2] is about sums and averages; the maximum is neither, so the comforting
+  normal shape never arrives.
+
+**The bias, derived in full.** We claimed $\mathbb{E}[\max_i X_i] = \frac{n}{n+1}\theta$;
+here is every step, using only the i.i.d. assumption and Calc-1 integration. Write
+$M = \max_i X_i$. The route is the standard one for an extreme: get the *cumulative
+distribution function* (CDF) of $M$ first, because "the max is $\le m$" is an easy event,
+then differentiate to a density and integrate for the mean.
+
+A single $X_i \sim$ Uniform$[0,\theta]$ has CDF
+$$
+F(x) = P(X_i \le x) = \frac{x}{\theta}, \qquad 0 \le x \le \theta,
+$$
+since a uniform puts probability on $[0,\theta]$ in proportion to length. Now the key
+observation: the maximum of the sample is $\le m$ **exactly when every** $X_i \le m$. So,
+using independence to factor the joint probability into a product (this is the one place
+the i.i.d. assumption enters),
+$$
+F_M(m) = P(M \le m) = P(X_1 \le m,\dots,X_n \le m)
+= \prod_{i=1}^n P(X_i \le m) = \left(\frac{m}{\theta}\right)^{\!n},
+\qquad 0 \le m \le \theta.
+$$
+The density of $M$ is the derivative of its CDF (the fundamental relationship between a
+CDF and its density), and we differentiate $(m/\theta)^n = m^n/\theta^n$ with respect to
+$m$ by the power rule:
+$$
+f_M(m) = \frac{d}{dm}\,F_M(m) = \frac{d}{dm}\,\frac{m^n}{\theta^n}
+= \frac{n\,m^{\,n-1}}{\theta^n}, \qquad 0 \le m \le \theta.
+$$
+Finally the expectation is $\int m\,f_M(m)\,dm$ over the support $[0,\theta]$ (the
+continuous analogue of the probability-weighted sum we used for the Bernoulli):
+$$
+\mathbb{E}[M] = \int_0^\theta m\,\frac{n\,m^{\,n-1}}{\theta^n}\,dm
+= \frac{n}{\theta^n}\int_0^\theta m^{\,n}\,dm
+= \frac{n}{\theta^n}\cdot\frac{m^{\,n+1}}{n+1}\Bigg|_0^\theta
+= \frac{n}{\theta^n}\cdot\frac{\theta^{\,n+1}}{n+1}
+= \frac{n}{n+1}\,\theta.
+$$
+So $\mathbb{E}[M] = \frac{n}{n+1}\theta < \theta$ for every finite $n$ — the bias is
+$\frac{n}{n+1}\theta - \theta = -\frac{1}{n+1}\theta$, negative and shrinking like $1/n$,
+matching both the simulated mean above and the $1/n$ (not $1/\sqrt{n}$) convergence in the
+right panel. Multiplying the estimator by $\frac{n+1}{n}$ cancels the bias exactly:
+$\mathbb{E}\!\left[\frac{n+1}{n}M\right] = \frac{n+1}{n}\cdot\frac{n}{n+1}\theta = \theta$.
+
+The general lesson is the honest boundary of this article. The framework — *estimator is a
+random variable, has a sampling distribution, summarized by bias and standard error* — is
+**completely general and always applies**. But the *specific clean results* (unbiasedness,
+$\sigma/\sqrt{n}$, eventual normality) are facts about the **sample mean and its kin**, not
+universal laws. When your estimator is an extreme (a max, a min, a range), a ratio, or any
+strongly nonlinear function of the data, expect the tidy formulas to fail and reach for the
+tools that do not assume them — the **bootstrap** ([INFR-E1]), which simulates the sampling
+distribution directly from the data without needing any of these formulas to hold.
+
+::: {.callout-warning title="Pitfall"}
+**Do not assume every estimator is unbiased with a $1/\sqrt{n}$ standard error.** That
+pattern is the signature of the sample mean (and smooth functions of it), not a birthright
+of estimators in general. Maxima, minima, variances of heavy-tailed data, ratios, and
+quantiles can be biased, can converge at other rates, and can have non-normal sampling
+distributions for any sample size. The safe habit: when you meet a new estimator, either
+*derive* its sampling behavior or *simulate* it (as @fig-edge does) — never assume it
+inherits the sample mean's good manners.
+:::
+
+# Failure modes and the honest boundary {#sec-failure}
+
+Beyond the maximum of @sec-example-edge, two assumptions quietly underpin every clean result
+in this article. Naming where they break is what turns "can compute a standard error" into
+"knows when the standard error is a lie."
+
+**The i.i.d. assumption is load-bearing — and frequently false.** Both the unbiasedness and,
+especially, the $\sigma^2/n$ variance of the sample mean assumed an i.i.d. sample. Real data
+are often *not* independent: measurements on the same patient over time, students within a
+school, days within a market, pixels within an image. As the interview callout in
+@sec-mean-exact spelled out, positive correlation inflates the true standard error above
+$\sigma/\sqrt{n}$, so the naive formula reports *more confidence than you have earned*. The
+fix is not to abandon the framework — the estimator is still a random variable with a
+sampling distribution — but to account for the dependence (cluster-robust standard errors,
+time-series corrections, or simply resampling whole clusters with the bootstrap). The
+single most common real-world inference error is treating dependent data as i.i.d.
+
+**A finite variance is assumed, and not always present.** Every variance formula here
+silently assumed $\sigma^2 < \infty$. For genuinely heavy-tailed populations — income,
+city sizes, insurance losses, returns in a crash — the variance can be enormous or
+mathematically infinite, in which case "$\sigma/\sqrt{n}$" is undefined and the sample mean
+itself is a poor summary (the median or a trimmed mean may be the right target instead).
+The extreme case, where even the *mean* is the wrong thing to estimate, is the Cauchy-style
+example that opens [INFR-A2], where averaging more data does **not** help at all. This
+article's machinery is general, but its comforting numbers presume tails light enough for a
+variance to exist.
+
+::: {.callout-tip title="You might be asked"}
+*"When is this whole framework the right tool, and when is it the wrong one?"* The honest
+summary you should be able to recite:
+
+- **Always applicable (the concept):** *any* statistic computed from a random sample is a
+  random variable with a sampling distribution. There is no situation where this framing is
+  wrong — it is the definition of inference. If someone hands you a single estimate with no
+  notion of how it would vary on resampling, the framing is *missing*, not inapplicable.
+- **The clean formulas apply** when (a) the data are genuinely i.i.d., (b) the population
+  has a finite variance, and (c) the estimator is a mean or a smooth function of means. Then
+  unbiasedness, $\sigma/\sqrt{n}$, and (via [INFR-A2]) approximate normality all hold, and
+  you can report $\hat\theta \pm \text{SE}$ with a clear conscience.
+- **Reach for something else** when the data are dependent (cluster/time-series methods, or
+  resample clusters), when tails are heavy or variance is infinite (robust targets like the
+  median; the framework still holds but $\sigma/\sqrt{n}$ does not), or when the estimator
+  is extreme/nonlinear (the bootstrap, [INFR-E1], which builds the sampling distribution by
+  brute force and assumes none of the clean formulas).
+:::
+
+# How you would actually compute this {#sec-implementation}
+
+The math is primary; this is the secondary, practical note. You almost never compute a
+standard error by simulating thousands of resamples — that was a *teaching* device to make
+the sampling distribution visible. For the sample mean you use the formula directly:
+`s = data.std(ddof=1)` (the `ddof=1` is the $n-1$ divisor we proved necessary in
+@sec-example-variance) and `se = s / np.sqrt(len(data))`. For a proportion, `phat =
+successes / n` and `se = np.sqrt(phat*(1-phat)/n)`. Libraries like `scipy.stats`
+(`sem` for the standard error of the mean) and `statsmodels` package these, and every
+regression summary's "Std. Err." column is this same quantity computed for $\hat\beta$.
+When no formula exists — the edge cases of @sec-example-edge — you genuinely do resample,
+which is the bootstrap of [INFR-E1]. Either way, the object you are after is always the same:
+the spread of the estimator's sampling distribution.
+
+# Connections and where to go next {#sec-connections}
+
+::: {.callout-important title="Where you are in the track"}
+This is the foundation stone of the **Statistical Inference** track. Everything downstream
+is, in one way or another, *the study of sampling distributions*.
+
+- **[INFR-A2] *Two Theorems That Make Statistics Possible: LLN and the CLT*** — the
+  immediate sequel. We pinned the sampling distribution's center and spread exactly; A2
+  pins its *shape* (the bell curve, via the CLT) and proves the estimate homes in on the
+  truth as $n\to\infty$ (the law of large numbers). Together they complete the description
+  of $\bar X_n$ that this article began.
+- **[INFR-B1] *The Likelihood: Reading Probability Backwards*** — so far we *guessed*
+  estimators (mean, proportion); the likelihood is the principled engine for *constructing*
+  them, and it inherits the sampling-distribution viewpoint built here.
+- **[INFR-C1] *Confidence Intervals*** — a confidence interval is built directly on the
+  standard error of this article. "$\hat\theta \pm 1.96\,\text{SE}$" is meaningless until
+  you accept that $\hat\theta$ has a sampling distribution with a standard error — which is
+  exactly what we installed.
+- **[INFR-E1] *The Bootstrap*** — the escape hatch for every case where the clean formulas
+  of @sec-mean-exact fail (the maximum of @sec-example-edge, dependent data, heavy tails):
+  it simulates the sampling distribution directly, exactly as our figures did.
+
+Outside the track, the **Regression** track consumes this wholesale: the estimated
+coefficient $\hat\beta$ is an estimator, a random variable with a sampling distribution and
+a standard error, and every "Std. Err." in a regression table is this article applied to
+$\hat\beta$.
+:::
+
+# Going deeper {#sec-deeper}
+
+- **Primary source.** R. A. Fisher, "On the Mathematical Foundations of Theoretical
+  Statistics," *Philosophical Transactions of the Royal Society A* 222 (1922) — the paper
+  that named the *statistic* and put its *sampling distribution* at the center of the
+  theory, alongside the concepts of consistency, efficiency, and sufficiency that the rest
+  of this track unpacks.
+- **The bias example in its natural home.** The $n-1$ correction (@sec-example-variance) is
+  the entry point to *degrees of freedom*, which recur throughout the track — in the
+  $t$-distribution ([INFR-C2]) and the chi-square distribution of the sample variance.
+- **Open threads this article deliberately deferred.** *What shape is the sampling
+  distribution?* — the CLT, [INFR-A2]. *How do we handle the unknown $\sigma$ honestly in a
+  small sample?* — the $t$-distribution, [INFR-C2]. *Is there a "best" estimator, and how
+  much information can a sample possibly carry about $\theta$?* — Fisher information and the
+  Cramér–Rao bound, [INFR-B3]. *What do we do when no standard-error formula exists at all?*
+  — the bootstrap, [INFR-E1].
