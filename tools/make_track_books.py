@@ -30,7 +30,7 @@ TRACKS = {
 }
 
 def quarto_yaml(name, chapter_files):
-    chapters = "\n".join(f"        - {f}" for f in chapter_files)
+    chapters = "\n".join(f"    - {f}" for f in chapter_files)  # 4 spaces: same level as "- index.qmd"
     return f'''project:
   type: book
   output-dir: _out

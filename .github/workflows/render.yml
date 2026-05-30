@@ -72,7 +72,8 @@ jobs:
           find "$SRC" -name '*.qmd' -print0 | while IFS= read -r -d '' f; do
             quarto render "$f" --to pdf >/dev/null 2>&1 || echo "WARN: $f"
           done
-          find "$SRC" -name '*.pdf' -exec cp {} out/articles/ \;
+          # copy only the article PDFs, not the *_files/ figure intermediates
+          find "$SRC" -name '*.pdf' -not -path '*_files/*' -exec cp {} out/articles/ \;
           echo "Article PDFs produced:"; ls out/articles | wc -l
 
       - name: Upload PDFs as build artifact
